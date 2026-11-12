@@ -80,7 +80,7 @@ class CodeServerSetupTest {
         assertTrue(CodeServerSetup.kotlinInstall("1.2;rm", "aarch64") is Outcome.Failure)
         assertTrue(CodeServerSetup.kotlinInstall("263.7084.0", "mips") is Outcome.Failure)
         val install = (CodeServerSetup.kotlinInstall("263.7084.0", "aarch64") as Outcome.Success).value
-        assertEquals(listOf("/root/.local/share/dpai/kotlin-lsp", "263.7084.0", KotlinLsp.archiveUrl("263.7084.0", "aarch64"), KotlinLsp.ROCKSDB_URL, KotlinLsp.ROCKSDB_SHA256, "librocksdbjni-linux-aarch64-musl.so"), install.drop(4))
+        assertEquals(listOf("/root/tools/ide/kotlin-lsp", "263.7084.0", KotlinLsp.archiveUrl("263.7084.0", "aarch64"), KotlinLsp.ROCKSDB_URL, KotlinLsp.ROCKSDB_SHA256, "librocksdbjni-linux-aarch64-musl.so"), install.drop(4))
         val (info, vm) = assertNotNull(CodeServerSetup.kotlinFiles(listOf("{\"launch\":[]}", "", "--DPAI-VMOPTIONS--", "-Xmx2048m")))
         assertEquals("{\"launch\":[]}\n", info)
         assertEquals("-Xmx2048m", vm)

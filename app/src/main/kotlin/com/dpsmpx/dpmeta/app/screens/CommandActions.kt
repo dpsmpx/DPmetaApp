@@ -19,8 +19,11 @@ import com.dpsmpx.dpmeta.model.RepoRef
  * здесь — только смысл. Чистый Kotlin.
  */
 object CommandActions {
-    /** Клоны пульта в госте (D-72): `/root/repos/<владелец>/<имя>`. */
-    const val GUEST_ROOT: String = "/root/repos"
+    /** Клоны пульта в госте (D-111, D-113): `/root/projects/<владелец>/<имя>`; прежний `/root/repos` — ссылка. */
+    const val GUEST_ROOT: String = "/root/projects"
+
+    /** Прежний корень клонов (D-72): ссылка на [GUEST_ROOT]; у команд реестра — тот же смысл. */
+    const val LEGACY_GUEST_ROOT: String = "/root/repos"
 
     /** Строк вывода на экране — последние; длиннее — счёт отброшенных. */
     const val MAX_LINES: Int = 2_000

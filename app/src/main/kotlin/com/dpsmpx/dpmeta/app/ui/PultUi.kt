@@ -1236,7 +1236,7 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
     Spacer(Modifier.height(Tokens.gap))
     Text("Клоны репозиториев", style = MaterialTheme.typography.titleMedium)
     Text(
-        "Отмеченные репозитории клонируются в приложение: «AI» работает в них (Linux-среда, /root/repos), пульт берёт из них файлы. " +
+        "Отмеченные репозитории клонируются в приложение: «AI» работает в них (Linux-среда, ~/projects), пульт берёт из них файлы. " +
             view.clones,
         style = MaterialTheme.typography.bodySmall,
     )
@@ -1582,7 +1582,7 @@ private fun CommandsScreen(loader: Loader, onBack: () -> Unit) {
         item { Text("Команды проектов", style = MaterialTheme.typography.titleMedium) }
         item {
             Text(
-                "Идут в Linux-среде приложения, в клонах /root/repos — там же, где работает «AI», или в Termux, в его папке проектов. Чтение — сразу; правка рабочего дерева — после окна «что изменится», с записью в журнал.",
+                "Идут в Linux-среде приложения, в клонах ~/projects — там же, где работают терминал, IDE и «AI», или в Termux, в его папке проектов. Чтение — сразу; правка рабочего дерева — после окна «что изменится», с записью в журнал.",
                 style = MaterialTheme.typography.bodySmall,
             )
         }

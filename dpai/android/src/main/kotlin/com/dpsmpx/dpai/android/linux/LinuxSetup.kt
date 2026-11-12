@@ -39,6 +39,8 @@ object LinuxSetup {
     fun environment(context: Context): LinuxEnvironment = LinuxEnvironment(NioVfs(context.filesDir.toPath()))
 
     fun layout(context: Context): ProotLayout {
+        // Разделы хранилища и перенос из прежних мест — до первого запуска гостя (D-143).
+        com.dpsmpx.dpai.android.StorageMap.prepare(context)
         val lib = context.applicationInfo.nativeLibraryDir
         val tmp = File(context.cacheDir, "linux-tmp").apply { mkdirs() }
         val rootfs = File(context.filesDir, environment(context).rootfs)
@@ -93,7 +95,13 @@ object LinuxSetup {
     /** Распаковать Alpine из APK, если ещё не; `null` — уже установлена. */
     fun install(context: Context): Outcome<RootfsInstaller.Summary?> {
         if (!available(context)) return Outcome.failure(DiagCode.UNSUPPORTED, "Linux в приложении — только на телефоне с arm64")
-        return environment(context).install(VERSION) { context.assets.open(ASSET) }
+        return environment(context).install(VERSION) { context.assets.open(ASSET) }.also {
+            // `~/tools/bin` в PATH оболочек входа и карта — сразу после установки (D-143).
+            if (it is Outcome.Success && it.value != null) {
+                environment(context).writeProfile()
+                com.dpsmpx.dpai.android.StorageMap.refresh(context)
+            }
+        }
     }
 
     /** DNS гостя — серверы сети телефона: перед каждым запуском, сеть могла смениться. */
@@ -112,8 +120,11 @@ object LinuxSetup {
             is Outcome.Failure -> return s
             is Outcome.Success -> s.value
         }
+        if (action == LinuxEnvironment.Apk.ADD) {
+            (com.dpsmpx.dpai.android.StorageSpace.check(context, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.PACKAGES, null, packages.joinToString(" ")) as? Outcome.Failure)?.let { return it }
+        }
         refreshDns(context)
-        return host(context).run(spec, 15.minutes, maxStdoutChars = 200_000)
+        return host(context).run(spec, 15.minutes, maxStdoutChars = 200_000).also { com.dpsmpx.dpai.android.StorageMap.refresh(context) }
     }
 
     /**

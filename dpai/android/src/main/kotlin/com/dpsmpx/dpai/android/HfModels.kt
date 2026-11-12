@@ -4,6 +4,7 @@ import android.content.Context
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Secret
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.orchestrator.linux.GuestStorage
 import com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment
 import com.dpsmpx.dpai.providers.Cancel
 import com.dpsmpx.dpai.providers.DownloadSink
@@ -28,11 +29,8 @@ object HfModels {
     /** Имя токена в хранилище ключей (`ApiKeys`, Keystore). */
     private const val TOKEN = "huggingface"
 
-    /** Каталог моделей в домашней папке гостя: `/root/models`. */
-    private const val DIR = "models"
-
-    /** Запас места сверх файла: Linux-среде и серверу модели тоже нужно место. */
-    const val RESERVE: Long = 256L * 1024 * 1024
+    /** Каталог моделей — раздел инструментов (D-143, DPmetaApp:D-113): `/root/tools/models`; прежний `/root/models` — ссылкой. */
+    private const val DIR = GuestStorage.MODELS
 
     /** Ход в состоянии — не чаще, чем через столько байт: строк на гигабайт — сотни, а не тысячи. */
     private const val STEP: Long = 4L * 1024 * 1024
@@ -106,10 +104,10 @@ object HfModels {
         val part = "$target.part"
         if (vfs.exists(target)) return finish("Уже скачан: $guest.", failed = false)
         val have = vfs.size(part) ?: 0
-        val free = free(app)
         val need = (file.size - have).coerceAtLeast(0)
-        if (free < need + RESERVE) {
-            return finish("Мало места: нужно ${size(need)} и ${size(RESERVE)} запаса, свободно ${size(free)}.", failed = true)
+        // Предел хранилища и жёсткий запас 1 ГБ (DPmetaApp:D-113) — до запроса.
+        (StorageSpace.check(app, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.DOWNLOAD, need, name) as? Outcome.Failure)?.let {
+            return finish(it.errors.first().message.replaceFirstChar { c -> c.uppercase() } + ".", failed = true)
         }
         val c = Cancel()
         synchronized(this) {
@@ -151,6 +149,7 @@ object HfModels {
                 }
             }
             cancel = null
+            if (r is Outcome.Success) StorageMap.refresh(app)
             AppLogs.info(app, "модели", "Hugging Face ${listing.repo}, $name: " + when (r) {
                 is Outcome.Success -> "скачан"
                 is Outcome.Failure -> "${r.errors.first().code}"
@@ -180,20 +179,6 @@ object HfModels {
         val s = flow.value
         val file = s.retry?.let { p -> s.rows.firstOrNull { it.file.path == p }?.file }
         if (file != null) download(context, file) else if (s.input.isNotBlank()) list(context, s.input)
-    }
-
-    /**
-     * Сколько места можно занять под `/root`: с учётом кэша, который система очистит
-     * сама (`StorageManager`); не ответила — свободное по `StatFs`.
-     */
-    private fun free(context: Context): Long {
-        val home = GuestPaths.home(context)
-        val sm = context.getSystemService(android.os.storage.StorageManager::class.java)
-        return try {
-            sm.getAllocatableBytes(sm.getUuidForPath(home))
-        } catch (_: IOException) {
-            android.os.StatFs(home.path).availableBytes
-        }
     }
 
     private fun finish(note: String, failed: Boolean) {

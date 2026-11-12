@@ -95,7 +95,7 @@ object TermuxActions {
     /**
      * Вызов команды [spec] в клоне [clone] папки [folder]. Программа гостя из `/bin` —
      * из `$PREFIX/bin` Termux; программа из клона — от каталога команды. Аргумент
-     * `/root/repos` (корень клонов Linux-среды) — папка проектов; другие пути гостя
+     * `/root/projects` или прежний `/root/repos` (корень клонов Linux-среды) — папка проектов; другие пути гостя
      * `/root/…` в Termux не годятся — отказ. Уровень 2 — только на переднем плане (F-41).
      */
     fun call(spec: CommandSpec, spot: CommandActions.Spot, folder: String, clone: String): Outcome<Call> {
@@ -113,7 +113,7 @@ object TermuxActions {
         }
         val args = spec.args.map { a ->
             when {
-                a == CommandActions.GUEST_ROOT -> folder
+                a == CommandActions.GUEST_ROOT || a == CommandActions.LEGACY_GUEST_ROOT -> folder
                 a.startsWith("/root/") -> return Outcome.failure(DiagCode.UNSUPPORTED, "аргумент $a — путь Linux-среды, в Termux его нет", spec.id)
                 else -> a
             }

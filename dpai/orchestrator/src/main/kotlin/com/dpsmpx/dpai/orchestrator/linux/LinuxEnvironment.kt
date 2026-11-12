@@ -35,6 +35,7 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
     /** Черновик `resolv.conf` — вне корня гостя: гость его не видит и ссылкой не подменит. */
     private val dnsDraft = Vfs.join(dir, "resolv.conf.draft")
     private val keyDraft = Vfs.join(dir, "llama-key.draft")
+    private val profileDraft = Vfs.join(dir, "profile.draft")
 
     /** Версия установленной корневой системы; `null` — не установлена или установка оборвалась. */
     fun installed(): String? = vfs.read(ready)?.toString(Charsets.UTF_8)?.trim()?.ifEmpty { null }
@@ -74,6 +75,26 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
      * дотянуться, и встаёт на место переименованием — оно заменяет запись
      * каталога, ссылку тоже, а не цель ссылки; `/etc`-ссылка — отказ.
      */
+    /**
+     * `~/tools/bin` в `PATH` и оболочки входа (D-143): `/etc/profile` Alpine задаёт свой
+     * `PATH`, поэтому строка — в `/etc/profile.d`. Как у [writeDns]: черновик вне корня
+     * гостя и переименование; `/etc` или `/etc/profile.d` — ссылка — отказ.
+     */
+    fun writeProfile(): Outcome<Unit> {
+        val etc = Vfs.join(rootfs, "etc")
+        val dir = Vfs.join(etc, "profile.d")
+        val path = Vfs.join(dir, "dpmetaapp-tools.sh")
+        if (vfs.isSymlink(etc) || vfs.isSymlink(dir)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "/etc гостя — символьная ссылка: PATH для оболочки входа не записан", dir)
+        return try {
+            vfs.mkdirs(dir)
+            vfs.write(profileDraft, GuestStorage.PROFILE_SCRIPT.toByteArray())
+            vfs.rename(profileDraft, path)
+            Outcome.success(Unit)
+        } catch (e: IOException) {
+            Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "/etc/profile.d гостя не записан", e, path)))
+        }
+    }
+
     fun writeDns(servers: List<String>): Outcome<Int> {
         val good = servers.map { it.trim().substringBefore('%') }.filter(::isIpLiteral).distinct().take(MAX_DNS)
         if (good.isEmpty()) return Outcome.failure(DiagCode.VALUE_INVALID, "нет адреса DNS сети телефона: /etc/resolv.conf гостя не изменён", rootfs)
@@ -167,8 +188,8 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
          * `GEMINI_CLI_HOME` — D-29, D-100): вход — в нём, по разу на слот.
          */
         fun slotDir(n: Int, executor: com.dpsmpx.dpai.core.ids.Executor = com.dpsmpx.dpai.core.ids.Executor.CLAUDE): String {
-            require(n in 1..99) { "номер слота — 1…99" }
-            return "/root/.${executor.key}-slot-$n"
+            // Слоты — в разделе `~/ai` (D-143, DPmetaApp:D-113); прежние `~/.<исполнитель>-slot-N` — ссылками.
+            return GuestStorage.slotDir(executor.key, n)
         }
 
         /** Пакеты npm исполнителей Codex и Gemini (D-100): ставятся в госте глобально. */
@@ -213,7 +234,7 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
         fun llamaInstall(): List<ProcessSpec> = listOf(apkAdd("llama-server"), ProcessSpec(listOf("llama-server", "--version")))
 
         /** Каталоги гостя, откуда берётся модель (D-105): свои модели, копии папок (D-99) и всё хранилище. */
-        val MODEL_DIRS: List<String> = listOf("/root/models/", "/root/files/", "/root/storage/shared/")
+        val MODEL_DIRS: List<String> = listOf("/root/tools/models/", "/root/models/", "/root/files/", "/root/storage/shared/")
 
         /** Путь модели: буквы любого алфавита (имена папок автора бывают русскими), цифры, пробел и `._()+@-` — аргумент идёт без оболочки. */
         private val MODEL_PATH = Regex("/[\\p{L}\\p{N}._/ ()+@-]+\\.gguf")

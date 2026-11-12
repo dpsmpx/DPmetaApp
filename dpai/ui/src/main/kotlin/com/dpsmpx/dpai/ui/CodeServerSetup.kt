@@ -17,7 +17,8 @@ import org.w3c.dom.Element
  */
 object CodeServerSetup {
     /** Каталог студии в Linux приложения (как у запуска, D-141). */
-    const val HOME: String = "/root/.local/share/dpai"
+    /** Службы IDE — в разделе инструментов (D-143, DPmetaApp:D-113); прежний `~/.local/share/dpai` — ссылкой. */
+    const val HOME: String = "/root/tools/ide"
     const val PYRIGHT_HOME: String = "$HOME/${PythonServers.PYRIGHT_DIR}"
     const val KOTLIN_HOME: String = "$HOME/kotlin-lsp/current"
     const val KOTLIN_SYSTEM: String = "$HOME/kotlin-lsp-system"

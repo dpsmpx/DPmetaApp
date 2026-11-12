@@ -1,7 +1,7 @@
 # Реестр команд пульта (ТЗ, F-40, F-43, приложение Б; D-82).
 #
 # Команды идут в Linux-среде приложения, в клоне проекта
-# /root/repos/<владелец>/<имя>; у подсистемы (строка реестра DPmeta с `dir`) —
+# /root/projects/<владелец>/<имя> (D-113; прежний /root/repos — ссылка); у подсистемы (строка реестра DPmeta с `dir`) —
 # в её каталоге клона DPmetaApp. Произвольной команды нет: только эти.
 #
 #   project   имя из реестра DPmeta или "*" — проект выбирается на экране
@@ -16,7 +16,7 @@
 #
 # Те же команды идут и в Termux (F-41, F-42; D-84): клон — в папке проектов
 # Termux (<папка>/<имя>), программа гостя из /bin, /usr/bin — из $PREFIX/bin
-# Termux, аргумент /root/repos — папка проектов; другие пути /root/… — не для Termux.
+# Termux, аргумент /root/projects (и прежний /root/repos) — папка проектов; другие пути /root/… — не для Termux.
 #
 # Новая команда — правка этого файла; его проверяет tools/check (проверка commands).
 # Команд SocialMediaImage нет, пока сайт на паузе (SocialMediaImage:Д52).
@@ -40,7 +40,7 @@ id = "dpmeta.activity"
 title = "Кто работает — по клонам"
 project = "DPmeta"
 path = "/usr/bin/python3"
-args = ["tools/activity.py", "--root", "/root/repos"]
+args = ["tools/activity.py", "--root", "/root/projects"]
 plan = "background"
 level = 0
 packages = ["python3", "git"]

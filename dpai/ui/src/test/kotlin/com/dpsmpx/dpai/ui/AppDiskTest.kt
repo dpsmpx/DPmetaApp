@@ -22,6 +22,21 @@ class AppDiskTest {
 
     private fun file(rel: String, text: String = "x") = root.resolve(rel).also { it.parent.toFile().mkdirs(); it.toFile().writeText(text) }
 
+    /** Раздел слотов ИИ `~/ai` (D-143, DPmetaApp:D-111) — секрет целиком; проекты и инструменты — видны и пишутся. */
+    @Test
+    fun aiSlotsSectionIsHiddenProjectsAndToolsAreNot() {
+        file("${AppDisk.LINUX_HOME}/ai/claude-1/.credentials.json")
+        file("${AppDisk.LINUX_HOME}/ai/claude-1/CLAUDE.md")
+        file("${AppDisk.LINUX_HOME}/projects/dpsmpx/DPmetaApp/README.md")
+        file("${AppDisk.LINUX_HOME}/tools/models/tiny.gguf")
+        assertTrue(AppDisk.hidden("${AppDisk.LINUX_HOME}/ai"))
+        assertTrue(AppDisk.hidden("${AppDisk.LINUX_HOME}/ai/claude-1/CLAUDE.md"))
+        assertNull(AppDisk.resolve(root, "${AppDisk.LINUX_HOME}/ai/claude-1/CLAUDE.md"))
+        assertFalse("ai" in AppDisk.children(root, AppDisk.LINUX_HOME))
+        assertTrue(AppDisk.writable("${AppDisk.LINUX_HOME}/projects/dpsmpx/DPmetaApp/README.md"))
+        assertTrue(listOf("projects", "tools").all { it in AppDisk.children(root, AppDisk.LINUX_HOME) })
+    }
+
     @Test
     fun secretsAreNeitherListedNorReachable() {
         file("control-token", "TOKEN")

@@ -84,6 +84,8 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     STORAGE_UNAVAILABLE(Category.STORAGE, Severity.ERROR, Retryability.NON_RETRYABLE),
     STORAGE_CORRUPTED(Category.INTEGRITY, Severity.ERROR, Retryability.NON_RETRYABLE),
     STORAGE_RECOVERED_LKG(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
+    /** Места не хватит (DPmetaApp:D-113): после загрузки, установки, клона или сборки приложение выйдет за предел или на телефоне останется меньше 1 ГБ. */
+    STORAGE_SPACE_LOW(Category.STORAGE, Severity.ERROR, Retryability.NON_RETRYABLE),
     JOURNAL_TAIL_TRUNCATED(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
     JOURNAL_CORRUPTED(Category.INTEGRITY, Severity.ERROR, Retryability.NON_RETRYABLE),
     SNAPSHOT_INVALID(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),

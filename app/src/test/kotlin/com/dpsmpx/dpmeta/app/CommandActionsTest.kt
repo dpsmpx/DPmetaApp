@@ -101,11 +101,11 @@ class CommandActionsTest {
     fun subsystemRunsInItsDirOfTheControlClone() {
         val s = CommandActions.spot(check, registry, null).valueOrNull()!!
         assertEquals("dpsmpx/DPmetaApp", "${s.repo}")
-        assertEquals("/root/repos/dpsmpx/DPmetaApp/dpmeta/tools", s.guestDir)
+        assertEquals("/root/projects/dpsmpx/DPmetaApp/dpmeta/tools", s.guestDir)
         assertEquals("dpmeta/tools/check.sh", CommandActions.scriptInClone(check, s))
         assertEquals(listOf("/bin/bash", "check.sh"), CommandActions.argv(check))
         val own = CommandActions.spot(next, registry, null).valueOrNull()!!
-        assertEquals("/root/repos/dpsmpx/DPlearn", own.guestDir)
+        assertEquals("/root/projects/dpsmpx/DPlearn", own.guestDir)
         assertEquals(listOf("./dpl"), CommandActions.argv(next), "программа клона без «/» — от каталога, не из PATH")
         assertEquals("dpl", CommandActions.scriptInClone(next, own))
     }
@@ -115,7 +115,7 @@ class CommandActionsTest {
         assertEquals(DiagCode.FIELD_MISSING, (CommandActions.spot(ff, registry, null) as Outcome.Failure).errors.single().code)
         assertEquals(DiagCode.VALUE_INVALID, (CommandActions.spot(ff, registry, "DPmeta") as Outcome.Failure).errors.single().code, "подсистема — не свой клон")
         assertEquals(DiagCode.ENTITY_NOT_FOUND, (CommandActions.spot(ff, registry, "Old") as Outcome.Failure).errors.single().code, "архив — не проект")
-        assertEquals("/root/repos/dpsmpx/DPlearn", CommandActions.spot(ff, registry, "DPlearn").valueOrNull()!!.guestDir)
+        assertEquals("/root/projects/dpsmpx/DPlearn", CommandActions.spot(ff, registry, "DPlearn").valueOrNull()!!.guestDir)
         assertEquals(listOf("DPmetaApp"), CommandActions.anyProjects(registry) { "$it" == "dpsmpx/DPmetaApp" })
         assertEquals(null, CommandActions.scriptInClone(ff, CommandActions.spot(ff, registry, "DPlearn").valueOrNull()!!), "у git скрипта нет")
     }

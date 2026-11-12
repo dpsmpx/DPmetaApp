@@ -241,7 +241,7 @@ class PultRepository(
             ?: Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "реестра проектов ещё нет: синхронизируйте пульт или отметьте клон DPmetaApp", REGISTRY)
     }
 
-    /** Каталог клона репозитория [repo] на телефоне — тот же, что у гостя в `/root/repos` (D-72). */
+    /** Каталог клона репозитория [repo] на телефоне — тот же, что у гостя в `/root/projects` (D-111, D-113). */
     fun cloneDir(repo: RepoRef): java.io.File = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList()).dir("$repo")
 
     /** Рабочее дерево клона (D-70): ветка и коммит рядом с `origin/<ветка>`; клона нет — `null`. */

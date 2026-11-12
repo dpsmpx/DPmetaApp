@@ -42,17 +42,19 @@ import kotlin.time.Duration.Companion.seconds
  */
 internal object CodeService {
     /** Что можно поставить кнопкой; [note] — что и откуда придёт, показывается до установки. */
-    enum class Install(val title: String, val note: String) {
-        CLANGD("Поставить clangd", "Пакет Alpine clang-extra-tools: нужна сеть и около 400 МБ на диске, это несколько минут."),
-        PYTHON_LIGHT("Поставить лёгкую службу", "Пакеты Alpine py3-lsp-server и ruff: около 50 МБ. Дополнение, переходы, переименование — Jedi; замечания, исправления и формат — ruff. Без проверки типов."),
-        PYTHON_HEAVY("Поставить pyright", "Node.js из Alpine и pyright ${PythonServers.PYRIGHT_VERSION} из реестра npm со сверкой SHA-256, плюс ruff: около 130 МБ. Проверка типов; памяти нужно больше, чем лёгкой службе."),
+    /** Службы кнопкой; [need] — сколько займёт на диске (для защиты места DPmetaApp:D-113), по описанию службы. */
+    enum class Install(val title: String, val note: String, val need: Long = 0) {
+        CLANGD("Поставить clangd", "Пакет Alpine clang-extra-tools: нужна сеть и около 400 МБ на диске, это несколько минут.", 400L shl 20),
+        PYTHON_LIGHT("Поставить лёгкую службу", "Пакеты Alpine py3-lsp-server и ruff: около 50 МБ. Дополнение, переходы, переименование — Jedi; замечания, исправления и формат — ruff. Без проверки типов.", 50L shl 20),
+        PYTHON_HEAVY("Поставить pyright", "Node.js из Alpine и pyright ${PythonServers.PYRIGHT_VERSION} из реестра npm со сверкой SHA-256, плюс ruff: около 130 МБ. Проверка типов; памяти нужно больше, чем лёгкой службе.", 130L shl 20),
         KOTLIN(
             "Поставить kotlin-lsp",
             "Последняя сборка официальной службы JetBrains с download.jetbrains.com со сверкой SHA-256 (около 370 МБ загрузки, около 1 ГБ на диске), RocksDB для musl с Maven Central (84 МБ) и JDK 25/21 Alpine. " +
                 "Сборки EAP перестают запускаться примерно через 30 дней — тогда «Обновить». Статистика и отчёты JetBrains выключены (--data-sharing=none).",
+            1536L shl 20,
         ),
-        KOTLIN_UPDATE("Обновить kotlin-lsp", KOTLIN.note),
-        ANDROID_SDK("Поставить платформу Android", "Платформа Android SDK уровня compileSdk проекта из репозитория Google (около 65 МБ) — после того, как вы примете её лицензию."),
+        KOTLIN_UPDATE("Обновить kotlin-lsp", KOTLIN.note, 1536L shl 20),
+        ANDROID_SDK("Поставить платформу Android", "Платформа Android SDK уровня compileSdk проекта из репозитория Google (около 65 МБ) — после того, как вы примете её лицензию.", 65L shl 20),
     }
 
     sealed interface State {
@@ -377,7 +379,13 @@ internal object CodeService {
      * [Install.ANDROID_SDK] ставится через [androidPlatform] и
      * [installAndroid]: сначала человек принимает лицензию.
      */
-    fun install(context: Context, what: Install): Outcome<Unit> = when (what) {
+    fun install(context: Context, what: Install): Outcome<Unit> {
+        // Предел хранилища и жёсткий запас 1 ГБ (DPmetaApp:D-113) — до загрузки.
+        (StorageSpace.check(context, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.SERVICE, what.need.takeIf { it > 0 }, what.title) as? Outcome.Failure)?.let { return it }
+        return installChecked(context, what).also { if (it is Outcome.Success) StorageMap.refresh(context) }
+    }
+
+    private fun installChecked(context: Context, what: Install): Outcome<Unit> = when (what) {
         Install.CLANGD -> done(LinuxSetup.apk(context, LinuxEnvironment.Apk.ADD, listOf(PACKAGE)), null)
         Install.PYTHON_LIGHT -> done(LinuxSetup.apk(context, LinuxEnvironment.Apk.ADD, PythonServers.LIGHT_PACKAGES), null).also {
             if (it is Outcome.Success) setPythonKind(context, PythonServers.Kind.LIGHT)

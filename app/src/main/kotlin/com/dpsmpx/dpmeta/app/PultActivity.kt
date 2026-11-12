@@ -957,8 +957,15 @@ open class PultActivity : ComponentActivity() {
         private const val PENDING_PERIOD = "export.period"
         private const val PENDING_AS_OF = "export.asOf"
 
-        /** Каталог клонов репозиториев экосистемы (D-65) в `filesDir`. */
-        const val CLONES_DIR = "clones"
+        /** Каталог клонов репозиториев экосистемы (D-65) в `filesDir` — раздел проектов гостя `~/projects` (D-111, D-113). */
+        const val CLONES_DIR = "linux/rootfs/root/projects"
+
+        /** Есть ли токен GitHub в хранилище пульта — для карты хранилища (D-111): только признак, без значения. */
+        fun hasGithubToken(context: android.content.Context): Boolean =
+            com.dpsmpx.dpmeta.app.data.SecretStore(NioVfs(context.noBackupFilesDir.toPath().resolve("dpmeta"))).exists()
+
+        /** Прежнее место клонов (до D-111, D-113): переезжает в `~/projects`, на старом месте — ссылка. */
+        const val LEGACY_CLONES_DIR = "clones"
 
         /** Реестр команд в APK (F-40): `config/commands.toml` корня. */
         const val COMMANDS_ASSET = "commands.toml"

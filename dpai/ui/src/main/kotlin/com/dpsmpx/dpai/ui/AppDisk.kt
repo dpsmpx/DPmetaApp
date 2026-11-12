@@ -46,6 +46,8 @@ object AppDisk {
         if (p.any { it == ".ssh" || it == ".credentials.json" }) return true
         val home = parts(LINUX_HOME)
         if (p.size <= home.size || p.take(home.size) != home) return false
+        // Раздел слотов ИИ `~/ai` (D-143, DPmetaApp:D-111) — секрет целиком, как прежние `.claude-slot-N`.
+        if (p.size > home.size && p[home.size] == "ai") return true
         // Аудит A-01: новый способ входа не должен расширять доступ менеджеру
         // файлов. Скрытые конфиги закрыты по умолчанию, в том числе внутри проекта.
         return p.drop(home.size).any { it.startsWith('.') && it !in SAFE_DOT_NAMES }

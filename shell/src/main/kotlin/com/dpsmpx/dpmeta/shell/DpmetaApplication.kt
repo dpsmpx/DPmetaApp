@@ -15,8 +15,14 @@ class DpmetaApplication : DpaiApplication() {
         AppLock.install(this)
         // Пояс показа — всему приложению с запуска процесса: «AI» строит экраны и без открытого пульта (UX-22).
         com.dpsmpx.dpmeta.app.PultActivity.applyZone(this)
-        // Клоны репозиториев пульта (D-70) — в Linux-среде «AI» как /root/repos: модели работают в них.
-        com.dpsmpx.dpai.android.linux.LinuxSetup.share(java.io.File(filesDir, com.dpsmpx.dpmeta.app.PultActivity.CLONES_DIR), "/root/repos")
+        // Одно хранилище (D-111, D-113): клоны пульта живут в ~/projects гостя — их видят терминал, IDE и «AI»;
+        // прежний каталог клонов переезжает туда один раз, до первого окна. Карта ~/STORAGE.md — в фоне.
+        com.dpsmpx.dpai.android.StorageMap.adopt(java.io.File(filesDir, com.dpsmpx.dpmeta.app.PultActivity.LEGACY_CLONES_DIR), "projects")
+        com.dpsmpx.dpai.android.StorageMap.secrets { ctx ->
+            if (com.dpsmpx.dpmeta.app.PultActivity.hasGithubToken(ctx)) listOf(com.dpsmpx.dpai.android.StorageMap.SecretName("Токен GitHub", "GH_TOKEN", false)) else emptyList()
+        }
+        com.dpsmpx.dpai.android.StorageMap.prepare(this)
+        com.dpsmpx.dpai.android.StorageMap.refresh(this)
     }
 
     /** Опасный ответ окна поверх приложений — только после входа (D-61). */

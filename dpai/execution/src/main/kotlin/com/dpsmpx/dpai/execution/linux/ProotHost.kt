@@ -99,7 +99,8 @@ class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) 
 
         val GUEST_ENVIRONMENT: Map<String, String> = mapOf(
             "HOME" to GUEST_HOME,
-            "PATH" to "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            // `~/tools/bin` — первым (D-143, DPmetaApp:D-111): поставленное IDE и ИИ видно терминалу.
+            "PATH" to "/root/tools/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "LANG" to "C.UTF-8",
             "TMPDIR" to "/tmp",
         )

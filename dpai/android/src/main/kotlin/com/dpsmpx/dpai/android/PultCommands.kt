@@ -66,8 +66,8 @@ object PultCommands {
         onLine: (String) -> Unit,
         onStop: (() -> Unit) -> Unit,
     ): Outcome<Finished> {
-        if (!dir.startsWith("/root/repos/") || dir.split('/').any { it == ".." }) {
-            return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "команды реестра — только в клонах /root/repos", dir)
+        if (!(dir.startsWith("/root/projects/") || dir.startsWith("/root/repos/")) || dir.split('/').any { it == ".." }) {
+            return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "команды реестра — только в клонах /root/projects", dir)
         }
         val host = LinuxSetup.guestHost(context) ?: return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сначала установите Linux", "linux")
         val p = when (val s = host.start(ProcessSpec(argv, workDir = dir)) { onLine(it.text) }) {
