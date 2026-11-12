@@ -44,4 +44,11 @@ class OpenEditorFilesTest {
         files.finishedBrowse("code.cpp")
         assertEquals(null, files.tabs.active); assertEquals(listOf("code.cpp"), files.tabs.paths)
     }
+    @Test fun closingLastTabReleasesEmptyFolderMetadata() {
+        val files = OpenEditorFiles("empty-root-test", mutableStateOf(EditorTabs().open("last.cpp")))
+        files.browse(); assertTrue("empty-root-test" in IdeState.state.value.roots)
+        files.close("last.cpp")
+        assertEquals(emptyList(), files.tabs.paths)
+        assertEquals(false, "empty-root-test" in IdeState.state.value.roots)
+    }
 }
