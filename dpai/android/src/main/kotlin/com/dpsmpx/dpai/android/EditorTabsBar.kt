@@ -63,7 +63,11 @@ internal class OpenEditorFiles(private val key: String, private val state: Mutab
     fun browse() { if (!busy) change(tabs.browse()) }
     /** Выход уже подтверждён владельцем документа; его saving мог закончиться до следующего кадра. */
     fun finishedBrowse(path: String) { if (tabs.active == path) { busy = false; change(tabs.browse()) } }
-    fun close(path: String) { busy = false; change(tabs.close(path)) }
+    fun close(path: String) {
+        val next = tabs.close(path)
+        if (next.active != tabs.active) pendingPreview = next.active
+        busy = false; change(next)
+    }
     fun next(backwards: Boolean) { if (!busy) { val next = tabs.next(backwards); pendingPreview = next.active; change(next) } }
     fun requestClose(path: String) {
         if (busy) return
