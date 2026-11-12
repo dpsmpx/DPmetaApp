@@ -70,6 +70,11 @@ class DpmetaApplication : DpaiApplication() {
             onDenied = { _, _ -> if (!activity.isDestroyed) done(com.dpsmpx.dpai.core.result.Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, "Вход не подтверждён")) })
     }
 
+    /** Раздел пульта с левой панели окна «AI» (D-112): пульт под «AI» выходит вперёд, «AI» над ним закрывается. */
+    override fun sectionIntent(section: com.dpsmpx.dpai.ui.AppSection): android.content.Intent =
+        android.content.Intent(this, DpmetaActivity::class.java).putExtra(com.dpsmpx.dpmeta.app.PultActivity.EXTRA_SECTION, section.name)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+
     /** «AI» открывается над пультом, «назад» из неё — в пульт (D-73, UX-1). */
     override fun parentIntent(): android.content.Intent = android.content.Intent(this, DpmetaActivity::class.java)
 }

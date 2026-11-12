@@ -74,4 +74,7 @@ open class DpaiApplication : Application() {
 
     /** Служба контроллера остановлена: оболочка отзывает права, выданные «до остановки службы» (`DPmetaApp:D-114`). */
     open fun controllerStopped() = Unit
+
+    /** Раздел приложения вне окна «AI» (`DPmetaApp:D-112`): окно пульта на нём; `null` — пульта нет (отдельная сборка). */
+    open fun sectionIntent(section: com.dpsmpx.dpai.ui.AppSection): android.content.Intent? = null
 }

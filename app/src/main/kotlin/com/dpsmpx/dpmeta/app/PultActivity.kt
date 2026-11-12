@@ -49,6 +49,19 @@ open class PultActivity : ComponentActivity() {
     private lateinit var secrets: SecretStore
     private val view = mutableStateOf(PultView(null, "", hasToken = false, busy = false))
 
+    /** Раздел, на который просят перейти с левой панели окна «AI» (D-112); экран сбрасывает его, перейдя. */
+    private val goTo = mutableStateOf<com.dpsmpx.dpai.ui.AppSection?>(null)
+
+    private fun takeSection(intent: Intent?) {
+        val name = intent?.getStringExtra(EXTRA_SECTION) ?: return
+        goTo.value = com.dpsmpx.dpai.ui.AppSection.entries.firstOrNull { it.name == name }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        takeSection(intent)
+    }
+
     /**
      * Что экспортируется (F-36), пока системный выбор ищет место: формат и срок
      * переживают пересоздание окна (поворот), текст собирается заново из истории.
@@ -412,11 +425,13 @@ open class PultActivity : ComponentActivity() {
         enableEdgeToEdge()
         // Пункт и строка «AI» — только с оболочкой подсистемы (D-53, D-76).
         val ai: ((Boolean) -> Unit)? = if (aiIntent() != null) { requests -> aiIntent(requests)?.let(::startActivity) } else null
+        takeSection(intent)
         setContent {
             PultTheme {
                 PultApp(
                     view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken,
                     onAi = ai, onIde = ideIntent()?.let { i -> { startActivity(i) } }, onExport = ::export,
+                    goTo = goTo.value, onGoTo = { goTo.value = null },
                     onClones = { withToken { token -> if (token != null) askClones(token, first = false) } }, onClonesChosen = ::clonesChosen,
                     onCancelSync = {
                         repo.cancelClones()
@@ -951,6 +966,9 @@ open class PultActivity : ComponentActivity() {
     }
 
     companion object {
+        /** Раздел пульта по имени `AppSection` — для перехода с левой панели окна «AI» (D-112). */
+        const val EXTRA_SECTION = "com.dpsmpx.dpmeta.SECTION"
+
         /** Как часто строка «AI» сводки перечитывает числа, пока пульт на экране (D-76). */
         private const val AI_REFRESH_MS = 5_000L
 

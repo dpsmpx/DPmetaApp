@@ -494,6 +494,9 @@ fun PultApp(
     onForgetToken: () -> Unit,
     onAi: ((requests: Boolean) -> Unit)? = null,
     onIde: (() -> Unit)? = null,
+    /** Раздел с левой панели окна «AI» (D-112): перейти и сбросить [onGoTo]. */
+    goTo: com.dpsmpx.dpai.ui.AppSection? = null,
+    onGoTo: () -> Unit = {},
     onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null,
     /** «Клоны…» в настройках (D-70). */
     onClones: () -> Unit = {},
@@ -512,6 +515,15 @@ fun PultApp(
     var pullFilter by rememberSaveable { mutableStateOf(Screens.PullFilter.WAITING) }
     var pullProject by rememberSaveable { mutableStateOf<String?>(null) }
     val stacks = rememberSaveable(saver = StacksSaver) { mutableStateMapOf() }
+    LaunchedEffect(goTo) {
+        val to = goTo ?: return@LaunchedEffect
+        tab = when (to) {
+            com.dpsmpx.dpai.ui.AppSection.SUMMARY -> Section.SUMMARY
+            com.dpsmpx.dpai.ui.AppSection.PROJECTS -> Section.DEV
+            com.dpsmpx.dpai.ui.AppSection.SETTINGS -> Section.MORE
+        }
+        onGoTo()
+    }
     val stack = stacks[tab].orEmpty()
     val open: (Nav) -> Unit = { stacks[tab] = stacks[tab].orEmpty() + it }
     val back: () -> Unit = { stacks[tab]?.takeIf { it.isNotEmpty() }?.let { stacks[tab] = it.dropLast(1) } }

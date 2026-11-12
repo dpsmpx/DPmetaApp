@@ -86,6 +86,8 @@ dependencies {
     implementation("com.dpsmpx.dpai:android")
     // Числа строки «AI» сводки (D-76) — `Measure` ядра: передаются из «AI» в пульт через этот модуль.
     implementation("com.dpsmpx.dpai:core")
+    // Разделы приложения для левой панели окна «AI» (D-112) — `AppSection` модели экранов.
+    implementation("com.dpsmpx.dpai:ui")
     // DpmetaActivity наследует пульт — ComponentActivity нужна и на classpath компиляции.
     implementation(libs.activity.compose)
 }
