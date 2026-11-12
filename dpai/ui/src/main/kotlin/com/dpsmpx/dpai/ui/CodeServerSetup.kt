@@ -23,7 +23,7 @@ object CodeServerSetup {
     const val KOTLIN_SYSTEM: String = "$HOME/kotlin-lsp-system"
     const val ANDROID_SDK: String = "$HOME/android-sdk"
 
-    private const val CURL = "curl --fail --location --proto '=https' --connect-timeout 30 --max-time 1800"
+    private const val CURL = "curl -sS --fail --location --proto '=https' --connect-timeout 30 --max-time 1800"
 
     private fun sh(name: String, script: String, vararg args: String): List<String> = listOf("/bin/sh", "-c", script.trimIndent(), name) + args
 

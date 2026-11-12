@@ -73,3 +73,33 @@ ZIP 87 077 443 байта, SHA-256
 разрешает штатный Kotlin main-kts через Maven Central
 https://repo.maven.apache.org/maven2/ , с POM и транзитивными зависимостями.
 Их лицензии/артефакты остаются в кэше среды, не становятся зависимостями APK.
+
+## Языковые службы Python и Kotlin (D-110)
+
+Ставятся в Linux приложения только кнопкой человека и не входят в APK.
+Сверено 12 ноября 2026.
+
+- pylsp (python-lsp-server 1.14, MIT) и ruff 0.15.15 (MIT) — пакеты
+  Alpine 3.24 `py3-lsp-server`, `ruff`; Jedi — зависимость пакета.
+- pyright 1.1.414 (MIT): архив реестра npm
+  https://registry.npmjs.org/pyright/-/pyright-1.1.414.tgz , SHA-256
+  `bf5f473f6167c0d14175492c3263d783b4489a6956e1c06c18e15228e3a3fa42`;
+  sha512 совпал с `dist.integrity` реестра. Работает на Node.js Alpine.
+- kotlin-lsp (JetBrains, Apache-2.0 с закрытыми частями JetBrains Air и
+  Fleet; https://github.com/Kotlin/kotlin-lsp ): сборки EAP, срок около
+  30 дней, поэтому версия не закреплена — сборка со страницы выпусков,
+  архив и его `.sha256` с download.jetbrains.com. Запуск без встроенной
+  glibc-JVM: JDK 25 Alpine, gcompat для наблюдения за файлами,
+  `--data-sharing=none`. Проверена сборка 263.7084.0: на Alpine x86_64
+  (musl) в chroot и на хосте — импорт Gradle, диагностика, переходы,
+  переименование.
+- rocksdbjni 10.10.1 (Apache-2.0 / GPL-2.0): общий архив Maven Central
+  https://repo1.maven.org/maven2/org/rocksdb/rocksdbjni/10.10.1/rocksdbjni-10.10.1.jar ,
+  SHA-256 `3e3c9e439b89c2ac4aaa7512bc73052d44b3a6397daed6cb88168cefa6e431a9`
+  (совпал с `.sha256` Maven Central). Из него берётся только musl-библиотека
+  нужной архитектуры: набор JNI-символов (1525) совпал с библиотекой
+  сборки kotlin-lsp полностью, для x86_64 и aarch64.
+- Платформа Android SDK: архив из манифеста
+  https://dl.google.com/android/repository/repository2-3.xml , сверка SHA-1
+  манифеста, как у sdkmanager; ставится после принятия лицензии Google
+  человеком, отметка — SHA-1 текста лицензии в `licenses/`.
