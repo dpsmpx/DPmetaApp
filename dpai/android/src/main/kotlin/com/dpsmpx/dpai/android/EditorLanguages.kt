@@ -41,8 +41,11 @@ internal object EditorLanguages {
     }
     fun language(path: String, width: Int, tabs: Boolean): Language {
         val id = when (CodeSyntax.language(path)) { "C/C++" -> "cpp"; "Kotlin" -> "kotlin"; "Java" -> "java"; "Python" -> "python"; "JSON" -> "json"; else -> return EmptyLanguage() }
-        val inner = TextMateLanguage.create("source.$id", false).apply { setAutoCompleteEnabled(false); setTabSize(width) }
-        return object : Language by inner { override fun useTab() = tabs }
+        return TextMateLanguage.create("source.$id", false).apply {
+            setAutoCompleteEnabled(false)
+            setTabSize(width)
+            useTab(tabs) // Тот же объект использует обработчик Enter, не только внешнее поле.
+        }
     }
     fun scheme(dark: Boolean): TextMateColorScheme {
         ThemeRegistry.getInstance().setTheme(if (dark) "studio-dark" else "studio-light")

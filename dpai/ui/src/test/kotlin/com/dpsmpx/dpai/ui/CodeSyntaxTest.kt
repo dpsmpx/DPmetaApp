@@ -33,4 +33,7 @@ class CodeSyntaxTest {
         assertTrue(h.spans.all { it.end <= CodeSyntax.MAX_CHARS })
         assertTrue(CodeSyntax.highlight("notes.md", "return 42").spans.isEmpty())
     }
+    @Test fun pythonRecognizesSourceStubAndWindowedScriptExtensions() {
+        for (path in listOf("main.py", "module.pyi", "UI.PYW")) assertEquals("Python", CodeSyntax.language(path))
+    }
 }

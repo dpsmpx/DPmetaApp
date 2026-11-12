@@ -15,7 +15,7 @@ object CodeSyntax {
 
     fun language(path: String): String = when (path.substringAfterLast('.').lowercase()) {
         "c", "h", "cpp", "cc", "cxx", "hpp", "hxx" -> "C/C++"
-        "py", "pyi" -> "Python"
+        "py", "pyi", "pyw" -> "Python"
         "kt", "kts" -> "Kotlin"
         "java" -> "Java"
         "json" -> "JSON"

@@ -46,4 +46,67 @@ class EditorGrammarTest {
             assertTrue(t[0].has(3, "string")); assertTrue(t[1].has(20_000, "constant.numeric"))
         }
     }
+    @Test fun pythonPrefixedStringsAndDocstringsKeepTheirOwnEscapes() {
+        val lines = listOf("path = r\"C:\\new\\name\"", "data = b\"\\x41\"", "doc = r'''# not comment", "still raw''' # comment")
+        val t = tokens("python", lines)
+        assertTrue(t[0].has(lines[0].indexOf("\\new"), "string"))
+        assertFalse(t[0].has(lines[0].indexOf("\\new"), "constant.character.escape"))
+        assertTrue(t[1].has(lines[1].indexOf("\\x41"), "constant.character.escape"))
+        assertTrue(t[2].has(10, "string.quoted.triple")); assertFalse(t[2].has(10, "comment"))
+        assertTrue(t[3].has(2, "string.quoted.triple")); assertTrue(t[3].has(lines[3].indexOf('#'), "comment"))
+    }
+    @Test fun pythonFStringsDistinguishEscapedBracesAndNestedExpressions() {
+        val line = "value = f\"{{literal}} {items['key'] if ready else {'nested': 2}}\" # end"
+        val t = tokens("python", listOf(line))[0]
+        assertFalse(t.has(line.indexOf("literal"), "meta.interpolation"))
+        assertTrue(t.has(line.indexOf("items"), "meta.interpolation"))
+        assertTrue(t.has(line.indexOf("if ready"), "keyword.control.python"))
+        assertTrue(t.has(line.indexOf("'nested'"), "string.quoted.single.python"))
+        assertTrue(t.has(line.indexOf("# end"), "comment"))
+    }
+    @Test fun pythonRawFStringsSupportMultilineExpressionsAndQuoteReuse() {
+        val lines = listOf("value = RF\"\"\"\\n {", "    data[\"key\"] if ready else 0", "}\"\"\" # end")
+        val t = tokens("python", lines)
+        assertFalse(t[0].has(lines[0].indexOf("\\n"), "constant.character.escape"))
+        assertTrue(t[1].has(4, "meta.interpolation")); assertTrue(t[1].has(15, "keyword.control.python"))
+        assertTrue(t[2].has(lines[2].indexOf('#'), "comment"))
+        val single = "f\"{data[\"key\"]}\" # done"
+        assertTrue(tokens("python", listOf(single))[0].has(single.indexOf('#'), "comment"))
+    }
+    @Test fun pythonDecoratorsDefinitionsSoftKeywordsAndNumericForms() {
+        val lines = listOf("@cache.memoize", "async def привет(x):", "class Thing:", "match value:", "    case [first, *rest]:", "values = [0x_FF, 0b_1010, 0o755, 1_000j, .5e-2, 1.]")
+        val t = tokens("python", lines)
+        assertTrue(t[0].has(2, "entity.name.function.decorator"))
+        assertTrue(t[1].has(lines[1].indexOf("привет"), "entity.name.function"))
+        assertTrue(t[2].has(6, "entity.name.type")); assertTrue(t[3].has(0, "keyword.control")); assertTrue(t[4].has(4, "keyword.control"))
+        for (number in listOf("0x_FF", "0b_1010", "0o755", "1_000j", ".5e-2", "1.")) {
+            val at = lines[5].indexOf(number)
+            assertTrue(t[5].has(at, "constant.numeric"), number)
+            assertTrue(t[5].has(at + number.length - 1, "constant.numeric"), number)
+        }
+    }
+    private fun pythonConfig() = java.io.File(System.getProperty("dpai.editor.assets"), "editor/python.config.json").reader().use {
+        checkNotNull(org.eclipse.tm4e.languageconfiguration.internal.model.LanguageConfiguration.load(it))
+    }
+    @Test fun pythonEnterIndentsBlockHeadersAndOpeningBrackets() {
+        val config = pythonConfig()
+        val enter = org.eclipse.tm4e.languageconfiguration.internal.supports.OnEnterSupport(config.brackets, config.onEnterRules)
+        val indent = org.eclipse.tm4e.languageconfiguration.internal.supports.IndentRulesSupport(checkNotNull(config.indentationRules))
+        for (line in listOf("def f(x):", "async def f(): # note", "class Thing:", "    if x == ':': # note", "elif ready:", "else:", "for x in xs:", "async with lock:", "try:", "except* ValueError:", "finally:", "match value:", "    case {'key': x}:", ") -> list[int]:")) {
+            kotlin.test.assertEquals(org.eclipse.tm4e.languageconfiguration.internal.model.EnterAction.IndentAction.Indent, enter.onEnter("", line, "")?.indentAction, line)
+            assertTrue(indent.shouldIncrease(line), line)
+        }
+        assertTrue(indent.shouldIncrease("items = [ # values"))
+        kotlin.test.assertEquals(org.eclipse.tm4e.languageconfiguration.internal.model.EnterAction.IndentAction.IndentOutdent, enter.onEnter("", "call(", ")")?.indentAction)
+    }
+    @Test fun pythonEnterDoesNotIndentCommentOrStringColons() {
+        val config = pythonConfig()
+        val enter = org.eclipse.tm4e.languageconfiguration.internal.supports.OnEnterSupport(config.brackets, config.onEnterRules)
+        val indent = org.eclipse.tm4e.languageconfiguration.internal.supports.IndentRulesSupport(checkNotNull(config.indentationRules))
+        for (line in listOf("# if ready:", "text = 'if ready:'", "mapping = {'key': 1}", "if ready: run()", "@decorate", "value = '[('", "if ready # :")) {
+            kotlin.test.assertNull(enter.onEnter("", line, ""), line)
+            assertFalse(indent.shouldIncrease(line), line)
+        }
+        assertTrue(indent.shouldDecrease("    ] # end"))
+    }
 }

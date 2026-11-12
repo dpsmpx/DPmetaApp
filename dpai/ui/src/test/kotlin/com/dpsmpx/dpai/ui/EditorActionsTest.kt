@@ -90,4 +90,13 @@ class EditorActionsTest {
         assertFalse(EditorActions.surround(b, "{", "}"))
         assertFalse(b.dirty); assertFalse(b.canUndo)
     }
+    @Test fun pythonCommentsPreserveCrLfAndUndoForAllSupportedExtensions() {
+        for (path in listOf("main.py", "types.pyi", "window.pyw")) {
+            val buffer = CodeEditorBuffer("    def f():\r\n        pass")
+            buffer.select(0, buffer.text.length)
+            assertTrue(EditorActions.comment(buffer, path))
+            assertEquals("    # def f():\r\n        # pass", buffer.text)
+            buffer.undo(); assertEquals(buffer.original, buffer.text)
+        }
+    }
 }
