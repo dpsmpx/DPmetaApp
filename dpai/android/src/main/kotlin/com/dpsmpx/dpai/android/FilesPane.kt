@@ -524,8 +524,8 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
     var afterLeaving by remember { mutableStateOf<(() -> Unit)?>(null) }
     var configure by remember { mutableStateOf(false) }
     var configureOnly by remember { mutableStateOf(false) }
-    var command by remember { mutableStateOf(IdeState.state.value.roots[editorRootKey]?.runCommand.orEmpty().ifEmpty { com.dpsmpx.dpai.ui.EditorTerminalRun.defaultCommand(path) }) }
-    val storedCommand = IdeState.state.collectAsState().value.roots[editorRootKey]?.runCommand
+    var command by remember { mutableStateOf((IdeState.state.value.roots[editorRootKey] ?: com.dpsmpx.dpai.ui.EditorRootSession()).command(path)) }
+    val storedCommand = IdeState.state.collectAsState().value.roots[editorRootKey]?.command(path)
     LaunchedEffect(storedCommand, configure) { if (!configure && !storedCommand.isNullOrBlank()) command = storedCommand }
     val zen = ideZen()
     fun issue(message: String) { status = message; android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show() }
@@ -570,6 +570,7 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
             try {
                 val file = guestPath
                 val root = guestRoot
+                if (LongJobs.get(context).busy(*LongJobs.GUEST.toTypedArray())) { issue("Дождитесь завершения операции Linux перед запуском"); return@launch }
                 if (readOnly || file == null || root == null) { issue("Для запуска нужна доступная для записи папка Linux"); return@launch }
                 val dirty = Drafts.fileDrafts().any { (_, d) -> d.guestPath?.let { it == root || it.startsWith(root.trimEnd('/') + "/") } == true }
                 if (dirty) { issue("Сначала сохраните или отмените правки остальных файлов этой папки"); return@launch }
@@ -616,7 +617,7 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
             androidx.compose.material3.OutlinedTextField(command, { if (it.length <= 4096) command = it }, label = { Text("Команда проекта") }) } },
         confirmButton = { TextButton(enabled = command.isNotBlank(), onClick = {
             val root = IdeState.state.value.roots[editorRootKey] ?: com.dpsmpx.dpai.ui.EditorRootSession()
-            IdeState.root(editorRootKey, root.copy(runCommand = command)); configure = false
+            IdeState.root(editorRootKey, root.withCommand(path, command)); configure = false
             if (!configureOnly) requestLeave { runSaved() }
         }) { Text(if (configureOnly) "Сохранить команду" else "Запустить") } }, dismissButton = { TextButton(onClick = { configure = false }) { Text("Отмена") } })
     LaunchedEffect(path) {

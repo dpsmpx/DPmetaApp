@@ -48,7 +48,8 @@ object KotlinRuntime {
             java -jar "${'$'}DPAI_BUILD/main.jar"
         """.trimIndent()
     }
-    fun installCompiler(root: String, file: String): List<String> = ProjectRuntime.args(root, file, ProjectRuntime.context + "\n" + javaEnvironment + "\n" + """
+    fun installCompiler(root: String, file: String, force: Boolean = true): List<String> = ProjectRuntime.args(root, file, ProjectRuntime.context + "\n" + javaEnvironment + "\n" +
+        (if (force) "" else "if test -x \"\$DPAI_STUDIO_HOME/kotlin/$VERSION/kotlinc/bin/kotlinc\"; then \"\$DPAI_STUDIO_HOME/kotlin/$VERSION/kotlinc/bin/kotlinc\" -version && exit 0; fi\n") + """
         DPAI_SDK="${'$'}DPAI_STUDIO_HOME/kotlin"
         mkdir -p "${'$'}DPAI_SDK" || exit
         DPAI_STAGE=${'$'}(mktemp -d "${'$'}DPAI_SDK/install.XXXXXX") || exit

@@ -50,11 +50,12 @@ object TerminalHub {
      * ([target] — `null`, D-75, шаг 5).
      */
     class EditorRun(val file: String, val root: String, val command: String, val editorRootKey: String?) {
-        internal var output = com.dpsmpx.dpai.ui.EditorRunOutput()
-        @Volatile var report: com.dpsmpx.dpai.ui.CppDependencies.Report? = null
+        val language: com.dpsmpx.dpai.ui.RunLanguage get() = com.dpsmpx.dpai.ui.RunLanguage.of(file)
+        internal var output = com.dpsmpx.dpai.ui.EditorRunOutput(file)
+        @Volatile var report: com.dpsmpx.dpai.ui.RunDiagnosis? = null
             internal set
         internal var offered = false
-        internal fun begin() { output = com.dpsmpx.dpai.ui.EditorRunOutput(); report = null; offered = false }
+        internal fun begin() { output = com.dpsmpx.dpai.ui.EditorRunOutput(file); report = null; offered = false }
     }
 
     class Tab internal constructor(val id: Int, val target: TargetEntry?, val command: List<String>, label: String, val tmux: String? = null, val editorRun: EditorRun? = null) : TerminalListener {

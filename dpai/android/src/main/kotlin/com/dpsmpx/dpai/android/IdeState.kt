@@ -47,7 +47,7 @@ internal object IdeState {
             }
             val loaded = book.load()
             when (loaded) {
-                is Outcome.Success -> flow.value = loaded.value.copy(roots = loaded.value.roots.filterValues { it.tabs.paths.isNotEmpty() || it.runCommand.isNotBlank() })
+                is Outcome.Success -> flow.value = loaded.value.copy(roots = loaded.value.roots.filterValues { it.tabs.paths.isNotEmpty() || it.runCommand.isNotBlank() || it.commands.isNotEmpty() })
                 is Outcome.Failure -> error.value = loaded.errors.first().message
             }
             ready.value = true
@@ -60,7 +60,7 @@ internal object IdeState {
     fun options(value: EditorOptions) { flow.update { it.copy(options = value) }; updates.trySend(Unit) }
     fun place(value: String?) { flow.update { it.copy(lastPlace = value) }; updates.trySend(Unit) }
     fun root(key: String, value: EditorRootSession) {
-        val empty = value.tabs.paths.isEmpty() && value.runCommand.isBlank()
+        val empty = value.tabs.paths.isEmpty() && value.runCommand.isBlank() && value.commands.isEmpty()
         if (!empty && key !in flow.value.roots && flow.value.roots.size >= EditorSessionBook.MAX_ROOTS) { error.value = "Настройки IDE: достигнут предел открытых папок"; return }
         flow.update { it.copy(roots = if (empty) it.roots - key else it.roots + (key to value)) }; updates.trySend(Unit)
     }
