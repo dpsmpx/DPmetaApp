@@ -111,6 +111,9 @@ class AssistTest {
         assertEquals(Assist.SignatureLine("int add(int a, int b)", null, 0), Assist.signature(SignatureHelp(listOf(sig), 7, 5)), "номера за пределами — без отметки, перегрузка — последняя")
         assertEquals(null, Assist.signature(SignatureHelp(emptyList(), 0, null)))
         assertEquals(null, Assist.signature(null))
+        // LSP 3.16: текущий параметр у самой подписи (kotlin-lsp) важнее общего.
+        val own = Signature("twice(value: Int): Int", null, listOf(6..15), activeParameter = 0)
+        assertEquals(Assist.SignatureLine("twice(value: Int): Int", 6..15, 0), Assist.signature(SignatureHelp(listOf(own), 0, null)))
     }
 
     @Test

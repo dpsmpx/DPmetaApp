@@ -138,11 +138,12 @@ object Assist {
     }
 
     /**
-     * Переименование без индекса проекта безопасно, только если символ —
-     * этого файла: [places] (объявление и определение по ответу службы) все
-     * в нём, и сам файл не заголовок. Без фонового индекса (D-105) служба не
-     * видит другие файлы проекта: для символа из заголовка она вернула бы
-     * правки одного файла — и переименование молча стало бы частичным.
+     * Переименование применяется только в этом файле, поэтому безопасно,
+     * только если символ — этого файла: [places] (объявление и определение
+     * по ответу службы) все в нём, и сам файл не заголовок C/C++. Службы
+     * видят проект не целиком: clangd без фонового индекса (D-105) и pyright
+     * в режиме открытых файлов (D-142) для символа из другого файла вернули
+     * бы правки одного файла — и переименование молча стало бы частичным.
      */
     fun renameScope(uri: String, places: List<Location>): Outcome<Unit> {
         val here = DocumentUri.toPath(uri) ?: return Outcome.failure(DiagCode.UNSUPPORTED, "файл не на диске службы")
@@ -152,7 +153,7 @@ object Assist {
         if (places.isEmpty()) return Outcome.failure(DiagCode.UNSUPPORTED, "служба не нашла объявления символа под курсором")
         val outside = places.mapNotNull { DocumentUri.toPath(it.uri) ?: it.uri }.filter { it != here }.distinct()
         if (outside.isNotEmpty()) {
-            return Outcome.failure(DiagCode.UNSUPPORTED, "символ объявлен в ${outside.first().substringAfterLast('/')}: другие файлы проекта служба без индекса не видит — переименование отменено, чтобы не стать частичным")
+            return Outcome.failure(DiagCode.UNSUPPORTED, "символ объявлен в ${outside.first().substringAfterLast('/')}: переименование через файлы пока не применяется — отменено, чтобы не стать частичным; ничего не изменено")
         }
         return Outcome.success(Unit)
     }
@@ -171,7 +172,7 @@ object Assist {
     fun signature(help: SignatureHelp?): SignatureLine? {
         val list = help?.signatures?.takeIf { it.isNotEmpty() } ?: return null
         val active = list[help.active.coerceIn(0, list.lastIndex)]
-        val parameter = help.activeParameter?.let { active.parameters.getOrNull(it) }?.takeIf { it.first >= 0 && it.last < active.label.length }
+        val parameter = (active.activeParameter ?: help.activeParameter)?.let { active.parameters.getOrNull(it) }?.takeIf { it.first >= 0 && it.last < active.label.length }
         return SignatureLine(active.label, parameter, list.size - 1)
     }
 

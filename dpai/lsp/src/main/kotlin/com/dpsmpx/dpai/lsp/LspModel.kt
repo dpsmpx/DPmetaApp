@@ -50,8 +50,12 @@ data class CompletionList(val items: List<CompletionItem>, val incomplete: Boole
 
 data class Hover(val text: String, val range: Range?)
 
-/** Подпись функции: [parameters] — границы параметров в [label] (UTF-16), `null` — службе неизвестны. */
-data class Signature(val label: String, val documentation: String?, val parameters: List<IntRange?>)
+/**
+ * Подпись функции: [parameters] — границы параметров в [label] (UTF-16),
+ * `null` — службе неизвестны. [activeParameter] — текущий параметр этой
+ * подписи (LSP 3.16, так отвечает kotlin-lsp); его нет — общий из [SignatureHelp].
+ */
+data class Signature(val label: String, val documentation: String?, val parameters: List<IntRange?>, val activeParameter: Int? = null)
 
 data class SignatureHelp(val signatures: List<Signature>, val active: Int, val activeParameter: Int?)
 
@@ -220,7 +224,7 @@ internal object LspParse {
                     else -> null
                 }
             }
-            Signature(label.take(MAX_TEXT), markup(so["documentation"]), params)
+            Signature(label.take(MAX_TEXT), markup(so["documentation"]), params, int(so["activeParameter"]))
         }
         return SignatureHelp(signatures, int(o["activeSignature"]) ?: 0, int(o["activeParameter"]))
     }
