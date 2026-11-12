@@ -400,3 +400,12 @@ noBackupFilesDir; `IdeChrome`/`IdeWindow` ограничивают скрыти�
 временем жизни поля. Режим просмотра не удаляет CodeEditorBuffer.
 `ui.EditorTerminalRun` строит argv с путями как данными, а TerminalActivity
 открывает отдельную PTY без автоматического повтора при восстановлении.
+
+Зависимости запуска (D-139): ui.EditorRunOutput держит кольцевой хвост
+128 КиБ только первой команды IDE; CppDependencies сопоставляет
+Clang/GCC/linker с каталогом Alpine, не превращая чужой вывод в пакеты.
+TerminalHub.EditorRun принадлежит своей PTY-вкладке; EditorDependencyUi
+показывает предложение и подтверждение. Установка — PultCommands.install
+и LongJobs.LINUX_APK с общими исключениями гостя, без ввода в PTY.
+Шаблон команды сохраняется отдельно по выбору человека через IdeState;
+ни установка, ни восстановление экрана не повторяют программу.

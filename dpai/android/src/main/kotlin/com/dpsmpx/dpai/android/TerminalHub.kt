@@ -49,7 +49,15 @@ object TerminalHub {
      * Вкладка: к target по SSH ([target]) или к Linux-среде в приложении
      * ([target] — `null`, D-75, шаг 5).
      */
-    class Tab internal constructor(val id: Int, val target: TargetEntry?, val command: List<String>, label: String, val tmux: String? = null) : TerminalListener {
+    class EditorRun(val file: String, val root: String, val command: String, val editorRootKey: String?) {
+        internal var output = com.dpsmpx.dpai.ui.EditorRunOutput()
+        @Volatile var report: com.dpsmpx.dpai.ui.CppDependencies.Report? = null
+            internal set
+        internal var offered = false
+        internal fun begin() { output = com.dpsmpx.dpai.ui.EditorRunOutput(); report = null; offered = false }
+    }
+
+    class Tab internal constructor(val id: Int, val target: TargetEntry?, val command: List<String>, label: String, val tmux: String? = null, val editorRun: EditorRun? = null) : TerminalListener {
         /**
          * Связь оборвалась, а не программа кончилась (D-111): закрытие без
          * кода выхода или неудачное подключение. Такую вкладку с оболочкой
@@ -176,7 +184,7 @@ object TerminalHub {
      * же сессию.
      */
     @Synchronized
-    fun open(context: Context, target: TargetEntry?, command: List<String>, label: String, kind: String? = null): Tab {
+    fun open(context: Context, target: TargetEntry?, command: List<String>, label: String, kind: String? = null, editorRun: EditorRun? = null): Tab {
         val session = if (kind != null && target != null && target.tmux && target.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX) {
             // Занятые: открытые вкладки и сессии, которые ещё не удалось завершить (закрыты без сети).
             pendingLoad(context.applicationContext)
@@ -186,7 +194,7 @@ object TerminalHub {
         } else {
             null
         }
-        val tab = Tab(nextId++, target, command, label, session)
+        val tab = Tab(nextId++, target, command, label, session, editorRun)
         tabs += tab
         count.intValue = tabs.size
         current = tab
@@ -355,6 +363,7 @@ object TerminalHub {
         val resumeOnly = status == RECONNECTING && tab.command.isNotEmpty()
         tab.resumed = resumeOnly && tab.tmux != null
         tab.status = status
+        tab.editorRun?.begin()
         tab.session.attach(t)
         observer?.tabs()
         thread(name = "dpai-term-connect", isDaemon = true) {
@@ -365,7 +374,12 @@ object TerminalHub {
             val o: Outcome<TermChannel>? = if (target == null || target.inApp) {
                 // Linux-среда в приложении (и target «в приложении»): псевдотерминал через JNI, без SSH (D-75, шаг 5).
                 com.dpsmpx.dpai.android.linux.LinuxSetup.shell(app, com.dpsmpx.dpai.execution.linux.WindowSize(cols, rows), command).map { child ->
-                    LocalChannel(child, onOutput = { b, n -> tab.session.output(b, 0, n) }, onClosed = { code -> if (tab.transport === t) closed(tab, code) })
+                    LocalChannel(child, onOutput = { b, n ->
+                        tab.session.output(b, 0, n)
+                        if (tab.transport === t) tab.editorRun?.let { run ->
+                            run.output.feed(b, n)?.takeIf { it.useful }?.let { report -> run.report = report; observer?.tabs() }
+                        }
+                    }, onClosed = { code -> if (tab.transport === t) closed(tab, code) })
                 }
             } else {
                 val controller = Controller.get(app.filesDir)

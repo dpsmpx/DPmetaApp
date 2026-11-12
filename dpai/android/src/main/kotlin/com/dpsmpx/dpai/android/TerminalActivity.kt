@@ -39,6 +39,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     private lateinit var statusRow: LinearLayout
     private lateinit var status: TextView
     private lateinit var reconnect: TextView
+    private lateinit var dependencies: TextView
+    private var dependencyUi: EditorDependencyUi? = null
     private lateinit var ctrlKey: TextView
     private lateinit var altKey: TextView
     private lateinit var keysRow: View
@@ -62,6 +64,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         // Терминал всегда тёмный: значки панелей — светлые и при светлой теме телефона (терминал:A-20).
         enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
         setContentView(layout())
+        dependencyUi = EditorDependencyUi(this, ::renderTabs)
         applyKeyboard()
         // Метка устройства, targets и незавершённые сессии tmux — с диска заранее, не в главном потоке (D-111).
         thread(name = "dpai-term-warm", isDaemon = true) { TerminalHub.warm(applicationContext) }
@@ -90,11 +93,17 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     override fun onResume() {
         super.onResume()
         RequestOverlay.appVisible = true
+        view.post { renderTabs() }
     }
 
     override fun onPause() {
         RequestOverlay.appVisible = false
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        dependencyUi?.close()
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -132,7 +141,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             if (code != null && run != null && dir != null) {
                 intent.removeExtra(EXTRA_RUN_FILE); intent.removeExtra(EXTRA_RUN_COMMAND)
                 when (val plan = com.dpsmpx.dpai.ui.EditorTerminalRun.argv(code, dir, run)) {
-                    is Outcome.Success -> show(TerminalHub.open(this, null, plan.value, "▶ ${code.substringAfterLast('/')}"))
+                    is Outcome.Success -> show(TerminalHub.open(this, null, plan.value, "▶ ${code.substringAfterLast('/')}",
+                        editorRun = TerminalHub.EditorRun(code, dir, run, intent.getStringExtra(EXTRA_EDITOR_ROOT))))
                     is Outcome.Failure -> android.widget.Toast.makeText(this, plan.errors.first().message, android.widget.Toast.LENGTH_LONG).show()
                 }
                 return
@@ -594,12 +604,14 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             setPadding(dp(12), dp(4), dp(12), dp(4))
         }
         reconnect = chip("↻ Переподключить") { TerminalHub.current?.let { TerminalHub.connect(this, it) } }
+        dependencies = chip("Библиотеки…") { TerminalHub.current?.let { dependencyUi?.offer(it, automatic = false) } }
         statusRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(0xff262626.toInt())
             addView(status, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             addView(reconnect)
+            addView(dependencies)
         }
         // Ряд клавиш (терминал:A-3, §4, п. 1): девять клавиш видны целиком, без прокрутки; смахивание вверх по
         // клавише — второй знак (ESC ~, TAB |, ← HOME, ↓ PGDN, ↑ PGUP, → END); «⋯» — остальное.
@@ -763,8 +775,11 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         if (hardKeyboard()) tabsRow.addView(moreChip())
         val s = current?.status.orEmpty()
         status.text = listOfNotNull(s.ifEmpty { null }, current?.notice).joinToString(" · ")
-        statusRow.visibility = if (status.text.isEmpty()) View.GONE else View.VISIBLE
+        val hasDependencies = current?.editorRun?.report?.useful == true
+        dependencies.visibility = if (hasDependencies) View.VISIBLE else View.GONE
+        statusRow.visibility = if (status.text.isEmpty() && !hasDependencies) View.GONE else View.VISIBLE
         reconnect.visibility = if (current != null && !current.open && !current.busy) View.VISIBLE else View.GONE
+        if (current != null && hasDependencies) dependencyUi?.offer(current, automatic = true)
     }
 
     companion object {
@@ -773,6 +788,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         const val EXTRA_LOGIN = "com.dpsmpx.dpai.terminal.LOGIN"
         const val EXTRA_LINUX = "com.dpsmpx.dpai.terminal.LINUX"
         private const val EXTRA_RUN_FILE = "com.dpsmpx.dpai.terminal.RUN_FILE"
+        private const val EXTRA_EDITOR_ROOT = "com.dpsmpx.dpai.terminal.EDITOR_ROOT"
         private const val EXTRA_RUN_COMMAND = "com.dpsmpx.dpai.terminal.RUN_COMMAND"
         const val EXTRA_DIR = "com.dpsmpx.dpai.terminal.DIR"
 
@@ -812,9 +828,10 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         }
 
         /** Явный запуск в собственной PTY, без ввода команды в уже работающую программу (D-138). */
-        internal fun startCode(context: Context, file: String, dir: String, command: String) {
+        internal fun startCode(context: Context, file: String, dir: String, command: String, editorRootKey: String? = null) {
             val intent = Intent(context, TerminalActivity::class.java).putExtra(EXTRA_LINUX, true)
                 .putExtra(EXTRA_DIR, dir).putExtra(EXTRA_RUN_FILE, file).putExtra(EXTRA_RUN_COMMAND, command)
+                .putExtra(EXTRA_EDITOR_ROOT, editorRootKey)
             if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
         }

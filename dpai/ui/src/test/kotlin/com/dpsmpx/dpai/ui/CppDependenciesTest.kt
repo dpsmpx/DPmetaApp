@@ -45,4 +45,10 @@ class CppDependenciesTest {
         assertTrue(command.indexOf("\"\$DPAI_FILE\"") < command.indexOf("-lncursesw"))
         assertTrue(command.contains("trap 'rm -f \"\$DPAI_BIN\"' EXIT"))
     }
+    @Test fun repeatedMissingLibraryDoesNotDropEarlierKnownLinkFlags() {
+        val report = CppDependencies.analyze("error: 'zlib.h' file not found", 1)
+        val command = CppDependencies.singleFileCommand(report, "clang++ file.cpp -lncurses && ./program")
+        assertTrue(command.contains("-lncursesw -lz"), command)
+        assertFalse(command.contains("&& ./program"))
+    }
 }

@@ -525,6 +525,8 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
     var configure by remember { mutableStateOf(false) }
     var configureOnly by remember { mutableStateOf(false) }
     var command by remember { mutableStateOf(IdeState.state.value.roots[editorRootKey]?.runCommand.orEmpty().ifEmpty { com.dpsmpx.dpai.ui.EditorTerminalRun.defaultCommand(path) }) }
+    val storedCommand = IdeState.state.collectAsState().value.roots[editorRootKey]?.runCommand
+    LaunchedEffect(storedCommand, configure) { if (!configure && !storedCommand.isNullOrBlank()) command = storedCommand }
     val zen = ideZen()
     fun issue(message: String) { status = message; android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show() }
     suspend fun discard(): Boolean {
@@ -584,7 +586,7 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
                     }
                 }
                 if (result is Outcome.Failure) issue(result.errors.first().message)
-                else TerminalActivity.startCode(context, file, root, command)
+                else TerminalActivity.startCode(context, file, root, command, editorRootKey)
             } finally { saving = false }
         }
     }

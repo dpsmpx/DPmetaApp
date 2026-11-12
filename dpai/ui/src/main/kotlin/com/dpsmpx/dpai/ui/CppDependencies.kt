@@ -52,8 +52,13 @@ object CppDependencies {
         return Report(exitCode, found.toList(), unknown)
     }
     /** Шаблон предлагается отдельно; произвольная команда проекта не переписывается. */
-    fun singleFileCommand(report: Report): String {
-        val flags = report.flags.joinToString(" ")
+    fun singleFileCommand(report: Report, previousCommand: String = ""): String {
+        val previous = catalog.filter { library ->
+            (library.flags + library.links.map { "-l$it" }).any { flag ->
+                Regex("(?<!\\S)${Regex.escape(flag)}(?!\\S)").containsMatchIn(previousCommand)
+            }
+        }.flatMap { it.flags }
+        val flags = (previous + report.flags).distinct().joinToString(" ")
         return "DPAI_BIN=\$(mktemp /tmp/dpai-cpp.XXXXXX) || exit\n" +
             "trap 'rm -f \"\$DPAI_BIN\"' EXIT\n" +
             "clang++ \"\$DPAI_FILE\" -std=c++20 -o \"\$DPAI_BIN\"${if (flags.isEmpty()) "" else " $flags"} && \"\$DPAI_BIN\""
