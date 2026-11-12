@@ -54,7 +54,7 @@ class EditorSessionBookTest {
         }
     }
     @Test fun unknownVersionReadDoesNotOverwriteStoredDocument() {
-        val unknown = JsonObject.of("format" to JsonString("dpai.editor-sessions"), "version" to JsonNumber.of(2))
+        val unknown = JsonObject.of("format" to JsonString("dpai.editor-sessions"), "version" to JsonNumber.of(3))
         docs().write("sessions", unknown)
         assertIs<Outcome.Failure>(book().load())
         assertEquals(unknown, docs().read("sessions").valueOrNull()?.content)
@@ -64,5 +64,35 @@ class EditorSessionBookTest {
         val roots = (0..EditorSessionBook.MAX_ROOTS).associate { "$it" to EditorRootSession() }
         assertIs<Outcome.Failure>(book().save(EditorSessions(roots = roots)))
         assertEquals(EditorSessions(), book().load().valueOrNull())
+    }
+    @Test fun languageCommandsSurviveRestartWithoutMixingScriptAndJvmOrCppAndPython() {
+        val root = EditorRootSession().withCommand("a.cpp", "build cpp").withCommand("a.py", "run python").withCommand("a.kt", "run jvm").withCommand("a.kts", "run script")
+        val state = EditorSessions(roots = mapOf("root" to root))
+        assertIs<Outcome.Success<Unit>>(book().save(state))
+        val loaded = book().load().valueOrNull()!!.roots.getValue("root")
+        assertEquals(root, loaded)
+        assertEquals("run python", loaded.command("other.py"))
+        assertEquals("run script", loaded.command("other.kts"))
+        assertEquals("run jvm", loaded.command("other.kt"))
+    }
+    @Test fun versionOneIsReadWithoutLosingLegacyCommandOrApplyingPythonToCpp() {
+        val original = EditorSessions(roots = mapOf("root" to EditorRootSession(runCommand = "python3 \"\$DPAI_FILE\"")))
+        book().save(original)
+        val saved = docs().read("sessions").valueOrNull()!!.content
+        docs().write("sessions", JsonObject(saved.fields + ("version" to JsonNumber.of(1))))
+        val restored = book().load().valueOrNull()!!
+        assertEquals(original, restored)
+        val root = restored.roots.getValue("root")
+        assertEquals("python3 \"\$DPAI_FILE\"", root.command("a.py"))
+        assertEquals(EditorTerminalRun.defaultCommand("a.cpp"), root.command("a.cpp"))
+        book().save(restored)
+        assertEquals(2L, (docs().read("sessions").valueOrNull()!!.content["version"] as JsonNumber).toLongExact())
+    }
+    @Test fun invalidLanguageMetadataDoesNotReplaceValidSnapshot() {
+        book().save(EditorSessions())
+        for (commands in listOf(mapOf("unknown" to "x"), mapOf("python" to "x".repeat(4097)), mapOf("kotlin" to "bad\u0000"))) {
+            assertIs<Outcome.Failure>(book().save(EditorSessions(roots = mapOf("root" to EditorRootSession(commands = commands)))))
+            assertEquals(EditorSessions(), book().load().valueOrNull())
+        }
     }
 }

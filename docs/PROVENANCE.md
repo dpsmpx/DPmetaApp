@@ -55,3 +55,21 @@ gradle/verification-metadata.xml и dpai/gradle/verification-metadata.xml
 Проверка подписи PGP не заявляется. Намеренно неверный SHA-256 KGP
 отклонён обычным Gradle strict в обеих сборках; файлы восстановлены.
 Источник механизма: https://docs.gradle.org/current/userguide/dependency_verification.html .
+
+## Среды Python и Kotlin IDE (D-109)
+
+Среды скачиваются на target по подтверждению и не включаются в APK.
+Python 3/venv/pip и JDK 21 — пакеты установленной Alpine, лицензии и
+зависимости сохраняет apk. PyPI: https://pypi.org/simple/ ; известное
+имя import сопоставляется с дистрибутивом, ручной ввод допускает точную
+версию. Код проектов туда не отправляется, системный Python не меняется.
+
+Kotlin/JVM 2.4.10: официальный архив JetBrains, Apache-2.0 и лицензии
+дистрибутива, https://github.com/JetBrains/kotlin/releases/tag/v2.4.10 .
+ZIP 87 077 443 байта, SHA-256
+`473dd66c7a3ef4b182065b3da670466c1bf2773a9dbb0ed8b33a39fe9d4f876d`:
+сверен с digest GitHub asset и официальным ZIP; проверяется до распаковки.
+Установка staged, неудача сохраняет прежний компилятор. JVM-библиотеки
+разрешает штатный Kotlin main-kts через Maven Central
+https://repo.maven.apache.org/maven2/ , с POM и транзитивными зависимостями.
+Их лицензии/артефакты остаются в кэше среды, не становятся зависимостями APK.

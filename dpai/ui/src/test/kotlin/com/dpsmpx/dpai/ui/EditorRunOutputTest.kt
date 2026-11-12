@@ -32,4 +32,11 @@ class EditorRunOutputTest {
         assertNull(output.feed("fatal error: 'ncurses.h' file not found\n".toByteArray()))
         assertTrue(output.feed("\n[Код выхода: 0]\n".toByteArray())?.packages?.isEmpty() == true)
     }
+    @Test fun pythonAndKotlinOutputHaveTheirOwnSolutions() {
+        val py = EditorRunOutput("a.py").feed("ModuleNotFoundError: No module named 'requests'\n[Код выхода: 1]\n".toByteArray())!!
+        assertEquals(listOf("requests"), py.pip)
+        assertTrue(py.packages.isEmpty())
+        val kt = EditorRunOutput("a.kt").feed("DPAI_KOTLIN_TOOLCHAIN: not installed\n[Код выхода: 127]\n".toByteArray())!!
+        assertEquals(KotlinRuntime.packages, kt.packages)
+    }
 }

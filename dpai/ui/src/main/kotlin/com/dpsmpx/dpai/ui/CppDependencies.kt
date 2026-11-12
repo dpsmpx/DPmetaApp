@@ -96,7 +96,7 @@ object CppDependencies {
             "clang++ \"\$DPAI_FILE\" -std=c++20 -fuse-ld=lld -o \"\$DPAI_BIN\"${if (flags.isEmpty()) "" else " $flags"} && \"\$DPAI_BIN\""
     }
     /** ANSI CSI/OSC убираются итеративно: чужой вывод ограничен по памяти и не вызывает рекурсивного regex. */
-    private fun plain(text: String): String = buildString {
+    internal fun plain(text: String): String = buildString {
         var at = 0
         while (at < text.length) {
             val c = text[at++]
