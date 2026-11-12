@@ -170,7 +170,7 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
         val path = file
         if (path != null) tabStates.SaveableStateProvider(path) {
             TreeFileView(tree, "workspace:${location.key}", path, readOnly, guestPath = "${location.path.trimEnd('/')}/$path",
-                onBrowse = { openFiles.finishedBrowse(path) }, onNext = openFiles::next, onActions = { openFiles.ready(path, it) }, guestRoot = location.path.trimEnd('/').ifEmpty { "/" }, sessionKey = location.key,
+                onBrowse = { openFiles.finishedBrowse(path) }, onNext = openFiles::next, onActions = { openFiles.ready(path, it) }, guestRoot = location.path.trimEnd('/').ifEmpty { "/" }, editorRootKey = location.key,
                 runGuard = { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } }) { openFiles.close(path) }
         } else {
             Row {

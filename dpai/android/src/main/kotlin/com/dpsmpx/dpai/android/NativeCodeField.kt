@@ -53,6 +53,8 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
     private var batch = false
     private var languageKey = ""
     private var lastSize = -1
+    var resumeKeyboard = false
+    var modeEditing = false
     var handlesBack = false
     var nativeChanges = 0
         private set
@@ -149,7 +151,7 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
         val key = "$path:$ready:$dark:$width:$tabs:$highlighted"
         if (ready && languageKey != key) {
             colorScheme = EditorLanguages.scheme(dark, highlighted)
-            setEditorLanguage(EditorLanguages.language(path, width, tabs))
+            setEditorLanguage(EditorLanguages.language(path, width, tabs, dark, highlighted))
             languageKey = key
         }
         sync()
@@ -226,7 +228,7 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
 }
 
 @Composable
-internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: Int, enabled: Boolean, wrap: Boolean, size: Int, width: Int, tabs: Boolean, marks: List<com.dpsmpx.dpai.lsp.Assist.Mark>, highlighted: Boolean, onActivate: (() -> Unit)?, handlesBack: Boolean,
+internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: Int, enabled: Boolean, wrap: Boolean, size: Int, width: Int, tabs: Boolean, marks: List<com.dpsmpx.dpai.lsp.Assist.Mark>, highlighted: Boolean, onActivate: (() -> Unit)?, handlesBack: Boolean, editingMode: Boolean,
     onChange: () -> Unit, onCommand: (EditorCommand) -> Unit, onPosition: (Int, Int) -> Unit, onIssue: (String) -> Unit, onZoom: (Int) -> Unit, modifier: Modifier) {
     val context = LocalContext.current
     val activity = androidx.activity.compose.LocalActivity.current
@@ -254,11 +256,18 @@ internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: I
             editor.viewport = { x, y -> offsetX = x; offsetY = y; visited = true }
             editor.zoom = { zoom(it) }
             editor.handlesBack = handlesBack
-            val entering = !editor.isEditable && enabled
+            val entering = editingMode && !editor.modeEditing && enabled
+            val resuming = editingMode && enabled && !editor.isEditable && editor.resumeKeyboard
+            if (editingMode && editor.modeEditing && editor.isEditable && !enabled) {
+                editor.resumeKeyboard = androidx.core.view.ViewCompat.getRootWindowInsets(editor)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == true
+            }
+            if (!editingMode) editor.resumeKeyboard = false
+            editor.modeEditing = editingMode
             editor.setOnClickListener { if (!enabled) editor.postInLifecycle { activate?.invoke() } }
-            editor.isEditable = enabled
+            if (editor.isEditable != enabled) editor.isEditable = enabled
             editor.bind(buffer, path, ready, dark, wrap, size, width, tabs, restored, highlighted)
-            if (entering) editor.postInLifecycle {
+            if (entering || resuming) editor.postInLifecycle {
+                editor.resumeKeyboard = false
                 editor.requestFocus()
                 activity?.window?.let { androidx.core.view.WindowCompat.getInsetsController(it, editor).show(androidx.core.view.WindowInsetsCompat.Type.ime()) }
             }

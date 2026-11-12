@@ -493,16 +493,16 @@ private fun FileView(p: Place, path: String, onBrowse: () -> Unit, onNext: (Bool
         Kind.SHARED -> GuestPaths.guestShared("")
         Kind.FOLDER -> null
     }
-    TreeFileView(tree, p.key(), path, guestPath = guestRoot?.let { FileNames.join(it, path) }, onBrowse = onBrowse, onNext = onNext, onActions = onActions, guestRoot = guestRoot, sessionKey = p.copy(dir = "").key(), runGuard = { profiles.edit { Outcome.success(Unit) } }, onClose = onClose)
+    TreeFileView(tree, p.key(), path, guestPath = guestRoot?.let { FileNames.join(it, path) }, onBrowse = onBrowse, onNext = onNext, onActions = onActions, guestRoot = guestRoot, editorRootKey = p.copy(dir = "").key(), runGuard = { profiles.edit { Outcome.success(Unit) } }, onClose = onClose)
 }
 
 @Composable
-internal fun TreeFileView(tree: FileTree, treeKey: String, path: String, readOnly: Boolean = false, guestPath: String? = null, onBrowse: (() -> Unit)? = null, onNext: (Boolean) -> Unit = {}, onActions: (EditorCallbacks) -> Unit = {}, guestRoot: String? = null, sessionKey: String = treeKey, runGuard: () -> Outcome<Unit> = { Outcome.success(Unit) }, onClose: () -> Unit) {
-    androidx.compose.runtime.key(treeKey, path) { TreeFileContent(tree, treeKey, path, readOnly, guestPath, guestRoot, sessionKey, runGuard, onBrowse, onNext, onActions, onClose) }
+internal fun TreeFileView(tree: FileTree, treeKey: String, path: String, readOnly: Boolean = false, guestPath: String? = null, onBrowse: (() -> Unit)? = null, onNext: (Boolean) -> Unit = {}, onActions: (EditorCallbacks) -> Unit = {}, guestRoot: String? = null, editorRootKey: String = treeKey, runGuard: () -> Outcome<Unit> = { Outcome.success(Unit) }, onClose: () -> Unit) {
+    androidx.compose.runtime.key(treeKey, path) { TreeFileContent(tree, treeKey, path, readOnly, guestPath, guestRoot, editorRootKey, runGuard, onBrowse, onNext, onActions, onClose) }
 }
 
 @Composable
-private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readOnly: Boolean, guestPath: String?, guestRoot: String?, sessionKey: String,
+private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readOnly: Boolean, guestPath: String?, guestRoot: String?, editorRootKey: String,
     runGuard: () -> Outcome<Unit>, onBrowse: (() -> Unit)?, onNext: (Boolean) -> Unit, onActions: (EditorCallbacks) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -524,7 +524,7 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
     var afterLeaving by remember { mutableStateOf<(() -> Unit)?>(null) }
     var configure by remember { mutableStateOf(false) }
     var configureOnly by remember { mutableStateOf(false) }
-    var command by remember { mutableStateOf(IdeState.state.value.roots[sessionKey]?.runCommand.orEmpty().ifEmpty { com.dpsmpx.dpai.ui.EditorTerminalRun.defaultCommand(path) }) }
+    var command by remember { mutableStateOf(IdeState.state.value.roots[editorRootKey]?.runCommand.orEmpty().ifEmpty { com.dpsmpx.dpai.ui.EditorTerminalRun.defaultCommand(path) }) }
     val zen = ideZen()
     fun issue(message: String) { status = message; android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show() }
     suspend fun discard(): Boolean {
@@ -613,8 +613,8 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
         text = { Column { Text("Рабочая папка: ${guestRoot ?: "нет Linux-пути"}. Путь текущего файла доступен как DPAI_FILE.")
             androidx.compose.material3.OutlinedTextField(command, { if (it.length <= 4096) command = it }, label = { Text("Команда проекта") }) } },
         confirmButton = { TextButton(enabled = command.isNotBlank(), onClick = {
-            val root = IdeState.state.value.roots[sessionKey] ?: com.dpsmpx.dpai.ui.EditorRootSession()
-            IdeState.root(sessionKey, root.copy(runCommand = command)); configure = false
+            val root = IdeState.state.value.roots[editorRootKey] ?: com.dpsmpx.dpai.ui.EditorRootSession()
+            IdeState.root(editorRootKey, root.copy(runCommand = command)); configure = false
             if (!configureOnly) requestLeave { runSaved() }
         }) { Text(if (configureOnly) "Сохранить команду" else "Запустить") } }, dismissButton = { TextButton(onClick = { configure = false }) { Text("Отмена") } })
     LaunchedEffect(path) {
