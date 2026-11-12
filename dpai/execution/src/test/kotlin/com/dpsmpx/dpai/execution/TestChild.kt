@@ -15,7 +15,9 @@ import kotlin.system.exitProcess
  * - `exit C` — выход с кодом C;
  * - `hang` — строка `ready` и ожидание без конца;
  * - `spawn-hang` — запустить внука `hang`, напечатать `grandchild <pid>`,
- *   ждать без конца: проверка, что остановка убирает всё дерево.
+ *   ждать без конца: проверка, что остановка убирает всё дерево;
+ * - `echo` — байты входа возвращаются на выход, пока вход открыт; в поток
+ *   ошибок — мегабайт: канал ошибок не должен останавливать собеседника.
  */
 object TestChild {
     @JvmStatic
@@ -35,6 +37,18 @@ object TestChild {
                 val child = (started as Outcome.Success).value
                 println("grandchild ${child.pid}")
                 CountDownLatch(1).await()
+            }
+            "echo" -> {
+                System.err.write(ByteArray(1 shl 20) { '!'.code.toByte() })
+                System.err.flush()
+                val buf = ByteArray(8192)
+                while (true) {
+                    val n = System.`in`.read(buf)
+                    if (n < 0) break
+                    System.out.write(buf, 0, n)
+                    System.out.flush()
+                }
+                exitProcess(0)
             }
             else -> exitProcess(64)
         }

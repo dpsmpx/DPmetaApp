@@ -283,6 +283,16 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     /** Событие неизвестного каталогу типа или правило тревоги с неизвестным типом, полем, неверным `regex`. */
     RULE_INVALID(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
 
+    // --- языковые службы редактора (D-137) ---
+    /** Сообщение языковой службы не по протоколу или длиннее предела: не догадка, а отказ. */
+    LSP_REPLY_INVALID(Category.FORMAT, Severity.ERROR, Retryability.UNKNOWN),
+    /** Служба ответила на запрос ошибкой (нет символа под курсором, файл не открыт, переименование невозможно). */
+    LSP_REQUEST_FAILED(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Языковая служба вышла или её поток закрыт: запросы не дойдут, пока её не запустят снова. */
+    LSP_SERVER_STOPPED(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+    /** Служба не ответила на запрос за отведённое время: запрос отменён, служба жива. */
+    LSP_TIMEOUT(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+
     /** Запечатанный сегмент журнала пропал или испорчен — восстановлен из копии (D-95). */
     JOURNAL_SEGMENT_RESTORED(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
 
