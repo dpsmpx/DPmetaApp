@@ -37,6 +37,10 @@ class DpmetaActivity : PultActivity() {
     // Со строки «AI»: ждут ответа — сразу на «Запросы» (D-76).
     override fun aiIntent(requests: Boolean): Intent = lastAi?.request?.takeIf { requests }?.let { AiSummary.open(this, it) } ?: aiIntent()
 
+    // Настройки — одним документом (D-112): «Оформление», «Хранилище и секреты», «AI» — подсистемы, блок пульта — слотом.
+    override val settingsDocument: @androidx.compose.runtime.Composable (projects: @androidx.compose.runtime.Composable () -> Unit) -> Unit =
+        { projects -> com.dpsmpx.dpai.android.SettingsDocument(projects) { startActivity(MainActivity.settings(this)) } }
+
     // Пункт «IDE» левой панели (D-112): окно «AI» на «Файлах» — дерево, редактор, терминал проекта.
     override fun ideIntent(): Intent = MainActivity.ide(this)
 

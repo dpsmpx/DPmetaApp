@@ -162,6 +162,9 @@ open class PultActivity : ComponentActivity() {
     /** Вход в «AI» со строки сводки (D-76): [requests] — сразу на «Запросы». */
     protected open fun aiIntent(requests: Boolean): Intent? = aiIntent()
 
+    /** Документ настроек приложения (D-112) — от оболочки; `null` — настройки пульта своим экраном. */
+    protected open val settingsDocument: (@androidx.compose.runtime.Composable (projects: @androidx.compose.runtime.Composable () -> Unit) -> Unit)? = null
+
     /** Пункт «IDE» левой панели (D-112): окно «AI» на «Файлах»; нет подсистемы — пункта нет. */
     protected open fun ideIntent(): Intent? = null
 
@@ -431,7 +434,7 @@ open class PultActivity : ComponentActivity() {
                 PultApp(
                     view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken,
                     onAi = ai, onIde = ideIntent()?.let { i -> { startActivity(i) } }, onExport = ::export,
-                    goTo = goTo.value, onGoTo = { goTo.value = null },
+                    goTo = goTo.value, onGoTo = { goTo.value = null }, settingsDocument = settingsDocument,
                     onClones = { withToken { token -> if (token != null) askClones(token, first = false) } }, onClonesChosen = ::clonesChosen,
                     onCancelSync = {
                         repo.cancelClones()

@@ -90,4 +90,7 @@ dependencies {
     implementation("com.dpsmpx.dpai:ui")
     // DpmetaActivity наследует пульт — ComponentActivity нужна и на classpath компиляции.
     implementation(libs.activity.compose)
+    // Слот документа настроек (D-112): оболочка передаёт блок пульта в документ «AI» — Compose на classpath.
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.material3)
 }

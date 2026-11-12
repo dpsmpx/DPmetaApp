@@ -17,7 +17,7 @@ import androidx.activity.enableEdgeToEdge
  * подтверждения на экране (D-44). Экран забирает и очищает.
  */
 /** Что пришло в окно «AI»: ссылка, подтверждение, остановка или вкладка ([tab] — имя `AiTab`, пункт панели приложения, D-112). */
-data class Incoming(val link: String? = null, val confirm: String? = null, val stop: Boolean = false, val tab: String? = null)
+data class Incoming(val link: String? = null, val confirm: String? = null, val stop: Boolean = false, val tab: String? = null, val settings: Boolean = false)
 
 /** Единственная activity: экраны — Compose (D-34), данные — контроллер или демо (D-35). */
 class MainActivity : ComponentActivity() {
@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
             CONFIRM -> intent.getStringExtra(EXTRA_URI)?.let { incoming.value = Incoming(confirm = it) }
             STOP_CONFIRM -> incoming.value = Incoming(stop = true)
             OPEN_TAB -> intent.getStringExtra(EXTRA_TAB)?.let { incoming.value = Incoming(tab = it) }
+            OPEN_SETTINGS -> incoming.value = Incoming(settings = true)
         }
     }
 
@@ -98,6 +99,11 @@ class MainActivity : ComponentActivity() {
         /** Окно «AI» на вкладке [tab]: уже открытое выходит вперёд, второго нет (UX-1). */
         fun tab(context: Context, tab: com.dpsmpx.dpai.ui.AiTab): Intent =
             internal(context).setAction(OPEN_TAB).putExtra(EXTRA_TAB, tab.name).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+
+        /** «Настройки AI» из документа настроек приложения (`DPmetaApp:D-112`). */
+        const val OPEN_SETTINGS = "com.dpsmpx.dpai.OPEN_SETTINGS"
+
+        fun settings(context: Context): Intent = internal(context).setAction(OPEN_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
 
         /** Пункт «IDE» левой панели приложения: «Файлы» — дерево, редактор и терминал проекта. */
         fun ide(context: Context): Intent = tab(context, com.dpsmpx.dpai.ui.AiTab.FILES)

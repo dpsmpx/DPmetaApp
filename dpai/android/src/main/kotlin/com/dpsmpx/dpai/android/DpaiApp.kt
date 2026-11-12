@@ -217,6 +217,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         incoming.confirm?.let { confirmUri = it }
         // Пункт левой панели приложения (DPmetaApp:D-112): вкладка — сверху, без открытой сессии и настроек.
         incoming.tab?.let { name -> AiTab.entries.firstOrNull { it.name == name }?.let { t -> selectedId = null; settings = false; openTab(t) } }
+        if (incoming.settings) { selectedId = null; settings = true; settingsSub = null }
         if (incoming != Incoming()) onIncoming()
     }
     confirmUri?.let { uri -> ConfirmDialog(model, snapshot?.requests.orEmpty(), uri) { confirmUri = null } }

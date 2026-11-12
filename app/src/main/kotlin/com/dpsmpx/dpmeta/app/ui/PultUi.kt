@@ -494,6 +494,11 @@ fun PultApp(
     onForgetToken: () -> Unit,
     onAi: ((requests: Boolean) -> Unit)? = null,
     onIde: (() -> Unit)? = null,
+    /**
+     * Документ настроек приложения (D-112) — от оболочки: в нём блок пульта — слотом.
+     * `null` — настройки пульта своим экраном (сборка без оболочки).
+     */
+    settingsDocument: (@Composable (projects: @Composable () -> Unit) -> Unit)? = null,
     /** Раздел с левой панели окна «AI» (D-112): перейти и сбросить [onGoTo]. */
     goTo: com.dpsmpx.dpai.ui.AppSection? = null,
     onGoTo: () -> Unit = {},
@@ -627,7 +632,15 @@ fun PultApp(
                     val pulls = remember(s, top) { s?.let { Screens.card(it, top.project) }?.pulls?.filter { it.head == top.name }?.map { it.number }.orEmpty() }
                     BranchScreen(top.project, top.name, pulls, loader, back)
                 }
-                tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport)
+                tab == Section.MORE -> {
+                    val doc = settingsDocument
+                    if (doc != null) {
+                        // Один документ на приложение (D-112): блок пульта — без своей прокрутки, внутри документа.
+                        doc { Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, scroll = false) }
+                    } else {
+                        Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport)
+                    }
+                }
                 s == null && view.loading -> Text("Читаю срез…", style = MaterialTheme.typography.bodySmall)
                 // Пустое состояние ведёт дальше (UX-11): кнопкой, а не словами «где-то в настройках».
                 s == null -> Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
@@ -1214,7 +1227,7 @@ private fun QuestionsList(q: List<Screens.Question>, open: (Nav) -> Unit, below:
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 // Листается (UX-15): при шрифте 200 % и в альбомной ориентации «Клоны…» не уходят за край.
-private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}, onJournal: () -> Unit = {}, onAsk: () -> Unit = {}, onCommands: () -> Unit = {}, onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}, onJournal: () -> Unit = {}, onAsk: () -> Unit = {}, onCommands: () -> Unit = {}, onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null, scroll: Boolean = true) = Column(if (scroll) Modifier.verticalScroll(rememberScrollState()) else Modifier, verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     var token by remember { mutableStateOf("") }
     // Пока токен сохранён — одна строка, поле — по «Заменить» (UX-12): пустое поле при сохранённом токене путало.
     var replacing by rememberSaveable { mutableStateOf(false) }

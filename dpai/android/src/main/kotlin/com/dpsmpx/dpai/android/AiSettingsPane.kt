@@ -69,6 +69,10 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub
         }
     }
     var restoring by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val app = context.applicationContext as? DpaiApplication
+    // В DPmetaApp «Оформление» и «Хранилище и секреты» — в документе настроек приложения (DPmetaApp:D-112), здесь — ссылка.
+    val appSettings = app?.sectionIntent(com.dpsmpx.dpai.ui.AppSection.SETTINGS)
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item(key = "guide") {
             Card(Modifier.fillMaxWidth()) {
@@ -78,7 +82,11 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub
                 }
             }
         }
-        item(key = "look") { LookCard() }
+        if (appSettings != null) {
+            item(key = "app") { Entry("Оформление, хранилище и секреты", "в настройках приложения — одним документом") { context.startActivity(appSettings) } }
+        } else {
+            item(key = "look") { LookCard() }
+        }
         item(key = "linux") { Entry("Linux в приложении", "Alpine, пакеты, слоты") { onSub(LINUX) } }
         item(key = "github") { Entry("PR на GitHub", "открытые PR проекта, проверки, отзывы — через gh") { onSub(GITHUB) } }
         item(key = "routines") { Entry("Маршруты Claude Code", "облачные сессии по токену маршрута — для поручений из пульта") { onSub(ROUTINES) } }
@@ -101,7 +109,7 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub
             }
         }
         item(key = "cli") { CliCard() }
-        item(key = "storage") { StorageSecretsCard() }
+        if (appSettings == null) item(key = "storage") { StorageSecretsCard() }
         item(key = "disk") { AppDiskCard() }
         item(key = "overlay") { OverlayCard() }
         item(key = "end") { androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp)) }
