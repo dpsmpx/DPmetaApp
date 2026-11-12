@@ -2,8 +2,10 @@ package com.dpsmpx.dpai.lsp
 
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.execution.process.LocalProcessHost
 import com.dpsmpx.dpai.execution.process.LocalStreamHost
 import com.dpsmpx.dpai.execution.process.ProcessSpec
+import com.dpsmpx.dpai.execution.process.run
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -41,6 +43,28 @@ class ClangdLiveTest {
             if (u == uri && v == version) return items
         }
         error("диагностики версии $version нет")
+    }
+
+    /** Поиск проекта — настоящим `sh`: сценарий тот же, что уйдёт в Linux приложения. */
+    @Test
+    fun projectIsLocatedUpwardsByCompileCommandsOrGit(@TempDir dir: File) {
+        assumeTrue(File("/bin/sh").canExecute(), "нет /bin/sh")
+        fun locate(fileDir: File): Clangd.Project? {
+            val done = ok(LocalProcessHost().run(ProcessSpec(Clangd.locateCommand(fileDir.path, dir.path)), 10.seconds))
+            return Clangd.parseProject(done.stdout)
+        }
+        val withBuild = File(dir, "a b/проект").apply { File(this, "src/deep").mkdirs(); File(this, "build").mkdirs() }
+        File(withBuild, "build/compile_commands.json").writeText("[]")
+        assertEquals(Clangd.Project(withBuild.path, "${withBuild.path}/build"), locate(File(withBuild, "src/deep")))
+        val inRoot = File(dir, "flat").apply { mkdirs() }
+        File(inRoot, "compile_commands.json").writeText("[]")
+        assertEquals(Clangd.Project(inRoot.path, inRoot.path), locate(inRoot))
+        val gitOnly = File(dir, "repo").apply { File(this, "src").mkdirs(); File(this, ".git").mkdirs() }
+        assertEquals(Clangd.Project(gitOnly.path, null), locate(File(gitOnly, "src")))
+        // Ничего не найдено до границы — корнем остаётся каталог файла; выше границы поиск не идёт.
+        val lonely = File(dir, "x/y").apply { mkdirs() }
+        assertEquals(Clangd.Project(lonely.path, null), locate(lonely))
+        assertEquals(null, Clangd.parseProject(listOf("root=relative", "мусор")))
     }
 
     @Test

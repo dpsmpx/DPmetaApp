@@ -38,6 +38,35 @@ object Clangd {
         return COMPILE_COMMANDS_DIRS.firstOrNull { (if (it.isEmpty()) COMPILE_COMMANDS else "$it/$COMPILE_COMMANDS") in present }
     }
 
+    /** Корень проекта для службы и каталог `compile_commands.json` в нём (`null` — файла нет). */
+    data class Project(val root: String, val compileCommandsDir: String?)
+
+    /**
+     * Команда `sh`, которая ищет проект файла на машине службы: от каталога
+     * файла [fileDir] вверх до [stopDir] — первый каталог с
+     * `compile_commands.json` (в нём или в [COMPILE_COMMANDS_DIRS]) или с
+     * `.git`. Пути идут аргументами, а не текстом сценария. Ответ разбирает
+     * [parseProject].
+     */
+    fun locateCommand(fileDir: String, stopDir: String): List<String> {
+        require(fileDir.startsWith("/") && stopDir.startsWith("/")) { "пути службы — абсолютные" }
+        val script = "s=\"\$1\"; d=\"\$1\"; stop=\"\$2\"; shift 2; " +
+            "while :; do " +
+            "for c in \"\$@\"; do if [ -f \"\$d/\$c/$COMPILE_COMMANDS\" ]; then echo \"root=\$d\"; echo \"cc=\$d/\$c\"; exit 0; fi; done; " +
+            "if [ -e \"\$d/.git\" ]; then echo \"root=\$d\"; exit 0; fi; " +
+            "if [ \"\$d\" = \"\$stop\" ]; then break; fi; " +
+            "n=\"\${d%/*}\"; if [ -z \"\$n\" ] || [ \"\$n\" = \"\$d\" ]; then break; fi; d=\"\$n\"; " +
+            "done; echo \"root=\$s\""
+        return listOf("sh", "-c", script, "sh", fileDir.trimEnd('/').ifEmpty { "/" }, stopDir.trimEnd('/').ifEmpty { "/" }) + COMPILE_COMMANDS_DIRS
+    }
+
+    /** Ответ [locateCommand]; без строки `root=` с абсолютным путём — `null`. */
+    fun parseProject(lines: List<String>): Project? {
+        val root = lines.firstOrNull { it.startsWith("root=/") }?.removePrefix("root=") ?: return null
+        val cc = lines.firstOrNull { it.startsWith("cc=/") }?.removePrefix("cc=")?.trimEnd('/')
+        return Project(root, cc)
+    }
+
     /**
      * Команда службы. [jobs] — потоков разбора; [backgroundIndex] — индекс
      * всего проекта в фоне: нужен ссылкам и переименованию между файлами,

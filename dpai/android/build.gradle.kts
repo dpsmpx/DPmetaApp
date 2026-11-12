@@ -203,6 +203,7 @@ dependencies {
     implementation(project(":localai"))
     implementation(project(":sync"))
     implementation(project(":files"))
+    implementation(project(":lsp"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.activity.compose)

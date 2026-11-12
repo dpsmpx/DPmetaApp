@@ -56,6 +56,26 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
     var nativeChanges = 0
         private set
 
+    /** Подчёркивания языковой службы (D-137); отрезки — в координатах текущего текста. */
+    private var marks: List<com.dpsmpx.dpai.lsp.Assist.Mark> = emptyList()
+    private val markProvider = io.github.rosemoe.sora.lang.diagnostic.DiagnosticProvider { container ->
+        val length = text.length
+        container.addDiagnostics(marks.filter { it.until <= length }.mapIndexed { i, m ->
+            val severity = when (m.severity) {
+                com.dpsmpx.dpai.lsp.LspSeverity.ERROR -> io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion.SEVERITY_ERROR
+                com.dpsmpx.dpai.lsp.LspSeverity.WARNING -> io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion.SEVERITY_WARNING
+                else -> io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion.SEVERITY_TYPO
+            }
+            io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion(m.from, m.until, severity, i.toLong())
+        })
+    }
+
+    fun mark(list: List<com.dpsmpx.dpai.lsp.Assist.Mark>) {
+        if (list == marks) return
+        marks = list
+        invalidateDiagnostics()
+    }
+
     init {
         typefaceText = Typeface.MONOSPACE
         isLineNumberEnabled = true
@@ -66,6 +86,7 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
         setInputType(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
         props.clipboardTextLengthLimit = 256 * 1024
         getComponent(EditorAutoCompletion::class.java).isEnabled = false
+        registerDiagnosticProvider(markProvider)
         subscribeEvent(ScrollEvent::class.java) { event, _ -> if (!applying) viewport(event.endX, event.endY) }
         subscribeEvent(ContentChangeEvent::class.java) { _, _ ->
             if (!applying) {
@@ -196,7 +217,7 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
 }
 
 @Composable
-internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: Int, enabled: Boolean, wrap: Boolean, size: Int, width: Int, tabs: Boolean,
+internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: Int, enabled: Boolean, wrap: Boolean, size: Int, width: Int, tabs: Boolean, marks: List<com.dpsmpx.dpai.lsp.Assist.Mark>,
     onChange: () -> Unit, onCommand: (EditorCommand) -> Unit, onPosition: (Int, Int) -> Unit, onIssue: (String) -> Unit, onZoom: (Int) -> Unit, modifier: Modifier) {
     val context = LocalContext.current
     val dark = isSystemInDarkTheme()
@@ -223,6 +244,7 @@ internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: I
             editor.zoom = { zoom(it) }
             editor.isEditable = enabled
             editor.bind(buffer, path, ready, dark, wrap, size, width, tabs, restored)
+            editor.mark(marks)
         })
     }
 }

@@ -41,7 +41,8 @@ import kotlinx.coroutines.withContext
 /** Инструменты IDE над нативным полем; снимки, история и восстановление остаются общими (D-136). */
 @Composable
 internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, onChange: () -> Unit, enabled: Boolean = true,
-    modifier: Modifier = Modifier, callbacks: EditorCallbacks = EditorCallbacks()) {
+    modifier: Modifier = Modifier, callbacks: EditorCallbacks = EditorCallbacks(), guestPath: String? = null, guestRoot: String? = null) {
+    var marks by remember { mutableStateOf<List<com.dpsmpx.dpai.lsp.Assist.Mark>>(emptyList()) }
     var searching by rememberSaveable(path) { mutableStateOf(false) }
     var query by rememberSaveable(path) { mutableStateOf("") }
     var replacement by rememberSaveable(path) { mutableStateOf("") }
@@ -145,7 +146,8 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
         }
         Text("${CodeSyntax.language(path)} · ${position.first}:${position.second} · ${if (EditorActions.separator(buffer.text) == "\r\n") "CRLF" else "LF"}", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall)
         note?.let { Text(it, Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall) }
-        NativeCodeField(buffer, path, revision, enabled, wrap, fontSize, width, tabs, onChange, ::command,
+        if (guestPath != null && guestRoot != null) CodeAssist(buffer, guestPath, guestRoot, revision, enabled, width, tabs, onChange = { changed() }, onMarks = { marks = it })
+        NativeCodeField(buffer, path, revision, enabled, wrap, fontSize, width, tabs, marks, onChange, ::command,
             onPosition = { line, column -> position = line to column }, onIssue = { note = it }, onZoom = { fontSize = it }, modifier = Modifier.weight(1f).fillMaxWidth())
     }
     if (lineDialog) {

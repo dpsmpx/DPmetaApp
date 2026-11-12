@@ -490,16 +490,16 @@ private fun FileView(p: Place, path: String, onBrowse: () -> Unit, onNext: (Bool
         Kind.SHARED -> GuestPaths.guestShared("")
         Kind.FOLDER -> null
     }
-    TreeFileView(tree, p.key(), path, guestPath = guestRoot?.let { FileNames.join(it, path) }, onBrowse = onBrowse, onNext = onNext, onActions = onActions, onClose = onClose)
+    TreeFileView(tree, p.key(), path, guestPath = guestRoot?.let { FileNames.join(it, path) }, onBrowse = onBrowse, onNext = onNext, onActions = onActions, guestRoot = guestRoot, onClose = onClose)
 }
 
 @Composable
-internal fun TreeFileView(tree: FileTree, treeKey: String, path: String, readOnly: Boolean = false, guestPath: String? = null, onBrowse: (() -> Unit)? = null, onNext: (Boolean) -> Unit = {}, onActions: (EditorCallbacks) -> Unit = {}, onClose: () -> Unit) {
-    androidx.compose.runtime.key(treeKey, path) { TreeFileContent(tree, treeKey, path, readOnly, guestPath, onBrowse, onNext, onActions, onClose) }
+internal fun TreeFileView(tree: FileTree, treeKey: String, path: String, readOnly: Boolean = false, guestPath: String? = null, onBrowse: (() -> Unit)? = null, onNext: (Boolean) -> Unit = {}, onActions: (EditorCallbacks) -> Unit = {}, guestRoot: String? = null, onClose: () -> Unit) {
+    androidx.compose.runtime.key(treeKey, path) { TreeFileContent(tree, treeKey, path, readOnly, guestPath, guestRoot, onBrowse, onNext, onActions, onClose) }
 }
 
 @Composable
-private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readOnly: Boolean, guestPath: String?, onBrowse: (() -> Unit)?, onNext: (Boolean) -> Unit, onActions: (EditorCallbacks) -> Unit, onClose: () -> Unit) {
+private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readOnly: Boolean, guestPath: String?, guestRoot: String?, onBrowse: (() -> Unit)?, onNext: (Boolean) -> Unit, onActions: (EditorCallbacks) -> Unit, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     val recovery by Drafts.recovery.collectAsState()
     val image = TextFile.isImage(path)
@@ -636,7 +636,7 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
         val e = editing
         when {
             e != null -> Clipboard.Sensitive {
-                CodeEditor(e.editor, path, revision, onChange = { revision++; Drafts.changed(draftKey) }, enabled = recovery.ready && !readOnly && !saving, modifier = Modifier.weight(1f).fillMaxWidth(), callbacks = editorActions)
+                CodeEditor(e.editor, path, revision, onChange = { revision++; Drafts.changed(draftKey) }, enabled = recovery.ready && !readOnly && !saving, modifier = Modifier.weight(1f).fillMaxWidth(), callbacks = editorActions, guestPath = guestPath, guestRoot = guestRoot)
             }
             bitmap != null -> Image(bitmap!!, FileNames.name(path), Modifier.fillMaxSize().padding(8.dp))
             text != null && text.orEmpty().length <= WHOLE_TEXT_MAX -> SelectionContainer(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {

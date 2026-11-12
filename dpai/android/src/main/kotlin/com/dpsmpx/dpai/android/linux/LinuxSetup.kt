@@ -205,6 +205,22 @@ object LinuxSetup {
         }
     }
 
+    /**
+     * Процессы-собеседники гостя (D-137): языковая служба рядом с деревом,
+     * с той же раскладкой и привязками, что у [guestHost]. Сети службе не
+     * нужно — DNS не трогается. Linux не установлен — `null`.
+     */
+    fun guestStreams(context: Context): com.dpsmpx.dpai.execution.process.StreamHost? {
+        if (!available(context) || environment(context).installed() == null) return null
+        val home = File(context.filesDir, AGENT_HOME).apply { mkdirs() }.path
+        val app = context.applicationContext
+        val native = JniProcesses()
+        return com.dpsmpx.dpai.execution.process.NativeStreamHost(native, wrap = { spec ->
+            val layout = layout(app)
+            ProotHost(NativeProcessHost(native, Clock.SYSTEM), layout.copy(binds = layout.binds + ProotLayout.Bind(home, home))).wrap(spec)
+        })
+    }
+
     /** Завершить оболочку: процесс-лидер сеанса получает HUP, proot с `--kill-on-exit` уносит гостя с собой. */
     fun hangUp(child: NativeChild) {
         JniProcesses().kill(child.pid, com.dpsmpx.dpai.execution.linux.Signals.HUP)
