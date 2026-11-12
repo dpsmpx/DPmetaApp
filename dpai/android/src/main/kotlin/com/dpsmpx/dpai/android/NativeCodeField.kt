@@ -36,8 +36,8 @@ import io.github.rosemoe.sora.widget.component.EditorAutoCompletion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-internal enum class EditorCommand { UNDO, REDO, SAVE, FIND, REPLACE, GOTO, COMMENT, DUPLICATE, DELETE_LINE, MOVE_UP, MOVE_DOWN, INDENT, UNINDENT, NEXT_FILE, PREV_FILE, CLOSE_FILE, FILES }
-internal data class EditorCallbacks(val save: () -> Unit = {}, val close: () -> Unit = {}, val browse: () -> Unit = {}, val next: (Boolean) -> Unit = {}, val busy: Boolean = false, val canSave: Boolean = false, val preview: () -> Unit = {}, val exit: () -> Unit = {}, val run: () -> Unit = {}, val configureRun: () -> Unit = {})
+internal enum class EditorCommand { UNDO, REDO, SAVE, FIND, REPLACE, GOTO, COMMENT, DUPLICATE, DELETE_LINE, MOVE_UP, MOVE_DOWN, INDENT, UNINDENT, NEXT_FILE, PREV_FILE, CLOSE_FILE, FILES, EXIT, RUN }
+internal data class EditorCallbacks(val save: () -> Unit = {}, val close: () -> Unit = {}, val browse: () -> Unit = {}, val next: (Boolean) -> Unit = {}, val busy: Boolean = false, val canSave: Boolean = false, val canRun: Boolean = false, val preview: () -> Unit = {}, val exit: () -> Unit = {}, val run: () -> Unit = {}, val configureRun: () -> Unit = {})
 
 /** Тонкий адаптер: рендеринг/IME у Sora, снимки и история — CodeEditorBuffer (D-136). */
 internal class StudioCodeField(context: Context) : SoraEditor(context) {
@@ -53,6 +53,7 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
     private var batch = false
     private var languageKey = ""
     private var lastSize = -1
+    var handlesBack = false
     var nativeChanges = 0
         private set
 
@@ -116,6 +117,7 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
                 val ctrl = event.isCtrlPressed
                 val shift = event.isShiftPressed
                 val action = when {
+                    event.keyCode == KeyEvent.KEYCODE_F5 -> EditorCommand.RUN
                     ctrl && event.keyCode == KeyEvent.KEYCODE_Z -> if (shift) EditorCommand.REDO else EditorCommand.UNDO
                     ctrl && event.keyCode == KeyEvent.KEYCODE_Y -> EditorCommand.REDO
                     ctrl && event.keyCode == KeyEvent.KEYCODE_S -> EditorCommand.SAVE
@@ -208,6 +210,13 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
         notifyIMEExternalCursorChange()
     }
     override fun cutLine() = cutText()
+    override fun onKeyPreIme(keyCode: Int, event: KeyEvent): Boolean {
+        if (handlesBack && keyCode == KeyEvent.KEYCODE_BACK) {
+            if (event.action == KeyEvent.ACTION_UP) command(EditorCommand.EXIT)
+            return true
+        }
+        return super.onKeyPreIme(keyCode, event)
+    }
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
         val connection = super.onCreateInputConnection(outAttrs)
         outAttrs.imeOptions = outAttrs.imeOptions or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
@@ -217,9 +226,10 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
 }
 
 @Composable
-internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: Int, enabled: Boolean, wrap: Boolean, size: Int, width: Int, tabs: Boolean, marks: List<com.dpsmpx.dpai.lsp.Assist.Mark>, highlighted: Boolean, onActivate: (() -> Unit)?,
+internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: Int, enabled: Boolean, wrap: Boolean, size: Int, width: Int, tabs: Boolean, marks: List<com.dpsmpx.dpai.lsp.Assist.Mark>, highlighted: Boolean, onActivate: (() -> Unit)?, handlesBack: Boolean,
     onChange: () -> Unit, onCommand: (EditorCommand) -> Unit, onPosition: (Int, Int) -> Unit, onIssue: (String) -> Unit, onZoom: (Int) -> Unit, modifier: Modifier) {
     val context = LocalContext.current
+    val activity = androidx.activity.compose.LocalActivity.current
     val dark = isSystemInDarkTheme()
     var ready by remember { mutableStateOf(false) }
     val change by rememberUpdatedState(onChange)
@@ -243,13 +253,14 @@ internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: I
             val restored = if (visited) offsetX to offsetY else null
             editor.viewport = { x, y -> offsetX = x; offsetY = y; visited = true }
             editor.zoom = { zoom(it) }
+            editor.handlesBack = handlesBack
             val entering = !editor.isEditable && enabled
             editor.setOnClickListener { if (!enabled) editor.postInLifecycle { activate?.invoke() } }
             editor.isEditable = enabled
             editor.bind(buffer, path, ready, dark, wrap, size, width, tabs, restored, highlighted)
             if (entering) editor.postInLifecycle {
                 editor.requestFocus()
-                (editor.context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showSoftInput(editor, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                activity?.window?.let { androidx.core.view.WindowCompat.getInsetsController(it, editor).show(androidx.core.view.WindowInsetsCompat.Type.ime()) }
             }
             editor.mark(marks)
         })

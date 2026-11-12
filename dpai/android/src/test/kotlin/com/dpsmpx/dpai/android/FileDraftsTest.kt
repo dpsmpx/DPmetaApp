@@ -7,6 +7,21 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class FileDraftsTest {
+    @Test fun inputArrivingDuringSaveRemainsDirtyWithTheNewBaseline() {
+        val key = "file:save-new-input-test"
+        try {
+            val draft = Drafts.startFile(key, "old".toByteArray(), "old")!!
+            draft.editor.edit("saved", EditorSelection(5))
+            val saving = draft.editor.text
+            draft.editor.edit("saved plus", EditorSelection(10))
+            Drafts.savedFile(key, draft, saving.toByteArray(), saving)
+            assertTrue(draft.editor.dirty)
+            assertEquals("saved plus", draft.editor.text)
+            kotlin.test.assertContentEquals("saved".toByteArray(), draft.original)
+            assertEquals(draft, Drafts.file(key))
+        } finally { Drafts.dropFile(key) }
+    }
+
     @Test
     fun staleCloseCannotRemoveNewDraftAndSavingKeepsUndo() {
         val key = "file:close-generation-test"

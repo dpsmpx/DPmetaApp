@@ -65,7 +65,9 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
         return
     }
     val project = current.project
-    var taskKey by rememberSaveable(project.project.value) { mutableStateOf<String?>(null) }
+    val previous = remember(project.project.value) { IdeState.state.value.lastPlace?.split("\u0001") }
+    var taskKey by rememberSaveable(project.project.value) { mutableStateOf(previous?.takeIf { it.size == 3 && it[0] == "workspace" && it[1] == project.project.value }?.get(2)?.ifEmpty { null }) }
+    LaunchedEffect(project.project, taskKey) { IdeState.place("workspace\u0001${project.project.value}\u0001${taskKey.orEmpty()}") }
     var page by rememberSaveable(project.project.value) { mutableStateOf(WorkspacePage.FILES.name) }
     var choose by remember { mutableStateOf(false) }
     var taskSheet by remember(project.project, taskKey) { mutableStateOf(false) }
@@ -168,7 +170,7 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
         val path = file
         if (path != null) tabStates.SaveableStateProvider(path) {
             TreeFileView(tree, "workspace:${location.key}", path, readOnly, guestPath = "${location.path.trimEnd('/')}/$path",
-                onBrowse = openFiles::browse, onNext = openFiles::next, onActions = { openFiles.ready(path, it) }, guestRoot = location.path.trimEnd('/').ifEmpty { "/" }, sessionKey = location.key,
+                onBrowse = { openFiles.finishedBrowse(path) }, onNext = openFiles::next, onActions = { openFiles.ready(path, it) }, guestRoot = location.path.trimEnd('/').ifEmpty { "/" }, sessionKey = location.key,
                 runGuard = { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } }) { openFiles.close(path) }
         } else {
             Row {

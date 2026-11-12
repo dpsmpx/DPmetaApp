@@ -37,8 +37,14 @@ internal object IdeState {
         if (!started.compareAndSet(false, true)) return
         val app = context.applicationContext
         scope.launch {
-            val dir = app.noBackupFilesDir.resolve("editor-ui").apply { mkdirs() }
-            val book = EditorSessionBook(DocumentStore(NioVfs(dir.toPath()), "ui"))
+            val book = try {
+                val dir = app.noBackupFilesDir.resolve("editor-ui").apply { mkdirs() }
+                EditorSessionBook(DocumentStore(NioVfs(dir.toPath()), "ui"))
+            } catch (_: java.io.IOException) {
+                error.value = "Не удалось открыть настройки IDE; сохранённая копия оставлена"; ready.value = true; return@launch
+            } catch (_: SecurityException) {
+                error.value = "Нет доступа к настройкам IDE; сохранённая копия оставлена"; ready.value = true; return@launch
+            }
             val loaded = book.load()
             when (loaded) {
                 is Outcome.Success -> flow.value = loaded.value

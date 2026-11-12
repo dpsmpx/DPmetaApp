@@ -121,13 +121,13 @@ private fun treeOf(context: android.content.Context, p: Place): FileTree = when 
 fun FilesPane(onLinux: () -> Unit = {}, model: DemoModel? = null, onSession: (String) -> Unit = {}) {
     val uiReady by IdeState.ready.collectAsState()
     if (!uiReady) { CircularProgressIndicator(Modifier.padding(12.dp)); return }
-    var projectOpen by rememberSaveable { mutableStateOf(false) }
+    var projectOpen by rememberSaveable { mutableStateOf(IdeState.state.value.lastPlace?.startsWith("workspace\u0001") == true) }
     var draftsOpen by remember { mutableStateOf(false) }
     if (draftsOpen) FileDraftsDialog { draftsOpen = false }
     val workspaceState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     if (projectOpen && model != null) {
         workspaceState.SaveableStateProvider("project") {
-            ProjectWorkspacePane(model, onTargets = onLinux, onSession = onSession) { projectOpen = false }
+            ProjectWorkspacePane(model, onTargets = onLinux, onSession = onSession) { IdeState.place(null); projectOpen = false }
         }
         return
     }
@@ -427,7 +427,7 @@ private fun BrowserContent(p: Place, onPlace: (Place) -> Unit, onClose: () -> Un
     Column(Modifier.fillMaxWidth()) { EditorTabsBar(openFiles) { path -> "file:${p.copy(dir = FileNames.parent(path)).key()}\u0001$path" } }
     file?.let { path ->
         tabStates.SaveableStateProvider(path) {
-            FileView(p.copy(dir = FileNames.parent(path)), path, onBrowse = openFiles::browse, onNext = openFiles::next,
+            FileView(p.copy(dir = FileNames.parent(path)), path, onBrowse = { openFiles.finishedBrowse(path) }, onNext = openFiles::next,
                 onActions = { openFiles.ready(path, it) }) { openFiles.close(path) }
         }
         return
@@ -493,7 +493,7 @@ private fun FileView(p: Place, path: String, onBrowse: () -> Unit, onNext: (Bool
         Kind.SHARED -> GuestPaths.guestShared("")
         Kind.FOLDER -> null
     }
-    TreeFileView(tree, p.key(), path, guestPath = guestRoot?.let { FileNames.join(it, path) }, onBrowse = onBrowse, onNext = onNext, onActions = onActions, guestRoot = guestRoot, sessionKey = p.copy(dir = "").key(), onClose = onClose)
+    TreeFileView(tree, p.key(), path, guestPath = guestRoot?.let { FileNames.join(it, path) }, onBrowse = onBrowse, onNext = onNext, onActions = onActions, guestRoot = guestRoot, sessionKey = p.copy(dir = "").key(), runGuard = { profiles.edit { Outcome.success(Unit) } }, onClose = onClose)
 }
 
 @Composable
@@ -506,6 +506,7 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
     runGuard: () -> Outcome<Unit>, onBrowse: (() -> Unit)?, onNext: (Boolean) -> Unit, onActions: (EditorCallbacks) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val recovery by Drafts.recovery.collectAsState()
     val image = TextFile.isImage(path)
     var text by remember { mutableStateOf<String?>(null) }
@@ -542,7 +543,10 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
                     text = content; original = result.value
                     when (val copy = withContext(Dispatchers.IO) { Drafts.savedFile(draftKey, current, result.value, content) }) {
                         is Outcome.Failure -> { issue(copy.errors.first().message); false }
-                        is Outcome.Success -> { status = "Сохранено"; true }
+                        is Outcome.Success -> {
+                            if (current.editor.dirty) { issue("Файл записан, но появились новые правки; редактор оставлен открытым"); false }
+                            else { status = "Сохранено"; true }
+                        }
                     }
                 }
             }
@@ -551,10 +555,10 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
     fun requestLeave(action: () -> Unit) {
         if (saving) return
         val current = draft ?: Drafts.file(draftKey)
-        if (current?.editor?.dirty == true) { draft = current; afterLeaving = action; leaving = true }
+        if (current?.editor?.dirty == true) { draft = current; afterLeaving = action; keyboard?.hide(); leaving = true }
         else action()
     }
-    val exit = { requestLeave { Drafts.flushNow(); if (onBrowse != null) onBrowse() else onClose() } }
+    val exit = { requestLeave { keyboard?.hide(); Drafts.flushNow(); if (onBrowse != null) onBrowse() else onClose() } }
     val close = { requestLeave { scope.launch { saving = true; try { if (!recovery.ready || draft == null || discard()) onClose() } finally { saving = false } } }; Unit }
     fun runSaved() {
         if (saving) return
@@ -589,14 +593,14 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
         else requestLeave { runSaved() }
     }
     val callbacks = EditorCallbacks(save = { scope.launch { save() } }, close = close, browse = exit, next = onNext, busy = saving,
-        canSave = !readOnly && recovery.ready && draft?.editor?.dirty == true,
-        preview = { if (!saving) editing = false }, exit = exit, run = { run() }, configureRun = { configureOnly = true; configure = true })
+        canSave = !readOnly && recovery.ready && draft?.editor?.dirty == true, canRun = !readOnly && guestPath != null && text != null && !loading,
+        preview = { if (!saving) { editing = false; keyboard?.hide() } }, exit = exit, run = { run() }, configureRun = { configureOnly = true; configure = true })
     SideEffect { onActions(callbacks) }
     LaunchedEffect(recovery.ready) { if (recovery.ready && draft == null) draft = Drafts.file(draftKey) }
     DisposableEffect(draftKey) { onDispose { Drafts.flushNow() } }
-    androidx.activity.compose.BackHandler(onBack = exit)
+    IdeBackHandler(exit)
     if (leaving) AlertDialog(onDismissRequest = { leaving = false; afterLeaving = null }, title = { Text("Есть несохранённые изменения") },
-        text = { Text("Сохранить «${FileNames.name(path)}» ?") },
+        text = { Text(FileNames.name(path)) },
         confirmButton = { TextButton(enabled = !saving && !readOnly, onClick = { scope.launch {
             if (save()) { val action = afterLeaving; afterLeaving = null; leaving = false; action?.invoke() }
         } }) { Text("Сохранить") } },
@@ -641,7 +645,7 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
         val buffer = draft?.editor ?: preview
         when {
             buffer != null -> Clipboard.Sensitive {
-                CodeEditor(buffer, path, revision, onChange = { revision++; if (draft != null) Drafts.changed(draftKey) },
+                CodeEditor(buffer, path, revision, onChange = { revision++; status = null; if (draft != null) Drafts.changed(draftKey) },
                     enabled = editing && recovery.ready && !readOnly && !saving,
                     modifier = Modifier.weight(1f).fillMaxWidth(), callbacks = callbacks, guestPath = guestPath, guestRoot = guestRoot,
                     presentation = true, editing = editing, onActivate = if (!readOnly && recovery.ready && !saving) ({

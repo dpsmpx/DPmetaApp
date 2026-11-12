@@ -7,5 +7,13 @@
     "editorCursor.foreground": "#d0bcff",
     "editor.lineHighlightBackground": "#27272f"
   },
-  "tokenColors": []
+  "tokenColors": [
+    {
+      "settings": {
+        "foreground": "#e6e1e5",
+        "background": "#1e1e24",
+        "fontStyle": ""
+      }
+    }
+  ]
 }

@@ -87,6 +87,8 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
             EditorCommand.NEXT_FILE -> callbacks.next(false)
             EditorCommand.PREV_FILE -> callbacks.next(true)
             EditorCommand.CLOSE_FILE -> callbacks.close()
+            EditorCommand.EXIT -> callbacks.exit()
+            EditorCommand.RUN -> callbacks.run()
             else -> if (enabled) {
                 val result = when (action) {
                     EditorCommand.INDENT -> EditorActions.indent(buffer, width, tabs)
@@ -138,7 +140,7 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
             }) { Text(pair) }
             for (symbol in listOf(";", ":", "=", "/", "_")) TextButton(enabled = enabled, onClick = { buffer.replaceSelection(symbol); changed() }) { Text(symbol) }
         }
-        if (searching) {
+        if (searching && !zen) {
             Row(Modifier.fillMaxWidth()) {
                 OutlinedTextField(query, { query = it }, Modifier.weight(1f), label = { Text("Найти") }, singleLine = true)
                 OutlinedTextField(replacement, { replacement = it }, Modifier.weight(1f), label = { Text("Заменить на") }, singleLine = true)
@@ -159,8 +161,8 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
         if (!zen) Text("${CodeSyntax.language(path)} · ${position.first}:${position.second} · ${if (EditorActions.separator(buffer.text) == "\r\n") "CRLF" else "LF"}", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall)
         if (!zen) note?.let { Text(it, Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall) }
         if (guestPath != null && guestRoot != null) CodeAssist(buffer, guestPath, guestRoot, revision, enabled, width, tabs, onChange = { changed() }, onMarks = { marks = it }, compact = zen)
-        NativeCodeField(buffer, path, revision, enabled, wrap, fontSize, width, tabs, marks, syntax, onActivate, onChange, ::command,
-            onPosition = { line, column -> position = line to column }, onIssue = { note = it }, onZoom = { fontSize = it }, modifier = Modifier.weight(1f).fillMaxWidth())
+        NativeCodeField(buffer, path, revision, enabled, wrap, fontSize, width, tabs, marks, syntax, onActivate, presentation, onChange, ::command,
+            onPosition = { line, column -> position = line to column }, onIssue = { note = it; if (zen) android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show() }, onZoom = { fontSize = it }, modifier = Modifier.weight(1f).fillMaxWidth())
     }
     if (lineDialog) {
         var line by remember { mutableStateOf("") }

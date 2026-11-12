@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -26,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.files.FileNames
@@ -38,6 +40,7 @@ internal class OpenEditorFiles(private val key: String, private val state: Mutab
     var note: String? by mutableStateOf(null)
     var busy: Boolean by mutableStateOf(false)
     var canSave: Boolean by mutableStateOf(false)
+    var canRun: Boolean by mutableStateOf(false)
     private var actions = EditorCallbacks()
     private var pendingClose: String? = null
     private var pendingPreview: String? = null
@@ -50,6 +53,7 @@ internal class OpenEditorFiles(private val key: String, private val state: Mutab
         if (busy) return
         val next = tabs.open(path)
         note = if (path !in next.paths) "Открыто ${EditorTabs.MAX_OPEN} файлов: закройте одну вкладку" else null
+        if (next.active != tabs.active) pendingPreview = next.active
         change(next)
     }
     fun preview(path: String) {
@@ -57,6 +61,8 @@ internal class OpenEditorFiles(private val key: String, private val state: Mutab
         if (tabs.active == path) actions.preview() else { pendingPreview = path; open(path) }
     }
     fun browse() { if (!busy) change(tabs.browse()) }
+    /** Выход уже подтверждён владельцем документа; его saving мог закончиться до следующего кадра. */
+    fun finishedBrowse(path: String) { if (tabs.active == path) { busy = false; change(tabs.browse()) } }
     fun close(path: String) { busy = false; change(tabs.close(path)) }
     fun next(backwards: Boolean) { if (!busy) { val next = tabs.next(backwards); pendingPreview = next.active; change(next) } }
     fun requestClose(path: String) {
@@ -65,7 +71,7 @@ internal class OpenEditorFiles(private val key: String, private val state: Mutab
     }
     fun ready(path: String, callbacks: EditorCallbacks) {
         if (path != tabs.active) return
-        actions = callbacks; busy = callbacks.busy; canSave = callbacks.canSave
+        actions = callbacks; busy = callbacks.busy; canSave = callbacks.canSave; canRun = callbacks.canRun
         if (pendingPreview == path) { pendingPreview = null; callbacks.preview() }
         if (pendingClose == path) { pendingClose = null; callbacks.close() }
     }
@@ -87,12 +93,15 @@ internal fun rememberOpenEditorFiles(key: String): OpenEditorFiles {
 
 @Composable
 internal fun EditorTabsBar(files: OpenEditorFiles, draftKey: (String) -> String) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val error by IdeState.error.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(error) { error?.let { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show() } }
     val recovery by Drafts.recovery.collectAsState()
     val settings by IdeState.state.collectAsState()
     val zen = ideZen()
     val tabs = files.tabs
+    if (tabs.paths.isEmpty()) return
     Row(Modifier.fillMaxWidth().height(48.dp)) {
-        if (tabs.active == null) IconButton(onClick = files::browse, enabled = !files.busy) { Text("≡") }
         Row(Modifier.weight(1f).horizontalScroll(rememberScrollState())) {
             for (path in tabs.paths) {
                 val dirty = Drafts.file(draftKey(path))?.editor?.dirty == true
@@ -100,12 +109,12 @@ internal fun EditorTabsBar(files: OpenEditorFiles, draftKey: (String) -> String)
                 Box {
                     Text(FileNames.name(path) + if (dirty) " *" else "", maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.background(if (tabs.active == path) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
-                            .combinedClickable(enabled = !files.busy, onClick = { files.preview(path) }, onLongClick = { menu = true })
-                            .padding(horizontal = 8.dp, vertical = 14.dp).semantics { contentDescription = path + if (dirty) ", есть правки" else "" })
+                            .combinedClickable(enabled = !files.busy, role = androidx.compose.ui.semantics.Role.Tab, onClickLabel = "Просмотр файла", onLongClickLabel = "Действия вкладки", onClick = { files.preview(path) }, onLongClick = { menu = true })
+                            .widthIn(min = 48.dp, max = 180.dp).padding(horizontal = 8.dp, vertical = 12.dp).semantics { contentDescription = path + if (dirty) ", есть правки" else ""; selected = tabs.active == path })
                     DropdownMenu(menu, { menu = false }) {
                         DropdownMenuItem(text = { Text(path) }, onClick = {}, enabled = false)
                         DropdownMenuItem(text = { Text("Закрыть вкладку") }, enabled = recovery.ready && !files.busy, onClick = { menu = false; files.requestClose(path) })
-                        DropdownMenuItem(text = { Text("К списку файлов") }, enabled = !files.busy, onClick = { menu = false; files.exit() })
+                        DropdownMenuItem(text = { Text("К списку файлов") }, enabled = !files.busy && tabs.active != null, onClick = { menu = false; files.exit() })
                         DropdownMenuItem(text = { Text("Команда запуска…") }, enabled = !files.busy && tabs.active == path, onClick = { menu = false; files.configureRun() })
                     }
                 }
@@ -115,7 +124,7 @@ internal fun EditorTabsBar(files: OpenEditorFiles, draftKey: (String) -> String)
             EditorIcon(R.drawable.ic_editor_exit, "Выйти из IDE", !files.busy, files::exit)
             EditorIcon(R.drawable.ic_editor_save, "Сохранить", !files.busy && files.canSave, files::save)
             EditorIcon(R.drawable.ic_editor_view, if (zen) "Полный интерфейс" else "Режим дзен", !files.busy) { IdeState.options(settings.options.copy(zen = !settings.options.zen)) }
-            EditorIcon(R.drawable.ic_editor_run, "Запустить в терминале", !files.busy, files::run)
+            EditorIcon(R.drawable.ic_editor_run, "Запустить в терминале", !files.busy && files.canRun, files::run)
         }
     }
     if (!zen) files.note?.let { Text(it, Modifier.padding(horizontal = 8.dp)) }

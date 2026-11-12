@@ -67,6 +67,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         thread(name = "dpai-term-warm", isDaemon = true) { TerminalHub.warm(applicationContext) }
         // После смерти процесса Android восстанавливает экран, а вкладок (только в памяти, D-27) уже нет:
         // открыть заново ту, с которой экран начинался, а не показывать мёртвый чёрный экран.
+        // Возврат Activity после смерти процесса никогда не повторяет пользовательскую программу.
+        if (savedInstanceState != null) { intent?.removeExtra(EXTRA_RUN_FILE); intent?.removeExtra(EXTRA_RUN_COMMAND) }
         val lost = savedInstanceState != null && TerminalHub.tabs.isEmpty()
         if (savedInstanceState == null || TerminalHub.tabs.isEmpty()) handle(intent)
         // Новая сессия вместо прежней — словами, а не молча (терминал:A-24).
@@ -128,6 +130,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             val code = intent.getStringExtra(EXTRA_RUN_FILE)
             val run = intent.getStringExtra(EXTRA_RUN_COMMAND)
             if (code != null && run != null && dir != null) {
+                intent.removeExtra(EXTRA_RUN_FILE); intent.removeExtra(EXTRA_RUN_COMMAND)
                 when (val plan = com.dpsmpx.dpai.ui.EditorTerminalRun.argv(code, dir, run)) {
                     is Outcome.Success -> show(TerminalHub.open(this, null, plan.value, "▶ ${code.substringAfterLast('/')}"))
                     is Outcome.Failure -> android.widget.Toast.makeText(this, plan.errors.first().message, android.widget.Toast.LENGTH_LONG).show()

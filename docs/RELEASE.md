@@ -11,7 +11,7 @@ D-104 разрешает ручную выкладку APK в GitHub Releases з
 1. Проверить, что репозиторий закрыт, версия/tag не заняты другой сборкой,
    рабочее дерево чистое, исходный коммит зафиксирован в описании.
 2. Выполнить `tools/check/run.sh full --strict` с JDK 21 и Android SDK.
-3. Взять объединённый APK `shell/build/outputs/apk/debug/shell-debug.apk`,
+3. Взять объединённый shell-debug.apk из debug-вывода модуля shell,
    проверить applicationId, versionName/versionCode, minSdk/targetSdk,
    `apksigner verify --verbose --print-certs` и SHA-256.
 4. Подготовить русское описание изменений, ограничений, результатов
