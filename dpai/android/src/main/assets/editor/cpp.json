@@ -1,0 +1,67 @@
+{
+  "name": "C/C++",
+  "scopeName": "source.cpp",
+  "patterns": [
+    {
+      "begin": "//",
+      "end": "$",
+      "name": "comment.line.double-slash.cpp"
+    },
+    {
+      "begin": "/\\*",
+      "end": "\\*/",
+      "name": "comment.block.cpp"
+    },
+    {
+      "begin": "(?:u8|u|U|L)?R\"([^\\s()\\\\]{0,16})\\(",
+      "end": "\\)\\1\"",
+      "name": "string.quoted.raw.cpp"
+    },
+    {
+      "begin": "(?:u8|u|U|L)?\"",
+      "end": "\"|$",
+      "name": "string.quoted.double.cpp",
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape"
+        }
+      ]
+    },
+    {
+      "begin": "(?:u8|u|U|L)?'",
+      "end": "'|$",
+      "name": "string.quoted.single.cpp",
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape"
+        }
+      ]
+    },
+    {
+      "match": "^\\s*#\\s*\\w+",
+      "name": "keyword.control.directive.cpp"
+    },
+    {
+      "match": "\\b(?:0[xX][\\da-fA-F]+|0[bB][01]+|\\d+(?:[\\._]\\d+)*(?:[eE][+-]?\\d+)?)[uUlLfF]*\\b",
+      "name": "constant.numeric"
+    },
+    {
+      "match": "\\b(?:alignas|alignof|asm|auto|break|case|catch|class|co_await|co_return|co_yield|concept|const|constexpr|consteval|constinit|const_cast|continue|decltype|default|delete|do|dynamic_cast|else|enum|explicit|export|extern|false|for|friend|goto|if|inline|mutable|namespace|new|noexcept|nullptr|operator|private|protected|public|register|reinterpret_cast|requires|return|sizeof|static|static_assert|static_cast|struct|switch|template|this|thread_local|throw|true|try|typedef|typeid|typename|union|using|virtual|volatile|while)\\b",
+      "name": "keyword.control.cpp"
+    },
+    {
+      "match": "\\b(?:bool|char|char8_t|char16_t|char32_t|double|float|int|long|short|signed|unsigned|void|wchar_t)\\b",
+      "name": "storage.type.cpp"
+    },
+    {
+      "match": "\\b[A-Za-z_]\\w*(?=\\s*\\()",
+      "name": "entity.name.function.cpp"
+    },
+    {
+      "match": "[{}()\\[\\]]",
+      "name": "punctuation.section"
+    }
+  ]
+}

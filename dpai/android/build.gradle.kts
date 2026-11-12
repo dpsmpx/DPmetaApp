@@ -190,6 +190,8 @@ kotlin {
 }
 
 dependencies {
+    implementation(libs.sora.editor)
+    implementation(libs.sora.textmate)
     implementation(project(":ui"))
     implementation(project(":jsch"))
     implementation(project(":terminal"))

@@ -8,8 +8,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -21,89 +21,110 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.OffsetMapping
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.input.TransformedText
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.ui.CodeEditorBuffer
-import com.dpsmpx.dpai.ui.CodeHighlight
 import com.dpsmpx.dpai.ui.CodeSyntax
-import com.dpsmpx.dpai.ui.CodeToken
 import com.dpsmpx.dpai.ui.DiffKind
 import com.dpsmpx.dpai.ui.DiffLine
+import com.dpsmpx.dpai.ui.EditorActions
 import com.dpsmpx.dpai.ui.EditorChanges
 import com.dpsmpx.dpai.ui.EditorMatches
-import com.dpsmpx.dpai.ui.EditorSelection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-/** Android рисует модель D-131; дорогой поиск, подсветка и просмотр правок — вне UI. */
+/** Инструменты IDE над нативным полем; снимки, история и восстановление остаются общими (D-136). */
 @Composable
-internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, onChange: () -> Unit, enabled: Boolean = true, modifier: Modifier = Modifier) {
-    var value by remember(buffer) { mutableStateOf(TextFieldValue(buffer.text, TextRange(buffer.state.selection.start, buffer.state.selection.end))) }
-    var searching by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
-    var replacement by remember { mutableStateOf("") }
-    var caseSensitive by remember { mutableStateOf(false) }
+internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, onChange: () -> Unit, enabled: Boolean = true,
+    modifier: Modifier = Modifier, callbacks: EditorCallbacks = EditorCallbacks()) {
+    var searching by rememberSaveable(path) { mutableStateOf(false) }
+    var query by rememberSaveable(path) { mutableStateOf("") }
+    var replacement by rememberSaveable(path) { mutableStateOf("") }
+    var caseSensitive by rememberSaveable(path) { mutableStateOf(false) }
+    var wrap by rememberSaveable(path) { mutableStateOf(false) }
+    var symbols by rememberSaveable(path) { mutableStateOf(true) }
+    var fontSize by rememberSaveable(path) { mutableStateOf(14) }
+    var width by rememberSaveable(path) { mutableStateOf(4) }
+    var tabs by rememberSaveable(path) { mutableStateOf(false) }
+    var view by remember { mutableStateOf(false) }
+    var licenses by remember { mutableStateOf(false) }
     var matches by remember { mutableStateOf(EditorMatches(emptyList(), false)) }
-    var highlight by remember { mutableStateOf<Pair<String, CodeHighlight>?>(null) }
     var lineDialog by remember { mutableStateOf(false) }
     var changes by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
-    val editorFocus = remember { FocusRequester() }
-    var focusRequest by remember { mutableStateOf(0) }
-    LaunchedEffect(focusRequest) { if (focusRequest > 0) editorFocus.requestFocus() }
-    // Синхронизация после undo/поиска; composition IME при обычном вводе сохраняется.
-    LaunchedEffect(revision) {
-        val s = buffer.state.selection
-        if (value.text != buffer.text || value.selection != TextRange(s.start, s.end)) value = TextFieldValue(buffer.text, TextRange(s.start, s.end))
-    }
-    LaunchedEffect(buffer.text, path) {
-        val text = buffer.text
-        delay(150)
-        highlight = text to withContext(Dispatchers.Default) { CodeSyntax.highlight(path, text) }
-    }
+    var position by remember { mutableStateOf(1 to 1) }
+    val context = LocalContext.current
     LaunchedEffect(buffer.text, query, caseSensitive, searching) {
         val text = buffer.text
         delay(150)
         matches = withContext(Dispatchers.Default) { if (searching) CodeEditorBuffer.find(text, query, !caseSensitive) else EditorMatches(emptyList(), false) }
     }
-    val colors = MaterialTheme.colorScheme
-    val styled = remember(highlight, colors) {
-        highlight?.let { (text, h) ->
-            AnnotatedString.Builder(text).apply {
-                for (span in h.spans) addStyle(SpanStyle(color = when (span.kind) {
-                    CodeToken.KEYWORD -> colors.primary
-                    CodeToken.STRING -> colors.tertiary
-                    CodeToken.COMMENT -> colors.onSurfaceVariant
-                    CodeToken.NUMBER -> colors.secondary
-                }), span.start, span.end)
-            }.toAnnotatedString()
+    fun changed() { onChange() }
+    fun command(action: EditorCommand) {
+        when (action) {
+            EditorCommand.UNDO -> if (enabled) { buffer.undo(); changed() }
+            EditorCommand.REDO -> if (enabled) { buffer.redo(); changed() }
+            EditorCommand.SAVE -> if (enabled) callbacks.save()
+            EditorCommand.FIND, EditorCommand.REPLACE -> searching = true
+            EditorCommand.GOTO -> lineDialog = true
+            EditorCommand.FILES -> callbacks.browse()
+            EditorCommand.NEXT_FILE -> callbacks.next(false)
+            EditorCommand.PREV_FILE -> callbacks.next(true)
+            EditorCommand.CLOSE_FILE -> callbacks.close()
+            else -> if (enabled) {
+                val result = when (action) {
+                    EditorCommand.INDENT -> EditorActions.indent(buffer, width, tabs)
+                    EditorCommand.UNINDENT -> EditorActions.indent(buffer, width, tabs, backwards = true)
+                    EditorCommand.COMMENT -> EditorActions.comment(buffer, path)
+                    EditorCommand.DUPLICATE -> EditorActions.duplicate(buffer)
+                    EditorCommand.DELETE_LINE -> EditorActions.deleteLines(buffer)
+                    EditorCommand.MOVE_UP -> EditorActions.moveLines(buffer, true)
+                    EditorCommand.MOVE_DOWN -> EditorActions.moveLines(buffer, false)
+                    else -> false
+                }
+                if (result) { note = null; changed() }
+            }
         }
-    }
-    fun changed() {
-        value = TextFieldValue(buffer.text, TextRange(buffer.state.selection.start, buffer.state.selection.end))
-        onChange()
-        focusRequest++
     }
     Column(modifier) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-            TextButton(enabled = enabled && buffer.canUndo, onClick = { buffer.undo(); changed() }) { Text("Отменить") }
-            TextButton(enabled = enabled && buffer.canRedo, onClick = { buffer.redo(); changed() }) { Text("Повторить") }
+            TextButton(enabled = enabled && buffer.canUndo, onClick = { command(EditorCommand.UNDO) }) { Text("↶") }
+            TextButton(enabled = enabled && buffer.canRedo, onClick = { command(EditorCommand.REDO) }) { Text("↷") }
             TextButton(onClick = { searching = !searching }) { Text("Поиск") }
             TextButton(onClick = { lineDialog = true }) { Text("Строка") }
-            TextButton(enabled = enabled, onClick = { buffer.replaceSelection("    "); changed() }) { Text("Отступ") }
-            TextButton(onClick = { changes = true }) { Text("Изменения") }
+            TextButton(onClick = { view = !view }) { Text("Вид / команды") }
+            TextButton(onClick = { changes = true }) { Text("Правки") }
+        }
+        if (view) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                FilterChip(wrap, { wrap = !wrap }, label = { Text("Перенос") })
+                FilterChip(symbols, { symbols = !symbols }, label = { Text("Клавиши") })
+                TextButton(enabled = fontSize > 10, onClick = { fontSize-- }) { Text("A−") }
+                Text("$fontSize", Modifier.padding(12.dp))
+                TextButton(enabled = fontSize < 32, onClick = { fontSize++ }) { Text("A+") }
+                TextButton(onClick = { width = when (width) { 2 -> 4; 4 -> 8; else -> 2 } }) { Text("Отступ: $width") }
+                FilterChip(tabs, { tabs = !tabs }, label = { Text("Tab") })
+                TextButton(onClick = { licenses = true }) { Text("Лицензии") }
+            }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                for ((action, label) in listOf(EditorCommand.COMMENT to "Комментарий", EditorCommand.DUPLICATE to "Дублировать", EditorCommand.DELETE_LINE to "Удалить строки", EditorCommand.MOVE_UP to "Выше", EditorCommand.MOVE_DOWN to "Ниже")) {
+                    TextButton(enabled = enabled, onClick = { command(action) }) { Text(label) }
+                }
+            }
+            Text("Ctrl+S — сохранить · Ctrl+F/H — поиск/замена · Ctrl+G — строка · Ctrl+/ — комментарий · Ctrl+D — дубль · Alt+↑/↓ — строки · Ctrl+Tab — вкладка · Ctrl+W — закрыть · Ctrl+P — файлы", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall)
+        }
+        if (symbols) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            TextButton(enabled = enabled, onClick = { command(EditorCommand.INDENT) }) { Text("Tab →") }
+            TextButton(enabled = enabled, onClick = { command(EditorCommand.UNINDENT) }) { Text("← Tab") }
+            for (pair in listOf("()", "[]", "{}", "\"\"", "''")) TextButton(enabled = enabled, onClick = {
+                EditorActions.surround(buffer, pair.take(1), pair.takeLast(1)); changed()
+            }) { Text(pair) }
+            for (symbol in listOf(";", ":", "=", "/", "_")) TextButton(enabled = enabled, onClick = { buffer.replaceSelection(symbol); changed() }) { Text(symbol) }
         }
         if (searching) {
             Row(Modifier.fillMaxWidth()) {
@@ -123,36 +144,28 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
                 Text("${matches.ranges.size}${if (matches.limited) "+" else ""}", Modifier.padding(12.dp))
             }
         }
-        Text("${CodeSyntax.language(path)} · ${buffer.line}:${buffer.column}${if (highlight?.second?.limited == true) " · подсветка сокращена" else ""}", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall)
+        Text("${CodeSyntax.language(path)} · ${position.first}:${position.second} · ${if (EditorActions.separator(buffer.text) == "\r\n") "CRLF" else "LF"}", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall)
         note?.let { Text(it, Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall) }
-        OutlinedTextField(
-            value, { next ->
-                if (buffer.edit(next.text, EditorSelection(next.selection.start, next.selection.end), typing = true)) {
-                    value = next
-                    onChange()
-                } else note = "Достигнут предел размера текста"
-            }, Modifier.weight(1f).fillMaxWidth().padding(8.dp).focusRequester(editorFocus),
-            textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-            readOnly = !enabled,
-            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
-            visualTransformation = VisualTransformation { source ->
-                TransformedText(styled?.takeIf { it.text == source.text } ?: source, OffsetMapping.Identity)
-            },
-        )
+        NativeCodeField(buffer, path, revision, enabled, wrap, fontSize, width, tabs, onChange, ::command,
+            onPosition = { line, column -> position = line to column }, onIssue = { note = it }, modifier = Modifier.weight(1f).fillMaxWidth())
     }
     if (lineDialog) {
         var line by remember { mutableStateOf("") }
         var invalid by remember { mutableStateOf(false) }
-        AlertDialog(
-            onDismissRequest = { lineDialog = false }, title = { Text("Перейти к строке") },
+        AlertDialog(onDismissRequest = { lineDialog = false }, title = { Text("Перейти к строке") },
             text = { OutlinedTextField(line, { line = it; invalid = false }, label = { Text("Номер строки") }, singleLine = true, isError = invalid) },
             confirmButton = { TextButton(onClick = {
                 if (line.toIntOrNull()?.let(buffer::goToLine) == true) { changed(); lineDialog = false } else invalid = true
-            }) { Text("Перейти") } },
-            dismissButton = { TextButton(onClick = { lineDialog = false }) { Text("Отмена") } },
-        )
+            }) { Text("Перейти") } }, dismissButton = { TextButton(onClick = { lineDialog = false }) { Text("Отмена") } })
     }
     if (changes) EditorChangesDialog(buffer.original, buffer.text) { changes = false }
+    if (licenses) {
+        var license by remember { mutableStateOf("") }
+        LaunchedEffect(Unit) { license = withContext(Dispatchers.IO) { context.assets.open("editor/SORA-LICENSE.txt").bufferedReader().use { it.readText() } } }
+        FullScreenDialog({ licenses = false }, "Sora Editor 0.24.7 · лицензия") {
+            SelectionContainer { Text(license, Modifier.verticalScroll(rememberScrollState()).padding(12.dp), style = MaterialTheme.typography.bodySmall) }
+        }
+    }
 }
 
 @Composable

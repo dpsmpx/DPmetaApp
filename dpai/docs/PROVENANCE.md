@@ -26,6 +26,7 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 | `androidx-core` (AndroidX Core: `FileProvider`) | 1.18.0 | Apache-2.0 | пульт DPmetaApp (`:app`) во время выполнения — «Поделиться» экспортом (`DPmetaApp:D-67`); та же версия прежде приходила транзитивно от `activity-compose` | Google Maven, `androidx.core` | 4 ноября 2026 |
 | `jgit` (Eclipse JGit; с ним JavaEWAH 1.1.13 — Apache-2.0, SLF4J API 1.7.30 — MIT) | 5.13.5.202508271544-r | EDL-1.0 (BSD-3-Clause) | пульт DPmetaApp (`:core:git` → приложение) во время выполнения — клоны репозиториев (`DPmetaApp:D-65`); ветка 5.13 — последняя для Java 8, на Android без недостающих API JDK 11+ | Maven Central, `org.eclipse.jgit` | 4 ноября 2026 |
 | `jsch` (JSch, форк mwiede) | 2.28.7 | BSD-3-Clause, ISC | модуль `jsch` → приложение Android во время выполнения | Maven Central, `com.github.mwiede` | 7 октября 2026 |
+| `sora` (Sora Editor и language-textmate) | 0.24.7 | LGPL-2.1-or-later; tm4e — EPL-2.0, Joni/JCodings — MIT, Gson — Apache-2.0, SnakeYAML Engine — Apache-2.0 | только Android: нативное поле и локальная подсветка (D-136); исходные грамматики проекта, без внешнего кода | Maven Central, `io.github.rosemoe`; исходники Rosemoe/sora-editor | 12 ноября 2026 |
 <!-- provenance: end -->
 
 Версии совпадают с теми, что закреплены в `DPpass:gradle/libs.versions.toml`
@@ -157,3 +158,16 @@ https://registry.npmjs.org/@anthropic-ai/claude-code/2.1.322 .
 Это закрепление пакетов верхнего уровня, не полный lock всех транзитивных
 зависимостей npm. Скрипты установки не отключены: Claude устанавливает
 нативный исполнитель через install.cjs. Проверка APK на телефоне требуется.
+
+## Поле редактора Sora
+
+12 ноября 2026: выбран стабильный 0.24.7 (Maven metadata, обновление
+17 октября 2026). Исходники изучены по sources.jar того же выпуска;
+лицензия LGPL-2.1-or-later, уведомление и текст лицензии включаются в APK.
+Нативное поле подключается как библиотека, исходники Sora не изменены.
+Грамматики/темы в android/src/main/assets/editor написаны в этом проекте.
+
+| Артефакт | SHA-256 |
+|---|---|
+| editor-0.24.7.aar | cdfdacdb3ac8605b190768d93f504935400c9aa37b773dc6f6c840311faf2b4c |
+| language-textmate-0.24.7.aar | eca50e81595cd4cf1f677cca12c5fa2203d6051eaf87dabc7e7489413dd098f1 |

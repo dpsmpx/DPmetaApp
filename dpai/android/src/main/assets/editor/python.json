@@ -1,0 +1,51 @@
+{
+  "name": "Python",
+  "scopeName": "source.python",
+  "patterns": [
+    {
+      "begin": "#",
+      "end": "$",
+      "name": "comment.line"
+    },
+    {
+      "begin": "\"\"\"",
+      "end": "\"\"\"",
+      "name": "string.quoted.triple"
+    },
+    {
+      "begin": "'''",
+      "end": "'''",
+      "name": "string.quoted.triple"
+    },
+    {
+      "begin": "\"",
+      "end": "\"|$",
+      "name": "string.quoted.double",
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape"
+        }
+      ]
+    },
+    {
+      "begin": "'",
+      "end": "'|$",
+      "name": "string.quoted.single",
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape"
+        }
+      ]
+    },
+    {
+      "match": "\\b(?:0[xX][\\da-fA-F]+|0[bB][01]+|\\d+(?:[\\._]\\d+)*(?:[eE][+-]?\\d+)?)[uUlLfF]*\\b",
+      "name": "constant.numeric"
+    },
+    {
+      "match": "\\b(?:and|as|assert|async|await|break|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|True|try|while|with|yield)\\b",
+      "name": "keyword.control.python"
+    }
+  ]
+}

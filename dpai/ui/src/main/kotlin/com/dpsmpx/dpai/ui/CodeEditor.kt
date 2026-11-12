@@ -32,7 +32,7 @@ class CodeEditorBuffer(val original: String, private val clock: Clock = Clock.SY
     }
 
     /** Только соседние короткие вводы в пределах 750 мс объединяются в шаг. */
-    fun edit(text: String, selection: EditorSelection, typing: Boolean = false): Boolean {
+    fun edit(text: String, selection: EditorSelection, typing: Boolean = false, coalesce: Boolean = false): Boolean {
         if (text.length > MAX_CHARS) return false
         val selected = EditorSelection(selection.start.coerceIn(0, text.length), selection.end.coerceIn(0, text.length))
         if (text == this.text) {
@@ -44,7 +44,7 @@ class CodeEditorBuffer(val original: String, private val clock: Clock = Clock.SY
         val sign = delta.compareTo(0)
         val adjacent = if (delta > 0) selected.start == state.selection.end + delta else selected.start in (state.selection.end + delta)..state.selection.end
         val small = typing && adjacent && kotlin.math.abs(delta) in 1..2 && state.selection.start == state.selection.end && selected.start == selected.end
-        val merge = small && direction == sign && lastEdit?.let { now - it in 0..750_000_000L } == true
+        val merge = coalesce && undo.isNotEmpty() || small && direction == sign && lastEdit?.let { now - it in 0..750_000_000L } == true
         if (!merge) {
             undo.addLast(state)
             historyChars += state.text.length
