@@ -148,7 +148,7 @@ object KotlinLsp {
     }
 
     /** Пакеты Alpine: JDK 25 для службы, gcompat для её glibc-библиотек, JDK 21 — для Gradle проекта (нужен компилятор). */
-    val PACKAGES: List<String> = listOf("openjdk25-jre-headless", "gcompat", "openjdk21-jdk", "curl", "ca-certificates", "tar")
+    val PACKAGES: List<String> = listOf("openjdk25-jre-headless", "gcompat", "openjdk21-jdk", "curl", "ca-certificates", "tar", "unzip")
 
     const val JAVA: String = "/usr/lib/jvm/java-25-openjdk/bin/java"
     const val GRADLE_JAVA_HOME: String = "/usr/lib/jvm/java-21-openjdk"

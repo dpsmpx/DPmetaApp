@@ -33,14 +33,16 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.lsp.Assist
-import com.dpsmpx.dpai.lsp.Clangd
 import com.dpsmpx.dpai.lsp.CodeAction
 import com.dpsmpx.dpai.lsp.CompletionItem
 import com.dpsmpx.dpai.lsp.LineIndex
 import com.dpsmpx.dpai.lsp.Location
-import com.dpsmpx.dpai.lsp.LspClient
+import com.dpsmpx.dpai.lsp.LanguageServers
+import com.dpsmpx.dpai.lsp.LanguageSession
 import com.dpsmpx.dpai.lsp.LspDiagnostic
 import com.dpsmpx.dpai.lsp.LspSeverity
+import com.dpsmpx.dpai.lsp.PythonServers
+import com.dpsmpx.dpai.ui.CodeServerSetup
 import com.dpsmpx.dpai.lsp.WorkspaceEdit
 import com.dpsmpx.dpai.ui.CodeEditorBuffer
 import com.dpsmpx.dpai.ui.EditorSelection
@@ -67,7 +69,8 @@ import kotlinx.coroutines.withContext
 @Composable
 internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: String, revision: Int, enabled: Boolean, tabSize: Int, tabs: Boolean, onChange: () -> Unit, onMarks: (List<Assist.Mark>) -> Unit, compact: Boolean = false,
     onOpen: ((String, Int) -> Unit)? = null) {
-    val language = Clangd.languageId(guestPath) ?: return
+    val language = LanguageServers.languageId(guestPath) ?: return
+    val title = LanguageServers.language(guestPath)?.title ?: return
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     val session = remember(guestPath) { CodeService.session(guestPath) }
@@ -80,6 +83,8 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
     var references by remember { mutableStateOf<List<Location>?>(null) }
     var renaming by remember { mutableStateOf<String?>(null) }
     var fixes by remember { mutableStateOf<Pair<Assist.Fixes, String>?>(null) }
+    var confirm by remember { mutableStateOf<CodeService.Install?>(null) }
+    var license by remember { mutableStateOf<CodeServerSetup.AndroidPlatform?>(null) }
     val state = session.state
     val diagnostics = session.diagnostics[session.uri].orEmpty()
 
@@ -92,7 +97,7 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
     LaunchedEffect(diagnostics) { onMarks(withContext(Dispatchers.Default) { Assist.marks(buffer.text, diagnostics) }) }
 
     /** Текст буфера — службе; затем [ask] с позицией курсора. Вне потока интерфейса. */
-    suspend fun <T> withClient(ask: (LspClient, String, Int) -> Outcome<T>): Outcome<T>? {
+    suspend fun <T> withClient(ask: (LanguageSession, String, Int) -> Outcome<T>): Outcome<T>? {
         val client = session.ready() ?: return null
         val text = buffer.text
         val cursor = buffer.state.selection.end.coerceIn(0, text.length)
@@ -130,6 +135,8 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
             val help = withClient { client, _, _ -> client.signatureHelp(session.uri, LineIndex(text).position(cursor)) }
             signature = Assist.signature((help as? Outcome.Success)?.value)
         }
+        // Службы без присылаемой диагностики (kotlin-lsp) спрашиваются после паузы в наборе.
+        if (session.ready()?.pulls == true) withContext(Dispatchers.IO) { CodeService.pull(session, text) }
     }
 
     fun apply(applied: Outcome<Assist.Applied>, done: String?) {
@@ -174,27 +181,59 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
         }
     }
 
+    /** Другая служба Python: остановить эту и запустить выбранную (выбор помнится). */
+    fun switchPython(kind: PythonServers.Kind) {
+        launch("…") {
+            withContext(Dispatchers.IO) {
+                CodeService.release(session)
+                CodeService.setPythonKind(context, kind)
+                CodeService.start(context, session, guestRoot)
+            }
+            note = null
+        }
+    }
+
+    /** Поставить службу после подтверждения и сразу запустить её; платформа Android — через лицензию. */
+    fun install(what: CodeService.Install) {
+        if (what == CodeService.Install.ANDROID_SDK) {
+            launch("Читаю репозиторий Android SDK…") {
+                when (val r = withContext(Dispatchers.IO) { CodeService.androidPlatform(context, session.compileSdk ?: 36) }) {
+                    is Outcome.Failure -> note = "Платформа не найдена: ${r.diagnostics.first().message}"
+                    is Outcome.Success -> { note = null; license = r.value }
+                }
+            }
+            return
+        }
+        launch("${what.title}: нужна сеть, это несколько минут…") {
+            when (val r = withContext(Dispatchers.IO) { CodeService.install(context, what) }) {
+                is Outcome.Failure -> note = "Не установлено: ${r.diagnostics.first().message}"
+                is Outcome.Success -> {
+                    note = null
+                    withContext(Dispatchers.IO) {
+                        CodeService.release(session)
+                        CodeService.start(context, session, guestRoot)
+                    }
+                }
+            }
+        }
+    }
+
     if (!compact) Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             when (state) {
                 CodeService.State.Off -> {
-                    Text("C++: семантика выключена", Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+                    Text("$title: семантика выключена", Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
                     TextButton(enabled = !busy, onClick = { launch("…") { withContext(Dispatchers.IO) { CodeService.start(context, session, guestRoot) }; note = null } }) { Text("Включить") }
                 }
-                is CodeService.State.Starting -> Text("C++: ${state.step}…", Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
-                CodeService.State.Missing -> {
-                    Text("clangd не установлен в Linux приложения", Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
-                    TextButton(enabled = !busy, onClick = {
-                        launch("Ставлю пакет ${CodeService.PACKAGE}: нужна сеть и около 400 МБ на диске, это несколько минут…") {
-                            when (val r = withContext(Dispatchers.IO) { CodeService.install(context) }) {
-                                is Outcome.Failure -> note = "Не установлен: ${r.diagnostics.first().message}"
-                                is Outcome.Success -> { note = null; withContext(Dispatchers.IO) { CodeService.start(context, session, guestRoot) } }
-                            }
-                        }
-                    }) { Text("Поставить clangd") }
+                is CodeService.State.Starting -> Text("$title: ${state.step}…", Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+                is CodeService.State.Missing -> {
+                    Text(state.message, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+                    for (action in state.actions) TextButton(enabled = !busy, onClick = { confirm = action }) { Text(action.title) }
+                    state.switchTo?.let { other -> TextButton(enabled = !busy, onClick = { switchPython(other) }) { Text("Взять: ${other.title}") } }
                 }
                 is CodeService.State.Failed -> {
-                    Text("C++: ${state.message}", Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Text("$title: ${state.message}", Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    for (action in state.actions) TextButton(enabled = !busy, onClick = { confirm = action }) { Text(action.title) }
                     TextButton(enabled = !busy, onClick = { launch("…") { withContext(Dispatchers.IO) { CodeService.start(context, session, guestRoot) }; note = null } }) { Text("Повторить") }
                 }
                 is CodeService.State.Ready -> {
@@ -245,12 +284,12 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                         }
                     }) { Text("Формат") }
                     TextButton(onClick = { kotlin.concurrent.thread(name = "dpai-code-service-release") { CodeService.release(session) } }) { Text("Выкл") }
+                    for (action in state.actions) TextButton(enabled = !busy, onClick = { confirm = action }) { Text(action.title) }
+                    state.switchTo?.let { other -> TextButton(enabled = !busy, onClick = { switchPython(other) }) { Text("Взять: ${other.title}") } }
                 }
             }
         }
-        if (state is CodeService.State.Ready && state.compileCommands == null) {
-            Text("Нет compile_commands.json: служба не знает флагов сборки и заголовков проекта — подсказки неполны (CMake: -DCMAKE_EXPORT_COMPILE_COMMANDS=ON)", Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall)
-        }
+        (state as? CodeService.State.Ready)?.note?.let { Text(it, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall) }
         note?.let { Text(it, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall) }
         signature?.let { s ->
             Text(buildAnnotatedString {
@@ -325,6 +364,35 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                 }
             } },
             confirmButton = { TextButton(onClick = { references = null }) { Text("Закрыть") } })
+    }
+    confirm?.let { what ->
+        AlertDialog(onDismissRequest = { confirm = null }, title = { Text(what.title) },
+            text = { Text(what.note, style = MaterialTheme.typography.bodySmall) },
+            confirmButton = { TextButton(onClick = { confirm = null; install(what) }) { Text("Поставить") } },
+            dismissButton = { TextButton(onClick = { confirm = null }) { Text("Отмена") } })
+    }
+    license?.let { platform ->
+        AlertDialog(onDismissRequest = { license = null }, title = { Text("Лицензия ${platform.path}") },
+            text = { Column {
+                Text("Платформа ставится, только если вы принимаете лицензию Google (${platform.licenseId}); архив ${platform.size / 1_000_000} МБ сверяется по SHA-1 манифеста.", style = MaterialTheme.typography.bodySmall)
+                Text(platform.license, Modifier.verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodySmall)
+            } },
+            confirmButton = { TextButton(onClick = {
+                license = null
+                launch("Ставлю ${platform.path}…") {
+                    when (val r = withContext(Dispatchers.IO) { CodeService.installAndroid(context, platform) }) {
+                        is Outcome.Failure -> note = "Не установлено: ${r.diagnostics.first().message}"
+                        is Outcome.Success -> {
+                            note = null
+                            withContext(Dispatchers.IO) {
+                                CodeService.release(session)
+                                CodeService.start(context, session, guestRoot)
+                            }
+                        }
+                    }
+                }
+            }) { Text("Принимаю, поставить") } },
+            dismissButton = { TextButton(onClick = { license = null }) { Text("Не принимаю") } })
     }
     renaming?.let { initial ->
         var name by remember(initial) { mutableStateOf(initial) }
