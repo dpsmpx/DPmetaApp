@@ -1045,7 +1045,7 @@ class Orchestrator(
         // Свежая сессия после прошлых (другой слот, перенос, контрольная точка — D-66): переписка и фоновые процессы.
         val fresh = workingSet && sessions.sessions.values.count { it.task == task } > 1
         val carried = if (fresh) listOfNotNull(transcriptSource(task), backgroundSource(task)) else emptyList()
-        val sources = config.sources(task) + listOfNotNull(environment(), handoff?.asSource(workingSet), toolOf[task]) + carried
+        val sources = config.sources(task) + listOfNotNull(environment(), handoff?.asSource(workingSet), toolOf[task], codeMapSource(task)) + carried
         val out = ContextAssembler.assemble(
             previous?.id ?: ids.next(IdKinds.CONTEXT), task, config.project, objective, handoff?.nextAction, sources, clock.now(), previous, policy,
         )
@@ -1534,6 +1534,30 @@ class Orchestrator(
             append("Итог хода — коротко: что сделано, что нет и почему.")
         }
         return ContextSource(ENVIRONMENT_SOURCE, SourceLevel.PROJECT, config.project, Sensitivity.INTERNAL, Origin.ORCHESTRATOR, text)
+    }
+
+    /**
+     * Карта кода (D-171): объявления и импорты области задачи из `git grep` её дерева
+     * (области нет — всё дерево), источник уровня кода — под давлением бюджета уходит
+     * первым и называется. Нет дерева, Git или совпадений — без карты; отказ Git —
+     * в проблемы, ход идёт без карты.
+     */
+    private fun codeMapSource(task: TaskId): ContextSource? {
+        val policy = efficiency.codeMap
+        val g = git ?: return null
+        if (!policy.enabled) return null
+        val path = treePath(task) ?: return null
+        val scope = tasks.tasks[task]?.scope.orEmpty().sorted().take(MAX_MAP_PATHS)
+        val done = when (val r = g.grep(path, com.dpsmpx.dpai.contexts.CodeMap.WORDS, scope, policy.maxGrepChars, policy.timeout)) {
+            is Outcome.Success -> r.value
+            is Outcome.Failure -> { problems += r.errors; return null }
+        }
+        val text = com.dpsmpx.dpai.contexts.CodeMap.render(done.stdout, done.truncated, policy.limits) ?: return null
+        val head = if (scope.isEmpty()) "Карта кода рабочего дерева" else "Карта кода области задачи (${scope.joinToString(", ")})"
+        return ContextSource(
+            CODE_MAP_SOURCE, SourceLevel.CODE, config.project, Sensitivity.INTERNAL, Origin.REPOSITORY,
+            "$head: файл — импорты; строка: объявление. Собрана по тексту, без компилятора — сверяй с файлами.\n$text",
+        )
     }
 
     /** Путь рабочего дерева задачи; дерева нет — `null`. */
@@ -2915,6 +2939,10 @@ class Orchestrator(
 
         /** Ключ источника «что среда делает сама» (D-40). */
         const val ENVIRONMENT_SOURCE = "orchestrator:environment"
+
+        /** Ключ источника карты кода (D-171). */
+        const val CODE_MAP_SOURCE = "code:map"
+        private const val MAX_MAP_PATHS = 50
 
         /** Переписка задачи и фоновые процессы — в свежей сессии после прошлых (D-66). */
         const val TRANSCRIPT_SOURCE = "orchestrator:transcript"

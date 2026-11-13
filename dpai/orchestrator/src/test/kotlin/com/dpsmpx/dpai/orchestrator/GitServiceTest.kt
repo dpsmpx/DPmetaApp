@@ -331,4 +331,21 @@ class GitServiceTest {
         assertEquals(listOf("feature.txt"), d.files.map { it.path })
         assertTrue("+сделано" in d.patch && "MAIN.md" !in d.patch, d.patch)
     }
+
+    /** Карта кода (D-171): `git grep` по словам — строки с путём и номером; не нашлось (код 1) — пусто, не отказ. */
+    @Test
+    fun grepFindsDeclarationsAndEmptyIsNotFailure() {
+        val repo = dir.resolve("grep").toFile().apply { mkdirs() }.path
+        fun sh(vararg a: String) = assertIs<Outcome.Success<com.dpsmpx.dpai.execution.process.Completed>>(host.run(com.dpsmpx.dpai.execution.process.ProcessSpec(listOf("git") + a), 1.minutes)).value.also { assertTrue(it.ok, it.toString()) }
+        sh("init", "-q", "-b", "main", repo)
+        java.io.File(repo, "src").mkdirs()
+        java.io.File(repo, "src/Модуль.kt").writeText("import a.B\n\nclass Greeter {\n    fun hi() = 1\n}\n")
+        java.io.File(repo, "notes.txt").writeText("class in prose\n")
+        sh("-C", repo, "add", ".")
+        val all = assertIs<Outcome.Success<com.dpsmpx.dpai.execution.process.Completed>>(git.grep(repo, com.dpsmpx.dpai.contexts.CodeMap.WORDS, listOf("src"), 65_536)).value
+        assertEquals(listOf("src/Модуль.kt:1:import a.B", "src/Модуль.kt:3:class Greeter {", "src/Модуль.kt:4:    fun hi() = 1"), all.stdout)
+        val none = assertIs<Outcome.Success<com.dpsmpx.dpai.execution.process.Completed>>(git.grep(repo, "(nothing_here_at_all)", emptyList(), 65_536)).value
+        assertEquals(emptyList(), none.stdout)
+        assertIs<Outcome.Failure>(git.grep(dir.resolve("нет").toString(), "(class)", emptyList(), 65_536), "не дерево Git — отказ")
+    }
 }

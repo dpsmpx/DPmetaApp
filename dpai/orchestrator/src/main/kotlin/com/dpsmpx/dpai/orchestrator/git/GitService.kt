@@ -40,6 +40,21 @@ class GitService(private val host: ProcessHost, private val commands: GitCommand
             }
         }
 
+    /**
+     * Строки `путь:строка:текст` по [pattern] в путях [paths] дерева (D-171); код 1 Git —
+     * «не нашлось», пустой список. [truncated] итога — вывод больше [maxChars].
+     */
+    fun grep(path: String, pattern: String, paths: List<String>, maxChars: Int, timeout: Duration = this.timeout): Outcome<Completed> =
+        commands.argv(GitOp.GREP, path, listOf(pattern) + paths, clock.now()).then { argv ->
+            host.run(ProcessSpec(argv), timeout, maxStdoutChars = maxChars).then { done ->
+                when (done.exitCode) {
+                    0 -> Outcome.success(done)
+                    1 -> Outcome.success(done.copy(stdout = emptyList()))
+                    else -> Outcome.failure(Diagnostic.error(DiagCode.GIT_COMMAND_FAILED, "git grep: код ${done.exitCode}: ${(done.stderr + done.stdout).lastOrNull { it.isNotBlank() }?.take(300) ?: "без вывода"}", path))
+                }
+            }
+        }
+
     fun status(path: String): Outcome<GitStatus> = status(path, Int.MAX_VALUE)
 
     /** Усечённый статус не доказывает отсутствие изменений/конфликтов (D-133). */
