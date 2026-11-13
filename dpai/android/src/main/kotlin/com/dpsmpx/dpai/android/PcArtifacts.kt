@@ -13,7 +13,9 @@ import java.io.IOException
  * Артефакты ПК-target на телефоне (`DPmetaApp:D-127`; D-162): файл дерева ПК
  * скачивается по SFTP в хранилище приложения (`pc-artifacts/<target>`), не больше
  * [MAX_BYTES], с проверкой места; сначала во временный файл, затем переименование.
- * На target хранятся [KEEP] последних файлов — прежние удаляются.
+ * На target хранятся [KEEP] последних файлов — прежние удаляются. Подписанные приложением
+ * копии — отдельно ([signedDir]): очистка их не трогает, и файл с ПК с тем же именем с ними
+ * не смешивается.
  */
 object PcArtifacts {
     const val MAX_BYTES: Long = 512L shl 20
@@ -22,6 +24,9 @@ object PcArtifacts {
 
     fun dir(context: Context, target: String): File =
         File(context.applicationContext.filesDir, "pc-artifacts/" + target.map { if (it.isLetterOrDigit() || it in "._-") it else '_' }.joinToString("").take(64))
+
+    /** Копии APK с ПК, подписанные ключом автора в приложении (D-127): живут, пока их не удалят. */
+    fun signedDir(context: Context, target: String): File = File(dir(context, target), "signed")
 
     /** Уже скачанный файл с именем [name], если он того же размера, что на ПК, и не старше его. */
     fun local(context: Context, target: String, name: String, size: Long, modified: Long): File? =

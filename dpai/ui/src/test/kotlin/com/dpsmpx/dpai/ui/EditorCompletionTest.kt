@@ -67,6 +67,22 @@ class EditorCompletionTest {
         assertEquals(6, small.sentChars)
     }
 
+    /** Курсор внутри ключа или пароля (находка проверки PR #188): половины по отдельности не опознаются — не отправлять. */
+    @Test
+    fun cursorInsideSecretIsNotSent() {
+        val key = "sk-ant-" + "api03-" + "B".repeat(40)
+        val text = "val a = 1\nval token = \"$key\"\nval b = 2\n"
+        val inside = text.indexOf(key) + 20
+        val r = EditorCompletion.request("src/A.kt", "kotlin", text, inside)
+        assertTrue(r.problem != null && r.user.isEmpty() && r.sentChars == 0, r.toString())
+        val pair = "db_password=" + "hunter" + "2secret"
+        val p = EditorCompletion.request("app.env", null, "x=1\n$pair\n", "x=1\n".length + "db_password=hun".length)
+        assertTrue(p.problem != null, "пароль пары разрезан курсором: ${p.user}")
+        val outside = EditorCompletion.request("src/A.kt", "kotlin", text, text.indexOf("val b = ") + "val b = ".length)
+        assertEquals(null, outside.problem)
+        assertTrue(key !in outside.user && "B".repeat(20) !in outside.user, "ключ вне курсора — вырезан целиком")
+    }
+
     @Test
     fun answerIsCleanedAndInserted() {
         assertEquals("return a + b", EditorCompletion.clean("<think>сложим</think>```kotlin\nreturn a + b\n```\nВот так.", "fun sum(a: Int, b: Int): Int {\n    ", "\n}"))

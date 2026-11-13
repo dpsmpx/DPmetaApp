@@ -15,8 +15,12 @@ import com.dpsmpx.dpai.ui.PcPreview
 import com.dpsmpx.dpai.ui.TargetEntry
 import kotlin.time.Duration.Companion.minutes
 
-/** Дерево файлов открыто на ПК: [target] и корень дерева [root] — путь на ПК (D-166). */
-internal data class PcPreviewPlace(val model: DemoModel, val target: TargetEntry, val root: String)
+/**
+ * Дерево файлов открыто на ПК: [target] и корень дерева [root] — путь на ПК (D-166).
+ * [guard] — можно ли сейчас писать в дерево (как у «Запуска»): Gradle пишет в `build/`,
+ * а дерево может быть занято ходом ИИ.
+ */
+internal data class PcPreviewPlace(val model: DemoModel, val target: TargetEntry, val root: String, val guard: () -> Outcome<Unit> = { Outcome.success(Unit) })
 
 /** Задаётся экраном файлов ПК: панель предпросмотра предлагает «Нарисовать на ПК». */
 internal val LocalPcPreview = staticCompositionLocalOf<PcPreviewPlace?> { null }
@@ -34,6 +38,7 @@ internal object PcPreviewRun {
     data class Result(val shots: List<Shot>, val log: String)
 
     fun run(place: PcPreviewPlace, tree: FileTree, path: String, compose: List<String>, layouts: List<String>, step: (String) -> Unit): Outcome<Result> {
+        place.guard().let { if (it is Outcome.Failure) return it }
         // Есть ли файл — по списку его каталога (список — один раз на каталог).
         val listed = HashMap<String, Set<String>>()
         val project = PcPreview.locate(path) { file ->
@@ -80,7 +85,8 @@ internal object PcPreviewRun {
         step("Забираю картинки…")
         return withSftp(place) { sftp ->
             val index = (sftp.read("${PcPreview.DIR}/${PcPreview.OUT}/${PcPreview.INDEX}", 1L shl 20) as? Outcome.Success)?.value?.toString(Charsets.UTF_8).orEmpty()
-            val rows = PcPreview.parseIndex(index)
+            // Строки индекса пишет код проекта на ПК — не больше, чем просили нарисовать.
+            val rows = PcPreview.parseIndex(index).take(PcPreview.MAX_ITEMS)
             if (rows.isEmpty()) {
                 return@withSftp Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "Gradle не нарисовал (код ${done.exitCode}). ${log.ifBlank { "Вывода нет." }}", project.module)
             }
@@ -90,7 +96,14 @@ internal object PcPreviewRun {
 
     private fun image(sftp: SftpTree, file: String): ImageBitmap? {
         val bytes = (sftp.read("${PcPreview.DIR}/${PcPreview.OUT}/$file", MAX_PNG) as? Outcome.Success)?.value ?: return null
-        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        // Размеры — до раскодирования: PNG в 16 МиБ может развернуться в гигабайты пикселей.
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / sample > MAX_SIDE || bounds.outHeight / sample > MAX_SIDE) sample *= 2
+        if (sample > MAX_SAMPLE) return null
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
     }
 
     /** Отдельное подключение SFTP на шаг: Gradle идёт минутами, держать канал всё это время незачем. */
@@ -103,4 +116,8 @@ internal object PcPreviewRun {
     private val TIMEOUT = 20.minutes
     private const val LOG_TAIL = 2_000
     private const val MAX_PNG = 16L shl 20
+
+    /** Сторона картинки в панели — не больше; крупнее — уменьшается при чтении, в 16 раз и больше — не показывается. */
+    private const val MAX_SIDE = 4096
+    private const val MAX_SAMPLE = 8
 }

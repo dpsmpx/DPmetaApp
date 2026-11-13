@@ -158,7 +158,9 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                 work("Подписываю") {
                     try {
                         val pair = withContext(Dispatchers.IO) { SigningKeys.key() } ?: return@work "ключа подписи нет"
-                        val out = File(r.source.parentFile, ApkSign.signedName(r.source.name))
+                        // Копия с ПК — в свою папку подписанных (не рядом со скачанными: их чистит очистка до трёх).
+                        val outDir = if (pc) PcArtifacts.signedDir(app, target.id.value).apply { mkdirs() } else r.source.parentFile
+                        val out = File(outDir, ApkSign.signedName(r.source.name))
                         // Подписывается копия, сведения которой видел человек, а не файл дерева.
                         when (val s = withContext(Dispatchers.IO) { ApkSign.sign(r.copy, out, pair.first, pair.second) }) {
                             is Outcome.Failure -> s.diagnostics.first().message
@@ -269,7 +271,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
         if (pc) {
             // Подписанные копии APK с ПК — в хранилище приложения (`pc-artifacts`, D-127): установить, сохранить, удалить.
             val signed = remember(version, found) {
-                PcArtifacts.dir(app, target.id.value).listFiles { f -> f.isFile && f.name.endsWith("-signed.apk") }.orEmpty().sortedByDescending { it.lastModified() }
+                PcArtifacts.signedDir(app, target.id.value).listFiles { f -> f.isFile && f.name.endsWith("-signed.apk") }.orEmpty().sortedByDescending { it.lastModified() }
             }
             if (signed.isNotEmpty()) {
                 Text("Подписанные копии на телефоне", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleSmall)
@@ -295,8 +297,8 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                             }) { Text("В Загрузки") }
                             TextButton(enabled = busy == null, onClick = {
                                 work("Удаляю копию") {
-                                    withContext(Dispatchers.IO) { runCatching { com.dpsmpx.dpai.storage.vfs.NioVfs(f.parentFile!!.toPath()).delete(f.name) } }
-                                    "Удалено: ${f.name}"
+                                    val r = withContext(Dispatchers.IO) { runCatching { com.dpsmpx.dpai.storage.vfs.NioVfs(f.parentFile!!.toPath()).delete(f.name) } }
+                                    r.exceptionOrNull()?.let { "Не удалено: ${f.name} — ${it.javaClass.simpleName}" } ?: "Удалено: ${f.name}"
                                 }
                             }) { Text("Удалить") }
                         }

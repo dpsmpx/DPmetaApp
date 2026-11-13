@@ -68,6 +68,18 @@ internal class AiCompletionState(val place: AiCompletionPlace, private val path:
     data class Offer(val text: String, val before: String, val cursor: Int)
 
     suspend fun request(context: Context, buffer: CodeEditorBuffer) {
+        // Занято с первого шага (T25): второе быстрое нажатие не отправит второй запрос и не сотрёт отмену первого.
+        if (busy) return
+        busy = true
+        try {
+            ask(context, buffer)
+        } finally {
+            busy = false
+            cancel = null
+        }
+    }
+
+    private suspend fun ask(context: Context, buffer: CodeEditorBuffer) {
         val text = buffer.text
         val selection = buffer.state.selection
         if (selection.start != selection.end) { note = "Снимите выделение: дополнение пишется в место курсора"; return }
@@ -87,9 +99,9 @@ internal class AiCompletionState(val place: AiCompletionPlace, private val path:
         // Сервер телефона не запущен — на его порту может слушать кто угодно (T18): не спрашивать.
         if (LocalModel.isOwn(app, profile) && !LocalModel.usable(profile)) { note = "Сервер llama.cpp на телефоне не запущен: вкладка Linux → «Запустить»"; return }
         val req = EditorCompletion.request(path, LanguageServers.languageId(path), text, selection.end)
+        req.problem?.let { note = it; return }
         val c = Cancel()
         cancel = c
-        busy = true
         offer = null
         note = "Спрашиваю «${profile.name}»: уходит ${req.sentChars} знаков файла…"
         try {
@@ -110,7 +122,6 @@ internal class AiCompletionState(val place: AiCompletionPlace, private val path:
                 }
             }
         } finally {
-            busy = false
             cancel = null
         }
     }
@@ -137,7 +148,10 @@ internal class AiCompletionState(val place: AiCompletionPlace, private val path:
 @Composable
 internal fun rememberAiCompletion(path: String): AiCompletionState? {
     val place = LocalAiCompletion.current ?: return null
-    return remember(place.project.project, path) { AiCompletionState(place, path) }
+    val state = remember(place.project.project, path) { AiCompletionState(place, path) }
+    // Вкладка закрыта или редактор ушёл — запрос отменяется, лимит модели не тратится зря.
+    androidx.compose.runtime.DisposableEffect(state) { onDispose { state.stop() } }
+    return state
 }
 
 /** Полоса ИИ-дополнения под панелью редактора: ход, предложение, «Вставить» и «Отклонить». */

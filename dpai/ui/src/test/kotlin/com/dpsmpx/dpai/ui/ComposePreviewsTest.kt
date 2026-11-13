@@ -74,7 +74,10 @@ class ComposePreviewsTest {
     @Test
     fun adbPreviewCommandCarriesValuesAsArguments() {
         val argv = (Adb.preview(40001, "com.example.app.debug", "com.example.app.ui.MainKt.GreetingPreview") as Outcome.Success).value
-        assertEquals(listOf("40001", "com.example.app.debug", "com.example.app.ui.MainKt.GreetingPreview"), argv.takeLast(3))
+        // Имя — в одинарных кавычках для оболочки телефона: `$` вложенного класса не раскрывается (проверка PR #188).
+        assertEquals(listOf("40001", "com.example.app.debug", "'com.example.app.ui.MainKt.GreetingPreview'"), argv.takeLast(3))
+        val nested = (Adb.preview(40001, "com.example.app.debug", "com.example.app.ui.Screens\$Inner.Preview") as Outcome.Success).value
+        assertEquals("'com.example.app.ui.Screens\$Inner.Preview'", nested.last())
         assertTrue(Adb.PREVIEW_ACTIVITY in argv[2] && "am start -W" in argv[2])
         assertIs<Outcome.Failure>(Adb.preview(40001, "com.example.app", "x; reboot"))
         assertIs<Outcome.Failure>(Adb.preview(40001, "app; reboot", "a.B.c"))

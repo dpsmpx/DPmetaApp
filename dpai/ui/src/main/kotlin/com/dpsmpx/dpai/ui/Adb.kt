@@ -132,7 +132,9 @@ object Adb {
             script(
                 "adb connect \"$HOST:\$1\" >/dev/null 2>&1 || exit 1\n" +
                     "exec adb -s \"$HOST:\$1\" shell am start -W -n \"\$2/$PREVIEW_ACTIVITY\" --es composable \"\$3\"",
-                port.toString(), pkg, composable,
+                // adb shell склеивает аргументы в строку для оболочки телефона: `$` вложенного класса
+                // (`Экран$Вложенный.Preview`) она бы раскрыла — имя едет в одинарных кавычках (их в имени нет).
+                port.toString(), pkg, "'$composable'",
             ),
         )
     }

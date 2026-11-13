@@ -38,7 +38,6 @@ import com.dpsmpx.dpai.ui.Adb
 import com.dpsmpx.dpai.ui.ComposePreviews
 import com.dpsmpx.dpai.ui.PcPreview
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.seconds
@@ -62,6 +61,8 @@ internal fun UiPreviewDialog(tree: FileTree, treeKey: String, path: String, text
     var note by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var shot by remember { mutableStateOf<ImageBitmap?>(null) }
+    // Предпросмотр открыт на телефоне: снимок экрана — по кнопке (DPmetaApp:D-132), а не сам.
+    var opened by remember { mutableStateOf<String?>(null) }
     // Дерево на ПК: рисует Robolectric в JVM проекта на самом ПК (D-169).
     val pcPlace = LocalPcPreview.current
     var pcShots by remember { mutableStateOf<List<PcPreviewRun.Shot>>(emptyList()) }
@@ -89,10 +90,8 @@ internal fun UiPreviewDialog(tree: FileTree, treeKey: String, path: String, text
                 }
                 if (started is Outcome.Failure) { note = started.diagnostics.first().message; return@launch }
                 AppLogs.info(app, "предпросмотр", "${pkg.trim()}: ${p.composable}")
-                // Дать предпросмотру отрисоваться, затем снять экран — приложение с предпросмотром сейчас поверх.
-                delay(SETTLE_MS)
-                shot = withContext(Dispatchers.IO) { screencap(app, port) }
-                note = if (shot != null) "${p.name} — открыт на телефоне; снимок ниже. Вернуться — «Назад» или список приложений." else "${p.name} открыт на телефоне; снимок экрана не получился."
+                opened = p.name
+                note = "${p.name} — открыт на телефоне. Вернуться — «Назад» или список приложений; «Снимок экрана» — картинка сюда."
             } finally {
                 busy = false
             }
@@ -168,6 +167,20 @@ internal fun UiPreviewDialog(tree: FileTree, treeKey: String, path: String, text
                 }
                 for ((name, why) in found.skipped) Text("$name — $why", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 note?.let { Text(it, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodyMedium) }
+                opened?.let { name ->
+                    TextButton(enabled = !busy, onClick = {
+                        val port = AdbBridge.state.value.connectPort ?: run { note = "adb не подключён"; return@TextButton }
+                        busy = true
+                        scope.launch {
+                            try {
+                                shot = withContext(Dispatchers.IO) { screencap(app, port) }
+                                note = if (shot != null) "$name — снимок ниже" else "Снимок экрана не получился"
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    }) { Text("Снимок экрана") }
+                }
                 shot?.let { Image(it, "Снимок предпросмотра", Modifier.fillMaxWidth().heightIn(max = 480.dp).padding(top = 8.dp)) }
             }
         },
@@ -214,4 +227,3 @@ private fun screencap(app: android.content.Context, port: Int): ImageBitmap? {
     }
 }
 
-private const val SETTLE_MS = 2_000L
