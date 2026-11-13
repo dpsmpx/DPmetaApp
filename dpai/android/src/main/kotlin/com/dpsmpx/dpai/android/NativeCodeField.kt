@@ -42,7 +42,9 @@ internal enum class EditorCommand { UNDO, REDO, SAVE, FIND, REPLACE, GOTO, COMME
  * службы C++, D-105); `null` — открыть некуда. [goToLine] — перейти к строке, когда текст уже загружен.
  */
 internal data class EditorCallbacks(val save: () -> Unit = {}, val close: () -> Unit = {}, val browse: () -> Unit = {}, val next: (Boolean) -> Unit = {}, val busy: Boolean = false, val canSave: Boolean = false, val canRun: Boolean = false, val preview: () -> Unit = {}, val exit: () -> Unit = {}, val run: () -> Unit = {}, val configureRun: () -> Unit = {},
-    val open: ((String, Int) -> Unit)? = null, val goToLine: (Int) -> Boolean = { false })
+    val open: ((String, Int) -> Unit)? = null, val goToLine: (Int) -> Boolean = { false },
+    /** «Отладка» файла (D-159): `null` — файл не отлаживается (не C, C++, Python или нет Linux-пути). */
+    val debug: (() -> Unit)? = null)
 
 /** Тонкий адаптер: рендеринг/IME у Sora, снимки и история — CodeEditorBuffer (D-136). */
 internal class StudioCodeField(context: Context) : SoraEditor(context) {
@@ -84,6 +86,29 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
         invalidateDiagnostics()
     }
 
+    /**
+     * Отладка (D-159): точки останова — фоном номера строки, строка остановки — фоном
+     * строки; стили — при отрисовке строки, поверх подсветки языка, без правки её
+     * результата. Строки — с единицы; правка текста точки не сдвигает.
+     */
+    private var debugLines: Set<Int> = emptySet()
+    private var debugAt: Int? = null
+    var gutter: ((Int) -> Unit)? = null
+    private val debugStyles = io.github.rosemoe.sora.lang.styling.ExtraStylesProvider { line, out ->
+        if (line + 1 in debugLines) out += io.github.rosemoe.sora.lang.styling.line.LineGutterBackground(line, io.github.rosemoe.sora.lang.styling.color.ConstColor(BREAKPOINT))
+        if (line + 1 == debugAt) out += io.github.rosemoe.sora.lang.styling.line.LineBackground(line, io.github.rosemoe.sora.lang.styling.color.ConstColor(STOPPED))
+    }
+
+    fun debug(lines: Set<Int>, at: Int?) {
+        if (lines == debugLines && at == debugAt) return
+        val moved = at != null && at != debugAt
+        debugLines = lines
+        debugAt = at
+        invalidate()
+        // Строка остановки — в видимой части: отладчик ведёт по коду, а не только подсвечивает.
+        if (moved && at <= lineCount) postInLifecycle { jumpToLine(at - 1) }
+    }
+
     init {
         typefaceText = Typeface.MONOSPACE
         isLineNumberEnabled = true
@@ -95,6 +120,15 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
         props.clipboardTextLengthLimit = 256 * 1024
         getComponent(EditorAutoCompletion::class.java).isEnabled = false
         registerDiagnosticProvider(markProvider)
+        registerExtraStylesProvider(debugStyles)
+        // Касание номера строки — точка останова (D-159), если файл можно отлаживать.
+        subscribeEvent(io.github.rosemoe.sora.event.ClickEvent::class.java) { event, _ ->
+            val toggle = gutter ?: return@subscribeEvent
+            if (event.motionRegion == io.github.rosemoe.sora.event.EditorMotionEvent.REGION_LINE_NUMBER) {
+                toggle(event.line + 1)
+                event.intercept()
+            }
+        }
         subscribeEvent(ScrollEvent::class.java) { event, _ -> if (!applying) viewport(event.endX, event.endY) }
         subscribeEvent(ContentChangeEvent::class.java) { _, _ ->
             if (!applying) {
@@ -229,12 +263,19 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
         outAttrs.imeOptions = outAttrs.imeOptions or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
         return connection
     }
-    fun dispose() { model = null; changed = {}; command = {}; release() }
+    fun dispose() { model = null; changed = {}; command = {}; gutter = null; release() }
+
+    private companion object {
+        /** Точка останова — красный фон номера; строка остановки — жёлтый полупрозрачный фон: текст читается в обеих темах. */
+        const val BREAKPOINT = 0xCCD32F2F.toInt()
+        const val STOPPED = 0x55F9A825
+    }
 }
 
 @Composable
 internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: Int, enabled: Boolean, wrap: Boolean, size: Int, width: Int, tabs: Boolean, marks: List<com.dpsmpx.dpai.lsp.Assist.Mark>, highlighted: Boolean, onActivate: (() -> Unit)?, handlesBack: Boolean, editingMode: Boolean,
-    onChange: () -> Unit, onCommand: (EditorCommand) -> Unit, onPosition: (Int, Int) -> Unit, onIssue: (String) -> Unit, onZoom: (Int) -> Unit, modifier: Modifier) {
+    onChange: () -> Unit, onCommand: (EditorCommand) -> Unit, onPosition: (Int, Int) -> Unit, onIssue: (String) -> Unit, onZoom: (Int) -> Unit, modifier: Modifier,
+    debugLines: Set<Int> = emptySet(), debugAt: Int? = null, onGutter: ((Int) -> Unit)? = null) {
     val context = LocalContext.current
     val activity = androidx.activity.compose.LocalActivity.current
     val dark = isSystemInDarkTheme()
@@ -277,6 +318,8 @@ internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: I
                 activity?.window?.let { androidx.core.view.WindowCompat.getInsetsController(it, editor).show(androidx.core.view.WindowInsetsCompat.Type.ime()) }
             }
             editor.mark(marks)
+            editor.gutter = onGutter
+            editor.debug(debugLines, debugAt)
         })
     }
 }

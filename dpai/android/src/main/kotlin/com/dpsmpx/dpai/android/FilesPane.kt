@@ -616,10 +616,38 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
         if (command.isBlank()) { configureOnly = false; configure = true }
         else requestLeave { runSaved() }
     }
+    /**
+     * Отладка файла (D-159): те же условия, что у ▶ — файл сохранён и не изменён снаружи,
+     * Linux установлен, правок в папке нет; цель — `DebugTargets.forFile`.
+     */
+    fun debugSaved() {
+        if (saving) return
+        scope.launch {
+            val file = guestPath
+            val root = guestRoot
+            if (LongJobs.get(context).busy(*LongJobs.GUEST.toTypedArray())) { issue("Дождитесь завершения операции Linux перед отладкой"); return@launch }
+            if (readOnly || file == null || root == null) { issue("Для отладки нужна доступная для записи папка Linux"); return@launch }
+            val dirty = Drafts.fileDrafts().any { (_, d) -> d.guestPath?.let { it == root || it.startsWith(root.trimEnd('/') + "/") } == true }
+            if (dirty) { issue("Сначала сохраните или отмените правки файлов этой папки"); return@launch }
+            val target = withContext(Dispatchers.IO) {
+                val guard = runGuard()
+                when {
+                    guard is Outcome.Failure -> guard
+                    !LinuxSetup.available(context) || LinuxSetup.environment(context).installed() == null -> Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, "Сначала установите Linux в приложении")
+                    else -> com.dpsmpx.dpai.ui.DebugTargets.forFile(root, file)
+                }
+            }
+            when (target) {
+                is Outcome.Failure -> issue(target.diagnostics.first().message)
+                is Outcome.Success -> Debugger.start(context, target.value, editorRootKey, root)
+            }
+        }
+    }
     val callbacks = EditorCallbacks(save = { scope.launch { save() } }, close = close, browse = exit, next = onNext, busy = saving,
         canSave = !readOnly && recovery.ready && draft?.editor?.dirty == true, canRun = !readOnly && guestPath != null && text != null && !loading,
         preview = { if (!saving) { editing = false; keyboard?.hide() } }, exit = exit, run = { run() }, configureRun = { configureOnly = true; configure = true },
-        open = onOpen, goToLine = { line -> shown?.goToLine(line)?.also { if (it) revision++ } == true })
+        open = onOpen, goToLine = { line -> shown?.goToLine(line)?.also { if (it) revision++ } == true },
+        debug = if (!readOnly && guestPath != null && guestRoot != null && com.dpsmpx.dpai.ui.DebugTargets.engineOf(guestPath) != null) ({ requestLeave { debugSaved() } }) else null)
     SideEffect { onActions(callbacks) }
     LaunchedEffect(recovery.ready) { if (recovery.ready && draft == null) draft = Drafts.file(draftKey) }
     DisposableEffect(draftKey) { onDispose { Drafts.flushNow() } }

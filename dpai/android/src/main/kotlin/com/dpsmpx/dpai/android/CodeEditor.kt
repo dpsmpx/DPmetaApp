@@ -113,6 +113,7 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
             TextButton(onClick = { lineDialog = true }) { Text("Строка") }
             TextButton(onClick = { view = !view }) { Text("Вид / команды") }
             TextButton(onClick = { changes = true }) { Text("Правки") }
+            callbacks.debug?.let { d -> TextButton(enabled = !callbacks.busy, onClick = d) { Text("Отладка") } }
         }
         if (view && !zen) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
@@ -163,8 +164,16 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
         if (!zen) Text("${CodeSyntax.language(path)} · ${position.first}:${position.second} · ${if (EditorActions.separator(buffer.text) == "\r\n") "CRLF" else "LF"}", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall)
         if (!zen) note?.let { Text(it, Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall) }
         if (guestPath != null && guestRoot != null) CodeAssist(buffer, guestPath, guestRoot, revision, enabled, width, tabs, onChange = { changed() }, onMarks = { marks = it }, compact = zen, onOpen = callbacks.open)
+        // Отладка (D-159): точки — касанием номера строки у файлов C, C++, Python в Linux; строка остановки — фоном.
+        val debuggable = guestPath != null && com.dpsmpx.dpai.ui.DebugTargets.engineOf(guestPath) != null
+        val breakpoints by Debugger.breakpoints.collectAsState()
+        val debugState by Debugger.state.collectAsState()
+        val debugLines = if (debuggable) breakpoints.lines(guestPath) else emptySet()
+        val debugAt = if (debuggable && debugState.view.status is com.dpsmpx.dpai.lsp.dap.DebugStatus.Stopped) debugState.view.location?.takeIf { it.path == guestPath }?.line else null
         NativeCodeField(buffer, path, revision, enabled, wrap, fontSize, width, tabs, marks, syntax, onActivate, presentation, editing, onChange, ::command,
-            onPosition = { line, column -> position = line to column }, onIssue = { note = it; if (zen) android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show() }, onZoom = { fontSize = it }, modifier = Modifier.weight(1f).fillMaxWidth())
+            onPosition = { line, column -> position = line to column }, onIssue = { note = it; if (zen) android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show() }, onZoom = { fontSize = it }, modifier = Modifier.weight(1f).fillMaxWidth(),
+            debugLines = debugLines, debugAt = debugAt, onGutter = if (debuggable) ({ line -> Debugger.toggle(guestPath, line) }) else null)
+        if (!zen) DebugPanel()
     }
     if (lineDialog) {
         var line by remember { mutableStateOf("") }
