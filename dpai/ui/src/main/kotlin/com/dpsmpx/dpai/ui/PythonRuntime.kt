@@ -15,6 +15,13 @@ object PythonRuntime {
         "DPAI_PY=python3\nif test -d \"\$DPAI_VENV\"; then\n" +
         "test -x \"\$DPAI_VENV/bin/python\" || { printf 'DPAI_PYTHON_VENV: broken interpreter\\n'; exit 126; }\nDPAI_PY=\"\$DPAI_VENV/bin/python\"\nfi"
     val defaultCommand: String = requirePython + "\n" + selection + "\nexec \"\$DPAI_PY\" \"\$DPAI_FILE\""
+
+    /**
+     * Адаптер debugpy для отладки (D-159): тот же интерпретатор, что у запуска — окружение
+     * проекта, если оно есть, иначе `python3`; программа идёт тем же интерпретатором.
+     */
+    fun debugAdapterCommand(root: String, file: String): List<String> =
+        ProjectRuntime.args(root, file, requirePython + "\n" + selection + "\nexec \"\$DPAI_PY\" -m debugpy.adapter")
     private val prepare = requirePython + "\n" + ProjectRuntime.context + """
 
         DPAI_VENV="${'$'}DPAI_PROJECT_HOME/python"
