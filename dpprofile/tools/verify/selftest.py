@@ -448,6 +448,9 @@ TESTS = [
     ("история: факт удалён", t_history_delete, "check_history", ("--strict",), None, "удалён"),
     ("история: решение исчезло", t_history_decision_removed, "check_history", ("--strict",), None, "исчезло"),
     ("история: без git строго", t_history_strict_no_git, "check_history", ("--strict",), None, "не репозиторий git"),
+    # Отмеченное `stable:` без истории git: обычный прогон — пометка, полный — ошибка с причиной.
+    ("этап: условие без истории строго", t_history_strict_no_git, "check_stages", ("--strict",), None,
+     "условие не проверить: stable:.*не репозиторий git"),
     ("клоны: нет клонов", t_refs_no_clones, "check_refs", (),
      {"DPPROFILE_SOURCES": "build/empty-sources"}, "нет клона"),
 ]
@@ -512,6 +515,23 @@ def main(argv):
                 failures.append(f"{name}: check_history не поймал как надо\n{out.strip()[:600]}")
             elif verbose:
                 print(f"  ✓ {name} → check_history")
+        # Неглубокий клон: граница истории выглядит правкой OUTLINE — причина названа, а не «условие ложно».
+        total += 1
+        origin = os.path.join(tmp, "shallow-origin")
+        copy_repo(origin)
+        git_repo(origin)
+        append(origin, dm.TODO, "")
+        git_commit(origin, "вторая")
+        shallow = os.path.join(tmp, "shallow")
+        git(tmp, "clone", "-q", "--depth", "1", "file://" + origin, shallow)
+        code, out = run(shallow, "check_stages", "--strict")
+        if code == 0 or "неглубокий клон" not in out or "условие ложно" in out:
+            failures.append(f"неглубокий клон: check_stages не назвал причину\n{out.strip()[:600]}")
+        elif verbose:
+            print("  ✓ неглубокий клон → check_stages")
+        code, out = run(shallow, "check_stages")
+        if code != 0 or "условие не проверено" not in out:
+            failures.append(f"неглубокий клон: обычный прогон — не пометка\n{out.strip()[:600]}")
         # S-00 — только коммиты истории DPprofile: опора есть, коммит внешнего репозитория — нет.
         total += 1
         root, onto = subtree_repo(tmp, "subtree-self")

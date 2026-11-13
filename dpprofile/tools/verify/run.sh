@@ -47,7 +47,11 @@ step "ссылки выводов"           "$PY" "$V/check_insights.py"
 step "хронология"               "$PY" "$V/check_timeline.py"
 step "внутренние ссылки"        "$PY" "$V/check_links.py"
 step "запрещённые формулировки" "$PY" "$V/check_forbidden.py"
-step "этапы и критерии"         "$PY" "$V/check_stages.py"
+if [ "$MODE" = full ]; then
+  step "этапы и критерии"       "$PY" "$V/check_stages.py" --strict
+else
+  step "этапы и критерии"       "$PY" "$V/check_stages.py"
+fi
 step "согласие документов"      "$PY" "$V/check_consistency.py"
 step "шлюз книги"               "$PY" "$V/check_book_gate.py"
 step "блок состояния README"    "$PY" "$V/readme_status.py"

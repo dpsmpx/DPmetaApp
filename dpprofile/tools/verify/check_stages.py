@@ -10,9 +10,12 @@
   * [x] при ложном условии — ошибка; у этапа «в работе» истинное условие
     без [x] — ошибка; у не начатого этапа отметок нет;
   * «выполнен» — только когда отмечены все критерии; этап «в работе» с
-    отмеченными всеми критериями — ошибка (отметить выполненным).
+    отмеченными всеми критериями — ошибка (отметить выполненным);
+  * условие, которое не проверить без полной истории git (копия без git,
+    неглубокий клон — `stable:`), у отмеченного критерия — пометка с
+    причиной; с --strict (полный прогон) — ошибка с той же причиной.
 
-    python3 tools/verify/check_stages.py
+    python3 tools/verify/check_stages.py [--strict]
 
 Код возврата: 0 — чисто; 1 — нарушения.
 """
@@ -21,7 +24,7 @@ import sys
 import docmodel as dm
 
 
-def check(root=None):
+def check(root=None, strict=False):
     r = dm.Report("этапы и критерии")
     stages, errors = dm.load_stages(root)
     r.extend(errors)
@@ -68,10 +71,17 @@ def check(root=None):
             if not gate:
                 r.err(where, "у критерия нет машинного условия <!-- gate: … -->")
                 continue
+            ctx.unknown = []
             ok, gate_errors = dm.eval_gate(gate, ctx)
             for e in gate_errors:
                 r.err(where, e)
-            if checked and not ok:
+            if checked and not ok and ctx.unknown:
+                why = "; ".join(ctx.unknown)
+                if strict:
+                    r.err(where, f"условие не проверить: {why}")
+                else:
+                    r.note(f"{where}: условие не проверено — {why}")
+            elif checked and not ok:
                 r.err(where, f"отмечен [x], но условие ложно: {gate}")
             if s["state"] == "в работе" and ok and not checked:
                 r.err(where, f"условие выполнено — отметить [x] в этом же коммите: {gate}")
@@ -87,4 +97,4 @@ def check(root=None):
 
 
 if __name__ == "__main__":
-    sys.exit(check())
+    sys.exit(check(strict="--strict" in sys.argv[1:]))
