@@ -101,11 +101,124 @@ object DebugTargets {
     }
 
     /**
-     * Команда как argv: слова через пробелы, кавычки `'…'` и `"…"`, `\` — экранирование.
+     * Программа страницы «Запуск» на ПК-target (`DPmetaApp:D-129`; D-164): адаптер DAP
+     * работает на самом ПК. `python… файл.py` (на Windows и `py -3 …`) — debugpy того же
+     * интерпретатора; иначе на POSIX — `gdb -i=dap`; на Windows — отказ: отладчик программ
+     * MSVC протокол DAP не говорит. [root] и [cwd] — пути ПК ([pcPath]).
+     */
+    fun forPcCommand(root: String, cwd: String, command: String, windows: Boolean): Outcome<Target> {
+        val dir = pcPath(cwd)
+        if (pcPath(root) == null || dir == null) return Outcome.failure(DiagCode.VALUE_INVALID, "нужна абсолютная папка запуска на ПК", cwd)
+        val argv = when (val r = argv(command, escapes = !windows)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        val script = argv.indexOfFirst { it.lowercase().endsWith(".py") || it.lowercase().endsWith(".pyw") }
+        val interpreter = if (script >= 1) argv.subList(0, script) else emptyList()
+        val launcher = interpreter.firstOrNull()?.let { name(it, windows) }
+        val python = launcher != null && (PYTHON.matches(launcher) || (windows && launcher == "py")) && interpreterFlags(interpreter.drop(1))
+        if (python) {
+            val program = pcAbsolute(dir, argv[script].replace('\\', '/'))
+            return Outcome.success(Target(Engine.DEBUGPY, null, interpreter + listOf("-m", "debugpy.adapter"), program, argv.drop(script + 1), dir, program))
+        }
+        if (windows) {
+            return Outcome.failure(DiagCode.UNSUPPORTED, "на Windows-ПК отлаживается только Python (debugpy): отладчик программ MSVC протокол DAP не поддерживает")
+        }
+        val program = if ('/' in argv.first()) absolute(dir, argv.first()) else argv.first()
+        return Outcome.success(Target(Engine.GDB, null, GDB_ADAPTER, program, argv.drop(1), dir, null))
+    }
+
+    /**
+     * Путь папки или файла на ПК: POSIX — `/…`; Windows — `C:/…` (SFTP показывает `/C:/…`,
+     * обратные косые — к прямым). Иное, управляющие знаки и слишком длинное — `null`.
+     */
+    fun pcPath(path: String): String? {
+        val p = path.replace('\\', '/').let { if (SFTP_DRIVE.containsMatchIn(it)) it.drop(1) else it }
+        return when {
+            p.length > 1024 || p.any { it.code < 32 } -> null
+            DRIVE.containsMatchIn(p) -> if (p.length > 3) p.trimEnd('/') else p
+            p.startsWith('/') -> if (p.length > 1) p.trimEnd('/') else p
+            else -> null
+        }
+    }
+
+    /** Тот же файл ПК: косые и регистр буквы диска не в счёт. */
+    fun samePcPath(a: String, b: String): Boolean {
+        val x = pcPath(a) ?: return a == b
+        val y = pcPath(b) ?: return false
+        return if (DRIVE.containsMatchIn(x) && DRIVE.containsMatchIn(y)) x.equals(y, ignoreCase = true) else x == y
+    }
+
+    /** Проверка отладчика на ПК одной командой без оболочки; ответ разбирает [pcReady]. */
+    fun pcCheck(target: Target): List<String> = when (target.engine) {
+        Engine.GDB -> listOf(target.adapter.first(), "--batch", "-ex", "python print('$GDB_MARK ' + gdb.VERSION)")
+        Engine.DEBUGPY -> target.adapter.dropLast(2) + listOf("-c", "import debugpy; print('$DEBUGPY_MARK ' + debugpy.__version__)")
+        Engine.JDWP -> throw IllegalArgumentException("APK отлаживается на телефоне, не на ПК")
+    }
+
+    /**
+     * Готов ли отладчик ПК по выводу [pcCheck]: версия — или что поставить, словами.
+     * gdb — 14 или новее и с Python (без них нет режима DAP).
+     */
+    fun pcReady(target: Target, output: List<String>): Outcome<String> {
+        when (target.engine) {
+            Engine.GDB -> {
+                val version = output.firstNotNullOfOrNull { it.trim().takeIf { l -> l.startsWith("$GDB_MARK ") }?.removePrefix("$GDB_MARK ")?.trim() }
+                    ?: return Outcome.failure(DiagCode.UNSUPPORTED, "на ПК нет gdb с Python: поставьте gdb 14 или новее из пакетов системы (например, «sudo apt install gdb»)")
+                val major = version.substringBefore('.').filter { it.isDigit() }.toIntOrNull() ?: 0
+                return if (major >= 14) {
+                    Outcome.success("gdb $version")
+                } else {
+                    Outcome.failure(DiagCode.UNSUPPORTED, "на ПК gdb $version: режим отладки DAP есть с gdb 14 — обновите gdb")
+                }
+            }
+            Engine.DEBUGPY -> {
+                val version = output.firstNotNullOfOrNull { it.trim().takeIf { l -> l.startsWith("$DEBUGPY_MARK ") }?.removePrefix("$DEBUGPY_MARK ")?.trim() }
+                val python = target.adapter.dropLast(2).joinToString(" ")
+                return version?.let { Outcome.success("debugpy $it") }
+                    ?: Outcome.failure(DiagCode.UNSUPPORTED, "на ПК у «$python» нет debugpy: поставьте его командой «$python -m pip install debugpy» в окружение программы")
+            }
+            Engine.JDWP -> return Outcome.failure(DiagCode.UNSUPPORTED, "APK отлаживается на телефоне, не на ПК")
+        }
+    }
+
+    /** Флаги интерпретатора перед файлом: `-X utf8` и `-W …` — со значением; `-m` и `-c` — уже не файл программы. */
+    private fun interpreterFlags(flags: List<String>): Boolean {
+        var i = 0
+        while (i < flags.size) {
+            val f = flags[i]
+            if (!f.startsWith("-") || f == "-m" || f == "-c") return false
+            i += if (f == "-X" || f == "-W") 2 else 1
+        }
+        return i == flags.size
+    }
+
+    private const val GDB_MARK = "DPAI-GDB"
+    private const val DEBUGPY_MARK = "DPAI-DEBUGPY"
+    private val DRIVE = Regex("^[A-Za-z]:/")
+    private val SFTP_DRIVE = Regex("^/[A-Za-z]:/")
+
+    private fun name(program: String, windows: Boolean): String {
+        val base = program.replace('\\', '/').substringAfterLast('/')
+        return if (windows) base.lowercase().removeSuffix(".exe") else base
+    }
+
+    private fun pcAbsolute(cwd: String, path: String): String = when {
+        DRIVE.containsMatchIn(path) -> path
+        DRIVE.containsMatchIn(cwd) -> {
+            val drive = cwd.take(2)
+            if (path.startsWith('/')) drive + path else drive + absolute(cwd.drop(2), path)
+        }
+        else -> absolute(cwd, path)
+    }
+
+    /**
+     * Команда как argv: слова через пробелы, кавычки `'…'` и `"…"`, `\` — экранирование
+     * (без [escapes] — обычный знак: на Windows это разделитель пути).
      * Операторы и подстановки оболочки (`;`, `&`, `|`, `<`, `>`, `$`, `` ` ``, скобки) —
      * отказ словами: под отладчиком идёт одна программа, а не сценарий оболочки.
      */
-    fun argv(command: String): Outcome<List<String>> {
+    fun argv(command: String, escapes: Boolean = true): Outcome<List<String>> {
         if (command.isBlank() || command.length > MAX_COMMAND || command.any { it.code < 32 && it != '\t' }) {
             return Outcome.failure(DiagCode.VALUE_INVALID, "команда пуста, слишком длинная или с управляющими знаками")
         }
@@ -120,12 +233,12 @@ object DebugTargets {
                 quote == '\'' -> if (c == '\'') quote = null else word.append(c)
                 quote == '"' -> when {
                     c == '"' -> quote = null
-                    c == '\\' && i + 1 < command.length && command[i + 1] in "\"\\" -> { word.append(command[i + 1]); i++ }
+                    escapes && c == '\\' && i + 1 < command.length && command[i + 1] in "\"\\" -> { word.append(command[i + 1]); i++ }
                     c == '$' || c == '`' -> return shell(c)
                     else -> word.append(c)
                 }
                 c == '\'' || c == '"' -> { quote = c; inWord = true }
-                c == '\\' && i + 1 < command.length -> { word.append(command[i + 1]); inWord = true; i++ }
+                escapes && c == '\\' && i + 1 < command.length -> { word.append(command[i + 1]); inWord = true; i++ }
                 c == ' ' || c == '\t' -> if (inWord) { out += word.toString(); word.clear(); inWord = false }
                 c in SHELL -> return shell(c)
                 else -> { word.append(c); inWord = true }

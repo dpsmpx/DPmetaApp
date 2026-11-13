@@ -12,4 +12,6 @@ dependencies {
     // api: EcdsaSignerIdentity — это com.jcraft.jsch.Identity.
     api(libs.jsch)
     testImplementation(project(":testkit"))
+    // Живой тест: адаптер DAP по SSH (D-164) — клиент отладки из lsp.
+    testImplementation(project(":lsp"))
 }

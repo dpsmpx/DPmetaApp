@@ -9,6 +9,9 @@ import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpai.execution.process.ProcessSpec
 import com.dpsmpx.dpai.execution.process.StreamProcess
 import com.dpsmpx.dpai.execution.process.run
+import com.dpsmpx.dpai.execution.target.TargetPlatform
+import com.dpsmpx.dpai.jsch.JschProcessHost
+import com.dpsmpx.dpai.jsch.JschStreamHost
 import com.dpsmpx.dpai.lsp.dap.DebugLaunch
 import com.dpsmpx.dpai.lsp.dap.DebugLaunches
 import com.dpsmpx.dpai.lsp.dap.DebugSession
@@ -23,6 +26,7 @@ import com.dpsmpx.dpai.ui.BuildProblems
 import com.dpsmpx.dpai.ui.DebugTargets
 import com.dpsmpx.dpai.ui.JvmSourceIndex
 import com.dpsmpx.dpai.ui.PythonRuntime
+import com.dpsmpx.dpai.ui.TargetEntry
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -81,6 +85,10 @@ object Debugger {
     @Volatile
     private var socket: Socket? = null
 
+    /** ПК-target текущего сеанса (D-164); `null` — Linux приложения или телефон. */
+    @Volatile
+    private var pc: TargetEntry? = null
+
     /** Последний отлаживаемый пакет по корню дерева: «Отладка» над файлом .kt/.java начинает его снова. */
     private val apks = java.util.concurrent.ConcurrentHashMap<String, String>()
 
@@ -98,14 +106,17 @@ object Debugger {
         marks.update { it.toggle(path, line) }
         val s = session ?: return
         val lines = marks.value.lines(path).sorted()
-        work { s.setBreakpoints(path, lines) }
+        work { s.setBreakpoints(adapterPath(path), lines) }
     }
+
+    /** Путь файла для адаптера: на ПК — `C:/…` с прямыми косыми (D-164); иначе как есть. */
+    private fun adapterPath(path: String): String = if (pc != null) DebugTargets.pcPath(path) ?: path else path
 
     fun clearBreakpoints() {
         val files = marks.value.byFile.keys
         marks.value = Breakpoints()
         val s = session ?: return
-        work { files.forEach { s.setBreakpoints(it, emptyList()) } }
+        work { files.forEach { s.setBreakpoints(adapterPath(it), emptyList()) } }
     }
 
     /** Строка остановки в файле [path] гостя (с единицы) или `null`. */
@@ -116,17 +127,35 @@ object Debugger {
     }
 
     /**
+     * Пути отладчика ПК — к виду путей вкладок (D-164): вкладка — корень дерева как
+     * его записал автор (`C:\проект`) плюс `/` и путь от корня; отладчик Windows
+     * отвечает `c:\проект\…`. Файлы вне дерева — `C:/…` с прямыми косыми.
+     */
+    private fun pcView(v: DebugView): DebugView {
+        val raw = flow.value.treeRoot?.trimEnd('/', '\\')
+        val root = raw?.let { DebugTargets.pcPath(it) }
+        val windows = pc?.platform == TargetPlatform.WINDOWS
+        fun editor(path: String?): String? {
+            val n = path?.let { DebugTargets.pcPath(it) } ?: return path
+            return if (raw != null && root != null && n.startsWith("$root/", ignoreCase = windows)) raw + "/" + n.substring(root.length + 1) else n
+        }
+        return v.copy(frames = v.frames.map { it.copy(path = editor(it.path)) }, breakpoints = v.breakpoints.mapKeys { (k, _) -> editor(k) ?: k })
+    }
+
+    /**
      * Начать отладку [target] (из редактора или со страницы «Запуск»): прежний сеанс
      * останавливается. [rootKey] и [treeRoot] — корень редактора для перехода к строке.
      */
-    fun start(context: Context, target: DebugTargets.Target, rootKey: String?, treeRoot: String?) {
+    fun start(context: Context, target: DebugTargets.Target, rootKey: String?, treeRoot: String?, onPc: TargetEntry? = null) {
         val app = context.applicationContext
         stopNow()
+        pc = onPc
         flow.value = State(Phase.CHECKING, target, rootKey, treeRoot, note = "Проверяю ${target.engine.title}…")
         work { run(app, target) }
     }
 
     private fun run(app: Context, target: DebugTargets.Target) {
+        pc?.let { return runPc(app, target, it) }
         if (!LinuxSetup.available(app) || LinuxSetup.environment(app).installed() == null) return end("Сначала установите Linux в приложении")
         if (target.engine == DebugTargets.Engine.JDWP) return runApk(app, target)
         val host = LinuxSetup.guestHost(app) ?: return end("Linux в приложении недоступен")
@@ -166,6 +195,42 @@ object Debugger {
             is Outcome.Failure -> {
                 stopNow()
                 return end("Отладка не началась: ${r.diagnostics.first().message}")
+            }
+            is Outcome.Success -> flow.update { it.copy(phase = Phase.ACTIVE, note = null) }
+        }
+    }
+
+    /**
+     * Отладка программы на ПК-target (`DPmetaApp:D-129`; D-164): отладчик проверяется
+     * одной командой (нет или стар — что поставить, словами; сам не ставится), адаптер
+     * DAP — процесс на ПК по SSH без PTY тем же входом, что команды и терминал. В
+     * адаптер уходят только точки файлов этого дерева.
+     */
+    private fun runPc(app: Context, target: DebugTargets.Target, entry: TargetEntry) {
+        val controller = Controller.get(app.filesDir)
+        val endpoint = entry.toTarget(controller.knownHostsFile).ssh ?: return end("У ПК-target нет адреса SSH")
+        val identities = listOf(KeystoreKey.identity())
+        when (val c = JschProcessHost(endpoint, entry.platform, identities = identities).run(ProcessSpec(DebugTargets.pcCheck(target)), 60.seconds, maxStdoutChars = 8_192)) {
+            is Outcome.Failure -> return end("ПК недоступен: ${c.diagnostics.first().message}")
+            is Outcome.Success -> when (val ready = DebugTargets.pcReady(target, c.value.stdout + c.value.stderr)) {
+                is Outcome.Failure -> return end(ready.diagnostics.first().message)
+                is Outcome.Success -> flow.update { it.copy(phase = Phase.STARTING, note = "Запускаю ${ready.value} на ${entry.label}…") }
+            }
+        }
+        val p = when (val r = JschStreamHost(endpoint, entry.platform, identities = identities).open(ProcessSpec(target.adapter))) {
+            is Outcome.Failure -> return end("Отладчик на ПК не запустился: ${r.diagnostics.first().message}")
+            is Outcome.Success -> r.value
+        }
+        process = p
+        val s = DebugSession(p.stdout, p.stdin, onView = { v -> onView(pcView(v)) }, onClosed = { p.stop(2.seconds) })
+        session = s
+        val root = flow.value.treeRoot?.let { DebugTargets.pcPath(it) }
+        val points = marks.value.forLaunch().mapKeys { (file, _) -> DebugTargets.pcPath(file) ?: "" }
+            .filterKeys { file -> root != null && file.startsWith("$root/", ignoreCase = entry.platform == TargetPlatform.WINDOWS) }
+        when (val r = s.start(launch(target), points, 2.minutes)) {
+            is Outcome.Failure -> {
+                stopNow()
+                return end("Отладка на ПК не началась: ${r.diagnostics.first().message}")
             }
             is Outcome.Success -> flow.update { it.copy(phase = Phase.ACTIVE, note = null) }
         }

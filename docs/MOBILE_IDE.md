@@ -84,9 +84,10 @@ DP_AI_Orcestrator:D-160). Отладка своих Kotlin/Java APK — свой
 JDWP через adb к самому телефону: точки в `.kt`/`.java`, стек,
 переменные, шаги, исключения (D-126, DP_AI_Orcestrator:D-161).
 Артефакты ПК-target — по SFTP только для чтения: «На телефон», затем
-установка, запуск и logcat (D-127, DP_AI_Orcestrator:D-162). Осталось
-этапа 5: отладка на ПК-target. Запуск на Windows-target — PowerShell по SSH
-с PTY (D-128, DP_AI_Orcestrator:D-163).
+установка, запуск и logcat (D-127, DP_AI_Orcestrator:D-162). Запуск на
+Windows-target — PowerShell по SSH с PTY (D-128, DP_AI_Orcestrator:D-163).
+Отладка на ПК-target — адаптер DAP на самом ПК по SSH без PTY: Linux-ПК —
+gdb и debugpy, Windows-ПК — debugpy (D-129, DP_AI_Orcestrator:D-164).
 
 В dev.31 расширены локальная грамматика и отступы Python. Это поле
 редактора; установка окружений, запуск/отладка и семантическая служба

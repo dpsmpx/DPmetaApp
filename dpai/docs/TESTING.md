@@ -171,6 +171,14 @@ Linux-target в облачной сессии (8 октября 2026) — Ubuntu
 `dpai.test.ssh*`; кириллица в аргументах на такой локали —
 `PROCESS_ARGUMENT_UNENCODABLE`, а не `?` (`docs/EXECUTION_MODEL.md`, §5).
 
+Отладка по SSH (D-164) — `JschStreamHostTest` 13 ноября 2026 на
+`openssh-server` 9.6 в контейнере (`127.0.0.1:2222`, вход ключом ECDSA,
+отдельный known_hosts) с `-Ddpai.test.ssh=root@127.0.0.1:2222:posix`,
+`.identity`, `.knownHosts`, `-Ddpai.test.gdb=/usr/bin/gdb` (15.1) и
+`-Ddpai.test.debugpy=<python с debugpy 1.8.22>`: байты кадра с CRLF и все
+256 значений байта — без изменений, остановка закрытием stdin — код 0,
+сеансы gdb и debugpy — точка, переменная, выход с кодом 3.
+
 Termux-target — Realme C21Y по USB (D-33): в Termux `openssh`, `sshd`
 слушает 8022, ключ `dpai_test` — в `~/.ssh/authorized_keys`; с ПК —
 `adb forward tcp:8022 tcp:8022`, затем вход на `127.0.0.1:8022`, ключ

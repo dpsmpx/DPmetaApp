@@ -176,8 +176,9 @@ internal fun WorkspaceRunPanel(model: DemoModel, view: ProjectWorkspaceView, loc
                 }
             }) { Text(if (awaiting) "Жду сборку…" else if (buildFirst) "▶ Собрать и запустить" else "▶ Запустить") }
             if (awaiting) TextButton(onClick = { awaiting = false; buildId = null; note = "Ожидание снято: сборка идёт дальше, программа сама не откроется" }) { Text("Не запускать") }
-            // Отладка программы проекта (D-159): Linux приложения, одна программа с аргументами; собирается заранее (-g).
-            TextButton(enabled = editable && location != null && view.ready && target?.inApp == true && !run.blocked, onClick = {
+            // Отладка программы проекта: одна программа с аргументами, собранная заранее (-g). Linux приложения — D-159;
+            // ПК — адаптер на самом ПК по SSH (D-164).
+            TextButton(enabled = editable && location != null && view.ready && target != null && !run.blocked, onClick = {
                 val loc = location ?: return@TextButton
                 val profile = when (val p = RunProfile.form(command, dir, buildFirst)) {
                     is Outcome.Failure -> { note = p.errors.first().message; return@TextButton }
@@ -185,17 +186,29 @@ internal fun WorkspaceRunPanel(model: DemoModel, view: ProjectWorkspaceView, loc
                 }
                 scope.launch {
                     guard(loc)?.let { note = "Отладка не начата: $it"; return@launch }
-                    when (val t = com.dpsmpx.dpai.ui.DebugTargets.forCommand(loc.path, profile.workDir(loc.path), profile.command)) {
+                    val pc = target?.takeIf { !it.inApp }
+                    val made = if (pc == null) {
+                        com.dpsmpx.dpai.ui.DebugTargets.forCommand(loc.path, profile.workDir(loc.path), profile.command)
+                    } else {
+                        com.dpsmpx.dpai.ui.DebugTargets.forPcCommand(loc.path, profile.workDir(loc.path), profile.command, windows)
+                    }
+                    when (val t = made) {
                         is Outcome.Failure -> note = "Отладка не начата: " + t.diagnostics.first().message
                         is Outcome.Success -> {
-                            Debugger.start(context, t.value, loc.key, loc.path)
+                            Debugger.start(context, t.value, loc.key, loc.path, onPc = pc)
                             note = "Отладка — панель ниже; точки — касанием номера строки в «Файлах»"
                         }
                     }
                 }
             }) { Text("Отладка") }
         }
-        if (target != null && !target.inApp) Text("Отладка — пока только в Linux приложения; программу на ПК отлаживайте отладчиком ПК.", style = MaterialTheme.typography.bodySmall)
+        if (target != null && !target.inApp) {
+            Text(
+                if (windows) "Отладка на ПК: только Python — нужен debugpy в интерпретаторе команды (py -m pip install debugpy)."
+                else "Отладка на ПК: C и C++ — gdb 14 или новее с Python, программа собрана с -g; Python — debugpy в интерпретаторе команды.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         run.active?.takeIf { awaiting }?.let { a ->
             Text("Сборка: шаг ${run.step ?: "?"} из ${a.profile.steps.size}", style = MaterialTheme.typography.bodyMedium)
         }

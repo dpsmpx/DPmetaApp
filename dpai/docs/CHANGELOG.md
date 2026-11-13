@@ -3,6 +3,14 @@
 Вехи проекта: этапы, форматы, публичные контракты. Подробности — в git
 и PR; что решено — `docs/direction/DECISIONS.md`.
 
+## 13 ноября 2026 — отладка на ПК-target (D-164)
+
+- `jsch.JschStreamHost` — процесс-собеседник на ПК по SSH без PTY;
+  модуль `jsch` в тестах зависит от `lsp`.
+- `ui.DebugTargets.forPcCommand`, `pcPath`, `pcCheck`/`pcReady`: gdb 14+ и
+  debugpy на Linux-ПК, debugpy на Windows-ПК; «Отладка» на странице
+  «Запуск» у дерева на ПК.
+
 ## 13 ноября 2026 — запуск на Windows-target (D-163)
 
 - «Запуск» у дерева на Windows-ПК: PowerShell `-EncodedCommand` по SSH с

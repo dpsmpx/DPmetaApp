@@ -67,4 +67,59 @@ class DebugTargetsTest {
         }
         assertEquals(listOf("a b", "c"), ok(DebugTargets.argv("a\\ b c")))
     }
+
+    /** Цели на ПК-target (`DPmetaApp:D-129`; D-164): адаптер на самом ПК, пути ПК. */
+    @Test
+    fun pcTargetsPosixAndWindows() {
+        fun ok(r: Outcome<DebugTargets.Target>) = assertIs<Outcome.Success<DebugTargets.Target>>(r, r.toString()).value
+        // Linux-ПК: программа сборки — gdb в режиме DAP, относительный путь — от папки запуска.
+        val gdb = ok(DebugTargets.forPcCommand("/home/u/proj", "/home/u/proj/build", "./app --size 3 'a b'", windows = false))
+        assertEquals(DebugTargets.Engine.GDB, gdb.engine)
+        assertEquals(DebugTargets.GDB_ADAPTER, gdb.adapter)
+        assertEquals("/home/u/proj/build/app", gdb.program)
+        assertEquals(listOf("--size", "3", "a b"), gdb.args)
+        assertNull(gdb.build, "на ПК программа — та, что собрал профиль")
+        // Python — тот же интерпретатор, что в команде, с его флагами.
+        val py = ok(DebugTargets.forPcCommand("/home/u/proj", "/home/u/proj", ".venv/bin/python3 -X utf8 lib/run.py --fast", windows = false))
+        assertEquals(DebugTargets.Engine.DEBUGPY, py.engine)
+        assertEquals(listOf(".venv/bin/python3", "-X", "utf8", "-m", "debugpy.adapter"), py.adapter)
+        assertEquals("/home/u/proj/lib/run.py", py.program)
+        assertEquals(listOf("--fast"), py.args)
+        // Windows: `py -3`, обратные косые — часть пути, путь SFTP /C:/… — к C:/….
+        val win = ok(DebugTargets.forPcCommand("/C:/Users/u/proj", "C:\\Users\\u\\proj", "py -3 src\\main.py 7", windows = true))
+        assertEquals(listOf("py", "-3", "-m", "debugpy.adapter"), win.adapter)
+        assertEquals("C:/Users/u/proj/src/main.py", win.program)
+        assertEquals("C:/Users/u/proj", win.cwd)
+        assertEquals("D:/x/y.py", ok(DebugTargets.forPcCommand("C:/p", "C:/p", "python.exe D:/x/y.py", windows = true)).program)
+        assertEquals("C:/abs/y.py", ok(DebugTargets.forPcCommand("C:/p", "C:/p", "python /abs/y.py", windows = true)).program)
+        // Windows и не Python — отказ словами; модуль (-m) и код (-c) — не файл программы.
+        val msvc = DebugTargets.forPcCommand("C:/p", "C:/p", "build\\app.exe", windows = true)
+        assertTrue(msvc is Outcome.Failure && msvc.diagnostics.single().code == DiagCode.UNSUPPORTED && "Python" in msvc.diagnostics.single().message)
+        assertEquals(DebugTargets.Engine.GDB, ok(DebugTargets.forPcCommand("/p", "/p", "python3 -m pkg.main x.py", windows = false)).engine)
+        assertTrue(DebugTargets.forPcCommand("relative", "/p", "./app", windows = false) is Outcome.Failure)
+        assertTrue(DebugTargets.forPcCommand("/p", "/p", "./app | tee log", windows = false) is Outcome.Failure)
+    }
+
+    @Test
+    fun pcPathsAndDebuggerCheck() {
+        assertEquals("C:/Users/u", DebugTargets.pcPath("/C:/Users/u/"))
+        assertEquals("C:/", DebugTargets.pcPath("C:\\"))
+        assertEquals("/", DebugTargets.pcPath("/"))
+        assertNull(DebugTargets.pcPath("proj"))
+        assertNull(DebugTargets.pcPath("/a\nb"))
+        assertTrue(DebugTargets.samePcPath("c:\\Users\\u\\main.py", "C:/Users/u/main.py"))
+        assertTrue(!DebugTargets.samePcPath("/home/U/a.py", "/home/u/a.py"), "на POSIX регистр важен")
+        val gdb = DebugTargets.Target(DebugTargets.Engine.GDB, null, DebugTargets.GDB_ADAPTER, "/p/app", emptyList(), "/p", null)
+        assertEquals(listOf("gdb", "--batch", "-ex", "python print('DPAI-GDB ' + gdb.VERSION)"), DebugTargets.pcCheck(gdb))
+        assertEquals(Outcome.success("gdb 15.1"), DebugTargets.pcReady(gdb, listOf("DPAI-GDB 15.1")))
+        val old = DebugTargets.pcReady(gdb, listOf("DPAI-GDB 12.1"))
+        assertTrue(old is Outcome.Failure && "14" in old.diagnostics.single().message)
+        val none = DebugTargets.pcReady(gdb, listOf("Python scripting is not supported in this copy of GDB."))
+        assertTrue(none is Outcome.Failure && "gdb с Python" in none.diagnostics.single().message)
+        val py = DebugTargets.Target(DebugTargets.Engine.DEBUGPY, null, listOf("py", "-3", "-m", "debugpy.adapter"), "C:/p/m.py", emptyList(), "C:/p", null)
+        assertEquals(listOf("py", "-3", "-c", "import debugpy; print('DPAI-DEBUGPY ' + debugpy.__version__)"), DebugTargets.pcCheck(py))
+        assertEquals(Outcome.success("debugpy 1.8.22"), DebugTargets.pcReady(py, listOf("", "DPAI-DEBUGPY 1.8.22")))
+        val missing = DebugTargets.pcReady(py, listOf("ModuleNotFoundError: No module named 'debugpy'"))
+        assertTrue(missing is Outcome.Failure && "py -3 -m pip install debugpy" in missing.diagnostics.single().message)
+    }
 }
