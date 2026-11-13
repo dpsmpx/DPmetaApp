@@ -166,7 +166,13 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
         object : FileTree {
             override fun list(dir: String) = model.workspaceAccess(view.project, location, false) { inner.list(dir) }
             override fun read(path: String, maxBytes: Long) = model.workspaceAccess(view.project, location, false) { inner.read(path, maxBytes) }
-            override fun write(path: String, bytes: ByteArray) = model.workspaceAccess(view.project, location, true) { inner.write(path, bytes) }
+            override fun write(path: String, bytes: ByteArray) = model.workspaceAccess(view.project, location, true) { inner.write(path, bytes) }.also { r ->
+                // Запись на ПК — действие вне приложения (D-07): строка журнала — путь и размер, без содержимого.
+                if (remote != null && target != null) {
+                    val what = if (r is Outcome.Success) "записан" else "не записан (${(r as Outcome.Failure).diagnostics.first().code})"
+                    AppLogs.info(context, "файлы ПК", "${target.label}: $what ${location.path}/$path, ${bytes.size} байт")
+                }
+            }
             override fun delete(path: String) = Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "удаление из рабочего экрана пока недоступно")
         }
     }

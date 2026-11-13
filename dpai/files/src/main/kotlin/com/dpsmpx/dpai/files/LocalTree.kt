@@ -7,6 +7,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.BasicFileAttributes
 
 /**
@@ -93,9 +94,14 @@ class LocalTree(private val root: Path, private val hidden: (String) -> Boolean 
         if (Files.isDirectory(p, LinkOption.NOFOLLOW_LINKS)) return Outcome.failure(DiagCode.VALUE_INVALID, "на этом месте каталог", path)
         val parent = FileNames.parent(path)
         val tmp = FileNames.join(parent, FileNames.TMP_PREFIX + FileNames.name(path))
+        val tmpPath = p.resolveSibling(FileNames.TMP_PREFIX + FileNames.name(path))
         return try {
             if (parent.isNotEmpty()) vfs.mkdirs(parent)
-            vfs.write(tmp, bytes)
+            // На месте временного файла может стоять ссылка из репозитория (или остаток прошлой
+            // записи): убирается сама запись каталога, не цель ссылки, а файл создаётся заново
+            // без перехода по ссылкам (CREATE_NEW) — запись не уходит за корень дерева.
+            Files.deleteIfExists(tmpPath)
+            Files.newOutputStream(tmpPath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use { it.write(bytes) }
             vfs.rename(tmp, path)
             val a = Files.readAttributes(p, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
             Outcome.success(FileMeta(a.size(), a.lastModifiedTime().toMillis()))
