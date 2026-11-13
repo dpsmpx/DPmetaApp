@@ -3,6 +3,16 @@
 Вехи проекта: этапы, форматы, публичные контракты. Подробности — в git
 и PR; что решено — `docs/direction/DECISIONS.md`.
 
+## 13 ноября 2026 — редактор → ИИ и переход у предела по слову человека (D-165)
+
+- `ui.EditorAiContext` — контекст места из редактора (выдержка через
+  Redactor, замечания, символ, импорты, использования), формат
+  `dpai.editor-ai` v1; `LspClient.symbols` и `Assist.enclosing`.
+- Переход у предела к другому исполнителю — только по настройке
+  `control.executor-switch` (событие `CONTROL_EXECUTOR_SWITCH_SET`, снимок
+  `dpai.control-state` v2); без неё — причина ожидания с исполнителями и
+  команда человека `task.executor`.
+
 ## 13 ноября 2026 — отладка на ПК-target (D-164)
 
 - `jsch.JschStreamHost` — процесс-собеседник на ПК по SSH без PTY;
