@@ -51,7 +51,11 @@ object StorageMap {
             GuestStorage.legacyMoves(root, home)
         val r = GuestStorage.migrate(root, moves)
         GuestStorage.ensure(root, home)
-        if (LinuxSetup.environment(app).installed() != null) LinuxSetup.environment(app).writeProfile()
+        if (LinuxSetup.environment(app).installed() != null) {
+            LinuxSetup.environment(app).writeProfile()
+            // Помощник входа Git из GH_TOKEN (D-158) — и в уже установленной среде; чужой /etc/gitconfig не трогается.
+            LinuxSetup.environment(app).writeGitConfig()
+        }
         when (r) {
             is Outcome.Success -> if (r.value.moved.isNotEmpty() || r.value.skipped.isNotEmpty()) {
                 AppLogs.info(app, "хранилище", "перенос: ${r.value.moved.size}, ссылок ${r.value.linked.size}, пропущено ${r.value.skipped.size}" +

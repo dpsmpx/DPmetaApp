@@ -104,6 +104,9 @@ private const val SESSION_SCREEN = -1
 /** Номер экрана «Настроек AI» в переходах (D-112): не вкладка. */
 private const val SETTINGS_SCREEN = -2
 
+/** Как часто окно «AI» пересчитывает проверку приложения (DPmetaApp:D-123). */
+private const val HEALTH_EVERY_MS = 60_000L
+
 /** Период шага контроллера: каждый шаг — вызовы агентов по SSH. */
 private const val LIVE_STEP_MS = 3000L
 
@@ -154,6 +157,29 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     // Только пока окно видно: свёрнутое приложение не шагает демо и не копит снимки (ревью 8 октября 2026, A-31);
     // контроллер в это время шагает в службе.
     val visible = rememberVisible()
+    // Проверка приложения (DPmetaApp:D-123): безопасное — само, число проблем — для полосы; раз в минуту, пока окно видно.
+    // Мастер настройки — сам при первом открытии, пока настройка не закончена и не нажато «Позже».
+    var healthCount by remember { mutableIntStateOf(0) }
+    var wizard by remember { mutableStateOf<com.dpsmpx.dpai.ui.HealthFacts?>(null) }
+    var wizardChecked by remember { mutableStateOf(false) }
+    LaunchedEffect(model, visible) {
+        while (visible) {
+            val facts = withContext(Dispatchers.IO) {
+                runCatching {
+                    HealthAuto.tick(context)
+                    HealthProbe.collect(context, model)
+                }.getOrNull()
+            }
+            if (facts != null) {
+                healthCount = com.dpsmpx.dpai.ui.Health.items(facts).size
+                if (!wizardChecked) {
+                    wizardChecked = true
+                    if (!com.dpsmpx.dpai.ui.Health.setupDone(facts) && !SetupWizardPrefs.later(context)) wizard = facts
+                }
+            }
+            kotlinx.coroutines.delay(HEALTH_EVERY_MS)
+        }
+    }
     LaunchedEffect(model, selectedId, visible) {
         while (visible) {
             val s = selected
@@ -224,6 +250,30 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     // «Остановить» из уведомления службы (A-18): подтверждение — здесь, с тем, что встанет.
     var confirmStop by remember { mutableStateOf(false) }
     LaunchedEffect(incoming) { if (incoming.stop) confirmStop = true }
+    wizard?.let { f ->
+        val jobs = remember { LongJobs.get(context) }
+        val jobState by jobs.state.collectAsState()
+        val busy = LongJobs.GUEST.any { jobState[it]?.running == true }
+        // Шаги мастера обновляются по мере работы: после установки — новый сбор фактов.
+        LaunchedEffect(busy) {
+            if (!busy) withContext(Dispatchers.IO) { runCatching { HealthProbe.collect(context, model) }.getOrNull() }?.let { wizard = it }
+        }
+        val nav = HealthNav(
+            targets = { wizard = null; openTab(AiTab.TARGETS) },
+            log = { wizard = null; selectedId = null; settings = true; settingsSub = SETTINGS_LOG },
+            guide = { wizard = null; selectedId = null; settings = true; settingsSub = SETTINGS_GUIDE },
+            settings = { wizard = null; selectedId = null; settings = true; settingsSub = null },
+        )
+        SetupWizardDialog(f, enabled = !busy, onAction = { a ->
+            if (a == com.dpsmpx.dpai.ui.HealthAction.GIT_IDENTITY) {
+                // Ввод имени и почты — на экране «Проверка».
+                wizard = null; selectedId = null; settings = true; settingsSub = SETTINGS_CHECK
+            } else runHealthAction(context, a, nav) {}
+        }, onClose = {
+            if (!com.dpsmpx.dpai.ui.Health.setupDone(f)) SetupWizardPrefs.setLater(context)
+            wizard = null
+        })
+    }
     if (confirmStop) {
         AlertDialog(
             onDismissRequest = { confirmStop = false },
@@ -448,6 +498,15 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                         }
                     }
                 }
+                // Полоса проверки (DPmetaApp:D-123): пока есть проблемы — над вкладками, с переходом к «Проверке».
+                if (healthCount > 0 && !(settings && settingsSub == SETTINGS_CHECK)) {
+                    androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Проверка: проблем — $healthCount. Что не так и как исправить — на экране «Проверка».", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                            TextButton(onClick = { selectedId = null; settings = true; settingsSub = SETTINGS_CHECK }) { Text("Открыть") }
+                        }
+                    }
+                }
                 if (stopped) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Контроллер остановлен: такты не идут, уведомлений нет.", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
@@ -467,7 +526,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                     tabStates.SaveableStateProvider(screen) {
                         Box(Modifier.fillMaxSize()) {
                             when {
-                                screen == SETTINGS_SCREEN -> AiSettingsPane(controller, model, settingsSub) { settingsSub = it }
+                                screen == SETTINGS_SCREEN -> AiSettingsPane(controller, model, settingsSub, onTargets = { openTab(AiTab.TARGETS) }) { settingsSub = it }
                                 screen == AiTab.TARGETS.ordinal -> TargetsPane(controller, model)
                                 screen == AiTab.REQUESTS.ordinal -> RequestsPane(model, s)
                                 screen == AiTab.MODELS.ordinal -> ModelsPane()

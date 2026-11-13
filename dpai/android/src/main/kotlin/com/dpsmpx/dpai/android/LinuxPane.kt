@@ -95,14 +95,9 @@ fun LinuxScreen(onBack: () -> Unit) {
         when {
             !available -> Text("Недоступно на этом телефоне: нужен процессор arm64.", style = MaterialTheme.typography.bodySmall)
             !checked -> Text("Проверяю…", style = MaterialTheme.typography.bodySmall)
-            installed == null -> Button(enabled = !running, onClick = {
-                jobs.start(LongJobs.LINUX_INSTALL, "Установка Alpine", excludes = LongJobs.GUEST) {
-                    when (val r = LinuxSetup.install(context)) {
-                        is Outcome.Success -> LongJobs.Done(r.value?.let { "Установлено: файлов ${it.files}, ${it.bytes / 1_048_576} МБ" } ?: "Уже установлено")
-                        is Outcome.Failure -> LongJobs.Done("Не установлено: ${r.errors.first().message}")
-                    }
-                }
-            }) { Text(if (install?.running == true) "Устанавливаю Alpine…" else "Установить Alpine") }
+            installed == null -> Button(enabled = !running, onClick = { LinuxJobs.install(context) }) {
+                Text(if (install?.running == true) "Устанавливаю Alpine…" else "Установить Alpine")
+            }
             else -> {
                 Text("Установлено: $installed", style = MaterialTheme.typography.bodySmall)
                 // Терминал — первым и заметным (терминал §4, п. 9).
@@ -113,12 +108,7 @@ fun LinuxScreen(onBack: () -> Unit) {
                     TextButton(enabled = !running && packages.isNotBlank(), onClick = { apk(LinuxEnvironment.Apk.DEL, "Убрать") }) { Text("Убрать") }
                     TextButton(enabled = !running, onClick = { apk(LinuxEnvironment.Apk.UPGRADE, "Обновить всё") }) { Text("Обновить всё") }
                     // Claude Code (D-75, шаг 5): Git, Node.js и npm — apk без /proc, затем npm; в конце — версия.
-                    TextButton(enabled = !running, onClick = {
-                        run("Установка Claude Code", { LinuxSetup.runSteps(context, LinuxEnvironment.claudeInstall()) }) {
-                            if (it.ok) "Claude Code: ${it.stdout.lastOrNull { l -> l.isNotBlank() } ?: "установлен"}"
-                            else "Установка завершилась с кодом ${it.exitCode} — причина в выводе ниже"
-                        }
-                    }) { Text("Поставить Claude Code") }
+                    TextButton(enabled = !running, onClick = { allOutput = false; LinuxJobs.claude(context) }) { Text("Поставить Claude Code") }
                     // Codex CLI и Gemini CLI (D-100): Node.js и npm из Alpine, пакеты npm, в конце — версии.
                     TextButton(enabled = !running, onClick = {
                         run("Установка Codex и Gemini", { LinuxSetup.runSteps(context, LinuxEnvironment.executorsInstall()) }) {

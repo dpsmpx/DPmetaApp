@@ -30,6 +30,8 @@ open class DpaiApplication : Application() {
         CrashRecord.onFatal = { text -> AppLogs.get(this).fatal("падение", Redactor.STANDARD.redact(text)) }
         // Диск открыт и после перезапуска процесса (D-96): уведомление «открыт» — снова в шторке.
         runCatching { AppDiskNotice.sync(this) }
+        // DNS гостя — и при смене сети (D-158): без этого гость спрашивал прежние серверы.
+        runCatching { com.dpsmpx.dpai.android.linux.LinuxSetup.watchDns(this) }
     }
 
     /**

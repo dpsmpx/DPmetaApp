@@ -23,6 +23,8 @@ object AiSummary {
         val running: Measure<Long>,
         val nearLimit: Measure<Long>,
         val request: String?,
+        /** Пунктов проверки приложения (DPmetaApp:D-123) по последней проверке. */
+        val problems: Int = 0,
     )
 
     /**
@@ -31,12 +33,14 @@ object AiSummary {
      * держит замок контура.
      */
     fun read(context: Context): Counts {
+        val problems = HealthAuto.count(context)
         val model = DemoModel.get(context)
-        if (!model.hasLive()) return Counts(false, NONE, NONE, NONE, null)
+        if (!model.hasLive()) return Counts(false, NONE, NONE, NONE, null, problems)
         // Контроллер остановлен (D-39) — снимок замер: числа неизвестны, а не «в работе 2» навсегда (D-13).
-        if (!ControllerService.running) return Counts(true, STOPPED, STOPPED, STOPPED, null)
-        val s = model.published?.takeIf { it.live } ?: return Counts(true, NOT_YET, NOT_YET, NOT_YET, null)
+        if (!ControllerService.running) return Counts(true, STOPPED, STOPPED, STOPPED, null, problems)
+        val s = model.published?.takeIf { it.live } ?: return Counts(true, NOT_YET, NOT_YET, NOT_YET, null, problems)
         return Counts(
+            problems = problems,
             configured = true,
             waiting = Measure.observed(s.requests.size.toLong()),
             running = Measure.observed(s.dashboard.active.toLong()),

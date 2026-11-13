@@ -36,8 +36,13 @@ import androidx.compose.ui.unit.dp
  * Инструкция и Linux — своими экранами; «Назад» — к настройкам.
  */
 @Composable
-fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub: (String?) -> Unit) {
+fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onTargets: () -> Unit = {}, onSub: (String?) -> Unit) {
     when (sub) {
+        CHECK -> {
+            BackHandler { onSub(null) }
+            HealthPane(model, HealthNav(targets = onTargets, log = { onSub(LOG) }, guide = { onSub(GUIDE) }, settings = { onSub(null) }), onBack = { onSub(null) })
+            return
+        }
         GUIDE -> {
             BackHandler { onSub(null) }
             SetupPane(controller, model) { onSub(null) }
@@ -74,6 +79,8 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub
     // В DPmetaApp «Оформление» и «Хранилище и секреты» — в документе настроек приложения (DPmetaApp:D-112), здесь — ссылка.
     val appSettings = app?.sectionIntent(com.dpsmpx.dpai.ui.AppSection.SETTINGS)
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Проверка — первой (DPmetaApp:D-123): что не так и как исправить.
+        item(key = "check") { Entry("Проверка", "что не так и что делать; мастер настройки; что исправлено само") { onSub(CHECK) } }
         item(key = "guide") {
             Card(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -138,7 +145,9 @@ internal const val SETTINGS_GUIDE = "guide"
 internal const val SETTINGS_LINUX = "linux"
 internal const val SETTINGS_GITHUB = "github"
 internal const val SETTINGS_ROUTINES = "routines"
-internal val SETTINGS_SUBS: Set<String> = setOf(SETTINGS_GUIDE, SETTINGS_LINUX, SETTINGS_GITHUB, SETTINGS_ROUTINES, "log")
+internal const val SETTINGS_CHECK = "check"
+internal val SETTINGS_SUBS: Set<String> = setOf(SETTINGS_CHECK, SETTINGS_GUIDE, SETTINGS_LINUX, SETTINGS_GITHUB, SETTINGS_ROUTINES, "log")
+private const val CHECK = SETTINGS_CHECK
 private const val GUIDE = SETTINGS_GUIDE
 private const val LINUX = SETTINGS_LINUX
 private const val GITHUB = SETTINGS_GITHUB

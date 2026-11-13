@@ -261,6 +261,55 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
         Worktree(branch, sha, upstream)
     }
 
+    /** Итог догона рабочего дерева (D-123): сдвинуто, уже вровень или оставлено — с причиной. */
+    sealed interface CatchUp {
+        data class Moved(val branch: String, val from: String, val to: String, val commits: Int) : CatchUp
+
+        data object Even : CatchUp
+
+        /** GitHub впереди, но дерево не тронуто: свои правки или коммиты, отказ git. */
+        data class Held(val why: String) : CatchUp
+
+        /** Догонять нечего или не с чем: HEAD отсоединён, у ветки нет ветки GitHub. */
+        data class Skipped(val why: String) : CatchUp
+    }
+
+    /**
+     * Рабочее дерево клона догоняет свою ветку GitHub (`origin/<ветка>`, уже скачанную
+     * [sync]) — только перемоткой (`--ff-only`) и только если в дереве нет правок,
+     * не сохранённых в Git, и своих коммитов (D-123, уточняет D-70). Иначе ничего не
+     * трогается — [CatchUp.Held] с причиной: работа ИИ и человека не теряется. Сети нет.
+     */
+    fun catchUp(project: String): Outcome<CatchUp> = withRepo(project) { repo ->
+        val head = repo.exactRef(Constants.HEAD)
+        val branch = head?.takeIf { it.isSymbolic }?.target?.name?.takeIf { it.startsWith(Constants.R_HEADS) }?.removePrefix(Constants.R_HEADS)
+            ?: return@withRepo CatchUp.Skipped("HEAD отсоединён от ветки")
+        val local = head.objectId ?: return@withRepo CatchUp.Skipped("в ветке $branch нет коммитов")
+        val upstream = repo.exactRef(Constants.R_REMOTES + "origin/" + branch)?.objectId
+            ?: return@withRepo CatchUp.Skipped("у ветки $branch нет ветки GitHub")
+        if (local == upstream) return@withRepo CatchUp.Even
+        val behind = RevWalk(repo).use { walk ->
+            val a = walk.parseCommit(local)
+            val b = walk.parseCommit(upstream)
+            if (!walk.isMergedInto(a, b)) return@withRepo CatchUp.Held("в ветке $branch есть свои коммиты — она разошлась с GitHub")
+            walk.reset()
+            walk.markStart(b)
+            walk.markUninteresting(a)
+            walk.count()
+        }
+        Git(repo).use { git ->
+            try {
+                if (git.status().call().hasUncommittedChanges()) return@withRepo CatchUp.Held("в рабочем дереве есть правки, не сохранённые в Git")
+                val r = git.merge().include(upstream).setFastForward(org.eclipse.jgit.api.MergeCommand.FastForwardMode.FF_ONLY).setCommit(true).call()
+                if (r.mergeStatus != org.eclipse.jgit.api.MergeResult.MergeStatus.FAST_FORWARD) return@withRepo CatchUp.Held("git не перемотал: ${r.mergeStatus}")
+            } catch (e: GitAPIException) {
+                // Неотслеживаемый файл на месте нового и т. п. — дерево не тронуто.
+                return@withRepo CatchUp.Held("git отказал: ${e.javaClass.simpleName}")
+            }
+        }
+        CatchUp.Moved(branch, local.name, upstream.name, behind)
+    }
+
     /** Ветки GitHub в клоне с головами; клона нет — `ENTITY_NOT_FOUND`. Символьная `origin/HEAD` — не ветка. */
     fun heads(project: String): Outcome<List<Head>> = withRepo(project) { repo ->
         RevWalk(repo).use { walk ->

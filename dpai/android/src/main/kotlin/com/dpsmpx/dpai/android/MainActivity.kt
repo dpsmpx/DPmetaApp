@@ -113,6 +113,9 @@ class MainActivity : ComponentActivity() {
         /** Пункт «IDE» левой панели приложения: «Файлы» — дерево, редактор и терминал проекта. */
         fun ide(context: Context): Intent = tab(context, com.dpsmpx.dpai.ui.AiTab.FILES)
 
+        /** Экран «Проверка» в «Настройках AI» (DPmetaApp:D-123): с полосы и строки «AI» пульта. */
+        fun check(context: Context): Intent = settings(context, SETTINGS_CHECK)
+
         /** Намерение во внутренний вход экрана — для своих `PendingIntent`. */
         fun internal(context: Context): Intent = Intent().setClassName(context, INTERNAL_ENTRY)
 

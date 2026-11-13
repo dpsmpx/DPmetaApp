@@ -33,6 +33,12 @@ data class ProotLayout(
  * завершаются вместе с ней. Без этого proot ждёт всех трассируемых, и
  * выход хода не виден, пока жив фоновый сервер, запущенный Claude.
  *
+ * Жёсткие ссылки — символьными (`--link2symlink`, D-158): Android запрещает
+ * `link()` в данных приложения, а пакеты Alpine (binutils, gcc, g++) несут
+ * жёсткие ссылки — без ключа `apk` их не распаковывал и отмечал пакет
+ * повреждённым. Форк Termux (D-115) делает ссылку на скрытый `.l2s.*` рядом
+ * и отвечает вызову успехом (`docs/research/LINUX_IN_APP.md`, §11).
+ *
  * `apk` — без `/proc` у гостя: apk-tools 3 создаёт файлы через `O_TMPFILE`
  * и `linkat` из `/proc/self/fd`, а это жёсткая ссылка, которую Android
  * запрещает; без `/proc` apk пишет временный файл и переименовывает его
@@ -52,6 +58,7 @@ class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) 
         val argv = buildList {
             add(layout.proot)
             add("--kill-on-exit")
+            add(LINK2SYMLINK)
             // Root-подделка: apk и права файлов корневой системы ждут uid 0.
             add("-0")
             add("-r")
@@ -84,6 +91,9 @@ class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) 
     }
 
     companion object {
+        /** Жёсткая ссылка гостя — символьной на хосте (D-158): Android запрещает `link()` приложениям. */
+        const val LINK2SYMLINK: String = "--link2symlink"
+
         /** Узлы `/dev` хоста, которые видит гость (D-93): терминал, пустые и случайные устройства — и только. */
         val DEVICES: List<String> = listOf("/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom", "/dev/tty", "/dev/ptmx", "/dev/pts")
 

@@ -84,6 +84,18 @@ class ScreenSnapshotTest {
         ) + ScreenText.summary(Screens.summary(state()), Screens.AiCounts(false, Measure.unknown("нет"), Measure.unknown("нет"), Measure.unknown("нет"))),
     )
 
+    /** Проблемы проверки приложения (D-123) — числом в конце строки «AI», и без настроенного контура. */
+    @Test
+    fun aiLineCountsHealthProblems() {
+        val none = Measure.unknown("нет")
+        assertEquals("AI: не настроено · проблем: 3", Screens.aiLine(Screens.AiCounts(false, none, none, none, problems = 3)))
+        assertEquals(
+            "AI: ждут ответа 0 · в работе 1 · подписки у предела 0 · проблем: 1",
+            Screens.aiLine(Screens.AiCounts(true, Measure.observed(0L), Measure.observed(1L), Measure.observed(0L), problems = 1)),
+        )
+        assertEquals("AI: не настроено", Screens.aiLine(Screens.AiCounts(false, none, none, none)))
+    }
+
     @Test
     fun projects() = snapshot("projects", ScreenText.projects(Screens.projects(state())))
 

@@ -566,7 +566,7 @@ class PultRepository(
             (if (cloned.lost > 0) ", не обновлено ${cloned.lost}" else "") +
             (if (cloned.skipped > 0) ", отменено ${cloned.skipped}" else "") +
             (if (cloned.rewritten > 0) ", с перезаписанной историей ${cloned.rewritten}" else "") +
-            "), ${"%.1f".format(java.util.Locale.ROOT, seconds)} с"
+            "), ${"%.1f".format(java.util.Locale.ROOT, seconds)} с" + cloned.catchUpNote()
         return Outcome.success(SyncReport(line, result.failures + cloned.failures, fresh))
     }
 
@@ -575,7 +575,19 @@ class PultRepository(
      * обновилось, у скольких GitHub перезаписал историю (сведение, D-70);
      * отказы клонов репозиториев реестра — отказами источника «clone».
      */
-    private class Cloned(val ok: Int, val created: Int, val lost: Int, val rewritten: Int, val failures: List<SourceFailure>, val skipped: Int = 0)
+    private class Cloned(
+        val ok: Int, val created: Int, val lost: Int, val rewritten: Int, val failures: List<SourceFailure>, val skipped: Int = 0,
+        /** Догон рабочих деревьев (D-123): сдвинутые и оставленные с причиной. */
+        val catchUps: Map<String, com.dpsmpx.dpmeta.git.Clones.CatchUp> = emptyMap(),
+    ) {
+        /** Для строки итога: «догнали GitHub: a +98; не догнаны: b — правки…». */
+        fun catchUpNote(): String {
+            val moved = catchUps.mapNotNull { (k, c) -> (c as? com.dpsmpx.dpmeta.git.Clones.CatchUp.Moved)?.let { "$k +${it.commits}" } }
+            val held = catchUps.mapNotNull { (k, c) -> (c as? com.dpsmpx.dpmeta.git.Clones.CatchUp.Held)?.let { "$k — ${it.why}" } }
+            return (if (moved.isNotEmpty()) "; догнали GitHub: ${moved.joinToString(", ")}" else "") +
+                (if (held.isNotEmpty()) "; не догнаны: ${held.joinToString("; ")}" else "")
+        }
+    }
 
     /**
      * Клонировать или обновить отмеченные автором клоны (D-70), по одному на
@@ -585,6 +597,7 @@ class PultRepository(
      * сведение в строке итога.
      */
     private fun cloneAll(reg: Registry, clones: com.dpsmpx.dpmeta.git.Clones, reader: CloneReader, token: Secret, selected: Set<String>, sizeOf: (String) -> Long?, progress: (String) -> Unit): Cloned {
+        val catchUps = java.util.concurrent.ConcurrentHashMap<String, com.dpsmpx.dpmeta.git.Clones.CatchUp>()
         val byKey = reg.shown.groupBy { reader.key(it) }
         val now = clock.now()
         // Только отмеченные автором (D-70) — из реестра и любые другие репозитории аккаунта.
@@ -597,8 +610,13 @@ class PultRepository(
                     (spaceCheck(key, cloneNeed(sizeOf(key))) as? Outcome.Failure)?.let { return@submit key to it }
                 }
                 // Сбой одного клона — его отказ, а не исключение из get(): иначе остальные клоны шли бы без защиты running.
-                key to runCatching { clones.sync(key, com.dpsmpx.dpmeta.git.Clones.github(key), token, Rules::isBuildBranch) }
+                val synced = runCatching { clones.sync(key, com.dpsmpx.dpmeta.git.Clones.github(key), token, Rules::isBuildBranch) }
                     .getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "клон: ${it.javaClass.simpleName}", key) }
+                // Чистое рабочее дерево без своих коммитов догоняет GitHub само (D-123); иначе — не трогается.
+                if (synced is Outcome.Success && synced.value.action == com.dpsmpx.dpmeta.git.Clones.Action.FETCHED) {
+                    runCatching { clones.catchUp(key) }.getOrNull()?.valueOrNull()?.let { catchUps[key] = it }
+                }
+                key to synced
             }
         }
         var ok = 0
@@ -637,7 +655,7 @@ class PultRepository(
                 }
             }
         }
-        return Cloned(ok, created, lost, rewritten, failures, skipped)
+        return Cloned(ok, created, lost, rewritten, failures, skipped, catchUps.toSortedMap())
     }
 
     companion object {

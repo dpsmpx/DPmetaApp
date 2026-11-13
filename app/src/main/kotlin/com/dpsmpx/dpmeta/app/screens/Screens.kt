@@ -160,15 +160,20 @@ object Screens {
      * контура — пульт об «AI» не знает (D-53). [configured] — `false`: демо
      * или не настроено.
      */
-    data class AiCounts(val configured: Boolean, val waiting: Measure<Long>, val running: Measure<Long>, val nearLimit: Measure<Long>)
+    data class AiCounts(val configured: Boolean, val waiting: Measure<Long>, val running: Measure<Long>, val nearLimit: Measure<Long>, val problems: Int = 0)
 
-    /** Строка «AI» сводки; неизвестное — словом, не нулём. */
-    fun aiLine(c: AiCounts): String =
-        if (!c.configured) {
+    /**
+     * Строка «AI» сводки; неизвестное — словом, не нулём. Проблемы проверки приложения
+     * (D-123) — числом в конце, пока они есть: и когда «AI» ещё не настроен.
+     */
+    fun aiLine(c: AiCounts): String {
+        val line = if (!c.configured) {
             "AI: не настроено"
         } else {
             "AI: ждут ответа ${show(c.waiting)} · в работе ${show(c.running)} · подписки у предела ${show(c.nearLimit)}"
         }
+        return if (c.problems > 0) "$line · проблем: ${c.problems}" else line
+    }
 
     /** Касание строки «AI» — на «Запросы», если ответа ждут (D-76). */
     fun aiToRequests(c: AiCounts): Boolean = c.configured && (c.waiting.orNull() ?: 0L) > 0L

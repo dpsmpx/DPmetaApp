@@ -46,7 +46,7 @@ class ProotHostTest {
         ProotHost(rec, layout).start(ProcessSpec(listOf("git", "status"), workDir = "/work/repo", stdin = "ввод")) {}
         val spec = requireNotNull(rec.spec)
         val argv = spec.command
-        assertEquals(listOf(layout.proot, "--kill-on-exit", "-0", "-r", layout.rootfs), argv.take(5))
+        assertEquals(listOf(layout.proot, "--kill-on-exit", "--link2symlink", "-0", "-r", layout.rootfs), argv.take(6))
         val fd = listOf("/proc/self/fd:/dev/fd", "/proc/self/fd/0:/dev/stdin", "/proc/self/fd/1:/dev/stdout", "/proc/self/fd/2:/dev/stderr")
         assertEquals(ProotHost.DEVICES + "/proc" + fd + "/data/user/0/app/files/work:/work", pairs(argv, "-b"))
         // D-93: ни всего /dev (там /dev/binder — службы системы от имени приложения), ни /sys.

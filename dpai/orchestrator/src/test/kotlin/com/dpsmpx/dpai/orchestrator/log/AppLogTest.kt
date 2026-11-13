@@ -238,4 +238,22 @@ class AppLogTest {
         assertEquals(TickStats(3, 20, 30, 300_030, 1), s)
         assertEquals(TickStats(0, 0, 0, 0, 0), m.drain())
     }
+
+    /** Части такта (D-158): у медленного такта видно, что ждало; в сводке — часть самого долгого. */
+    @Test
+    fun tickMeterNamesTheSlowestPart() {
+        val m = TickMeter(clock)
+        m.begin()
+        val a = clock.monotonicNanos(); clock.advance(5.milliseconds); m.part("шаг контура", a)
+        val b = clock.monotonicNanos(); clock.advance(20_000.milliseconds); m.part("лимиты", b)
+        val c = clock.monotonicNanos(); clock.advance(1.milliseconds); m.part("шаг контура", c)
+        val slow = m.end()!!
+        assertEquals(20_006, slow.ms)
+        assertEquals(mapOf("шаг контура" to 6L, "лимиты" to 20_000L), slow.parts)
+        assertEquals("лимиты" to 20_000L, slow.slowest)
+        m.begin(); clock.advance(3.milliseconds); assertEquals(Tick(3, emptyMap()), m.end())
+        m.part("вне такта", clock.monotonicNanos())
+        assertEquals(TickStats(2, 10_004, 20_006, 20_006, 0, "лимиты" to 20_000L), m.drain())
+        assertEquals(null, m.end(), "такт не начат")
+    }
 }

@@ -39,8 +39,10 @@ class DpmetaActivity : PultActivity() {
     // Окно «AI» — одно: уже открытое выходит вперёд, второго экземпляра нет (UX-1).
     override fun aiIntent(): Intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
 
-    // Со строки «AI»: ждут ответа — сразу на «Запросы» (D-76).
-    override fun aiIntent(requests: Boolean): Intent = lastAi?.request?.takeIf { requests }?.let { AiSummary.open(this, it) } ?: aiIntent()
+    // Со строки «AI»: ждут ответа — сразу на «Запросы» (D-76); иначе есть проблемы — на «Проверку» (D-123).
+    override fun aiIntent(requests: Boolean): Intent = lastAi?.request?.takeIf { requests }?.let { AiSummary.open(this, it) }
+        ?: lastAi?.takeIf { it.problems > 0 }?.let { MainActivity.check(this) }
+        ?: aiIntent()
 
     // Настройки — одним документом (D-112): «Оформление», «Хранилище и секреты», «AI» — подсистемы, блок пульта — слотом.
     override val settingsDocument: @androidx.compose.runtime.Composable (query: String, projects: @androidx.compose.runtime.Composable () -> Unit) -> Unit =
@@ -54,7 +56,7 @@ class DpmetaActivity : PultActivity() {
     /** Строки пульта — в журнал приложения подсистемы «AI» (D-39: один журнал отладки на приложение; там же Redactor). */
     override fun debugLog(tag: String, line: String) = com.dpsmpx.dpai.android.AppLogs.info(applicationContext, tag, line)
 
-    override fun aiCounts(): Screens.AiCounts = AiSummary.read(this).also { lastAi = it }.let { Screens.AiCounts(it.configured, it.waiting, it.running, it.nearLimit) }
+    override fun aiCounts(): Screens.AiCounts = AiSummary.read(this).also { lastAi = it }.let { Screens.AiCounts(it.configured, it.waiting, it.running, it.nearLimit, it.problems) }
 
     /** Маршруты Claude Code (F-22) — из подсистемы «AI» (`DP_AI_Orcestrator:D-116`): токен остаётся там. */
     override fun routes(): List<RouteActions.Route> =

@@ -34,6 +34,7 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
  */
 class ProotLiveTest {
     private lateinit var proot: ProotHost
+    private lateinit var rootfs: String
 
     @BeforeTest
     fun environment() {
@@ -48,6 +49,7 @@ class ProotLiveTest {
         )
         assumeTrue(File(layout.proot).canExecute() && File(layout.rootfs, "etc/alpine-release").isFile, "среда не подготовлена: $root")
         proot = ProotHost(LocalProcessHost(), layout)
+        rootfs = layout.rootfs
     }
 
     private fun guest(vararg command: String, environment: Map<String, String>? = null): Completed {
@@ -60,6 +62,26 @@ class ProotLiveTest {
         val r = guest("apk", "info", "-e", "git", "nodejs", "npm")
         assertEquals(0, r.exitCode, r.stderr.joinToString("\n"))
         assertEquals(listOf("git", "nodejs", "npm"), r.stdout)
+    }
+
+    /**
+     * Жёсткая ссылка гостя — символьная на хосте (D-158): Android запрещает `link()` приложениям,
+     * и пакеты с жёсткими ссылками (binutils, gcc) без `--link2symlink` не распаковывались. Гость
+     * видит обычную жёсткую ссылку (два имени, одно содержимое), хост — ни одной.
+     */
+    @Test
+    fun hardLinkInGuestIsSymlinkOnHost() {
+        val dir = "/tmp/dpai-l2s-${System.nanoTime()}"
+        val r = guest("/bin/sh", "-c", "mkdir -p $dir && echo данные > $dir/a && ln $dir/a $dir/b && cat $dir/b && stat -c %h $dir/a")
+        assertEquals(0, r.exitCode, r.stderr.joinToString("\n"))
+        assertEquals(listOf("данные", "2"), r.stdout)
+        val host = java.nio.file.Path.of(rootfs, dir.removePrefix("/"))
+        for (name in listOf("a", "b")) assertTrue(java.nio.file.Files.isSymbolicLink(host.resolve(name)), "на хосте $name — символьная ссылка")
+        java.nio.file.Files.walk(host).use { s ->
+            val hard = s.filter { java.nio.file.Files.isRegularFile(it, java.nio.file.LinkOption.NOFOLLOW_LINKS) && (java.nio.file.Files.getAttribute(it, "unix:nlink", java.nio.file.LinkOption.NOFOLLOW_LINKS) as Int) > 1 }.count()
+            assertEquals(0L, hard, "на хосте нет жёстких ссылок")
+        }
+        guest("rm", "-rf", dir)
     }
 
     @Test

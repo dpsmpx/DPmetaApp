@@ -36,6 +36,7 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
     private val dnsDraft = Vfs.join(dir, "resolv.conf.draft")
     private val keyDraft = Vfs.join(dir, "llama-key.draft")
     private val profileDraft = Vfs.join(dir, "profile.draft")
+    private val gitDraft = Vfs.join(dir, "gitconfig.draft")
 
     /** Версия установленной корневой системы; `null` — не установлена или установка оборвалась. */
     fun installed(): String? = vfs.read(ready)?.toString(Charsets.UTF_8)?.trim()?.ifEmpty { null }
@@ -95,6 +96,39 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
         }
     }
 
+    /**
+     * `/etc/gitconfig` гостя (D-158): помощник входа для `github.com` берёт токен из
+     * `GH_TOKEN` процесса — он есть, только если автор включил «давать ИИ» токену
+     * GitHub (D-114); значение на диск не пишется. Файл без отметки приложения — чужой
+     * (настроил человек): не трогается, итог — `false`. Как у [writeDns]: черновик вне
+     * корня гостя и переименование; `/etc` — ссылка — отказ.
+     */
+    fun writeGitConfig(): Outcome<Boolean> {
+        val etc = Vfs.join(rootfs, "etc")
+        val path = Vfs.join(etc, "gitconfig")
+        if (vfs.isSymlink(etc)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "/etc гостя — символьная ссылка: /etc/gitconfig не записан", etc)
+        return try {
+            val current = if (vfs.isSymlink(path)) null else vfs.read(path)?.toString(Charsets.UTF_8)
+            if (current != null && !current.startsWith(GIT_MARK)) return Outcome.success(false)
+            if (current == GIT_CONFIG) return Outcome.success(true)
+            vfs.mkdirs(etc)
+            vfs.write(gitDraft, GIT_CONFIG.toByteArray())
+            vfs.rename(gitDraft, path)
+            Outcome.success(true)
+        } catch (e: IOException) {
+            Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "/etc/gitconfig гостя не записан", e, path)))
+        }
+    }
+
+    /** Помощник входа Git уже в `/etc/gitconfig` гостя (файл — приложения). */
+    fun gitConfigured(): Boolean = vfs.read(Vfs.join(rootfs, "etc/gitconfig"))?.toString(Charsets.UTF_8) == GIT_CONFIG
+
+    /** Повреждённые пакеты Alpine гостя ([ApkDatabase]); базы нет — пусто. */
+    fun brokenPackages(): Outcome<List<ApkDatabase.Broken>> = when (val r = ApkDatabase.read(vfs, rootfs)) {
+        is Outcome.Failure -> r
+        is Outcome.Success -> Outcome.success(r.value?.let(ApkDatabase::broken).orEmpty())
+    }
+
     fun writeDns(servers: List<String>): Outcome<Int> {
         val good = servers.map { it.trim().substringBefore('%') }.filter(::isIpLiteral).distinct().take(MAX_DNS)
         if (good.isEmpty()) return Outcome.failure(DiagCode.VALUE_INVALID, "нет адреса DNS сети телефона: /etc/resolv.conf гостя не изменён", rootfs)
@@ -144,6 +178,12 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
         /** Переустановить выбранные пакеты и зависимости после частичной ошибки; данные проектов не трогаются (D-140). */
         FIX(listOf("fix", "-U", "--no-progress", "--depends"), true),
 
+        /**
+         * Починить пакеты, которые база отметила повреждёнными (D-158): те же версии заново,
+         * без зависимостей — приложение делает это само перед командой пакетов.
+         */
+        REPAIR(listOf("fix", "-U", "--no-progress"), true),
+
         /** Убрать. */
         DEL(listOf("del", "--no-progress"), true),
 
@@ -157,6 +197,22 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
 
         /** Признак готовности рядом с корневой системой: версия minirootfs. */
         const val READY = "rootfs.ready"
+
+        /** Отметка файла Git приложения: без неё `/etc/gitconfig` — человека и не перезаписывается. */
+        const val GIT_MARK: String = "# DPmetaApp:"
+
+        /**
+         * `/etc/gitconfig` гостя (D-158): помощник входа `github.com` из `GH_TOKEN` —
+         * без токена молчит, и Git спрашивает имя, как без помощника; свои настройки —
+         * в `~/.gitconfig` (оно сильнее системного).
+         */
+        val GIT_CONFIG: String = """
+            |$GIT_MARK файл пишет приложение (D-158): помощник входа GitHub берёт токен из GH_TOKEN.
+            |# Свои настройки — в ~/.gitconfig: правка здесь не сохранится.
+            |[credential "https://github.com"]
+            |${'\t'}helper = "!f() { test \"${'$'}1\" = get || exit 0; test -n \"${'$'}GH_TOKEN\" || exit 0; echo username=x-access-token; echo \"password=${'$'}GH_TOKEN\"; }; f"
+            |
+        """.trimMargin()
 
         /** Больше трёх серверов `resolv.conf` musl не читает. */
         const val MAX_DNS = 3

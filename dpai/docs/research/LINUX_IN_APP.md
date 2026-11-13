@@ -300,3 +300,42 @@ Android 15 (SDK 35), ядро `5.15.194-android13`, страница памят�
   path» в `claude.exe` 2.1.319; в minirootfs Alpine — только `sh` busybox.
   Поиск — встроенный ripgrep: `claude doctor` — «Search: OK (bundled)» в
   Alpine x86_64.
+
+## 11. Жёсткие ссылки пакетов и «N errors» у `apk`
+
+13 ноября 2026, журнал приложения автора (Xiaomi 23124RA7EO, Android 15,
+сборка dev.35) и отчёт Claude Code в Linux приложения: «Библиотеки IDE» —
+`apk` код 3, «failed to extract usr/bin/ar: Permission denied» у binutils
+2.45.1-r1, то же у gcc 15.2.0-r5 и g++; дальше любая команда пакетов
+(«Обновить всё», установка Claude Code, Python и Git для DP-Verify)
+кончалась «3 errors; 777.0 MiB in 94 packages» и кодом 3.
+
+- **Причина — жёсткие ссылки внутри пакетов.** Все отказавшие файлы
+  binutils, gcc и g++ в Alpine — жёсткие ссылки (`usr/bin/ar` и
+  `usr/<триплет>/bin/ar` и т. п.); Android запрещает `link()` в данных
+  приложения (§9). Машина сборки, Alpine 3.24 x86_64 под proot форка
+  Termux (D-115, `tools/linux/host-env.sh`), 13 ноября 2026: `apk add
+  binutils` без `--link2symlink` оставляет на хосте 20 файлов с числом
+  ссылок больше 1 — на телефоне каждая из них — «Permission denied».
+- **`--link2symlink` форка Termux работает.** С ключом: `ln a b` в госте —
+  код 0, гость видит два имени с числом ссылок 2, на хосте оба имени —
+  символьные ссылки на скрытый `.l2s.a0001` рядом, жёстких ссылок нет;
+  `apk add binutils` — код 0, ни одной жёсткой ссылки на хосте, `ar
+  --version` и `ld --version` в госте работают. С `/proc` у гостя
+  (терминал) `apk add make` с ключом — тоже код 0. Git с ключом: три
+  коммита, `git gc`, `git fsck` — без ошибок (в `.git` — символьные ссылки
+  `.l2s.*`). Цели ссылок — абсолютные пути хоста: перенос каталога внутри
+  корневой системы их рвёт.
+- **Отметка повреждения и её починка.** Пакет, распакованный не до конца,
+  apk-tools 3 отмечает в `/lib/apk/db/installed` полем `f:` (`f` — файлы,
+  `s` — скрипт, `x` — атрибуты). Проверено той же средой: строка `f:f` у
+  binutils — следующая команда `apk add bash` (чужой пакет) печатает «1
+  error; …» и кончается кодом 1; `apk fix --no-progress` (без имён — все
+  отмеченные) с `--link2symlink` переустанавливает binutils, код 0,
+  отметка снята.
+- **Помощник входа Git из `GH_TOKEN`.** `/etc/gitconfig` с
+  `[credential "https://github.com"]` и помощником-функцией оболочки,
+  проверено `git credential fill` в госте: с `GH_TOKEN` — `username=
+  x-access-token` и `password=<токен>`; без переменной — помощник молчит,
+  Git спрашивает имя (без терминала — «terminal prompts disabled»); для
+  другого хоста помощник не вызывается.
