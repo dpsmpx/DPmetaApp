@@ -193,6 +193,23 @@ sealed interface Command {
         override val operation: String get() = "control.session-limit"
     }
 
+    /**
+     * Передавать ли задачу у предела всех слотов её исполнителя следующему по кругу
+     * автоматически (D-165, изменяет D-100); по умолчанию — нет: задача ждёт, а человек
+     * видит, кому её можно передать ([SetExecutor]).
+     */
+    data class SetExecutorSwitch(val auto: Boolean, override val key: String? = null) : Command {
+        override val operation: String get() = "control.executor-switch"
+    }
+
+    /**
+     * Передать задачу другому исполнителю (D-165): следующий ход — на его слоте, с контекстом
+     * handoff; модель и усилие политики снимаются, как при переходе у предела (D-100).
+     */
+    data class SetExecutor(override val task: TaskId, val executor: com.dpsmpx.dpai.core.ids.Executor, override val key: String? = null) : Command, TaskCommand {
+        override val operation: String get() = "task.executor"
+    }
+
     /** Спрятать завершённую задачу в архив или вернуть (D-42). */
     data class Archive(override val task: TaskId, val archived: Boolean, override val key: String? = null) : Command, TaskCommand {
         override val operation: String get() = "task.archive"

@@ -128,6 +128,7 @@ import com.dpsmpx.dpai.orchestrator.commands.OperationRecord
 import com.dpsmpx.dpai.orchestrator.commands.OperationsProjection
 import com.dpsmpx.dpai.orchestrator.commands.OperationsState
 import com.dpsmpx.dpai.orchestrator.commands.operationEnvelopes
+import com.dpsmpx.dpai.orchestrator.commands.executorSwitchEnvelope
 import com.dpsmpx.dpai.orchestrator.commands.sessionLimitEnvelope
 import com.dpsmpx.dpai.orchestrator.commands.targetEnabledEnvelope
 import com.dpsmpx.dpai.orchestrator.requests.RequestPurpose
@@ -736,6 +737,24 @@ class Orchestrator(
      * причины (ТЗ, §36). [code] — настоящая причина: недоступный target —
      * не «нет слота» (аудит 1 ноября 2026, A-3).
      */
+    /**
+     * Кому передать задачу у предела всех слотов её исполнителя, когда автоматический переход
+     * выключен (D-165): исполнители с готовым слотом. Нет предела, переход включён или передать
+     * некому — пусто.
+     */
+    fun handoverCandidates(task: TaskId): List<Executor> {
+        val t = tasks.tasks[task] ?: return emptyList()
+        if (control.autoExecutorSwitch || config.remote != null || t.terminal) return emptyList()
+        if (!accountsLogic.exhausted(accounts, t.policy.executor, clock.now())) return emptyList()
+        return accountsLogic.handoverCandidates(accounts, t.policy.executor, clock.now())
+    }
+
+    private fun handoverOffer(task: TaskId): String? {
+        val t = tasks.tasks[task] ?: return null
+        val to = handoverCandidates(task).takeIf { it.isNotEmpty() } ?: return null
+        return "у всех слотов ${t.policy.executor.title} предел — задачу можно передать: ${to.joinToString { it.title }} (кнопка у задачи; автоматически — настройкой «Передавать задачи у предела»)"
+    }
+
     private fun waiting(task: TaskId, why: String, code: DiagCode = DiagCode.ACCOUNT_NONE_AVAILABLE) {
         if (lastWaiting.put(task, why) == why) return
         taskNotify(task, "waiting", NotificationCategory.INFO, "Задача ждёт", why)
@@ -788,8 +807,13 @@ class Orchestrator(
             waiting(task, "ход с деревом на другом target ведёт только Claude Code, а исполнитель задачи — ${t.policy.executor.title}")
             return
         }
-        // Исполнитель задачи, а у всех его слотов предел — следующий по кругу (D-100).
-        val executors = if (config.remote != null) listOf(Executor.CLAUDE) else generateSequence(t.policy.executor) { it.next }.take(Executor.entries.size).toList()
+        // Исполнитель задачи, а у всех его слотов предел — следующий по кругу (D-100), но только по
+        // настройке человека (D-165): без неё задача ждёт своего исполнителя, а человек решает, кому передать.
+        val executors = when {
+            config.remote != null -> listOf(Executor.CLAUDE)
+            control.autoExecutorSwitch -> generateSequence(t.policy.executor) { it.next }.take(Executor.entries.size).toList()
+            else -> listOf(t.policy.executor)
+        }
         executors@ for (x in executors) {
             for (candidate in order) {
                 lease = accountsLogic.lease(
@@ -807,7 +831,8 @@ class Orchestrator(
         if (lease is Outcome.Failure) {
             // Свободного слота нет: задача ждёт следующего такта — и человек видит почему (раньше — молча).
             val moved = t.excludedSlot?.let { "задача перенесена со слота $it — другого слота нет: " }.orEmpty()
-            waiting(task, moved + (first ?: lease).errors.first().message)
+            val offer = handoverOffer(task)?.let { "; $it" }.orEmpty()
+            waiting(task, moved + (first ?: lease).errors.first().message + offer)
             return
         }
         if (pin != null) setPin(task, null)
@@ -2011,6 +2036,14 @@ class Orchestrator(
                     }
                 }
             }
+            is Command.SetExecutorSwitch -> record(command, provenance) {
+                if (control.autoExecutorSwitch != command.auto) {
+                    write(listOf(recorder.executorSwitchEnvelope(command.auto, clock.now())))
+                    control = control.copy(autoExecutorSwitch = command.auto)
+                }
+                Outcome.success(command.auto)
+            }
+            is Command.SetExecutor -> record(command, provenance) { setExecutor(command) }
             is Command.SetSessionLimit -> record(command, provenance) {
                 when {
                     command.limit != null && command.limit !in com.dpsmpx.dpai.orchestrator.commands.SESSION_LIMIT_RANGE ->
@@ -2063,6 +2096,30 @@ class Orchestrator(
             // Итог — состояние после правки: сначала журнал, потом ответ (в журнале ключей — то же).
             commitTasks(r.value)
             Outcome.success(tasks.tasks.getValue(task).state)
+        }
+    }
+
+    /**
+     * Передать задачу другому исполнителю по слову человека (D-165): модель и усилие политики —
+     * для прежнего исполнителя, они снимаются (как при переходе D-100); ревьюер, совпавший с новым
+     * исполнителем, — «тот же, что у задачи». Следующий ход — на слоте нового исполнителя с handoff.
+     */
+    private fun setExecutor(c: Command.SetExecutor): Outcome<TaskState> {
+        val t = tasks.tasks[c.task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task ${c.task}")
+        if (t.policy.executor == c.executor) return Outcome.success(t.state)
+        if (config.remote != null && c.executor != Executor.CLAUDE) {
+            return Outcome.failure(DiagCode.UNSUPPORTED, "ход с деревом на другом target ведёт только Claude Code", "task ${c.task}")
+        }
+        if (accounts.slots.values.none { it.executor == c.executor && !it.disabled }) {
+            return Outcome.failure(DiagCode.ACCOUNT_NONE_AVAILABLE, "у ${c.executor.title} нет включённого слота: подключите его в «Аккаунтах»", "task ${c.task}")
+        }
+        val policy = try {
+            t.policy.copy(executor = c.executor, model = null, effort = null, reviewExecutor = t.policy.reviewExecutor?.takeIf { it != c.executor })
+        } catch (e: IllegalArgumentException) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, e.message ?: "политика недопустима", "task ${c.task}")
+        }
+        return taskEdit(c.task) { tasksLogic.setPolicy(tasks, c.task, policy, clock.now()) }.also {
+            if (it is Outcome.Success) say(c.task, ChatRole.EVENT, "задача передана ${c.executor.title} человеком (была у ${t.policy.executor.title})")
         }
     }
 

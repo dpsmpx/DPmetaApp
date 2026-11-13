@@ -78,6 +78,8 @@ object CommandCodec {
             is Command.SetTargetEnabled -> { id("target", c.target); f["enabled"] = JsonBool(c.enabled) }
             is Command.SetSlotEnabled -> { id("slot", c.slot); f["enabled"] = JsonBool(c.enabled) }
             is Command.SetSessionLimit -> c.limit?.let { f["limit"] = JsonNumber.of(it) }
+            is Command.SetExecutorSwitch -> f["auto"] = JsonBool(c.auto)
+            is Command.SetExecutor -> { id("task", c.task); str("executor", c.executor.key) }
             is Command.Archive -> { id("task", c.task); f["archived"] = JsonBool(c.archived) }
             is Command.ArchiveFinished -> Unit
         }
@@ -173,6 +175,13 @@ object CommandCodec {
             "target.enabled" -> f.string("target")?.let { IdKinds.TARGET.parse(it).valueOrNull() }?.let { t -> f.boolean("enabled")?.let { Command.SetTargetEnabled(t, it, key) } }
             "slot.enabled" -> f.string("slot")?.let { IdKinds.ACCOUNT.parse(it).valueOrNull() }?.let { s -> f.boolean("enabled")?.let { Command.SetSlotEnabled(s, it, key) } }
             "control.session-limit" -> Command.SetSessionLimit(f.optLong("limit")?.toInt(), key)
+            "control.executor-switch" -> f.boolean("auto")?.let { Command.SetExecutorSwitch(it, key) }
+            "task.executor" -> task()?.let { t ->
+                f.string("executor")?.let { name ->
+                    com.dpsmpx.dpai.core.ids.Executor.byKey(name)?.let { Command.SetExecutor(t, it, key) }
+                        ?: null.also { d.error(DiagCode.VALUE_INVALID, "неизвестный исполнитель: $name", "$.executor") }
+                }
+            }
             "task.archive" -> task()?.let { t -> f.boolean("archived")?.let { Command.Archive(t, it, key) } }
             "tasks.archive-done" -> Command.ArchiveFinished(key)
             else -> null.also { d.error(DiagCode.UNSUPPORTED, "неизвестная команда: $name", "$.command") }

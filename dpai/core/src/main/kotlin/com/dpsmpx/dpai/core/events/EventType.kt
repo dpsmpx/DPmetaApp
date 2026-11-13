@@ -138,4 +138,7 @@ enum class EventType {
     ACTION_REQUESTED,
     ACTION_SETTLED,
     ACTION_REFUSED,
+
+    // --- переход у предела к другому исполнителю — только по настройке человека (DPmetaApp:D-130, D-165) ---
+    CONTROL_EXECUTOR_SWITCH_SET,
 }

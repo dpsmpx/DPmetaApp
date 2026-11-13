@@ -319,6 +319,15 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         return own.isNotEmpty() && own.all { it.state == AccountState.RATE_LIMITED || state.subscriptions.getValue(it.subscriptionId).limitedAt(now) }
     }
 
+    /**
+     * Кому можно передать задачу у предела её исполнителя (D-165): другие исполнители,
+     * у которых есть включённый слот и которые сами не у предела, — по кругу от [from].
+     */
+    fun handoverCandidates(state: AccountsState, from: Executor, now: Timestamp): List<Executor> =
+        generateSequence(from.next) { it.next }.take(Executor.entries.size - 1)
+            .filter { x -> state.slots.values.any { it.executor == x && !it.disabled } && !exhausted(state, x, now) }
+            .toList()
+
     fun release(state: AccountsState, session: SessionId, now: Timestamp): Outcome<List<AccountEvent>> {
         val slot = state.slotOf(session) ?: return Outcome.success(emptyList())
         return Outcome.success(finish(state, listOf(SessionReleased(slot.id, session, now)), now))

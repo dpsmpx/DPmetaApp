@@ -40,6 +40,7 @@ object SettingIntents {
         is Command.SetRotation -> "rotation:${c.subscription.value}"
         is Command.SetNearPercent -> "near:${c.subscription.value}"
         is Command.SetSessionLimit -> "session-limit"
+        is Command.SetExecutorSwitch -> "executor-switch"
         else -> null
     }
 
@@ -113,6 +114,7 @@ object SettingIntents {
             o.accounts.subscriptions[c.subscription]?.rotationExplicit == true
         is Command.SetNearPercent -> o.accounts.subscriptions[c.subscription]?.nearPercent == c.percent
         is Command.SetSessionLimit -> o.control.maxSessions == c.limit
+        is Command.SetExecutorSwitch -> o.control.autoExecutorSwitch == c.auto
         else -> true
     }
 }

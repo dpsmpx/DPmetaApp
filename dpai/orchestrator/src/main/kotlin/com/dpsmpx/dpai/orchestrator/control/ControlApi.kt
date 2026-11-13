@@ -281,7 +281,8 @@ class ControlApi(
         is Command.Waive -> true
         // Аудит A-02: токен канала не доказывает, что команду дал человек.
         // Автопрогон по доверенному манифесту использует внутренний канал и сюда не попадает.
-        is Command.AddTask, is Command.MoveTask, is Command.SetSessionLimit -> true
+        // Передача задачи другому ИИ и автоматический переход у предела (D-165) — тоже только человек.
+        is Command.AddTask, is Command.MoveTask, is Command.SetSessionLimit, is Command.SetExecutorSwitch, is Command.SetExecutor -> true
         is Command.SetPolicy -> o.tasks.tasks[c.task]?.policy?.let { previous ->
             (c.reviews != null && !c.reviews.containsAll(previous.reviews)) ||
                 c.taskClass.ordinal < previous.taskClass.ordinal ||
