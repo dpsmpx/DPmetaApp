@@ -469,7 +469,7 @@ class DemoModel(
     fun saveRunProfile(p: ProjectEntry, profile: com.dpsmpx.dpai.ui.RunProfile) = controller.manualProfiles.saveRun(p, profile)
     fun aiRoute(p: ProjectEntry) = controller.manualProfiles.aiRoute(p)
     fun saveAiRoute(p: ProjectEntry, route: com.dpsmpx.dpai.ui.EditorAiRoute) = controller.manualProfiles.saveAiRoute(p, route)
-    fun pcFiles(target: TargetEntry, root: String) = controller.pcFiles(target, root)
+    fun pcFiles(target: TargetEntry, root: String, writable: Boolean = false) = controller.pcFiles(target, root, writable)
     @Volatile private var manualStop = false
 
     fun stopManualProfile() { manualStop = true; resumeManualProfile() }

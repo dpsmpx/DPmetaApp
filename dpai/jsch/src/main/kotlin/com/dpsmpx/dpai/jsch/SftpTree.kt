@@ -36,16 +36,27 @@ interface SftpOps : AutoCloseable {
 
     fun open(path: String): InputStream
 
+    /** Записать файл [path] из [input] целиком (создать или заменить). */
+    fun write(path: String, input: InputStream)
+
+    /** Переименовать [from] в [to]; [to] существует — сервер может отказать (Windows OpenSSH). */
+    fun rename(from: String, to: String)
+
+    fun remove(path: String)
+
+    fun mkdir(path: String)
+
     override fun close()
 }
 
 /**
- * Файлы дерева на ПК по SFTP (`DPmetaApp:D-127`; D-162) — только чтение: список
- * каталога, чтение и копирование файла кусками; запись и удаление — отказ. Пути —
- * относительные от корня дерева [root] (`FileTree`); символьные ссылки и негодные
- * имена не показываются и не проходятся. Одно подключение на обход — закрыть [close].
+ * Файлы дерева на ПК по SFTP (`DPmetaApp:D-127`, D-131; D-162, D-166): список
+ * каталога, чтение и копирование файла кусками; с [writable] — запись (временный
+ * файл и переименование), без него — отказ. Удаления нет. Пути — относительные от
+ * корня дерева [root] (`FileTree`); символьные ссылки и негодные имена не
+ * показываются и не проходятся. Одно подключение — закрыть [close].
  */
-class SftpTree(private val ops: SftpOps, root: String, platform: TargetPlatform) : FileTree, AutoCloseable {
+class SftpTree(private val ops: SftpOps, root: String, platform: TargetPlatform, private val writable: Boolean = false) : FileTree, AutoCloseable {
     /** Корень дерева так, как его видит сервер SFTP. */
     val root: String = remotePath(platform, root)
 
@@ -65,9 +76,60 @@ class SftpTree(private val ops: SftpOps, root: String, platform: TargetPlatform)
         return copy(path, maxBytes) { b, n -> out.write(b, 0, n) }.then { Outcome.success(out.toByteArray()) }
     }
 
-    override fun write(path: String, bytes: ByteArray): Outcome<FileMeta> = readOnly(path)
+    /**
+     * Записать файл (D-166): недостающие каталоги создаются, байты — во временный файл
+     * того же каталога, затем переименование поверх; сервер не переименовывает поверх —
+     * прежний файл удаляется и временный переименовывается. Отказ — временный убран.
+     */
+    override fun write(path: String, bytes: ByteArray): Outcome<FileMeta> {
+        if (!writable) return readOnly(path)
+        if (path.isEmpty()) return Outcome.failure(DiagCode.VALUE_INVALID, "не файл", path)
+        val target = when (val r = abs(path)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        val parent = FileNames.parent(path)
+        val tmp = root.trimEnd('/') + "/" + FileNames.join(parent, FileNames.TMP_PREFIX + FileNames.name(path) + "-" + (++counter))
+        return attempt(path) {
+            ensureDirs(parent)
+            ops.write(tmp, bytes.inputStream())
+            try {
+                try {
+                    ops.rename(tmp, target)
+                } catch (e: IOException) {
+                    if (e is SftpOps.NoSuchFile) throw e
+                    // Windows OpenSSH не переименовывает поверх существующего файла.
+                    ops.remove(target)
+                    ops.rename(tmp, target)
+                }
+            } catch (e: IOException) {
+                runCatching { ops.remove(tmp) }
+                throw e
+            }
+            val e = ops.stat(target)
+            FileMeta(e.size, e.modifiedSec * 1000)
+        }
+    }
 
-    override fun delete(path: String): Outcome<Unit> = readOnly(path)
+    /** Создать недостающие каталоги [dir] (относительный путь) по одному. */
+    private fun ensureDirs(dir: String) {
+        if (dir.isEmpty()) return
+        var cur = ""
+        for (seg in dir.split('/')) {
+            cur = FileNames.join(cur, seg)
+            val p = root.trimEnd('/') + "/" + cur
+            val e = try { ops.stat(p) } catch (_: SftpOps.NoSuchFile) { null }
+            when {
+                e == null -> ops.mkdir(p)
+                e.link || !e.dir -> throw IOException("часть пути — не каталог: $cur")
+            }
+        }
+    }
+
+    @Volatile
+    private var counter = 0
+
+    override fun delete(path: String): Outcome<Unit> = Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "удаление файлов ПК из приложения недоступно", path)
 
     /** Сведения о файле [path]: размер и время изменения (мс). */
     fun meta(path: String): Outcome<FileMeta> = abs(path).then { p ->
@@ -113,6 +175,9 @@ class SftpTree(private val ops: SftpOps, root: String, platform: TargetPlatform)
 
     private fun <T> readOnly(path: String): Outcome<T> = Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "файлы ПК здесь только читаются", path)
 
+    /** Ошибка связи (не «нет файла» и не отказ проверки): после неё стоит переподключиться. */
+    internal fun connectionLost(r: Outcome<*>): Boolean = r is Outcome.Failure && r.diagnostics.first().code == DiagCode.SSH_CONNECTION_FAILED
+
     private inline fun <T> attempt(path: String, block: () -> T): Outcome<T> = try {
         Outcome.success(block())
     } catch (_: SftpOps.NoSuchFile) {
@@ -134,8 +199,8 @@ class SftpTree(private val ops: SftpOps, root: String, platform: TargetPlatform)
             return if (Regex("^[A-Za-z]:(/.*)?$").matches(p)) "/" + p.ifEmpty { "." } else p.ifEmpty { "." }
         }
 
-        /** Открыть дерево [root] на target [endpoint] по SFTP — тем же входом, что команды (D-31, T2). */
-        fun open(endpoint: SshEndpoint, platform: TargetPlatform, root: String, identities: List<Identity>, connectTimeout: Duration = 10.seconds): Outcome<SftpTree> {
+        /** Открыть дерево [root] на target [endpoint] по SFTP — тем же входом, что команды (D-31, T2); [writable] — с записью (D-166). */
+        fun open(endpoint: SshEndpoint, platform: TargetPlatform, root: String, identities: List<Identity>, connectTimeout: Duration = 10.seconds, writable: Boolean = false): Outcome<SftpTree> {
             val session = when (val s = JschConnect.open(endpoint, identities, connectTimeout, "sftp ${endpoint.host}")) {
                 is Outcome.Failure -> return s
                 is Outcome.Success -> s.value
@@ -143,7 +208,7 @@ class SftpTree(private val ops: SftpOps, root: String, platform: TargetPlatform)
             return try {
                 val channel = session.openChannel("sftp") as ChannelSftp
                 channel.connect(connectTimeout.inWholeMilliseconds.toInt())
-                Outcome.success(SftpTree(JschSftpOps(session, channel), root, platform))
+                Outcome.success(SftpTree(JschSftpOps(session, channel), root, platform, writable))
             } catch (e: JSchException) {
                 session.disconnect()
                 Outcome.failure(JschProcessHost.classify(e), "SFTP не открылся: ${e.message?.take(200).orEmpty()}", endpoint.host)
@@ -154,6 +219,8 @@ class SftpTree(private val ops: SftpOps, root: String, platform: TargetPlatform)
 
 /** [SftpOps] на JSch `ChannelSftp`: ошибка SFTP — `IOException`, «нет файла» — [SftpOps.NoSuchFile]. */
 internal class JschSftpOps(private val session: Session, private val channel: ChannelSftp) : SftpOps {
+    // Один ChannelSftp не годится для двух потоков сразу (D-166).
+    @Synchronized
     private fun <T> call(path: String, block: () -> T): T = try {
         block()
     } catch (e: SftpException) {
@@ -173,10 +240,61 @@ internal class JschSftpOps(private val session: Session, private val channel: Ch
         SftpOps.Entry(path.substringAfterLast('/'), a.isDir, a.isLink, a.size, a.mTime.toLong() and 0xFFFFFFFFL)
     }
 
+    /**
+     * Поток файла — без буфера в памяти (APK до 512 МБ, D-127). Читать его, пока канал не
+     * занят другим вызовом: `ReopeningSftpTree` выполняет действия по одному, скачивание
+     * идёт своим подключением.
+     */
     override fun open(path: String): InputStream = call(path) { channel.get(path) }
+
+    override fun write(path: String, input: InputStream) = call(path) { channel.put(input, path, ChannelSftp.OVERWRITE) }
+
+    override fun rename(from: String, to: String) = call(from) { channel.rename(from, to) }
+
+    override fun remove(path: String) = call(path) { channel.rm(path) }
+
+    override fun mkdir(path: String) = call(path) { channel.mkdir(path) }
 
     override fun close() {
         runCatching { channel.disconnect() }
         runCatching { session.disconnect() }
+    }
+}
+
+/**
+ * Дерево ПК с одним подключением на всё время экрана (D-166): открывается при первом
+ * обращении через [open]; обрыв связи — новое подключение и один повтор действия.
+ * Закрыть [close], когда экран дерева ушёл.
+ */
+class ReopeningSftpTree(private val open: () -> Outcome<SftpTree>) : FileTree, AutoCloseable {
+    private var current: SftpTree? = null
+
+    @Synchronized
+    private fun <T> run(action: (SftpTree) -> Outcome<T>): Outcome<T> {
+        repeat(2) { attempt ->
+            val tree = current ?: when (val r = open()) {
+                is Outcome.Failure -> return r
+                is Outcome.Success -> r.value.also { current = it }
+            }
+            val result = action(tree)
+            if (!tree.connectionLost(result) || attempt == 1) return result
+            runCatching { tree.close() }
+            current = null
+        }
+        error("недостижимо")
+    }
+
+    override fun list(dir: String) = run { it.list(dir) }
+
+    override fun read(path: String, maxBytes: Long) = run { it.read(path, maxBytes) }
+
+    override fun write(path: String, bytes: ByteArray) = run { it.write(path, bytes) }
+
+    override fun delete(path: String) = run { it.delete(path) }
+
+    @Synchronized
+    override fun close() {
+        current?.let { runCatching { it.close() } }
+        current = null
     }
 }

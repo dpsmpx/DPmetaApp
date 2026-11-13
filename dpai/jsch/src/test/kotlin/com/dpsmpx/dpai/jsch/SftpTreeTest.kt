@@ -21,12 +21,33 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
  */
 class SftpTreeTest {
     /** Сервер-двойник: файлы — путь → байты; ссылки — отдельно; [opened] — что читали. */
-    private class FakeSftp(private val files: Map<String, ByteArray>, private val links: Set<String> = emptySet()) : SftpOps {
+    private class FakeSftp(initial: Map<String, ByteArray>, private val links: Set<String> = emptySet(), val renameOver: Boolean = true) : SftpOps {
+        val files: MutableMap<String, ByteArray> = initial.toMutableMap()
         val listed = mutableListOf<String>()
+        val calls = mutableListOf<String>()
         var closed = false
-        private val dirs: Set<String> = files.keys.flatMap { f -> generateSequence(f.substringBeforeLast('/', "")) { it.substringBeforeLast('/', "").takeIf { p -> p.isNotEmpty() } }.toList() }.toSet()
+
+        /** Сколько следующих вызовов кончатся обрывом связи. */
+        var drops = 0
+        private val made = mutableSetOf<String>()
+        private val dirs: Set<String> get() = files.keys.flatMap { f -> generateSequence(f.substringBeforeLast('/', "")) { it.substringBeforeLast('/', "").takeIf { p -> p.isNotEmpty() } }.toList() }.toSet() + made
+
+        private fun net() { if (drops > 0) { drops--; throw java.io.IOException("Connection reset") } }
+
+        override fun write(path: String, input: InputStream) { net(); calls += "write $path"; files[path] = input.readBytes() }
+
+        override fun rename(from: String, to: String) {
+            calls += "rename $from"
+            if (to in files && !renameOver) throw java.io.IOException("Failure")
+            files[to] = files.remove(from) ?: throw SftpOps.NoSuchFile(from)
+        }
+
+        override fun remove(path: String) { calls += "remove $path"; files.remove(path) ?: throw SftpOps.NoSuchFile(path) }
+
+        override fun mkdir(path: String) { calls += "mkdir $path"; made += path }
 
         override fun list(path: String): List<SftpOps.Entry> {
+            net()
             listed += path
             if (path !in dirs) throw SftpOps.NoSuchFile(path)
             val prefix = "$path/"
@@ -98,9 +119,51 @@ class SftpTreeTest {
         assertEquals(DiagCode.ENTITY_NOT_FOUND, assertIs<Outcome.Failure>(tree.copy("none.apk", 1L shl 20) { _, _ -> }).diagnostics.first().code)
         assertEquals(DiagCode.VALUE_INVALID, assertIs<Outcome.Failure>(tree.copy("link.apk", 1L shl 20) { _, _ -> }).diagnostics.first().code, "ссылка не читается")
         assertEquals(DiagCode.VALUE_INVALID, assertIs<Outcome.Failure>(tree.list("../etc")).diagnostics.first().code)
-        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, assertIs<Outcome.Failure>(tree.write("x.txt", ByteArray(1))).diagnostics.first().code)
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, assertIs<Outcome.Failure>(tree.write("x.txt", ByteArray(1))).diagnostics.first().code, "без writable — только чтение")
         assertEquals(DiagCode.OPERATION_NOT_ALLOWED, assertIs<Outcome.Failure>(tree.delete("big.apk")).diagnostics.first().code)
         assertEquals(2 * SftpTree.CHUNK, ok(tree.read("big.apk", 64L shl 20)).size)
+    }
+
+    /** Запись (D-166): временный файл и переименование поверх; Windows — удалить и переименовать; каталоги создаются. */
+    @Test
+    fun writeGoesThroughTempFileAndCreatesDirs() {
+        val posix = FakeSftp(mapOf("/srv/p/src/a.txt" to "old".toByteArray()))
+        val tree = SftpTree(posix, "/srv/p", TargetPlatform.POSIX, writable = true)
+        assertEquals(3L, ok(tree.write("src/a.txt", "new".toByteArray())).size)
+        assertEquals("new", String(posix.files.getValue("/srv/p/src/a.txt")))
+        assertTrue(posix.calls.first().startsWith("write /srv/p/src/.dpai-tmp-a.txt"), posix.calls.toString())
+        assertTrue(posix.calls.none { it.startsWith("remove") }, "переименование поверх — без удаления")
+        assertTrue(posix.files.keys.none { "/.dpai-tmp-" in it }, "временного не осталось")
+        ok(tree.write("new/deep/b.txt", "b".toByteArray()))
+        assertTrue("mkdir /srv/p/new" in posix.calls && "mkdir /srv/p/new/deep" in posix.calls, posix.calls.toString())
+        assertEquals(listOf("a.txt"), ok(tree.list("src")).map { it.name }, "временный файл в списке не виден")
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, assertIs<Outcome.Failure>(tree.delete("src/a.txt")).diagnostics.first().code)
+        assertEquals(DiagCode.VALUE_INVALID, assertIs<Outcome.Failure>(tree.write("../x", ByteArray(1))).diagnostics.first().code)
+
+        val windows = FakeSftp(mapOf("/C:/p/a.txt" to "old".toByteArray()), renameOver = false)
+        ok(SftpTree(windows, "C:\\p", TargetPlatform.WINDOWS, writable = true).write("a.txt", "new".toByteArray()))
+        assertEquals("new", String(windows.files.getValue("/C:/p/a.txt")))
+        assertTrue("remove /C:/p/a.txt" in windows.calls, windows.calls.toString())
+        assertTrue(windows.files.keys.none { "/.dpai-tmp-" in it })
+    }
+
+    /** Одно подключение на экран и переподключение после обрыва (D-166). */
+    @Test
+    fun reopeningTreeReconnectsOnceAfterDrop() {
+        var opened = 0
+        val fake = FakeSftp(mapOf("/srv/p/a.txt" to ByteArray(1)))
+        val tree = ReopeningSftpTree { opened++; Outcome.success(SftpTree(fake, "/srv/p", TargetPlatform.POSIX, writable = true)) }
+        ok(tree.list(""))
+        ok(tree.list(""))
+        assertEquals(1, opened, "одно подключение на несколько действий")
+        fake.drops = 1
+        ok(tree.list(""))
+        assertEquals(2, opened, "обрыв — новое подключение и повтор")
+        fake.drops = 2
+        assertEquals(DiagCode.SSH_CONNECTION_FAILED, assertIs<Outcome.Failure>(tree.list("")).diagnostics.first().code, "повтор — один")
+        assertEquals(DiagCode.ENTITY_NOT_FOUND, assertIs<Outcome.Failure>(tree.list("none")).diagnostics.first().code)
+        tree.close()
+        assertTrue(fake.closed)
     }
 
     /** Настоящий SFTP target (`-Ddpai.test.ssh=user@host:port:posix|windows`, `.identity`, `.knownHosts`, `.sftp.root`). */
