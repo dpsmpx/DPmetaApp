@@ -433,6 +433,21 @@ private fun BrowserContent(p: Place, onPlace: (Place) -> Unit, onClose: () -> Un
         return
     }
     var searching by androidx.compose.runtime.saveable.rememberSaveable(rootKey) { mutableStateOf(false) }
+    var logcat by androidx.compose.runtime.saveable.rememberSaveable(rootKey) { mutableStateOf(false) }
+    if (logcat) {
+        // Logcat (D-160): строка трассировки — файл этого места по имени и пакету класса, вкладкой на строке.
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        val tree = remember(rootKey) { treeOf(context, p) }
+        LogcatPanel(onClose = { logcat = false }, onFrame = { f ->
+            scope.launch {
+                val hits = withContext(Dispatchers.IO) { (com.dpsmpx.dpai.files.TreeSearch.names(tree, f.file, p.dir, limit = 50) as? Outcome.Success)?.value?.hits.orEmpty() }
+                val path = hits.firstOrNull { it.endsWith(f.pathSuffix) } ?: hits.firstOrNull { it.substringAfterLast('/') == f.file }
+                if (path != null) { logcat = false; openFiles.openAt(path, f.line) }
+                else android.widget.Toast.makeText(context, "${f.file} не найден в этой папке", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        })
+        return
+    }
     if (searching) {
         val profiles = remember { Controller.get(context.filesDir).manualProfiles }
         // Запись замены — тем же путём, что «Сохранить» редактора: под замком ручных профилей.
@@ -451,6 +466,7 @@ private fun BrowserContent(p: Place, onPlace: (Place) -> Unit, onClose: () -> Un
             TextButton(onClick = { if (p.dir.isEmpty()) onClose() else onPlace(p.copy(dir = FileNames.parent(p.dir))) }, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
             Text(p.title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             TextButton(onClick = { searching = true }) { Text("Поиск") }
+            TextButton(onClick = { logcat = true }) { Text("Logcat") }
             p.guestDir?.let { g -> TextButton(onClick = { TerminalActivity.startLinux(context, g) }) { Text("В терминале") } }
         }
         error?.let { Text(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error) }

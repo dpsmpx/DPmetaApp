@@ -184,6 +184,8 @@ object GuestStorage {
         val secrets: List<SecretLine>,
         val free: Long?,
         val limit: Long,
+        /** Ключ adb к этому телефону есть (`~/.android/adbkey`, DPmetaApp:D-125; D-160). */
+        val adbPaired: Boolean = false,
     )
 
     /** Предел файлов при счёте размера раздела: дальше — «не меньше». */
@@ -214,6 +216,7 @@ object GuestStorage {
             packages = runCatching { Files.readAllLines(rootfs.resolve("lib/apk/db/installed")).count { it.startsWith("P:") } }.getOrNull(),
             slots = names(home.resolve(AI)),
             secrets = secrets,
+            adbPaired = Files.isRegularFile(home.resolve(".android/adbkey"), LinkOption.NOFOLLOW_LINKS),
             free = free,
             limit = limit,
         )
@@ -362,6 +365,8 @@ object GuestStorage {
             val name = s.variable?.let { v -> " — `$v`" + (s.alias?.let { " (слотам, где `$v` перекрыл бы вход подпиской, — `$it`)" } ?: "") } ?: ""
             appendLine("- ${s.name}$name" + if (s.toAi) " — выдаётся ИИ" else " — ИИ не выдаётся")
         }
+        // adb к этому телефону (DPmetaApp:D-125): права shell; подключение — по порту из файла.
+        if (f.adbPaired) appendLine("- Ключ adb к этому телефону — `~/.android/adbkey` (права shell): `adb connect 127.0.0.1:\$(cat ~/.android/dpmetaapp-port)`, если беспроводная отладка включена")
         appendLine()
         appendLine("## Место")
         appendLine("- предел: " + if (f.limit > 0) gb(f.limit) else "всё свободное место телефона")

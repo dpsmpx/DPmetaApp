@@ -89,6 +89,10 @@ class GuestStorageTest {
         assertTrue("Токен GitHub — `GH_TOKEN` — ИИ не выдаётся" in md)
         assertTrue("всё свободное место телефона" in md && "41,0 ГБ" in md)
         assertEquals("/root/ai/claude-3", GuestStorage.slotDir("claude", 3))
+        assertTrue("Ключ adb" !in md, "без сопряжения — строки нет")
+        write(home.resolve(".android/adbkey"), "PRIVATE-PART")
+        val paired = GuestStorage.render(GuestStorage.scan(home, rootfs, "12.11.2026 14:30", emptyList(), 41L shl 30, 0))
+        assertTrue("Ключ adb к этому телефону" in paired && "dpmetaapp-port" in paired && "PRIVATE-PART" !in paired, "значение ключа в карту не идёт")
     }
 
     @Test

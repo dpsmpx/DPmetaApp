@@ -4,6 +4,7 @@ import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -84,6 +85,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
         var busy by remember { mutableStateOf<String?>(null) }
         var version by remember { mutableIntStateOf(0) }
         var details by remember { mutableStateOf<String?>(null) }
+        var logcatFor by remember { mutableStateOf<String?>(null) }
         var key by remember { mutableStateOf<SigningKeys.Info?>(null) }
         LaunchedEffect(Unit) { key = withContext(Dispatchers.IO) { SigningKeys.info() } }
         LaunchedEffect(location, patterns, refresh, version) {
@@ -164,6 +166,19 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                                 busy = null
                             }
                         }) { Text("Установить") }
+                        // Запуск установленного APK и сразу его logcat (D-160): adb к самому телефону.
+                        TextButton(enabled = busy == null, onClick = {
+                            val file = host(a.path) ?: run { note = "файл вне дерева или исчез"; return@TextButton }
+                            val port = AdbBridge.state.value.connectPort
+                            if (port == null) { note = "Сначала подключите adb: «Файлы» → «Logcat» → «Подключить»"; return@TextButton }
+                            busy = "Запускаю"
+                            scope.launch {
+                                val meta = withContext(Dispatchers.IO) { ApkInstaller.meta(app, file) }
+                                val pkg = (meta as? Outcome.Success)?.value?.takeIf { it.installed != null }?.packageName
+                                if (pkg == null) { busy = null; note = "Приложение не установлено — сначала «Установить»"; return@launch }
+                                AdbBridge.launch(app, port, pkg) { r -> scope.launch { busy = null; note = r; if (r.startsWith("Запущено")) logcatFor = pkg } }
+                            }
+                        }) { Text("Запустить") }
                         TextButton(enabled = busy == null && key != null, onClick = {
                             val file = host(a.path) ?: run { note = "файл вне дерева или исчез"; return@TextButton }
                             DeviceConfirm.ask(context, "Подписать ${file.name} своим ключом", onOk = {
@@ -193,6 +208,11 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
             }
         }
         TextButton(enabled = busy == null, onClick = { version++ }) { Text("Обновить список") }
+        logcatFor?.let { pkg ->
+            androidx.compose.ui.window.Dialog(onDismissRequest = { logcatFor = null }, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+                androidx.compose.material3.Surface(androidx.compose.ui.Modifier.fillMaxSize()) { LogcatPanel(initialPackage = pkg, onClose = { logcatFor = null }) }
+            }
+        }
         details?.let { text ->
             AlertDialog(onDismissRequest = { details = null }, title = { Text("APK") }, text = { Text(text, style = MaterialTheme.typography.bodySmall) },
                 confirmButton = { TextButton(onClick = { details = null }) { Text("Закрыть") } })
