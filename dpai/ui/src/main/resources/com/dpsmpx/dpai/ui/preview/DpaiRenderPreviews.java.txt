@@ -1,0 +1,158 @@
+// DPmetaApp: рендер предпросмотра на ПК (DPmetaApp:D-132; DP_AI_Orcestrator:D-169).
+// Временный тест: функции Compose без параметров (-Pdpai.preview.compose, «класс.функция»
+// через запятую) и разметки XML (-Pdpai.preview.layouts) — PNG и index.tsv в
+// -Pdpai.preview.out. Compose — через отражение: проекту без Compose тест тоже собирается.
+package dpai.preview;
+
+import android.app.Activity;
+import android.app.Application;
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.os.Looper;
+import android.view.ContextThemeWrapper;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.Robolectric;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.RuntimeEnvironment;
+import org.robolectric.annotation.Config;
+import org.robolectric.annotation.GraphicsMode;
+
+import static org.robolectric.Shadows.shadowOf;
+
+@RunWith(RobolectricTestRunner.class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = 36, qualifiers = "w360dp-h800dp-xhdpi")
+public class DpaiRenderPreviews {
+    // Всё — одним тестом: в песочнице Robolectric эффекты Compose идут только в первом тесте.
+    @Test
+    public void render() throws Exception {
+        File out = new File(System.getProperty("dpai.preview.out", "build/dpai-preview"));
+        out.mkdirs();
+        StringBuilder index = new StringBuilder();
+        for (String fqn : split(System.getProperty("dpai.preview.compose", ""))) {
+            String name = fqn.substring(fqn.lastIndexOf('.') + 1);
+            try {
+                Activity a = activity();
+                View view = composeView(a, fqn);
+                a.setContentView(view);
+                settle();
+                save(a.getWindow().getDecorView(), new File(out, "compose-" + name + ".png"));
+                index.append("compose\t").append(fqn).append("\tcompose-").append(name).append(".png\tok\n");
+            } catch (Throwable e) {
+                index.append("compose\t").append(fqn).append("\t\t").append(why(e)).append('\n');
+            }
+        }
+        for (String layout : split(System.getProperty("dpai.preview.layouts", ""))) {
+            try {
+                Application app = RuntimeEnvironment.getApplication();
+                int theme = app.getApplicationInfo().theme;
+                Context ctx = new ContextThemeWrapper(app, theme != 0 ? theme : android.R.style.Theme_DeviceDefault_Light);
+                int id = app.getResources().getIdentifier(layout, "layout", app.getPackageName());
+                if (id == 0) throw new IllegalArgumentException("нет разметки " + layout);
+                FrameLayout root = new FrameLayout(ctx);
+                View v = LayoutInflater.from(ctx).inflate(id, root, false);
+                root.addView(v);
+                float d = ctx.getResources().getDisplayMetrics().density;
+                int w = (int) (360 * d);
+                root.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec((int) (2000 * d), View.MeasureSpec.AT_MOST));
+                root.layout(0, 0, w, Math.max(1, root.getMeasuredHeight()));
+                save(root, new File(out, "layout-" + layout + ".png"));
+                index.append("layout\t").append(layout).append("\tlayout-").append(layout).append(".png\tok\n");
+            } catch (Throwable e) {
+                index.append("layout\t").append(layout).append("\t\t").append(why(e)).append('\n');
+            }
+        }
+        try (OutputStream o = new FileOutputStream(new File(out, "index.tsv"))) {
+            o.write(index.toString().getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    /** ComponentActivity, если есть (Compose нужен владелец жизненного цикла), иначе Activity. */
+    @SuppressWarnings("unchecked")
+    private static Activity activity() {
+        Class<? extends Activity> cls;
+        try {
+            cls = (Class<? extends Activity>) Class.forName("androidx.activity.ComponentActivity");
+        } catch (ClassNotFoundException e) {
+            cls = Activity.class;
+        }
+        return Robolectric.buildActivity(cls).setup().get();
+    }
+
+    /** ComposeView с функцией «класс.функция»: её код после компилятора Compose — f(Composer, int). */
+    private static View composeView(Activity a, String fqn) throws Exception {
+        int dot = fqn.lastIndexOf('.');
+        Class<?> owner = Class.forName(fqn.substring(0, dot));
+        Class<?> composer = Class.forName("androidx.compose.runtime.Composer");
+        Method m = owner.getDeclaredMethod(fqn.substring(dot + 1), composer, int.class);
+        m.setAccessible(true);
+        Class<?> viewClass = Class.forName("androidx.compose.ui.platform.ComposeView");
+        View view = (View) viewClass.getConstructor(Context.class).newInstance(a);
+        Class<?> fn2 = Class.forName("kotlin.jvm.functions.Function2");
+        Object unit = Class.forName("kotlin.Unit").getField("INSTANCE").get(null);
+        Object content = Proxy.newProxyInstance(fn2.getClassLoader(), new Class<?>[]{fn2}, (proxy, method, args) -> {
+            if (method.getName().equals("invoke")) {
+                m.invoke(null, args[0], 0);
+                return unit;
+            }
+            if (method.getName().equals("hashCode")) return System.identityHashCode(proxy);
+            if (method.getName().equals("equals")) return proxy == args[0];
+            return fqn;
+        });
+        viewClass.getMethod("setContent", fn2).invoke(view, content);
+        return view;
+    }
+
+    /** Главный цикл — шагами по 50 мс с настоящим ожиданием между ними: данные и эффекты успевают. */
+    private static void settle() {
+        Semaphore tick = new Semaphore(0);
+        for (int i = 0; i < 40; i++) {
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(50));
+            try {
+                tick.tryAcquire(25, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        shadowOf(Looper.getMainLooper()).idle();
+    }
+
+    private static void save(View v, File file) throws Exception {
+        int w = Math.max(1, v.getWidth());
+        int h = Math.max(1, v.getHeight());
+        Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        c.drawColor(Color.WHITE);
+        v.draw(c);
+        try (OutputStream o = new FileOutputStream(file)) {
+            bmp.compress(Bitmap.CompressFormat.PNG, 100, o);
+        }
+    }
+
+    private static String[] split(String s) {
+        return s.isEmpty() ? new String[0] : s.split(",");
+    }
+
+    private static String why(Throwable e) {
+        Throwable root = e;
+        while (root.getCause() != null && root != root.getCause()) root = root.getCause();
+        String text = root.getClass().getSimpleName() + ": " + String.valueOf(root.getMessage());
+        return text.replace('\t', ' ').replace('\n', ' ').substring(0, Math.min(300, text.length()));
+    }
+}
