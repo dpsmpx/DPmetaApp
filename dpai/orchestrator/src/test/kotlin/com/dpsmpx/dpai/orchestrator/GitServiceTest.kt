@@ -85,6 +85,14 @@ class GitServiceTest {
         assertEquals(null, detached.branch)
     }
 
+    @Test
+    fun truncatedDiffCannotBecomeACompleteReview() {
+        val repo = repo()
+        File(repo.root, "README.md").appendText("changed\n".repeat(100))
+        val result = assertIs<Outcome.Failure>(git.run(GitOp.DIFF, repo.root, maxStdoutChars = 64))
+        assertEquals(com.dpsmpx.dpai.core.diagnostics.DiagCode.GIT_OUTPUT_INVALID, result.errors.single().code)
+    }
+
     private fun repo(): Repository {
         val root = dir.resolve("repo").toFile().apply { mkdirs() }.path
         sh("init", "-q", "-b", "main", root)

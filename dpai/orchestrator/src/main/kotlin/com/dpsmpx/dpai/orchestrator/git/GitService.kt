@@ -31,7 +31,10 @@ class GitService(private val host: ProcessHost, private val commands: GitCommand
     fun run(op: GitOp, path: String, args: List<String> = emptyList(), approval: Approval? = null, maxStdoutChars: Int = 1024 * 1024): Outcome<Completed> =
         commands.argv(op, path, args, clock.now(), approval).then { argv ->
             host.run(ProcessSpec(argv, stdin = if (op == GitOp.COMMIT) args.single() else null), timeout, maxStdoutChars = maxStdoutChars).then { done ->
-                if (done.ok) {
+                if (done.truncated && !op.writes) {
+                    // Частичный diff/log не доказывает, что ревью увидело все изменения (O-05).
+                    Outcome.failure(DiagCode.GIT_OUTPUT_INVALID, "вывод Git больше предела; полный результат неизвестен", path)
+                } else if (done.ok) {
                     Outcome.success(done)
                 } else {
                     val tail = (done.stderr + done.stdout).lastOrNull { it.isNotBlank() }?.take(300) ?: "без вывода"
