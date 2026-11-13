@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.android
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -53,6 +54,8 @@ object ApiKeys {
      * Секрет по имени — для секретов приложения, не профилей: токен и пароль
      * облачной копии (D-107). Имена не похожи на id профилей (`acc_…`).
      */
+    // Синхронная запись секрета: нужен результат commit, а KTX edit его не возвращает.
+    @SuppressLint("ApplySharedPref", "UseKtx")
     @Synchronized
     fun putNamed(context: Context, name: String, secret: Secret): Boolean {
         if (secret.isEmpty) {
@@ -94,6 +97,8 @@ object ApiKeys {
     fun remove(context: Context, id: AccountId) = removeNamed(context, id.value)
 
     @Synchronized
+    // Синхронная запись секрета: нужен результат commit, а KTX edit его не возвращает.
+    @SuppressLint("ApplySharedPref", "UseKtx")
     fun removeNamed(context: Context, name: String) {
         prefs(context).edit().remove(name).commit()
     }

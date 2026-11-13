@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
 import com.dpsmpx.dpai.accounts.ApiProfile
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.localai.LocalAI
@@ -55,7 +56,7 @@ object LocalHints {
     }
 
     fun choose(context: Context, profile: ApiProfile) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, profile.id.value).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString(KEY, profile.id.value) }
     }
 
     /**

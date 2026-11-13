@@ -33,6 +33,13 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 | `robolectric-android-all` (образ «Android целиком», SDK 36) | 16-robolectric-13921718-i7 | Apache-2.0 | там же: образ, который ждёт Robolectric 4.17; берётся Gradle со сверкой суммы в `verification-metadata.xml` | Maven Central, `org.robolectric` | 13 ноября 2026 |
 <!-- provenance: end -->
 
+Предпросмотр на ПК (D-169) кладёт в домашний каталог ПК init-скрипт, который
+на один запуск добавляет тестам модуля проекта Robolectric 4.17 и JUnit 4.13.2
+(версии закреплены в ресурсе `ui/src/main/resources/com/dpsmpx/dpai/ui/preview/dpai-preview.init.gradle.txt`).
+Скачивает их Gradle на ПК из репозиториев самого проекта; суммы сверяет только
+`verification-metadata.xml` проекта, если он есть, — приложение их не проверяет
+(угроза T27). В APK DPmetaApp они не попадают.
+
 Версии совпадают с теми, что закреплены в `DPpass:gradle/libs.versions.toml`
 на 6 октября 2026: одна связка Kotlin и JUnit на экосистему проще в
 сопровождении.

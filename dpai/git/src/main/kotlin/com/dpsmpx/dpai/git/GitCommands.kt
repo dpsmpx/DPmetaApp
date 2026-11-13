@@ -28,6 +28,11 @@ enum class GitOp(val destructive: Boolean, val writes: Boolean) {
     WORKTREE_LIST(false, false),
     /** Коммит, на который указывает ссылка (ветка): слияние сверяет, что ветка — та, что прошла проверку (аудит O-02). */
     REV_PARSE(false, false),
+    /**
+     * Строки дерева по словам (D-171, карта кода): первый аргумент — регулярное
+     * выражение (ERE, целые слова), дальше — пути области; без путей — всё дерево.
+     */
+    GREP(false, false),
     FETCH(false, false),
     ADD(false, true),
     COMMIT(false, true),
@@ -58,7 +63,7 @@ class GitCommands(private val approvals: ApprovalLedger, private val git: String
         if (worktree.isBlank() || worktree.startsWith("-") || worktree.any { it.isISOControl() }) {
             return Outcome.failure(DiagCode.VALUE_INVALID, "путь рабочего дерева недопустим", "worktree")
         }
-        args.firstOrNull { it.startsWith("-") || it.any { c -> c.isISOControl() } || it.isEmpty() }?.let {
+        args.firstOrNull { if (op == GitOp.COMMIT) it.isBlank() || '\u0000' in it else it.startsWith("-") || it.any { c -> c.isISOControl() } || it.isEmpty() }?.let {
             return Outcome.failure(DiagCode.VALUE_INVALID, "аргумент «$it» похож на параметр или пуст: параметры задаёт операция", worktree)
         }
         if (op.destructive) {
@@ -81,9 +86,11 @@ class GitCommands(private val approvals: ApprovalLedger, private val git: String
             GitOp.MERGES_BETWEEN -> listOf("rev-list", "--ancestry-path", "--merges", "--reverse", "${args[0]}..${args[1]}", "--")
             GitOp.WORKTREE_LIST -> listOf("worktree", "list", "--porcelain")
             GitOp.REV_PARSE -> listOf("rev-parse", "--verify", "--quiet", "${args.single()}^{commit}")
+            GitOp.GREP -> listOf("grep", "-n", "-I", "--no-color", "--full-name", "-w", "-E", "-e", args[0], "--") + args.drop(1)
             GitOp.FETCH -> listOf("fetch", "--no-recurse-submodules", "--") + args
             GitOp.ADD -> listOf("add", "--") + args
-            GitOp.COMMIT -> listOf("commit", "--no-verify", "-m", args.single())
+            // Сообщение передаёт GitService через stdin: Windows shell не раскрывает текст задачи (O-06).
+            GitOp.COMMIT -> listOf("commit", "--no-verify", "-F", "-")
             GitOp.BRANCH_CREATE -> listOf("branch", "--") + args
             GitOp.WORKTREE_ADD -> listOf("worktree", "add", "-b", args[1], "--", args[0]) + args.drop(2)
             GitOp.WORKTREE_REMOVE -> listOf("worktree", "remove", "--", args.single())
@@ -120,19 +127,19 @@ class GitCommands(private val approvals: ApprovalLedger, private val git: String
         private val READ_OPTIONS = listOf("--no-optional-locks")
         private val READ_ONLY = setOf(
             GitOp.STATUS, GitOp.DIFF, GitOp.LOG, GitOp.HEAD, GitOp.MERGE_BASE, GitOp.DIFF_FROM, GitOp.DIFF_STAT_FROM, GitOp.MERGES_BETWEEN, GitOp.WORKTREE_LIST,
-            GitOp.REV_PARSE,
+            GitOp.REV_PARSE, GitOp.GREP,
         )
 
         /** Пути — как есть, в UTF-8: при `core.quotePath=true` кириллица шла бы «\320\227…» в кавычках. */
         private val UNQUOTED_PATHS = listOf("-c", "core.quotePath=false")
-        private val PATH_OUTPUT = setOf(GitOp.STATUS, GitOp.DIFF, GitOp.DIFF_FROM, GitOp.DIFF_STAT_FROM)
+        private val PATH_OUTPUT = setOf(GitOp.STATUS, GitOp.DIFF, GitOp.DIFF_FROM, GitOp.DIFF_STAT_FROM, GitOp.GREP)
 
         /**
          * Хуки проекта при коммите оркестратора не исполняются (`--no-verify`, T4):
          * проверка проекта — отдельный шаг профиля (этап 10), а не побочный эффект коммита.
          */
         private val ARITY: Map<GitOp, IntRange> = mapOf(
-            GitOp.STATUS to 0..0, GitOp.DIFF to 0..50, GitOp.LOG to 0..0, GitOp.HEAD to 0..0, GitOp.MERGE_BASE to 2..2, GitOp.DIFF_FROM to 1..2, GitOp.DIFF_STAT_FROM to 1..2, GitOp.MERGES_BETWEEN to 2..2, GitOp.WORKTREE_LIST to 0..0, GitOp.REV_PARSE to 1..1, GitOp.FETCH to 0..2,
+            GitOp.STATUS to 0..0, GitOp.DIFF to 0..50, GitOp.LOG to 0..0, GitOp.HEAD to 0..0, GitOp.MERGE_BASE to 2..2, GitOp.DIFF_FROM to 1..2, GitOp.DIFF_STAT_FROM to 1..2, GitOp.MERGES_BETWEEN to 2..2, GitOp.WORKTREE_LIST to 0..0, GitOp.REV_PARSE to 1..1, GitOp.GREP to 1..51, GitOp.FETCH to 0..2,
             GitOp.ADD to 1..1000, GitOp.COMMIT to 1..1, GitOp.BRANCH_CREATE to 1..2, GitOp.WORKTREE_ADD to 2..3,
             GitOp.WORKTREE_REMOVE to 1..1, GitOp.MERGE to 1..1, GitOp.MERGE_ABORT to 0..0, GitOp.PUSH to 1..2, GitOp.RESET_HARD to 0..1,
             GitOp.CLEAN_FORCE to 0..50, GitOp.PUSH_FORCE to 1..2, GitOp.BRANCH_DELETE_FORCE to 1..1, GitOp.WORKTREE_REMOVE_FORCE to 1..1,

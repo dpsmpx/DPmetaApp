@@ -1,8 +1,10 @@
 package com.dpsmpx.dpai.android
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import androidx.core.net.toUri
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.result.Outcome
@@ -26,6 +28,8 @@ object TermuxLauncher {
     private const val PACKAGE = "com.termux"
     private const val SERVICE = "com.termux.app.RunCommandService"
     private const val ACTION = "com.termux.RUN_COMMAND"
+    // Это исполняемый файл внешнего Termux, а не каталог данных DPmetaApp.
+    @SuppressLint("SdCardPath")
     private const val SSHD = "/data/data/com.termux/files/usr/bin/sshd"
 
     /** Аргументы `sshd`: только ключи, без паролей и интерактивного входа. */
@@ -40,7 +44,7 @@ object TermuxLauncher {
 
     /** Страница приложения в настройках: там «Другие разрешения» — если HyperOS не показал окно запроса. */
     fun appSettings(context: Context): Intent =
-        Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     fun installed(context: Context): Boolean = try {
         context.packageManager.getPackageInfo(PACKAGE, 0)

@@ -1,0 +1,138 @@
+package com.dpsmpx.dpai.android
+
+import android.graphics.BitmapFactory
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.execution.process.ProcessSpec
+import com.dpsmpx.dpai.execution.process.run
+import com.dpsmpx.dpai.files.FileNames
+import com.dpsmpx.dpai.files.FileTree
+import com.dpsmpx.dpai.jsch.SftpTree
+import com.dpsmpx.dpai.ui.PcPreview
+import com.dpsmpx.dpai.ui.TargetEntry
+import kotlin.time.Duration.Companion.minutes
+
+/**
+ * Дерево файлов открыто на ПК: [target] и корень дерева [root] — путь на ПК (D-166).
+ * [guard] — можно ли сейчас писать в дерево (как у «Запуска»): Gradle пишет в `build/`,
+ * а дерево может быть занято ходом ИИ.
+ */
+internal data class PcPreviewPlace(val model: DemoModel, val target: TargetEntry, val root: String, val project: com.dpsmpx.dpai.ui.ProjectEntry, val location: com.dpsmpx.dpai.ui.WorkspaceLocation, val guard: () -> Outcome<Unit> = { Outcome.success(Unit) })
+
+/** Задаётся экраном файлов ПК: панель предпросмотра предлагает «Нарисовать на ПК». */
+internal val LocalPcPreview = staticCompositionLocalOf<PcPreviewPlace?> { null }
+
+/**
+ * Предпросмотр на ПК (`DPmetaApp:D-132`; D-169): init-скрипт и тест — в домашний
+ * каталог ПК по SFTP, Gradle wrapper проекта — по SSH, PNG — обратно по SFTP.
+ * Файлы проекта не меняются. Звать не из главного потока.
+ */
+internal object PcPreviewRun {
+    /** Нарисованное: [image] — `null`, если не нарисовано (причина — в [PcPreview.Rendered.error]). */
+    data class Shot(val rendered: PcPreview.Rendered, val image: ImageBitmap?)
+
+    /** Итог: картинки и хвост вывода Gradle (для отказа и для «почему не нарисовано»). */
+    data class Result(val shots: List<Shot>, val log: String)
+
+    suspend fun run(place: PcPreviewPlace, tree: FileTree, path: String, compose: List<String>, layouts: List<String>, step: (String) -> Unit): Outcome<Result> {
+        place.guard().let { if (it is Outcome.Failure) return it }
+        // Есть ли файл — по списку его каталога (список — один раз на каталог).
+        val listed = HashMap<String, Set<String>>()
+        val project = PcPreview.locate(path) { file ->
+            val names = listed.getOrPut(FileNames.parent(file)) {
+                ((tree.list(FileNames.parent(file)) as? Outcome.Success)?.value ?: emptyList()).filter { !it.dir }.map { it.name }.toSet()
+            }
+            FileNames.name(file) in names
+        }
+            ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "не найден проект Gradle: нет build.gradle(.kts) модуля или settings.gradle(.kts) выше файла", path)
+        val platform = place.target.platform
+        val nonce = com.dpsmpx.dpai.core.clock.RandomSource.secure().nextBytes(16).joinToString("") { "%02x".format(it) }
+        val runDir = "${PcPreview.DIR}/$nonce"
+        step("Кладу init-скрипт и тест на ПК…")
+        val home = when (val h = withSftp(place) { sftp ->
+            val raw = when (val r = sftp.home()) {
+                is Outcome.Failure -> return@withSftp r
+                is Outcome.Success -> r.value
+            }
+            for ((rel, text) in listOf(PcPreview.INIT to PcPreview.initScript(), PcPreview.TEST to PcPreview.testSource(), "${PcPreview.OUT}/${PcPreview.INDEX}" to "")) {
+                val w = sftp.write("$runDir/$rel", text.toByteArray(Charsets.UTF_8))
+                if (w is Outcome.Failure) return@withSftp w
+            }
+            Outcome.success(PcPreview.localPath(platform, raw).trimEnd('/'))
+        }) {
+            is Outcome.Failure -> return h
+            is Outcome.Success -> h.value
+        }
+        val dir = "$home/$runDir"
+        val argv = when (val a = PcPreview.command(
+            platform, PcPreview.pcDir(platform, place.root, home, project.project), project.module,
+            "$dir/${PcPreview.INIT}", "$dir/${PcPreview.SRC}", "$dir/${PcPreview.OUT}", compose, layouts,
+        )) {
+            is Outcome.Failure -> return a
+            is Outcome.Success -> a.value
+        }
+        step("Gradle рисует на ПК (${project.module}); проект остаётся на паузе до завершения…")
+        val finished = kotlinx.coroutines.CompletableDeferred<Outcome<Result>>()
+        val profile = com.dpsmpx.dpai.ui.ManualProfile(com.dpsmpx.dpai.ui.ManualProfileKind.BUILD,
+            listOf(com.dpsmpx.dpai.ui.ManualStep("Предпросмотр", argv, TIMEOUT.inWholeSeconds)))
+        fun collect(done: LongJobs.Done, view: com.dpsmpx.dpai.ui.ManualRunView): Outcome<Result> {
+            val log = (done.output.joinToString("\n") + "\n" + done.note).takeLast(LOG_TAIL)
+            if (done.failed || !view.complete || view.blocked) {
+                return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "предпросмотр не завершён: $log", project.module)
+            }
+            step("Забираю картинки…")
+            return withSftp(place) { sftp ->
+                val index = (sftp.read("$runDir/${PcPreview.OUT}/${PcPreview.INDEX}", 1L shl 20) as? Outcome.Success)?.value?.toString(Charsets.UTF_8).orEmpty()
+                val rows = PcPreview.parseIndex(index).take(PcPreview.MAX_ITEMS)
+                if (rows.isEmpty()) return@withSftp Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "Gradle не нарисовал. ${log.ifBlank { "Вывода нет." }}", project.module)
+                val imageCount = rows.count { it.file != null }.coerceAtLeast(1)
+                Outcome.success(Result(rows.map { row -> Shot(row, row.file?.let { image(sftp, runDir, it, imageCount) }) }, log))
+            }
+        }
+        // Worker живёт вне панели: даже после её закрытия дочитывает итог и удаляет свои PNG.
+        if (!place.model.startManualProfile(place.project, place.location, profile) { done, view ->
+            try {
+                finished.complete(collect(done, view))
+            } catch (e: Exception) {
+                finished.complete(Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "не получен предпросмотр: ${e.javaClass.simpleName}"))
+            } finally {
+                // При неподтверждённом завершении Gradle ещё может писать: папка остаётся до сверки.
+                if (!view.blocked) cleanup(place, home, nonce)
+            }
+        }) {
+            cleanup(place, home, nonce)
+            return Outcome.failure(DiagCode.WORKTREE_OWNED, "идёт другая операция; дождитесь её завершения")
+        }
+        return finished.await()
+    }
+
+    private fun cleanup(place: PcPreviewPlace, home: String, nonce: String) {
+        val argv = PcPreview.cleanupCommand(place.target.platform, home, nonce).valueOrNull() ?: return
+        val host = place.model.pcHost(place.target).valueOrNull() ?: return
+        host.run(ProcessSpec(argv), kotlin.time.Duration.parse("30s"), maxStdoutChars = LOG_TAIL)
+    }
+
+    private fun image(sftp: SftpTree, runDir: String, file: String, imageCount: Int): ImageBitmap? {
+        val bytes = (sftp.read("$runDir/${PcPreview.OUT}/$file", MAX_PNG) as? Outcome.Success)?.value ?: return null
+        // Размеры — до раскодирования: PNG в 16 МиБ может развернуться в гигабайты пикселей.
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        val sample = PcPreview.imageSample(bounds.outWidth, bounds.outHeight, imageCount) ?: return null
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
+    }
+
+    /** Отдельное подключение SFTP на шаг: Gradle идёт минутами, держать канал всё это время незачем. */
+    private fun <T> withSftp(place: PcPreviewPlace, block: (SftpTree) -> Outcome<T>): Outcome<T> =
+        when (val s = place.model.pcFiles(place.target, "", writable = true)) {
+            is Outcome.Failure -> s
+            is Outcome.Success -> s.value.use(block)
+        }
+
+    private val TIMEOUT = 20.minutes
+    private const val LOG_TAIL = 2_000
+    private const val MAX_PNG = 16L shl 20
+
+}

@@ -573,11 +573,31 @@ class History:
 
     def last_change(self, rel):
         """Дата (ГГГГ-ММ-ДД) последнего коммита, менявшего файл, или ""."""
+        return self.last_commit(rel)[1]
+
+    def last_commit(self, rel):
+        """(коммит, дата ГГГГ-ММ-ДД) последней правки файла или ("", "")."""
         for revs, prefix in reversed(self.segments):
-            _, text = self._git(["log", "-1", "--format=%cs", *revs, "--", prefix + rel])
+            _, text = self._git(["log", "-1", "--format=%H %cs", *revs, "--", prefix + rel])
             if text.strip():
-                return text.strip()
-        return ""
+                sha, _, day = text.strip().partition(" ")
+                return sha, day
+        return "", ""
+
+    def shallow_boundary(self, sha):
+        """Коммит — граница неглубокого клона: у него в клоне нет родителей, и правкой
+        файла он выглядит, даже если файл не менялся (git clone --depth)."""
+        code, path = self._git(["rev-parse", "--git-path", "shallow"])
+        if code != 0 or not sha:
+            return False
+        where = path.strip()
+        if not os.path.isabs(where):
+            where = os.path.join(self.where, where)
+        try:
+            with open(where, encoding="ascii") as f:
+                return sha in {line.strip() for line in f}
+        except OSError:
+            return False
 
     def locate(self, sha):
         """Префикс путей коммита из истории DPprofile или None — коммит не его."""
@@ -631,6 +651,8 @@ class Context:
 
     def __init__(self, root=None):
         self.root = root or ROOT
+        # Условия, которые не проверить без полной истории git: «терм: причина».
+        self.unknown = []
         self.facts, _, _ = load_facts(self.root)
         self.insights, _, _ = load_insights(self.root)
         self.registry, _ = load_registry(self.root)
@@ -690,7 +712,10 @@ def eval_term(term, ctx):
         m = re.fullmatch(r"(.+)>=(\d+)", arg)
         if not m:
             return False, f"условие stable не «путь>=дней»: {term}"
-        return stable(m.group(1), int(m.group(2)), ctx.root), None
+        ok, unknown = stable_check(m.group(1), int(m.group(2)), ctx.root)
+        if unknown:
+            ctx.unknown.append(f"{term}: {unknown}")
+        return ok, None
     if kind == "decision-mark":
         return any(accepted(d) and d.get("mark") == arg for d in ctx.decisions.values()), None
     if kind == "fact-mark":
@@ -731,15 +756,30 @@ def coverage(what, ctx):
 
 
 def stable(rel, days, root):
+    return stable_check(rel, days, root)[0]
+
+
+def stable_check(rel, days, root):
+    """(истинно?, почему не проверить) для `stable:ПУТЬ>=ДНЕЙ`.
+
+    Без истории (копия без git) и в неглубоком клоне, где граница клона выглядит
+    правкой файла, условие не проверить: второе значение — причина, а не ложное
+    «условие ложно».
+    """
     h = history(root)
-    if not h.ok or not exists(rel, root):
-        return False
+    if not h.ok:
+        return False, h.problem
+    if not exists(rel, root):
+        return False, None
     code, dirty = git(["status", "--porcelain", "--", rel], cwd=root)
     if code != 0 or dirty.strip():
-        return False
-    out = h.last_change(rel)
-    last = iso(out.strip())
-    return last is not None and (today() - last).days >= days
+        return False, None
+    sha, day = h.last_commit(rel)
+    if h.shallow_boundary(sha):
+        return False, (f"неглубокий клон: граница истории {sha[:7]} выглядит правкой {rel} — "
+                       "git fetch --unshallow")
+    last = iso(day)
+    return last is not None and (today() - last).days >= days, None
 
 
 # ---------------------------------------------------------------- отчёт

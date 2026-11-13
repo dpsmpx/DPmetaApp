@@ -50,7 +50,9 @@ class RunChannel(private val source: RunEventSource, val run: SessionId, private
         val accepted = mutableListOf<EventEnvelope>()
         val notes = mutableListOf<Diagnostic>()
         var reconciled = false
+        var pages = 0
         while (true) {
+            pages++
             val acceptedBefore = accepted.size
             val reply = when (val r = source.events(run, lastAccepted, pageSize)) {
                 is Outcome.Failure -> return stopped(accepted, notes, r.diagnostics)
@@ -81,7 +83,7 @@ class RunChannel(private val source: RunEventSource, val run: SessionId, private
             // тогда говорит `more`: дочитать, а не объявлять пропуск. Без `more` короткая
             // страница при отставании — пропуск и сверка, как прежде (критерий этапа 3).
             // Страница, ничего не продвинувшая, не продолжается: так не зациклиться.
-            val more = fullPage || (gap == null && reply.more && accepted.size > acceptedBefore)
+            val more = gap == null && (fullPage || reply.more) && accepted.size > acceptedBefore
             if (gap == null && !more && reported > lastAccepted) {
                 gap = Diagnostic.warning(
                     DiagCode.EVENT_SEQUENCE_GAP,
@@ -110,10 +112,17 @@ class RunChannel(private val source: RunEventSource, val run: SessionId, private
                 continue
             }
             // Полная страница или продвинувшая приём при отставании — за ней ещё события.
-            if (more) continue
+            if (more && pages < MAX_PAGES) continue
+            // Ограничиваем один такт (O-03): хвост дочитает следующий poll с lastAccepted.
+            // Промежуточный статус не применяем: выход процесса может опередить его события.
+            if (more) return Outcome.success(Batch(accepted, null, notes), notes)
             // Закрытый сверкой пропуск остаётся предупреждением: он был, и это видно.
             return Outcome.success(Batch(accepted, reply.run, notes), notes)
         }
+    }
+
+    private companion object {
+        const val MAX_PAGES = 8
     }
 
     /**

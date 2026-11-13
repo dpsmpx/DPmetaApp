@@ -1,6 +1,7 @@
 package com.dpsmpx.dpai.android
 
 import android.content.Context
+import androidx.core.content.edit
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
@@ -61,7 +62,7 @@ object SettingIntents {
             load(context)
             pending[k] = c
             refused.remove(k)
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(k, CanonicalJson.write(CommandCodec.encode(c))).apply()
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString(k, CanonicalJson.write(CommandCodec.encode(c))) }
         }
     }
 
@@ -76,7 +77,7 @@ object SettingIntents {
     private fun drop(context: Context, k: String) {
         pending.remove(k)
         sent.remove(k)
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(k).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { remove(k) }
     }
 
     /**

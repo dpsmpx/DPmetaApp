@@ -1,6 +1,7 @@
 package com.dpsmpx.dpai.android
 
 import android.content.Context
+import androidx.core.content.edit
 import com.dpsmpx.dpai.accounts.ApiPresets
 import com.dpsmpx.dpai.accounts.ApiProfile
 import com.dpsmpx.dpai.accounts.ApiProfiles
@@ -15,13 +16,13 @@ import com.dpsmpx.dpai.execution.process.RunningProcess
 import com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment
 import com.dpsmpx.dpai.providers.ProviderHosts
 import com.dpsmpx.dpai.providers.Providers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.update
 import java.io.File
 import java.net.InetAddress
 import java.net.ServerSocket
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * Сервер локальной модели на телефоне (D-105, T18): `llama-server` в Linux
@@ -201,7 +202,7 @@ object LocalModel {
             is Outcome.Success -> f.value
         }
         val why = ModelsStore.saveProfile(p, Secret(key))
-        if (why == null) context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_PROFILE, id.value).apply()
+        if (why == null) context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString(KEY_PROFILE, id.value) }
         return why
     }
 

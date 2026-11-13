@@ -119,7 +119,10 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
         pageStates.SaveableStateProvider("${location?.key ?: "${project.project.value}:$taskKey"}:$page") {
             when (page) {
                 WorkspacePage.FILES.name -> if (location == null) Text("У задачи ещё нет доступного рабочего дерева", Modifier.padding(12.dp)) else {
-                    WorkspaceFiles(model, current, location, readOnly = current.paused || !current.ready || selected?.owner != null, modifier = Modifier.weight(1f), onAi = { aiRequest = it })
+                    // Файлы проекта: ИИ-дополнение берёт источник и согласие проекта (D-170).
+                    androidx.compose.runtime.CompositionLocalProvider(LocalAiCompletion provides AiCompletionPlace(model, project)) {
+                        WorkspaceFiles(model, current, location, readOnly = current.paused || !current.ready || selected?.owner != null, modifier = Modifier.weight(1f), onAi = { aiRequest = it })
+                    }
                 }
                 WorkspacePage.AI.name -> Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
                     if (selected == null) Text("Выберите задачу контура, чтобы открыть её чат и действия") else {
@@ -149,16 +152,27 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
 private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, location: WorkspaceLocation, readOnly: Boolean, modifier: Modifier, onAi: ((EditorAiRequest) -> Unit)? = null) {
     val context = LocalContext.current
     val prefix = WorkspacePaths.homeRelative(view.target, location.path)?.takeIf { it.isEmpty() || FileNames.pathValid(it) }
-    if (prefix == null) {
-        Text("Файлы этого target пока открываются через терминал. Браузер поддерживает домашнюю папку Linux в приложении.", Modifier.padding(12.dp))
+    val target = view.target
+    // Дерево на ПК — по SFTP с правкой (DPmetaApp:D-131; D-166): одно подключение на экран дерева.
+    val pc = prefix == null && target != null && !target.inApp
+    if (prefix == null && !pc) {
+        Text("Файлы этого target пока открываются через терминал. Браузер поддерживает домашнюю папку Linux в приложении и деревья на ПК.", Modifier.padding(12.dp))
         return
     }
+    val remote = remember(view.project, location) { if (pc) com.dpsmpx.dpai.jsch.ReopeningSftpTree { model.pcFiles(target, location.path, writable = true) } else null }
+    androidx.compose.runtime.DisposableEffect(remote) { onDispose { remote?.let { r -> Thread({ r.close() }, "dpai-sftp-close").start() } } }
     val tree = remember(view.project, location) {
-        val inner = SubTree(GuestPaths.homeTree(context), prefix)
+        val inner: FileTree = remote ?: SubTree(GuestPaths.homeTree(context), prefix!!)
         object : FileTree {
             override fun list(dir: String) = model.workspaceAccess(view.project, location, false) { inner.list(dir) }
             override fun read(path: String, maxBytes: Long) = model.workspaceAccess(view.project, location, false) { inner.read(path, maxBytes) }
-            override fun write(path: String, bytes: ByteArray) = model.workspaceAccess(view.project, location, true) { inner.write(path, bytes) }
+            override fun write(path: String, bytes: ByteArray) = model.workspaceAccess(view.project, location, true) { inner.write(path, bytes) }.also { r ->
+                // Запись на ПК — действие вне приложения (D-07): строка журнала — путь и размер, без содержимого.
+                if (remote != null && target != null) {
+                    val what = if (r is Outcome.Success) "записан" else "не записан (${(r as Outcome.Failure).diagnostics.first().code})"
+                    AppLogs.info(context, "файлы ПК", "${target.label}: $what ${location.path}/$path, ${bytes.size} байт")
+                }
+            }
             override fun delete(path: String) = Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "удаление из рабочего экрана пока недоступно")
         }
     }
@@ -181,9 +195,13 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
         EditorTabsBar(openFiles) { path -> "file:workspace:${location.key}\u0001$path" }
         val path = file
         if (path != null) tabStates.SaveableStateProvider(path) {
-            TreeFileView(tree, "workspace:${location.key}", path, readOnly, guestPath = "${location.path.trimEnd('/')}/$path",
-                onBrowse = { openFiles.finishedBrowse(path) }, onNext = openFiles::next, onActions = { openFiles.ready(path, it) }, guestRoot = location.path.trimEnd('/').ifEmpty { "/" }, editorRootKey = location.key,
-                runGuard = { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } }, onOpen = openFiles::openAt, onAi = onAi) { openFiles.close(path) }
+            // У дерева ПК нет пути в Linux приложения: службы, запуск файла и отладка из редактора — у деревьев Linux (D-131).
+            // Дерево на ПК — предпросмотр интерфейсов может рисовать на самом ПК (D-169).
+            androidx.compose.runtime.CompositionLocalProvider(LocalPcPreview provides if (pc) PcPreviewPlace(model, target, location.path, view.project, location) { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } } else null) {
+                TreeFileView(tree, "workspace:${location.key}", path, readOnly, guestPath = if (pc) null else "${location.path.trimEnd('/')}/$path",
+                    onBrowse = { openFiles.finishedBrowse(path) }, onNext = openFiles::next, onActions = { openFiles.ready(path, it) }, guestRoot = if (pc) null else location.path.trimEnd('/').ifEmpty { "/" }, editorRootKey = location.key,
+                    runGuard = { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } }, onOpen = openFiles::openAt, onAi = onAi) { openFiles.close(path) }
+            }
         } else if (searching) {
             TreeSearchPanel(tree, dir, "workspace:${location.key}", onOpen = { searching = false; openFiles.open(it) }, onOpenAt = { found, line -> searching = false; openFiles.openAt(found, line) },
                 replaceBlocked = when {

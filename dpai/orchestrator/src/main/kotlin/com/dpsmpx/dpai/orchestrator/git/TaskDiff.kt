@@ -73,7 +73,8 @@ data class TaskDiff(
                 is Outcome.Success -> r.value
             }
             // Текст — не длиннее предела уже при чтении: diff на сотни МБ не занимает память телефона.
-            val textRun = when (val r = git.run(GitOp.DIFF_FROM, path, revs, maxStdoutChars = maxChars + 1)) {
+            // Только предпросмотр: ниже неполнота явно записывается в truncated и в текст.
+            val textRun = when (val r = git.run(GitOp.DIFF_FROM, path, revs, maxStdoutChars = maxChars + 1, allowTruncated = true)) {
                 is Outcome.Failure -> return r
                 is Outcome.Success -> r.value
             }

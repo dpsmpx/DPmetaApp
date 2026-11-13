@@ -32,10 +32,43 @@ class LocalProcessHostTest {
         assertEquals(0, r.valueOrNull()!!.exitCode)
         assertEquals(7, host.run(ProcessSpec(TestChild.command("exit", "7")), 30.seconds).valueOrNull()!!.exitCode)
         // Предел вывода: строки сверх него отброшены, итог помечен (ревью 17 октября 2026).
-        val cut = host.run(ProcessSpec(TestChild.command("lines", "100")), 30.seconds, maxStdoutChars = 20).valueOrNull()!!
+        val cut = host.run(ProcessSpec(TestChild.command("lines", "100")), 30.seconds, maxStdoutChars = 21).valueOrNull()!!
         assertEquals(listOf("line 0", "line 1", "line 2"), cut.stdout)
         assertTrue(cut.truncated)
         assertTrue(!r.valueOrNull()!!.truncated)
+    }
+
+    @Test
+    fun largeInputAndOutputDoNotDeadlock() {
+        val text = "message\n".repeat(24_000)
+        val result = host.run(ProcessSpec(TestChild.command("echo"), stdin = text), 30.seconds, maxStderrChars = 2048).valueOrNull()!!
+        assertEquals(0, result.exitCode)
+        assertEquals(text.trimEnd().lines(), result.stdout)
+        assertTrue(result.stderr.sumOf { it.length + 1 } <= 2048)
+        assertTrue(result.truncated, "поток ошибок ограничен, но полностью дочитан")
+    }
+
+    @Test
+    fun outputBudgetsIncludeEmptyLinesAndReaderTruncation() {
+        val host = object : com.dpsmpx.dpai.execution.process.ProcessHost {
+            override fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit): Outcome<com.dpsmpx.dpai.execution.process.RunningProcess> {
+                repeat(100_000) {
+                    onOutput(OutputLine(OutputStream.STDOUT, ""))
+                    onOutput(OutputLine(OutputStream.STDERR, ""))
+                }
+                return LocalProcessHost().start(ProcessSpec(TestChild.command("exit", "0")))
+            }
+        }
+        val result = host.run(ProcessSpec(listOf("fake")), 30.seconds, maxStdoutChars = 100, maxStderrChars = 200).valueOrNull()!!
+        assertEquals(100, result.stdout.size)
+        assertEquals(200, result.stderr.size)
+        assertTrue(result.truncated)
+        val lines = mutableListOf<OutputLine>()
+        val input = ("x".repeat(LocalProcessHost.MAX_LINE * 3) + "\r\nlast\r\n").byteInputStream()
+        com.dpsmpx.dpai.execution.process.OutputLines.read(input, OutputStream.STDOUT, lines::add)
+        assertEquals(LocalProcessHost.MAX_LINE, lines.first().text.length)
+        assertTrue(lines.first().truncated)
+        assertEquals("last", lines.last().text)
     }
 
     @Test

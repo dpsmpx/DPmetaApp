@@ -158,6 +158,37 @@ class RunChannelTest {
         assertIs<Outcome.Failure>(AgentReply.parse("""{"format":"dpai.agent-reply","version":1,"command":"x","ok":true,"diagnostics":[],"extra":1}"""))
     }
 
+    @Test
+    fun fullPageOfDuplicatesDoesNotLoop() {
+        var calls = 0
+        val channel = RunChannel({ _, _, _ ->
+            check(++calls <= 3) { "полная страница повторов зациклила опрос" }
+            Outcome.success(AgentReply("events", true, run = RunStatus(run, RunState.RUNNING, lastSequence = 3), events = events.take(3)))
+        }, run, pageSize = 3)
+        assertEquals(events.take(3), channel.poll().valueOrNull()!!.events)
+        assertTrue(channel.poll().valueOrNull()!!.events.isEmpty())
+        assertEquals(3, calls)
+    }
+
+    @Test
+    fun longTailYieldsWithoutLosingEventsOrApplyingPrematureStatus() {
+        val agent = FakeAgent(run, events)
+        val channel = RunChannel(agent, run, pageSize = 1)
+        val first = channel.poll().valueOrNull()!!
+        assertTrue(first.events.size in 1 until events.size, "один такт не забирает весь хвост")
+        assertEquals(null, first.status, "статус ждёт оставшихся событий")
+        val received = first.events.toMutableList()
+        repeat(20) {
+            val next = channel.poll().valueOrNull()!!
+            received += next.events
+            if (next.status != null) {
+                assertEquals(events, received)
+                return
+            }
+        }
+        error("хвост не дочитан")
+    }
+
     /** Свойство: при любых потерях в одном ответе канал отдаёт ровно 1…N по порядку. */
     @Test
     fun anySingleReplyLossIsRecovered() {

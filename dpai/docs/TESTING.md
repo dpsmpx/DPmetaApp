@@ -179,6 +179,15 @@ Linux-target в облачной сессии (8 октября 2026) — Ubuntu
 256 значений байта — без изменений, остановка закрытием stdin — код 0,
 сеансы gdb и debugpy — точка, переменная, выход с кодом 3.
 
+Предпросмотр на ПК (D-169) — `PcPreviewTest.realProjectRenders` 13 ноября
+2026 с `-Ddpai.test.preview=<Android-проект с gradlew>`: образец — модуль
+`app` (AGP, Compose BOM 2026.09.00, Material 3, `compileSdk` 37), две
+функции `@Preview` (одна `private`) и `res/layout/card.xml`; Robolectric
+4.17, образ Android 16 из кэша Gradle (`-Pdpai.preview.robolectricDir`).
+Две картинки Compose и разметка — PNG, несуществующие функция и разметка —
+отказ с причиной в `index.tsv`, картинка прошлого запуска удалена; около
+22 с.
+
 Termux-target — Realme C21Y по USB (D-33): в Termux `openssh`, `sshd`
 слушает 8022, ключ `dpai_test` — в `~/.ssh/authorized_keys`; с ПК —
 `adb forward tcp:8022 tcp:8022`, затем вход на `127.0.0.1:8022`, ключ

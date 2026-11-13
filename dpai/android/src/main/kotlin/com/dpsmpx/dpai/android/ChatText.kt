@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.core.net.toUri
 
 /**
  * Касание ссылки в тексте модели (AI:A-20, D-75): первое копирует адрес и
@@ -25,7 +26,7 @@ internal fun rememberLinkTap(): (String) -> Unit {
                     say(act.text)
                 }
                 is com.dpsmpx.dpai.ui.LinkTaps.Act.Open -> try {
-                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(act.url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, act.url.toUri()).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
                 } catch (_: android.content.ActivityNotFoundException) {
                     say("Нет приложения для ссылки — адрес скопирован")
                 }

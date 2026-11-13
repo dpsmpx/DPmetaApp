@@ -52,6 +52,11 @@ object RegistryFormat {
             if (!seen.add(entry.name)) return Outcome.failure(DiagCode.VALUE_INVALID, "проект «${entry.name}» записан второй раз", at)
             projects += entry
         }
+        // Подсистема с каталогом живёт в клоне строки управления (D-46, DPmeta:M-16) — без неё неизвестно, в чьём.
+        val sub = projects.indexOfFirst { it.dir != null }
+        if (sub >= 0 && projects.none { it.place == Place.CONTROL }) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, "у подсистем есть dir, а строки управления (place = \"control\") нет", "$source:repo[$sub].dir")
+        }
         return Outcome.success(Registry(SCHEMA, projects))
     }
 

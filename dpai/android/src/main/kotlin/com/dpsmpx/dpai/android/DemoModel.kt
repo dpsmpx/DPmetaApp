@@ -1,41 +1,42 @@
 package com.dpsmpx.dpai.android
 
+import android.annotation.SuppressLint
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
+import com.dpsmpx.dpai.core.events.EventEnvelope
 import com.dpsmpx.dpai.core.ids.ExecutionTargetId
 import com.dpsmpx.dpai.core.ids.IdKinds
-import com.dpsmpx.dpai.core.ids.TaskId
-import com.dpsmpx.dpai.core.result.Outcome
-import com.dpsmpx.dpai.core.result.then
 import com.dpsmpx.dpai.core.ids.RequestId
 import com.dpsmpx.dpai.core.ids.SessionId
+import com.dpsmpx.dpai.core.ids.TaskId
+import com.dpsmpx.dpai.core.operation.OperationResult
+import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.result.then
 import com.dpsmpx.dpai.notifications.Notification
 import com.dpsmpx.dpai.notifications.NotificationDecision
 import com.dpsmpx.dpai.notifications.RequestAnswer
 import com.dpsmpx.dpai.notifications.RequestKind
-import com.dpsmpx.dpai.orchestrator.requests.RequestPurpose
-import com.dpsmpx.dpai.core.events.EventEnvelope
 import com.dpsmpx.dpai.orchestrator.commands.Command
-import com.dpsmpx.dpai.ui.RequestCard
-import com.dpsmpx.dpai.core.operation.OperationResult
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
-import com.dpsmpx.dpai.ui.RequestScreens
-import kotlin.time.Duration
+import com.dpsmpx.dpai.orchestrator.requests.RequestPurpose
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.ui.ControlView
 import com.dpsmpx.dpai.ui.DashboardScreen
 import com.dpsmpx.dpai.ui.DemoSystem
 import com.dpsmpx.dpai.ui.LiveSystem
 import com.dpsmpx.dpai.ui.ProjectEntry
+import com.dpsmpx.dpai.ui.RequestCard
+import com.dpsmpx.dpai.ui.RequestScreens
 import com.dpsmpx.dpai.ui.SessionScreen
 import com.dpsmpx.dpai.ui.TargetEntry
 import com.dpsmpx.dpai.ui.TaskBoard
 import java.io.File
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
+import kotlin.time.Duration
 
 /** Снимок для отрисовки: всё, что показывает приложение в один кадр. */
 data class Snapshot(
@@ -469,7 +470,11 @@ class DemoModel(
     fun saveRunProfile(p: ProjectEntry, profile: com.dpsmpx.dpai.ui.RunProfile) = controller.manualProfiles.saveRun(p, profile)
     fun aiRoute(p: ProjectEntry) = controller.manualProfiles.aiRoute(p)
     fun saveAiRoute(p: ProjectEntry, route: com.dpsmpx.dpai.ui.EditorAiRoute) = controller.manualProfiles.saveAiRoute(p, route)
-    fun pcFiles(target: TargetEntry, root: String) = controller.pcFiles(target, root)
+    fun completion(p: ProjectEntry) = controller.manualProfiles.completion(p)
+    fun saveCompletion(p: ProjectEntry, setting: com.dpsmpx.dpai.ui.CompletionSetting) = controller.manualProfiles.saveCompletion(p, setting)
+    fun pcFiles(target: TargetEntry, root: String, writable: Boolean = false) = controller.pcFiles(target, root, writable)
+
+    fun pcHost(target: TargetEntry) = controller.pcHost(target)
     @Volatile private var manualStop = false
 
     fun stopManualProfile() { manualStop = true; resumeManualProfile() }
@@ -491,9 +496,11 @@ class DemoModel(
         }
     }
 
-    fun startManualProfile(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, profile: com.dpsmpx.dpai.ui.ManualProfile): Boolean {
+    fun startManualProfile(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, profile: com.dpsmpx.dpai.ui.ManualProfile,
+        onFinished: ((LongJobs.Done, com.dpsmpx.dpai.ui.ManualRunView) -> Unit)? = null): Boolean {
         val app = context ?: return false
-        return LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST) {
+        return LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST,
+            onFinished = { done -> onFinished?.invoke(done, controller.manualProfiles.snapshot()) }) {
             val target = controller.targets().firstOrNull { it.id == location.target }
                 ?: return@start LongJobs.Done("target удалён", failed = true)
             // Сборка в Linux приложения пишет на диск телефона — под защитой места (DPmetaApp:D-113); на ПК-target место — его.
@@ -711,6 +718,8 @@ class DemoModel(
         /** Причина «контекст не прочитан: идёт такт» — окно повторяет попытку само. */
         const val CONTEXT_BUSY = "идёт такт контура — пробую ещё раз"
 
+        // get создаёт модель только с applicationContext, не с Activity.
+        @SuppressLint("StaticFieldLeak")
         @Volatile
         private var instance: DemoModel? = null
 

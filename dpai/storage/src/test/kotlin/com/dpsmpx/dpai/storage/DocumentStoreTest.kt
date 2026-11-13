@@ -16,6 +16,42 @@ class DocumentStoreTest {
     private val v2 = JsonObject.of("name" to json("вторая"), "n" to json(2))
 
     @Test
+    fun separateStoresShareTheSameTransactionLock() {
+        val firstEntered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val secondEntered = java.util.concurrent.CountDownLatch(1)
+        val writes = java.util.concurrent.atomic.AtomicInteger()
+        val delegate = SimulatedVfs()
+        val vfs = object : com.dpsmpx.dpai.storage.vfs.Vfs by delegate {
+            override fun write(path: String, bytes: ByteArray) {
+                if (path.endsWith(".tmp")) {
+                    if (writes.incrementAndGet() == 1) {
+                        firstEntered.countDown()
+                        check(release.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                    } else secondEntered.countDown()
+                }
+                delegate.write(path, bytes)
+            }
+        }
+        val a = DocumentStore(vfs, "data")
+        val b = DocumentStore(vfs, "data")
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(2)
+        try {
+            val one = executor.submit(java.util.concurrent.Callable { a.write("settings", v1) })
+            assertTrue(firstEntered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            val two = executor.submit(java.util.concurrent.Callable { b.write("settings", v2) })
+            kotlin.test.assertFalse(secondEntered.await(200, java.util.concurrent.TimeUnit.MILLISECONDS), "второй экземпляр не пишет в занятый tmp")
+            release.countDown()
+            assertTrue(one.get(5, java.util.concurrent.TimeUnit.SECONDS).isSuccess)
+            assertTrue(two.get(5, java.util.concurrent.TimeUnit.SECONDS).isSuccess)
+            assertEquals(v2, b.read("settings").valueOrNull()!!.content)
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun writeReadAndAbsent() {
         val store = DocumentStore(SimulatedVfs(), "data")
         assertNull(store.read("settings").valueOrNull())
@@ -25,6 +61,29 @@ class DocumentStoreTest {
         assertEquals(v2, store.read("settings").valueOrNull()?.content)
         assertEquals(listOf("settings"), store.keys())
         assertEquals(DiagCode.VALUE_INVALID, assertIs<Outcome.Failure>(store.write("../x", v1)).errors.single().code)
+    }
+
+    @Test
+    fun oversizedReplacementKeepsReadablePreviousDocument() {
+        val store = DocumentStore(SimulatedVfs(), "data")
+        assertTrue(store.write("settings", v1).isSuccess)
+        val oversized = JsonObject.of("text" to json("x".repeat(16 * 1024 * 1024)))
+        val result = assertIs<Outcome.Failure>(store.write("settings", oversized))
+        assertEquals(DiagCode.JSON_TOO_LARGE, result.errors.single().code)
+        assertEquals(v1, store.read("settings").valueOrNull()!!.content)
+    }
+
+    @Test
+    fun keysIncludeRecoverableVersionsWithoutMainFile() {
+        val vfs = SimulatedVfs()
+        val store = DocumentStore(vfs, "data")
+        store.write("settings", v1)
+        vfs.rename("data/settings", "data/settings.tmp")
+        assertEquals(listOf("settings"), store.keys())
+        assertEquals(v1, store.read("settings").valueOrNull()!!.content)
+        vfs.rename("data/settings.tmp", "data/settings.prev")
+        assertEquals(listOf("settings"), store.keys())
+        assertEquals(v1, store.read("settings").valueOrNull()!!.content)
     }
 
     /** Прерванная в любой точке запись: прежняя или новая версия, не смесь (ТЗ, §103). */

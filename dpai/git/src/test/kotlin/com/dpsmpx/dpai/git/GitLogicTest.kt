@@ -81,6 +81,10 @@ class GitLogicTest {
         val status = c.argv(GitOp.STATUS, "/w", emptyList(), clock.now()).valueOrNull()!!
         assertEquals(listOf("git", "--no-optional-locks") + GitCommands.HARDENING + listOf("-c", "core.quotePath=false", "-C", "/w", "status", "--porcelain=v2", "--branch"), status)
         assertTrue("--no-optional-locks" !in add)
+        // Карта кода (D-171): чтение без блокировки, пути в UTF-8, выражение — после `-e`, пути — после `--`.
+        val grep = c.argv(GitOp.GREP, "/w", listOf("(class|fun)", "src", "app/src"), clock.now()).valueOrNull()!!
+        assertEquals(listOf("git", "--no-optional-locks") + GitCommands.HARDENING + listOf("-c", "core.quotePath=false", "-C", "/w", "grep", "-n", "-I", "--no-color", "--full-name", "-w", "-E", "-e", "(class|fun)", "--", "src", "app/src"), grep)
+        assertIs<Outcome.Failure>(c.argv(GitOp.GREP, "/w", listOf("(class)", "--exec=x"), clock.now()), "путь-параметр отвергнут")
         for (op in GitOp.entries.filter { it.destructive }) {
             val r = c.argv(op, "/w", if (op == GitOp.BRANCH_DELETE_FORCE || op == GitOp.WORKTREE_REMOVE_FORCE || op == GitOp.PUSH_FORCE) listOf("x") else emptyList(), clock.now())
             assertEquals(DiagCode.APPROVAL_REQUIRED, (r as Outcome.Failure).errors.single().code, op.name)
@@ -88,7 +92,7 @@ class GitLogicTest {
         // Без разрушительных флагов в обычных операциях.
         for (op in GitOp.entries.filter { !it.destructive }) {
             val args = when (op) {
-                GitOp.COMMIT, GitOp.WORKTREE_REMOVE, GitOp.MERGE, GitOp.BRANCH_CREATE, GitOp.ADD, GitOp.PUSH -> listOf("x")
+                GitOp.COMMIT, GitOp.WORKTREE_REMOVE, GitOp.MERGE, GitOp.BRANCH_CREATE, GitOp.ADD, GitOp.PUSH, GitOp.GREP -> listOf("x")
                 GitOp.WORKTREE_ADD -> listOf("/p", "b")
                 GitOp.MERGE_BASE, GitOp.MERGES_BETWEEN -> listOf("main", "HEAD")
                 GitOp.DIFF_FROM, GitOp.DIFF_STAT_FROM, GitOp.REV_PARSE -> listOf("main")

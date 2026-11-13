@@ -7,7 +7,7 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * Вывод процесса строками — общий для [LocalProcessHost] и
- * `NativeProcessHost` (Linux-среда в приложении, D-75): строка длиннее
+ * `NativeProcessHost` и JSch (D-75, аудит O-04): строка длиннее
  * [LocalProcessHost.MAX_LINE] обрезается с отметкой, `\r` в конце снимается.
  * Без `ProcessHandle` — исполняется и на телефоне.
  */
@@ -21,7 +21,14 @@ object OutputLines {
 
     /** Поток чтения строк [input] в [onOutput]; уже запущен. */
     fun reader(input: InputStream, stream: OutputStream, onOutput: (OutputLine) -> Unit): Thread =
-        Thread {
+        Thread { read(input, stream, onOutput) }.apply {
+            name = "dpai-process-${stream.name.lowercase()}"
+            isDaemon = true
+            start()
+        }
+
+    /** Читать с пределом во время накопления, в том числе удалённый поток без перевода строки. */
+    fun read(input: InputStream, stream: OutputStream, onOutput: (OutputLine) -> Unit) {
             input.bufferedReader(Charsets.UTF_8).use { r ->
                 val buf = StringBuilder()
                 var truncated = false
@@ -44,9 +51,14 @@ object OutputLines {
                     }
                 }
             }
-        }.apply {
-            name = "dpai-process-${stream.name.lowercase()}"
-            isDaemon = true
-            start()
+    }
+
+    /** Вход пишется параллельно чтению: большой prompt не блокирует start и его тайм-аут (O-17). */
+    fun writer(output: java.io.OutputStream, text: String?): Thread = Thread({
+        try {
+            output.use { out -> text?.let { out.write(it.toByteArray(Charsets.UTF_8)) } }
+        } catch (_: IOException) {
+            // Процесс сам закрыл вход или остановлен: итог виден по выводу и коду выхода.
         }
+    }, "dpai-process-stdin").apply { isDaemon = true; start() }
 }

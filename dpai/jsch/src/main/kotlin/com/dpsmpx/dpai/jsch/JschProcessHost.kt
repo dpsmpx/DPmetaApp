@@ -3,8 +3,8 @@ package com.dpsmpx.dpai.jsch
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
-import com.dpsmpx.dpai.execution.process.LocalProcessHost
 import com.dpsmpx.dpai.execution.process.OutputLine
+import com.dpsmpx.dpai.execution.process.OutputLines
 import com.dpsmpx.dpai.execution.process.OutputStream
 import com.dpsmpx.dpai.execution.process.ProcessHost
 import com.dpsmpx.dpai.execution.process.ProcessSpec
@@ -116,12 +116,7 @@ private class JschProcess(
         for ((kind, input) in streams) {
             Thread({
                 try {
-                    input.bufferedReader(Charsets.UTF_8).useLines { lines ->
-                        lines.forEach { l ->
-                            val cut = l.length > LocalProcessHost.MAX_LINE
-                            onOutput(OutputLine(kind, if (cut) l.take(LocalProcessHost.MAX_LINE) else l, cut))
-                        }
-                    }
+                    OutputLines.read(input, kind, onOutput)
                 } catch (_: java.io.IOException) {
                     // Канал закрыт остановкой: читать больше нечего.
                 } finally {

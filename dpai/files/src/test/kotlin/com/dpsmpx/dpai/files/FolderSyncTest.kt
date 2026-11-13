@@ -49,6 +49,27 @@ class MemoryTree(files: Map<String, String> = emptyMap()) : FileTree {
 
 /** Синхронизация папки и копии (D-99): ничего не затирается молча, удаление в папке — только с отметкой. */
 class FolderSyncTest {
+    @Test
+    fun stalePlansCannotOverwriteDeleteOrAdoptNewerFiles() {
+        for (action in listOf(SyncAction.TO_LOCAL, SyncAction.TO_REMOTE, SyncAction.DELETE_LOCAL, SyncAction.DELETE_REMOTE, SyncAction.ADOPT, SyncAction.CONFLICT)) {
+            for (changed in Side.entries) {
+                val remote = MemoryTree(mapOf("a.txt" to "old"))
+                val local = MemoryTree(mapOf("a.txt" to "old"))
+                val r = remote.scan().getValue("a.txt")
+                val l = local.scan().getValue("a.txt")
+                val base = mapOf("a.txt" to BaseEntry("old-hash", r, l))
+                val plan = listOf(SyncItem("a.txt", action, r, l, "old-hash"))
+                (if (changed == Side.REMOTE) remote else local).put("a.txt", "newer unsynced contents")
+                val report = FolderSync.apply(plan, remote, local, base, SyncOptions(true, mapOf("a.txt" to Resolution.KEEP_REMOTE)))
+                assertEquals(if (changed == Side.REMOTE) "newer unsynced contents" else "old", remote.text("a.txt"), "$action/$changed")
+                assertEquals(if (changed == Side.LOCAL) "newer unsynced contents" else "old", local.text("a.txt"), "$action/$changed")
+                assertEquals(base, report.base)
+                assertTrue(report.errors.any { it.code == DiagCode.STATE_CONFLICT })
+                assertEquals(SyncAction.CONFLICT, report.skipped.single().action)
+            }
+        }
+    }
+
     private fun sync(remote: MemoryTree, local: MemoryTree, base: Map<String, BaseEntry>, options: SyncOptions = SyncOptions()): Pair<List<SyncItem>, SyncReport> {
         val plan = FolderSync.plan(remote.scan(), local.scan(), base) { side, p -> FolderSync.hashOf(if (side == Side.REMOTE) remote else local, p) }
         return plan to FolderSync.apply(plan, remote, local, base, options)

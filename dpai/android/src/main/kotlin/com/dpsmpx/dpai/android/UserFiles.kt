@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.android
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.database.Cursor
@@ -9,6 +10,8 @@ import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
 import android.provider.Settings
 import android.webkit.MimeTypeMap
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
@@ -53,12 +56,12 @@ object AllFiles {
     fun active(context: Context): Boolean = wanted(context) && granted()
 
     fun set(context: Context, on: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY, on).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putBoolean(KEY, on) }
     }
 
     /** Системное окно разрешения для этого приложения. */
     fun settingsIntent(context: Context): Intent =
-        Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${context.packageName}"))
+        Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, "package:${context.packageName}".toUri())
 
     fun root(): File = Environment.getExternalStorageDirectory()
 }
@@ -229,6 +232,8 @@ class SafTree(private val context: Context, private val tree: Uri) : FileTree {
  * данных приложения (`app_files/`, вне диска приложения и копий);
  * постоянные права на папки — у системы, отзываются при «Отвязать».
  */
+// init сохраняет только context.applicationContext; ссылки на Activity здесь нет.
+@SuppressLint("StaticFieldLeak")
 object FileLinks {
     private const val DOC = "file-links"
 
@@ -272,7 +277,7 @@ object FileLinks {
 
     fun local(link: FileLink): LocalTree = LocalTree(copyRoot(link).toPath())
 
-    fun remote(link: FileLink): SafTree = SafTree(app, Uri.parse(link.tree))
+    fun remote(link: FileLink): SafTree = SafTree(app, link.tree.toUri())
 
     /** Связать папку [tree]: права — постоянными, копия — новый каталог `~/files/<имя>`. */
     @Synchronized
@@ -297,7 +302,7 @@ object FileLinks {
     /** Отвязать: права на папку отозваны, копия в Linux остаётся. */
     @Synchronized
     fun remove(link: FileLink): Outcome<Unit> {
-        runCatching { app.contentResolver.releasePersistableUriPermission(Uri.parse(link.tree), Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+        runCatching { app.contentResolver.releasePersistableUriPermission(link.tree.toUri(), Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
         return save(flow.value.filter { it.id != link.id })
     }
 

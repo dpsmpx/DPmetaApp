@@ -74,7 +74,7 @@ interface ProcessHost {
 
 /**
  * Итог процесса, дождавшегося выхода. [truncated] — вывод длиннее предела
- * [run] (`maxStdoutChars`): лишние строки stdout отброшены.
+ * [run]: лишние строки stdout/stderr отброшены или строка обрезана читателем.
  */
 data class Completed(val exitCode: Int, val stdout: List<String>, val stderr: List<String>, val truncated: Boolean = false) {
     val ok: Boolean get() = exitCode == 0
@@ -90,25 +90,37 @@ fun ProcessHost.run(
     timeout: Duration,
     grace: Duration = RunningProcess.DEFAULT_GRACE,
     /** Предел stdout в знаках: память на телефоне не зависит от размера вывода (ревью 17 октября 2026). */
-    maxStdoutChars: Int = Int.MAX_VALUE,
+    maxStdoutChars: Int = 1024 * 1024,
+    maxStderrChars: Int = 1024 * 1024,
 ): Outcome<Completed> {
+    require(maxStdoutChars >= 0 && maxStderrChars >= 0) { "пределы вывода неотрицательны" }
     val out = mutableListOf<String>()
     val err = mutableListOf<String>()
     val lock = Any()
-    var chars = 0L
-    var cut = false
+    var outChars = 0L
+    var errChars = 0L
+    var outCut = false
+    var errCut = false
+    var lineCut = false
     val started = start(spec) { line ->
         synchronized(lock) {
+            lineCut = lineCut || line.truncated
+            val cost = line.text.length.toLong() + 1 // Пустые строки тоже занимают память (O-05).
             if (line.stream == OutputStream.STDOUT) {
                 // После первой отброшенной строки — только отбрасывать: вывод не рвётся посередине.
-                if (cut || chars + line.text.length > maxStdoutChars) {
-                    cut = true
+                if (outCut || outChars + cost > maxStdoutChars) {
+                    outCut = true
                 } else {
-                    chars += line.text.length + 1
+                    outChars += cost
                     out += line.text
                 }
             } else {
-                err += line.text
+                if (errCut || errChars + cost > maxStderrChars) {
+                    errCut = true
+                } else {
+                    errChars += cost
+                    err += line.text
+                }
             }
         }
     }
@@ -125,7 +137,7 @@ fun ProcessHost.run(
         )
     }
     // Выход корня ещё не значит, что потоки чтения дочитали вывод: их дожидается awaitExit.
-    return synchronized(lock) { Outcome.success(Completed(code, out.toList(), err.toList(), cut)) }
+    return synchronized(lock) { Outcome.success(Completed(code, out.toList(), err.toList(), outCut || errCut || lineCut)) }
 }
 
 internal fun orphans(report: StopReport, spec: ProcessSpec): Diagnostic =

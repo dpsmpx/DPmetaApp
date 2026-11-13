@@ -1,6 +1,7 @@
 package com.dpsmpx.dpai.android
 
 import android.content.Context
+import androidx.core.content.edit
 import com.dpsmpx.dpai.android.linux.LinuxSetup
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.result.Outcome
@@ -13,9 +14,9 @@ import com.dpsmpx.dpai.execution.tools.SharedToolsSync
 import com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import java.io.File
+import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlin.time.Duration.Companion.minutes
 
 /** Общая папка target «в приложении». Git, проверка и lease — у единственного POSIX-контроллера (D-125). */
 object SharedVerify {
@@ -29,7 +30,7 @@ object SharedVerify {
     fun available(context: Context): Boolean = (context.applicationContext as? DpaiApplication)?.sharedToolsAccountAvailable == true
     fun enabled(context: Context): Boolean = available(context) && prefs(context).getBoolean("automatic", false)
     fun automatic(context: Context, value: Boolean) {
-        prefs(context).edit().putBoolean("automatic", value).apply()
+        prefs(context).edit { putBoolean("automatic", value) }
         if (!value) (context.applicationContext as? DpaiApplication)?.sharedToolsSessionClosed()
         if (value) AiBackground.ensureService(context)
     }
@@ -164,7 +165,7 @@ object SharedVerify {
 
     private fun publish(context: Context, text: String) {
         note.value = text
-        prefs(context).edit().putString("note", text).apply()
+        prefs(context).edit { putString("note", text) }
     }
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

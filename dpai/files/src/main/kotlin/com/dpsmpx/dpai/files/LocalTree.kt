@@ -94,9 +94,20 @@ class LocalTree(private val root: Path, private val hidden: (String) -> Boolean 
         val parent = FileNames.parent(path)
         val tmp = FileNames.join(parent, FileNames.TMP_PREFIX + FileNames.name(path))
         return try {
+            val permissions = if (Files.exists(p, LinkOption.NOFOLLOW_LINKS)) {
+                Files.getFileAttributeView(p, java.nio.file.attribute.PosixFileAttributeView::class.java, LinkOption.NOFOLLOW_LINKS)?.readAttributes()?.permissions()
+            } else null
             if (parent.isNotEmpty()) vfs.mkdirs(parent)
-            vfs.write(tmp, bytes)
+            // На месте временного файла может стоять ссылка из репозитория (или остаток прошлой
+            // записи): убирается сама запись каталога, не цель ссылки, а файл создаётся заново
+            // без перехода по ссылкам (CREATE_NEW) — запись не уходит за корень дерева.
+            vfs.writeFresh(tmp, bytes)
+            if (permissions != null) {
+                Files.getFileAttributeView(root.resolve(tmp), java.nio.file.attribute.PosixFileAttributeView::class.java, LinkOption.NOFOLLOW_LINKS)?.setPermissions(permissions)
+            }
+            vfs.fsync(tmp)
             vfs.rename(tmp, path)
+            vfs.fsyncDir(parent)
             val a = Files.readAttributes(p, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
             Outcome.success(FileMeta(a.size(), a.lastModifiedTime().toMillis()))
         } catch (e: IOException) {

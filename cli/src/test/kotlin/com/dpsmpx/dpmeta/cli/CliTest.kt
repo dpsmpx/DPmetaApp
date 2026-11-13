@@ -23,7 +23,7 @@ class CliTest {
         try {
             val (c, out) = cli()
             assertEquals(0, c.run(listOf("sync", "--corpus", corpus.toString(), "--state", dir.toString())))
-            assertTrue(out.any { it.startsWith("синхронизация: проектов 3") }, out.joinToString("\n"))
+            assertTrue(out.any { it.startsWith("синхронизация: проектов 4") }, out.joinToString("\n"))
             assertTrue(out.any { "Alpha [core]: работает" in it }, out.joinToString("\n"))
             out.clear()
             assertEquals(0, c.run(listOf("state", "--state", dir.toString())))

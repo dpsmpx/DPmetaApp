@@ -2,6 +2,7 @@ package com.dpsmpx.dpai.android
 
 import android.content.Context
 import android.net.Uri
+import androidx.core.content.edit
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
@@ -60,7 +61,7 @@ object SettingsBackups {
         val name = PREFIX + SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date(now)) + ".json"
         val bytes = SettingsBackup.write(s, now, controller.version).toByteArray(Charsets.UTF_8)
         Downloads.write(context, DIR, name, "application/json", bytes, "копия настроек").let { if (it is Outcome.Failure) return it }
-        prefs(context).edit().putString("lastDigest", SettingsBackup.digest(s)).putLong("lastAt", now).putString("lastName", name).apply()
+        prefs(context).edit { putString("lastDigest", SettingsBackup.digest(s)).putLong("lastAt", now).putString("lastName", name) }
         Downloads.prune(context, DIR, PREFIX, KEEP)
         // И в Termux (D-54): после переустановки настройки вернутся оттуда без выбора файла.
         runCatching { controller.mirrorSettings(bytes.toString(Charsets.UTF_8)) }
@@ -87,7 +88,7 @@ object SettingsBackups {
         return when (val r = controller.restore(s)) {
             is Outcome.Failure -> r
             is Outcome.Success -> Outcome.success(s).also {
-                prefs(context).edit().putString("lastDigest", SettingsBackup.digest(s)).apply()
+                prefs(context).edit { putString("lastDigest", SettingsBackup.digest(s)) }
             }
         }
     }
@@ -103,13 +104,13 @@ object SettingsBackups {
         p.getString("restoreNonce", null)?.takeIf { now - p.getLong("restoreNonceAt", 0) < NONCE_MS }?.let { return it }
         val bytes = com.dpsmpx.dpai.core.clock.RandomSource.secure().nextBytes(16)
         val nonce = bytes.joinToString("") { "%02x".format(it) }
-        p.edit().putString("restoreNonce", nonce).putLong("restoreNonceAt", now).apply()
+        p.edit { putString("restoreNonce", nonce).putLong("restoreNonceAt", now) }
         return nonce
     }
 
     /** Код использован. */
     fun clearRestoreNonce(context: Context) {
-        prefs(context).edit().remove("restoreNonce").remove("restoreNonceAt").apply()
+        prefs(context).edit { remove("restoreNonce").remove("restoreNonceAt") }
     }
 
     /** Пользователь Termux (`u0_a123`) — по uid его приложения; `null` — Termux не установлен. */

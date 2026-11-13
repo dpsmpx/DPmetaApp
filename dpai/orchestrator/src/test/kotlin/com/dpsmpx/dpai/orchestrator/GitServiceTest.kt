@@ -85,6 +85,14 @@ class GitServiceTest {
         assertEquals(null, detached.branch)
     }
 
+    @Test
+    fun truncatedDiffCannotBecomeACompleteReview() {
+        val repo = repo()
+        File(repo.root, "README.md").appendText("changed\n".repeat(100))
+        val result = assertIs<Outcome.Failure>(git.run(GitOp.DIFF, repo.root, maxStdoutChars = 64))
+        assertEquals(com.dpsmpx.dpai.core.diagnostics.DiagCode.GIT_OUTPUT_INVALID, result.errors.single().code)
+    }
+
     private fun repo(): Repository {
         val root = dir.resolve("repo").toFile().apply { mkdirs() }.path
         sh("init", "-q", "-b", "main", root)
@@ -96,6 +104,18 @@ class GitServiceTest {
         val r = Repository(ids.next(IdKinds.REPOSITORY), ids.next(IdKinds.TARGET), root)
         ok(Worktrees.register(state, r, clock.now()))
         return r
+    }
+
+    @Test
+    fun taskTitleIsCommitInputRatherThanShellSyntax() {
+        val repo = repo()
+        File(repo.root, "README.md").appendText("new\n")
+        assertTrue(git.run(GitOp.ADD, repo.root, listOf("README.md")).isSuccess)
+        val title = "dpai: quotes \" % ^ ! \$(`test`)\nsecond line\tvalue"
+        val result = git.run(GitOp.COMMIT, repo.root, listOf(title))
+        assertTrue(result.isSuccess, result.diagnostics.toString())
+        val read = host.run(ProcessSpec(listOf("git", "-C", repo.root, "log", "-1", "--format=%B")), 1.minutes).valueOrNull()!!
+        assertEquals(title.trimEnd(), read.stdout.joinToString("\n").trimEnd())
     }
 
     private fun worktree(r: Repository, name: String, session: SessionId): WorktreeId {
@@ -330,5 +350,22 @@ class GitServiceTest {
         val d = assertIs<Outcome.Success<com.dpsmpx.dpai.orchestrator.git.TaskDiff>>(com.dpsmpx.dpai.orchestrator.git.TaskDiff.load(git, r.root, "main", "task/merged")).value
         assertEquals(listOf("feature.txt"), d.files.map { it.path })
         assertTrue("+сделано" in d.patch && "MAIN.md" !in d.patch, d.patch)
+    }
+
+    /** Карта кода (D-171): `git grep` по словам — строки с путём и номером; не нашлось (код 1) — пусто, не отказ. */
+    @Test
+    fun grepFindsDeclarationsAndEmptyIsNotFailure() {
+        val repo = dir.resolve("grep").toFile().apply { mkdirs() }.path
+        fun sh(vararg a: String) = assertIs<Outcome.Success<com.dpsmpx.dpai.execution.process.Completed>>(host.run(com.dpsmpx.dpai.execution.process.ProcessSpec(listOf("git") + a), 1.minutes)).value.also { assertTrue(it.ok, it.toString()) }
+        sh("init", "-q", "-b", "main", repo)
+        java.io.File(repo, "src").mkdirs()
+        java.io.File(repo, "src/Модуль.kt").writeText("import a.B\n\nclass Greeter {\n    fun hi() = 1\n}\n")
+        java.io.File(repo, "notes.txt").writeText("class in prose\n")
+        sh("-C", repo, "add", ".")
+        val all = assertIs<Outcome.Success<com.dpsmpx.dpai.execution.process.Completed>>(git.grep(repo, com.dpsmpx.dpai.contexts.CodeMap.WORDS, listOf("src"), 65_536)).value
+        assertEquals(listOf("src/Модуль.kt:1:import a.B", "src/Модуль.kt:3:class Greeter {", "src/Модуль.kt:4:    fun hi() = 1"), all.stdout)
+        val none = assertIs<Outcome.Success<com.dpsmpx.dpai.execution.process.Completed>>(git.grep(repo, "(nothing_here_at_all)", emptyList(), 65_536)).value
+        assertEquals(emptyList(), none.stdout)
+        assertIs<Outcome.Failure>(git.grep(dir.resolve("нет").toString(), "(class)", emptyList(), 65_536), "не дерево Git — отказ")
     }
 }

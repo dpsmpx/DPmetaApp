@@ -90,8 +90,9 @@ object Screens {
         asOf = time(s.asOf),
         active = show(s.activeProjects),
         questions = show(s.questionsOpen),
-        pullsWaiting = s.projects.map { it.openPulls }.let { ms ->
-            if (ms.all { it is Measure.Unknown }) UNKNOWN else ms.sumOf { it.orNull() ?: 0L }.toString()
+        // PR ждут автора (ТЗ, S-01, F-39; `repo.pr.waiting_author`): открыт и не черновик — как фильтр «Ждут автора» F-11.
+        pullsWaiting = s.projects.map { it.waitingAuthor(s.asOf) }.let { ms ->
+            if (ms.all { it is Measure.Unknown }) UNKNOWN else ms.sumOf { it.orNull()?.first ?: 0L }.toString()
         },
         projects = s.projects.size,
         sourceErrors = s.projects.sumOf { it.errors.size },
@@ -141,13 +142,13 @@ object Screens {
 
     /**
      * Сводка — одной сеткой плиток (UX-6): «Работают N из M» вместо двух строк,
-     * у каждой — свой экран. «PR ждут» — к списку PR (F-11) на фильтре «Все»: плитка
-     * считает все открытые PR (`repo.pr.open`), с черновиками.
+     * у каждой — свой экран. «PR ждут автора» (ТЗ, S-01) — к списку PR (F-11) на фильтре
+     * «Ждут автора»: плитка считает те же PR (`repo.pr.waiting_author` — открыт и не черновик).
      */
     fun tiles(s: Summary): List<Tile> = listOf(
         Tile("Работают", if (s.active == UNKNOWN) UNKNOWN else "${s.active} из ${s.projects}", Goes.PROJECTS, "eco.active_projects"),
         Tile("Вопросов автору", s.questions, Goes.QUESTIONS, "eco.questions_open"),
-        Tile("PR ждут", s.pullsWaiting, Goes.PULLS),
+        Tile("PR ждут автора", s.pullsWaiting, Goes.PULLS),
         Tile("Ошибок источников", s.sourceErrors.toString(), Goes.PROJECTS),
         Tile("Шлюз готов", s.gatesReady, Goes.PROJECTS),
         Tile("Синхронизация", s.syncHealth, Goes.SYNC, "app.sync.health"),

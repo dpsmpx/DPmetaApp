@@ -1,0 +1,31 @@
+// DPmetaApp: предпросмотр интерфейсов на ПК (DPmetaApp:D-132; DP_AI_Orcestrator:D-169).
+// Временный init-скрипт: подключается только к модулю -Pdpai.preview.module и только на
+// этот запуск Gradle; файлы проекта не меняются. Тест рендера — -Pdpai.preview.src.
+def props = gradle.startParameter.projectProperties
+def target = props['dpai.preview.module']
+def srcDir = props['dpai.preview.src']
+allprojects { p ->
+    if (p.path != target) return
+    ['com.android.application', 'com.android.library'].each { id ->
+        p.plugins.withId(id) {
+            p.android.testOptions.unitTests.includeAndroidResources = true
+            p.android.sourceSets.getByName('test').java.srcDir(srcDir)
+            p.dependencies.add('testImplementation', 'org.robolectric:robolectric:4.17')
+            p.dependencies.add('testImplementation', 'junit:junit:4.13.2')
+            p.tasks.withType(Test).configureEach { t ->
+                ['dpai.preview.out', 'dpai.preview.compose', 'dpai.preview.layouts'].each { k ->
+                    def v = props[k]
+                    if (v != null) t.systemProperty(k, v)
+                }
+                def dir = props['dpai.preview.robolectricDir']
+                if (dir) {
+                    t.systemProperty('robolectric.offline', 'true')
+                    t.systemProperty('robolectric.dependency.dir', dir)
+                }
+                // Образ Android 16 Robolectric заводит общую память через внутренности JDK.
+                t.jvmArgs('--add-exports=java.base/jdk.internal.access=ALL-UNNAMED')
+                t.outputs.upToDateWhen { false }
+            }
+        }
+    }
+}

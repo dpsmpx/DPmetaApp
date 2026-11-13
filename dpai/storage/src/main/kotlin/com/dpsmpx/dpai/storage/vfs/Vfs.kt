@@ -48,6 +48,18 @@ interface Vfs {
     @Throws(IOException::class)
     fun write(path: String, bytes: ByteArray)
 
+    /**
+     * Записать файл заново: прежняя запись каталога на этом месте (файл или символьная
+     * ссылка) убирается сама — не цель ссылки, — и файл создаётся без перехода по ссылкам.
+     * Для временного файла в каталоге, куда пишет недоверенный код (рабочее дерево):
+     * ссылка из репозитория не уводит запись за корень.
+     */
+    @Throws(IOException::class)
+    fun writeFresh(path: String, bytes: ByteArray) {
+        if (exists(path)) delete(path)
+        write(path, bytes)
+    }
+
     @Throws(IOException::class)
     fun append(path: String, bytes: ByteArray)
 

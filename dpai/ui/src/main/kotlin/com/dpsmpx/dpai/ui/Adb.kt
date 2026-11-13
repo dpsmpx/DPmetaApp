@@ -116,6 +116,49 @@ object Adb {
             port.toString(), pkg,
         )
 
+    /** Активность предпросмотра Compose из `ui-tooling` отладочной сборки (D-167). */
+    const val PREVIEW_ACTIVITY = "androidx.compose.ui.tooling.PreviewActivity"
+
+    private val COMPOSABLE = Regex("^[A-Za-z_$][\\w$]*(\\.[A-Za-z_$][\\w$]*)+$")
+
+    /**
+     * Открыть функцию `@Preview` [composable] (`класс.функция`) в приложении [pkg]
+     * (`DPmetaApp:D-132`; D-167): `PreviewActivity` его отладочной сборки, `am start -W`.
+     */
+    fun preview(port: Int, pkg: String, composable: String): Outcome<List<String>> {
+        if (packageName(pkg) is Outcome.Failure) return Outcome.failure(DiagCode.VALUE_INVALID, "имя пакета — вида com.example.app: «$pkg»")
+        if (!COMPOSABLE.matches(composable) || composable.length > 500) return Outcome.failure(DiagCode.VALUE_INVALID, "имя функции предпросмотра недопустимо: «$composable»")
+        return Outcome.success(
+            script(
+                "adb connect \"$HOST:\$1\" >/dev/null 2>&1 || exit 1\n" +
+                    "exec adb -s \"$HOST:\$1\" shell am start -W -n \"\$2/$PREVIEW_ACTIVITY\" --es composable \"\$3\"",
+                // adb shell склеивает аргументы в строку для оболочки телефона: `$` вложенного класса
+                // (`Экран$Вложенный.Preview`) она бы раскрыла — имя едет в одинарных кавычках (их в имени нет).
+                port.toString(), pkg, "'$composable'",
+            ),
+        )
+    }
+
+    /** Итог `am start` предпросмотра: нет активности — подсказка про `ui-tooling`. */
+    fun previewResult(output: List<String>, code: Int): Outcome<Unit> {
+        val text = output.joinToString("\n")
+        return when {
+            "does not exist" in text || "Unable to resolve" in text -> Outcome.failure(
+                DiagCode.OPERATION_NOT_ALLOWED,
+                "в отладочной сборке нет предпросмотра Compose: добавьте в модуль debugImplementation(\"androidx.compose.ui:ui-tooling\"), соберите и установите APK заново",
+            )
+            code == 0 && "Error" !in text -> Outcome.success(Unit)
+            else -> Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "предпросмотр не открылся: " + (output.lastOrNull { it.isNotBlank() }?.take(200) ?: "код $code"))
+        }
+    }
+
+    /** Снимок экрана телефона PNG — из потока процесса гостя, не строками (D-167). */
+    fun screencap(port: Int): List<String> =
+        script("adb connect \"$HOST:\$1\" >/dev/null 2>&1 || exit 1\nexec adb -s \"$HOST:\$1\" exec-out screencap -p", port.toString())
+
+    /** Предел снимка экрана: больше — не PNG экрана телефона. */
+    const val MAX_SCREENCAP: Int = 16 shl 20
+
     /** Итог строки [debugApk]: готово — порт и pid; отказ — слова; прочее — `null`. */
     sealed interface DebugLine {
         data class Ready(val port: Int, val pid: Int) : DebugLine

@@ -158,7 +158,9 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                 work("Подписываю") {
                     try {
                         val pair = withContext(Dispatchers.IO) { SigningKeys.key() } ?: return@work "ключа подписи нет"
-                        val out = File(r.source.parentFile, ApkSign.signedName(r.source.name))
+                        // Копия с ПК — в свою папку подписанных (не рядом со скачанными: их чистит очистка до трёх).
+                        val outDir = if (pc) PcArtifacts.signedDir(app, target.id.value).apply { mkdirs() } else r.source.parentFile
+                        val out = File(outDir, ApkSign.signedName(r.source.name))
                         // Подписывается копия, сведения которой видел человек, а не файл дерева.
                         when (val s = withContext(Dispatchers.IO) { ApkSign.sign(r.copy, out, pair.first, pair.second) }) {
                             is Outcome.Failure -> s.diagnostics.first().message
@@ -249,7 +251,8 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                                 }
                             }
                         }) { Text("Отладка") }
-                        if (!pc) TextButton(enabled = busy == null && key != null, onClick = {
+                        // У артефакта ПК подписывается копия на телефоне; итог — в «Подписанных копиях» ниже (D-127).
+                        TextButton(enabled = busy == null && key != null, onClick = {
                             val file = host(a.path) ?: run { note = "файл вне дерева или исчез"; return@TextButton }
                             work("Проверяю APK") { review(file, ApkAction.SIGN) }
                         }) { Text("Подписать") }
@@ -262,6 +265,44 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                             if (r is Outcome.Failure) r.diagnostics.first().message else "Сохранено: Загрузки/dpmeta-artifacts/${file.name}"
                         }
                     }) { Text("В Загрузки") }
+                }
+            }
+        }
+        if (pc) {
+            // Подписанные копии APK с ПК — в хранилище приложения (`pc-artifacts`, D-127): установить, сохранить, удалить.
+            val signed = remember(version, found) {
+                PcArtifacts.signedDir(app, target.id.value).listFiles { f -> f.isFile && f.name.endsWith("-signed.apk") }.orEmpty().sortedByDescending { it.lastModified() }
+            }
+            if (signed.isNotEmpty()) {
+                Text("Подписанные копии на телефоне", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleSmall)
+                for (f in signed) {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                        Text(f.name, style = MaterialTheme.typography.bodyMedium)
+                        Text("${size(f.length())} · ${time(f.lastModified())}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(Modifier.horizontalScroll(rememberScrollState())) {
+                            TextButton(enabled = busy == null, onClick = {
+                                if (!ApkInstaller.allowed(context)) {
+                                    note = "Разрешите DPmetaApp устанавливать приложения: откроется настройка Android, затем нажмите «Установить» снова."
+                                    ApkInstaller.askPermission(context)
+                                    return@TextButton
+                                }
+                                work("Проверяю APK") { review(f, ApkAction.INSTALL) }
+                            }) { Text("Установить") }
+                            TextButton(enabled = busy == null, onClick = {
+                                work("Сохраняю в «Загрузки»") {
+                                    if (f.length() > MAX_DOWNLOAD) return@work "файл больше ${MAX_DOWNLOAD shr 20} МБ — заберите его через терминал"
+                                    val r = withContext(Dispatchers.IO) { Downloads.write(app, "dpmeta-artifacts", f.name, "application/vnd.android.package-archive", f.readBytes(), f.name) }
+                                    if (r is Outcome.Failure) r.diagnostics.first().message else "Сохранено: Загрузки/dpmeta-artifacts/${f.name}"
+                                }
+                            }) { Text("В Загрузки") }
+                            TextButton(enabled = busy == null, onClick = {
+                                work("Удаляю копию") {
+                                    val r = withContext(Dispatchers.IO) { runCatching { com.dpsmpx.dpai.storage.vfs.NioVfs(f.parentFile!!.toPath()).delete(f.name) } }
+                                    r.exceptionOrNull()?.let { "Не удалено: ${f.name} — ${it.javaClass.simpleName}" } ?: "Удалено: ${f.name}"
+                                }
+                            }) { Text("Удалить") }
+                        }
+                    }
                 }
             }
         }

@@ -10,7 +10,6 @@ import com.dpsmpx.dpai.execution.process.ProcessSpec
 import com.dpsmpx.dpai.execution.process.RunningProcess
 import com.dpsmpx.dpai.execution.process.StopReport
 import java.io.File
-import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
@@ -35,14 +34,10 @@ class NativeProcessHost(
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }
-        try {
-            child.stdin.use { out -> spec.stdin?.let { out.write(it.toByteArray(Charsets.UTF_8)) } }
-        } catch (_: IOException) {
-            // Процесс закрыл вход сам — это его поведение, оно видно по выводу и коду.
-        }
         val readers = listOfNotNull(
             OutputLines.reader(child.stdout, OutputStream.STDOUT, onOutput),
             child.stderr?.let { OutputLines.reader(it, OutputStream.STDERR, onOutput) },
+            OutputLines.writer(child.stdin, spec.stdin),
         )
         return Outcome.success(Native(child, readers))
     }

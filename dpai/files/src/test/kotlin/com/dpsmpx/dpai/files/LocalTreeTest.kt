@@ -25,6 +25,18 @@ class LocalTreeTest {
     private fun code(r: Outcome<*>) = assertIs<Outcome.Failure>(r).errors.single().code
 
     @Test
+    fun savingExecutableKeepsItsPermissions() {
+        val path = root.resolve("gradlew")
+        Files.writeString(path, "#!/bin/sh\nexit 0\n")
+        val view = Files.getFileAttributeView(path, java.nio.file.attribute.PosixFileAttributeView::class.java) ?: return
+        val mode = java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-x---")
+        view.setPermissions(mode)
+        assertIs<Outcome.Success<FileMeta>>(LocalTree(root).write("gradlew", "#!/bin/sh\nexit 1\n".toByteArray()))
+        assertEquals(mode, view.readAttributes().permissions())
+        assertEquals("#!/bin/sh\nexit 1\n", Files.readString(path))
+    }
+
+    @Test
     fun writeReadListDelete() {
         val t = LocalTree(root)
         val meta = t.write("notes/a.md", "привет".toByteArray()).valueOrNull()!!
@@ -36,6 +48,20 @@ class LocalTreeTest {
         assertIs<Outcome.Success<Unit>>(t.delete("notes/a.md"))
         assertFalse(Files.exists(root.resolve("notes/a.md")))
         assertEquals(DiagCode.VALUE_INVALID, code(t.read("../x", 10)))
+    }
+
+    /** Ссылка из репозитория на месте временного файла записи не уводит запись за корень (проверка PR #188). */
+    @Test
+    fun linkAtTempNameIsNotWrittenThrough() {
+        val t = LocalTree(root)
+        val secret = Files.writeString(outside.resolve("authorized_keys"), "ключ")
+        t.write("a.md", "старое".toByteArray())
+        Files.createSymbolicLink(root.resolve(FileNames.TMP_PREFIX + "a.md"), secret)
+        t.write("a.md", "новое".toByteArray()).valueOrNull()!!
+        assertEquals("ключ", Files.readString(secret), "цель ссылки не тронута")
+        assertEquals("новое", Files.readString(root.resolve("a.md")))
+        assertFalse(Files.isSymbolicLink(root.resolve("a.md")), "на месте файла — файл, а не ссылка")
+        assertEquals(listOf("a.md"), root.toFile().list()!!.sorted(), "временного и ссылки не осталось")
     }
 
     @Test

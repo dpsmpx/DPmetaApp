@@ -45,7 +45,12 @@ class EcosystemSyncTest {
     @Test
     fun corpusSyncBuildsStateOfEveryShownProject() {
         val (state, result) = sync()
-        assertEquals(listOf("Alpha", "Beta", "DPmeta"), state.projects.map { it.name }, "архив не показывается, порядок — реестра")
+        assertEquals(listOf("Alpha", "Beta", "Pult", "DPmeta"), state.projects.map { it.name }, "архив не показывается, порядок — реестра")
+        // Строка управления (D-46): клон, в котором живут подсистемы, — и сама проект с файлами.
+        val pult = state.project("Pult")!!
+        assertEquals(Measure.observed(1L), pult.decisions)
+        assertEquals(Measure.observed(50L), pult.roadmapPercent)
+        assertEquals(emptyList(), pult.errors.map { it.kind })
         val alpha = state.project("Alpha")!!
         assertEquals(Measure.observed(2L), alpha.decisions)
         assertEquals(Measure.observed(3L), alpha.todoOpen)

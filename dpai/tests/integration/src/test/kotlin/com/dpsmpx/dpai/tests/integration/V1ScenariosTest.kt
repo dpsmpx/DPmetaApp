@@ -187,6 +187,34 @@ class V1ScenariosTest {
         assertTrue(orchestrator.problems.isEmpty(), orchestrator.problems.toString())
     }
 
+    /**
+     * Карта кода (D-171): ход получает объявления и импорты дерева задачи блоком данных
+     * `code:map` уровня кода — без файлов не из исходников и без тел функций.
+     */
+    @Test
+    fun turnContextCarriesCodeMapOfTheTaskTree() {
+        setUp(slots = 1)
+        File(repo.root, "app/src").mkdirs()
+        File(repo.root, "app/src/Greeter.kt").writeText(
+            "package demo\n\nimport demo.util.Clock\n\nclass Greeter(private val clock: Clock) {\n    fun hello(name: String): String = \"привет, \$name\"\n}\n",
+        )
+        File(repo.root, "scripts").mkdirs()
+        File(repo.root, "scripts/run.py").writeText("from pathlib import Path\n\n\ndef main(argv):\n    return 0\n")
+        File(repo.root, "NOTES.md").writeText("class в тексте заметки — не код\n")
+        sh("-C", repo.root, "add", ".")
+        sh("-C", repo.root, "commit", "-q", "-m", "код")
+        task("карта")
+        runUntilQuiet()
+        val prompt = started.first().prompt
+        assertTrue(Orchestrator.CODE_MAP_SOURCE in prompt, "блок карты в prompt хода")
+        assertTrue("app/src/Greeter.kt — импорты: demo.util.Clock" in prompt, prompt)
+        assertTrue("  5: class Greeter(private val clock: Clock)" in prompt, prompt)
+        assertTrue("  6:   fun hello(name: String): String" in prompt, "вложенное — с отступом: $prompt")
+        assertTrue("scripts/run.py — импорты: pathlib" in prompt && "  4: def main(argv)" in prompt, prompt)
+        assertFalse("NOTES.md" in prompt, "не исходник — не в карте")
+        assertFalse("привет" in prompt, "тела и значения не уходят")
+    }
+
     @Test
     fun scenario2AutomaticContinuationAfterLimit() {
         setUp(slots = 2)

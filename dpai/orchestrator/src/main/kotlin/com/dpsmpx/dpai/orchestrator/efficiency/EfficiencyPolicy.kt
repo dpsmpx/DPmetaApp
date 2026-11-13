@@ -30,6 +30,8 @@ data class EfficiencyPolicy(
     val environmentFacts: Boolean = true,
     /** Рабочий набор файлов и итог хода — в handoff свежей сессии (§4, D-41). */
     val workingSet: WorkingSetPolicy = WorkingSetPolicy(),
+    /** Карта кода области задачи — источник уровня кода (D-171). */
+    val codeMap: CodeMapPolicy = CodeMapPolicy(),
 ) {
     companion object {
         val DEFAULT = EfficiencyPolicy()
@@ -44,7 +46,23 @@ data class EfficiencyPolicy(
             rejectDuplicateTasks = false,
             environmentFacts = false,
             workingSet = WorkingSetPolicy(enabled = false),
+            codeMap = CodeMapPolicy(enabled = false),
         )
+    }
+}
+
+/**
+ * Карта кода (D-171): `git grep` по дереву задачи — не больше [maxGrepChars] знаков
+ * вывода и [timeout]; текст карты — в пределах [limits].
+ */
+data class CodeMapPolicy(
+    val enabled: Boolean = true,
+    val maxGrepChars: Int = 262_144,
+    val timeout: kotlin.time.Duration = kotlin.time.Duration.parse("30s"),
+    val limits: com.dpsmpx.dpai.contexts.CodeMap.Limits = com.dpsmpx.dpai.contexts.CodeMap.Limits(),
+) {
+    init {
+        require(maxGrepChars in 1_024..4_194_304) { "maxGrepChars — 1 КиБ…4 МиБ" }
     }
 }
 

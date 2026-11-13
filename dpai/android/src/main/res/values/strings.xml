@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DP AI Orcestrator</string>
+    <string name="editor_command_template">Шаблон одного файла %1$s. Он заменит команду этого языка только после сохранения.\n\n%2$s</string>
+    <string name="terminal_problems">Ошибки: %1$s</string>
+    <string name="request_confirm_label">Точно: %1$s?</string>
+    <string name="request_open_for_login">Открываю приложение: вход по PIN. Не открылось — откройте его сами: запрос на экране «Запросы»</string>
+    <string name="request_failed">Не принято: %1$s</string>
 </resources>
