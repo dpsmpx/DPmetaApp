@@ -5,6 +5,11 @@ import android.graphics.Canvas
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.dpsmpx.dpai.core.clock.ManualClock
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.measure.Measure
@@ -49,12 +54,15 @@ class ScreenshotsTest {
         override fun document(project: String, path: String, done: (Outcome<String>) -> Unit) = done(Outcome.success(""))
     }
 
-    private fun pult(goTo: com.dpsmpx.dpai.ui.AppSection?, name: String) {
+    /** Снимок: имя PNG и экран. */
+    private class Shot(val name: String, val content: @Composable () -> Unit)
+
+    private fun pult(goTo: com.dpsmpx.dpai.ui.AppSection?, name: String): Shot {
         val view = PultView(
             state(), "", hasToken = true, busy = false,
             ai = Screens.AiCounts(true, Measure.observed(2L), Measure.observed(1L), Measure.observed(0L)),
         )
-        shoot(name) {
+        return Shot(name) {
             PultTheme {
                 PultApp(
                     view, loader, onSync = {}, onSaveToken = {}, onForgetToken = {}, onAi = {}, onIde = {}, goTo = goTo,
@@ -64,44 +72,58 @@ class ScreenshotsTest {
         }
     }
 
-    private fun ai(tab: com.dpsmpx.dpai.ui.AiTab, name: String) {
+    private fun ai(tab: com.dpsmpx.dpai.ui.AiTab, name: String): Shot {
         val app = org.robolectric.RuntimeEnvironment.getApplication()
         val model = com.dpsmpx.dpai.android.DemoModel.get(app)
         val controller = com.dpsmpx.dpai.android.Controller.get(app.filesDir)
-        shoot(name) {
+        return Shot(name) {
             com.dpsmpx.dpai.android.DpaiTheme {
                 com.dpsmpx.dpai.android.DpaiApp(model, controller, com.dpsmpx.dpai.android.Incoming(tab = tab.name))
             }
         }
     }
 
+    /**
+     * Все экраны — одним тестом в одном окне: диспетчер Compose запоминает Choreographer
+     * первого теста песочницы Robolectric, и в следующих тестах эффекты (переход пульта,
+     * вкладка «AI», загрузка данных) не идут. Каждый экран — своя композиция (`key`):
+     * состояние прежнего снимка не переносится.
+     */
     @Test
-    fun pultSummary() = pult(null, "pult-summary")
-
-    @Test
-    fun pultProjects() = pult(com.dpsmpx.dpai.ui.AppSection.PROJECTS, "pult-projects")
-
-    @Test
-    fun pultSettings() = pult(com.dpsmpx.dpai.ui.AppSection.SETTINGS, "settings")
-
-    @Test
-    fun pultHelp() = pult(com.dpsmpx.dpai.ui.AppSection.HELP, "help")
-
-    @Test
-    fun aiSummary() = ai(com.dpsmpx.dpai.ui.AiTab.SUMMARY, "ai-summary")
-
-    @Test
-    fun aiTasks() = ai(com.dpsmpx.dpai.ui.AiTab.TASKS, "ai-tasks")
-
-    @Test
-    fun aiFiles() = ai(com.dpsmpx.dpai.ui.AiTab.FILES, "ide-files")
-
-    private fun shoot(name: String, content: @androidx.compose.runtime.Composable () -> Unit) {
+    fun screens() {
+        val shots = listOf(
+            pult(null, "pult-summary"),
+            pult(com.dpsmpx.dpai.ui.AppSection.PROJECTS, "pult-projects"),
+            pult(com.dpsmpx.dpai.ui.AppSection.SETTINGS, "settings"),
+            pult(com.dpsmpx.dpai.ui.AppSection.HELP, "help"),
+            ai(com.dpsmpx.dpai.ui.AiTab.SUMMARY, "ai-summary"),
+            ai(com.dpsmpx.dpai.ui.AiTab.TASKS, "ai-tasks"),
+            // IDE с файлом — позже: в песочнице список файлов демо не загружается, а крутилка
+            // загрузки — бесконечная анимация, на каждом кадре Robolectric двигает часы (docs/SCREENSHOTS.md).
+        )
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
-        activity.setContent(content = content)
+        var current by mutableStateOf(shots.first())
+        activity.setContent { key(current.name) { current.content() } }
+        for (shot in shots) {
+            current = shot
+            settle()
+            save(activity, shot.name)
+        }
+    }
+
+    /**
+     * Дать экрану устояться: эффекты Compose идут по главному циклу (его часы — фиктивные),
+     * данные «AI» грузятся в фоновых потоках по настоящему времени. Главный цикл
+     * прокручивается шагами, между ними — настоящее ожидание (без системных часов и сна).
+     */
+    private fun settle(seconds: Int = 4) {
         val looper = shadowOf(Looper.getMainLooper())
-        repeat(20) { looper.idleFor(java.time.Duration.ofMillis(100)) }
-        save(activity, name)
+        val tick = java.util.concurrent.Semaphore(0)
+        repeat(seconds * 20) {
+            looper.idleFor(java.time.Duration.ofMillis(50))
+            tick.tryAcquire(50, java.util.concurrent.TimeUnit.MILLISECONDS)
+        }
+        looper.idle()
     }
 
     private fun save(activity: ComponentActivity, name: String) {

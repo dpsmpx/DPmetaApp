@@ -28,6 +28,9 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 | `jsch` (JSch, форк mwiede) | 2.28.7 | BSD-3-Clause, ISC | модуль `jsch` → приложение Android во время выполнения | Maven Central, `com.github.mwiede` | 7 октября 2026 |
 | `sora` (Sora Editor и language-textmate) | 0.24.7 | LGPL-2.1-or-later; tm4e — EPL-2.0, Joni/JCodings — MIT, Gson — Apache-2.0, SnakeYAML Engine — Apache-2.0 | только Android: нативное поле и локальная подсветка (D-136); исходные грамматики проекта, без внешнего кода | Maven Central, `io.github.rosemoe`; исходники Rosemoe/sora-editor | 12 ноября 2026 |
 | `apksig` (Android apksig) | 9.4.1 | Apache-2.0 | только Android во время выполнения: подпись APK ключом автора из Android Keystore и проверка подписи (D-157); та же версия уже приходит с `agp` в сборку и проверена в `verification-metadata.xml` | Google Maven, `com.android.tools.build` | 13 ноября 2026 |
+| `robolectric` (Robolectric) | 4.17 | MIT; транзитивные — как у DPpass (`DPpass:docs/PROVENANCE.md`) | только тесты `:shell` корня DPmetaApp и только по свойству `dpmeta.screenshots` — снимки экранов на JVM (`DPmetaApp:docs/SCREENSHOTS.md`); в APK и обычную сборку не попадает | Maven Central, `org.robolectric` | 13 ноября 2026 |
+| `junit4` (JUnit 4) | 4.13.2 | EPL-1.0 | там же: API запускателя Robolectric; запуск — `junit-vintage-engine` из JUnit BOM | Maven Central, `junit` | 13 ноября 2026 |
+| `robolectric-android-all` (образ «Android целиком», SDK 36) | 16-robolectric-13921718-i7 | Apache-2.0 | там же: образ, который ждёт Robolectric 4.17; берётся Gradle со сверкой суммы в `verification-metadata.xml` | Maven Central, `org.robolectric` | 13 ноября 2026 |
 <!-- provenance: end -->
 
 Версии совпадают с теми, что закреплены в `DPpass:gradle/libs.versions.toml`

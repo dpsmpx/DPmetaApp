@@ -33,6 +33,8 @@ Compose, JSch; wrapper Gradle со сверкой SHA-256) — `dpai/docs/PROVEN
 |---|---|---|---|---|---|
 | Eclipse JGit (`org.eclipse.jgit:org.eclipse.jgit`, каталог `jgit`; с ним JavaEWAH 1.1.13 — Apache-2.0, SLF4J API 1.7.30 — MIT) | 5.13.5.202508271544-r | EDL-1.0 (BSD-3-Clause) | клоны репозиториев: клонирование, обновление, ветки и файлы (ветка 5.13 — последняя для Java 8, на Android без недостающих API JDK 11+; CVE-2023-4759 закрыта) | `:core:git` | D-65 |
 | AndroidX Core (`androidx.core:core`, каталог `androidx-core`) | 1.18.0 | Apache-2.0 | `FileProvider` — «Поделиться» экспортом истории (F-36) | `:app` | D-67 |
+| Robolectric (`org.robolectric:robolectric`, каталог `robolectric`; с ним JUnit 4 `junit:junit` 4.13.2 — EPL-1.0 и `junit-vintage-engine` из JUnit BOM — EPL-2.0) | 4.17 | MIT (транзитивные — как у DPpass, `dppass/docs/PROVENANCE.md`) | снимки экранов на JVM (`docs/SCREENSHOTS.md`): только тестам `:shell` и только по свойству `dpmeta.screenshots`; в APK и обычную сборку не попадает | `:shell` (тест) | те же версии, что у тестов экранов DPpass (`DPpass:D-86`) |
+| Образ «Android целиком» (`org.robolectric:android-all-instrumented`, каталог `robolectric-android-all`) | 16-robolectric-13921718-i7 | Apache-2.0 | образ SDK 36 для Robolectric 4.17; берётся Gradle со сверкой суммы, тест ничего не скачивает | `:shell` (тест) | `DPpass:D-86`; SHA-256 — `gradle/verification-metadata.xml` |
 
 ## Данные
 
