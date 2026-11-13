@@ -136,4 +136,30 @@ class LanguageSessionTest {
         board.clear(uri)
         assertEquals(emptyList(), board.merged(uri))
     }
+
+    @Test
+    fun documentSymbolsHierarchicalAndFlatGiveTheEnclosingSymbol() {
+        val tree = """[{"name":"Shape","kind":5,"range":{"start":{"line":1,"character":0},"end":{"line":9,"character":1}},"selectionRange":{"start":{"line":1,"character":6},"end":{"line":1,"character":11}},
+            "children":[{"name":"width","kind":8,"range":{"start":{"line":2,"character":4},"end":{"line":2,"character":20}},"selectionRange":{"start":{"line":2,"character":8},"end":{"line":2,"character":13}}},
+                        {"name":"area","kind":6,"range":{"start":{"line":4,"character":4},"end":{"line":6,"character":5}},"selectionRange":{"start":{"line":4,"character":8},"end":{"line":4,"character":12}}}]}]"""
+        val (client, server) = client("""{"documentSymbolProvider":true}""") { method, _ -> if (method == "textDocument/documentSymbol") parse(tree) else JsonNull }
+        val session = LanguageSession(client)
+        val symbols = (session.symbols(uri) as Outcome.Success).value
+        assertEquals(listOf("width", "area"), symbols.single().children.map { it.name })
+        assertEquals("Shape.area", Assist.enclosing(symbols, Position(5, 8)))
+        assertEquals("Shape", Assist.enclosing(symbols, Position(2, 10)), "поле — не место кода: символ — класс")
+        assertNull(Assist.enclosing(symbols, Position(12, 0)))
+        val init = server.params("initialize")
+        assertEquals(json(true), ((((init["capabilities"] as JsonObject)["textDocument"] as JsonObject)["documentSymbol"]) as JsonObject)["hierarchicalDocumentSymbolSupport"])
+        client.stop()
+        // Плоский SymbolInformation (как у pylsp): без детей, место — в location.
+        val flat = """[{"name":"main","kind":12,"location":{"uri":"$uri","range":{"start":{"line":4,"character":0},"end":{"line":8,"character":0}}}}]"""
+        val (plain, _) = client("""{"documentSymbolProvider":true}""") { method, _ -> if (method == "textDocument/documentSymbol") parse(flat) else JsonNull }
+        assertEquals("main", Assist.enclosing((LanguageSession(plain).symbols(uri) as Outcome.Success).value, Position(6, 2)))
+        plain.stop()
+        // Служба без documentSymbolProvider — пусто, а не отказ.
+        val (none, _) = client("{}")
+        assertEquals(emptyList(), (LanguageSession(none).symbols(uri) as Outcome.Success).value)
+        none.stop()
+    }
 }

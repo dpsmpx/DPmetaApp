@@ -170,6 +170,10 @@ class LspClient(
 
     fun definition(uri: String, at: Position, timeout: Duration = REQUEST_TIMEOUT): Outcome<List<Location>> = ask("textDocument/definition", place(uri, at), timeout, LspParse::locations)
 
+    /** Символы документа (функции, классы…) — для символа вокруг выделения в контексте ИИ (D-165). */
+    fun symbols(uri: String, timeout: Duration = REQUEST_TIMEOUT): Outcome<List<CodeSymbol>> =
+        ask("textDocument/documentSymbol", JsonObject.of("textDocument" to JsonObject.of("uri" to json(uri))), timeout) { LspParse.symbols(it) }
+
     /** Объявление символа под курсором — служба находит его и без индекса проекта, по разобранным заголовкам. */
     fun declaration(uri: String, at: Position, timeout: Duration = REQUEST_TIMEOUT): Outcome<List<Location>> = ask("textDocument/declaration", place(uri, at), timeout, LspParse::locations)
 
@@ -272,6 +276,7 @@ class LspClient(
             ),
             "definition" to JsonObject(emptyMap()),
             "references" to JsonObject(emptyMap()),
+            "documentSymbol" to JsonObject.of("hierarchicalDocumentSymbolSupport" to json(true)),
             "rename" to JsonObject(emptyMap()),
             "formatting" to JsonObject(emptyMap()),
             "rangeFormatting" to JsonObject(emptyMap()),

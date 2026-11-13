@@ -44,6 +44,10 @@ class LanguageSession(val main: LspClient, val helper: LspClient? = null, privat
 
     fun references(uri: String, at: Position): Outcome<List<Location>> = main.references(uri, at)
 
+    /** Символы документа; служба их не даёт — пустой список, а не отказ. */
+    fun symbols(uri: String): Outcome<List<CodeSymbol>> =
+        if (main.info?.capabilities?.documentSymbols == true) main.symbols(uri) else Outcome.success(emptyList())
+
     fun rename(uri: String, at: Position, newName: String): Outcome<WorkspaceEdit> = main.rename(uri, at, newName)
 
     /** Служба формата: вспомогательная, если умеет, иначе основная. */

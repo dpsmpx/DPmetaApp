@@ -62,6 +62,13 @@ data class SignatureHelp(val signatures: List<Signature>, val active: Int, val a
 /** Правки по файлам: адрес → правки в координатах текущего текста файла. */
 data class WorkspaceEdit(val changes: Map<String, List<TextEdit>>)
 
+/**
+ * Символ документа (`textDocument/documentSymbol`): функция, класс, поле…
+ * [kind] — число `SymbolKind` LSP; [range] — весь символ; [children] —
+ * вложенные (у плоского ответа `SymbolInformation` — пусто).
+ */
+data class CodeSymbol(val name: String, val kind: Int, val range: Range, val children: List<CodeSymbol>)
+
 /** Исправление или преобразование. Применимо здесь только с готовыми правками ([edit]); `command` службы пока не исполняется. */
 data class CodeAction(val title: String, val kind: String?, val edit: WorkspaceEdit?, val preferred: Boolean)
 
@@ -81,6 +88,7 @@ data class ServerCapabilities(
     /** Служба отдаёт диагностику по запросу `textDocument/diagnostic`; присылает ли сама — не обещано. */
     val pullDiagnostics: Boolean = false,
     val declaration: Boolean = false,
+    val documentSymbols: Boolean = false,
 )
 
 /** Имя и версия службы, если она их назвала. */
@@ -202,6 +210,20 @@ internal object LspParse {
         }
     }
 
+    /** Иерархия `DocumentSymbol` или плоский `SymbolInformation` (без детей); глубже [depth] — обрезается. */
+    fun symbols(v: JsonValue?, depth: Int = 0): List<CodeSymbol>? {
+        if (v == null || v == JsonNull) return emptyList()
+        val a = v as? JsonArray ?: return null
+        return a.items.take(MAX_ITEMS).map { item ->
+            val o = item as? JsonObject ?: return null
+            val name = str(o["name"])?.take(200) ?: return null
+            val kind = int(o["kind"]) ?: 0
+            val range = range(o["range"]) ?: range((o["location"] as? JsonObject)?.get("range")) ?: return null
+            val children = if (depth >= 16) emptyList() else symbols(o["children"], depth + 1) ?: return null
+            CodeSymbol(name, kind, range, children)
+        }
+    }
+
     fun hover(v: JsonValue?): Hover? {
         val o = v as? JsonObject ?: return null
         return Hover(markup(o["contents"]) ?: return null, range(o["range"]))
@@ -284,6 +306,7 @@ internal object LspParse {
             codeAction = has("codeActionProvider"),
             pullDiagnostics = has("diagnosticProvider"),
             declaration = has("declarationProvider"),
+            documentSymbols = has("documentSymbolProvider"),
         )
     }
 

@@ -136,6 +136,9 @@ class ClangdLiveTest {
             assertTrue(refused is Outcome.Failure && "shape.hpp" in refused.errors.single().message, refused.toString())
             // Локальная переменная — объявлена здесь: переименование разрешено.
             assertTrue(Assist.renameScope(uri, ok(client.declaration(uri, totalAt)) + ok(client.definition(uri, totalAt))) is Outcome.Success)
+            // Символ вокруг места (D-165): метод area внутри Shape в заголовке, функция twice в main.cpp.
+            assertEquals("twice", Assist.enclosing(ok(client.symbols(uri)), index.position(main.indexOf("value * 2"))))
+            assertEquals("main", Assist.enclosing(ok(client.symbols(uri)), index.position(main.indexOf("Shape shape"))))
             // Форматирование: правки службы приводят текст к её стилю, повторное — пусто.
             val ugly = main.replace("int main() {", "int   main( ){")
             ok(client.update(uri, ugly))

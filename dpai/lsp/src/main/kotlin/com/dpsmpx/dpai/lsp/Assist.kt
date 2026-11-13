@@ -176,6 +176,24 @@ object Assist {
         return SignatureLine(active.label, parameter, list.size - 1)
     }
 
+    /** Виды символов, которые называют место в коде: класс, метод, функция, конструктор, интерфейс, перечисление, структура… */
+    private val ENCLOSING = setOf(2, 3, 5, 6, 9, 10, 11, 12, 23)
+
+    /**
+     * Символ вокруг [at]: самый глубокий класс или функция, содержащие место, — путь
+     * имён через точку (`Shape.area`); вне них — `null` (D-165).
+     */
+    fun enclosing(symbols: List<CodeSymbol>, at: Position): String? {
+        var level = symbols
+        val names = mutableListOf<String>()
+        while (true) {
+            val hit = level.firstOrNull { it.range.start <= at && at <= it.range.end && (it.kind in ENCLOSING || it.children.isNotEmpty()) } ?: break
+            if (hit.kind in ENCLOSING) names += hit.name
+            level = hit.children
+        }
+        return names.takeIf { it.isNotEmpty() }?.joinToString(".")
+    }
+
     /** Подсказка подписи нужна: курсор сразу после `(` или `,` (пробелы не в счёт). */
     fun wantsSignature(text: String, cursor: Int): Boolean {
         var i = cursor.coerceIn(0, text.length) - 1
