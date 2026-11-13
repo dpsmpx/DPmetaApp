@@ -464,6 +464,8 @@ class DemoModel(
     fun manualProfile(p: ProjectEntry, kind: com.dpsmpx.dpai.ui.ManualProfileKind) = controller.manualProfiles.profile(p, kind)
     fun saveManualProfile(p: ProjectEntry, profile: com.dpsmpx.dpai.ui.ManualProfile) = controller.manualProfiles.save(p, profile)
     fun runProfile(p: ProjectEntry) = controller.manualProfiles.runProfile(p)
+    fun manualHistory(p: ProjectEntry) = controller.manualProfiles.history(p)
+    fun clearManualHistory(p: ProjectEntry) = controller.manualProfiles.clearHistory(p)
     fun saveRunProfile(p: ProjectEntry, profile: com.dpsmpx.dpai.ui.RunProfile) = controller.manualProfiles.saveRun(p, profile)
     @Volatile private var manualStop = false
 
@@ -520,7 +522,8 @@ class DemoModel(
                 controller.manualProfiles.stop(client)
                 return@start LongJobs.Done("проверьте ветку, HEAD и конфликты дерева: ${git.diagnostics.firstOrNull()?.message.orEmpty()}", failed = true)
             }
-            controller.manualProfiles.launch((prepared as Outcome.Success).value, client)
+            // HEAD дерева — в историю запуска (D-156): какая версия кода собиралась.
+            controller.manualProfiles.launch((prepared as Outcome.Success).value, client, status.head)
             watchManual(client)
         }
     }

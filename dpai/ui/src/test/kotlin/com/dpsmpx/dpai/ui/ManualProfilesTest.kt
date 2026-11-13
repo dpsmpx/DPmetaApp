@@ -38,11 +38,12 @@ import org.junit.jupiter.api.io.TempDir
 
 class ManualProfilesTest {
     @TempDir lateinit var dir: Path
-    private val ids = IdGenerator(ManualClock(), RandomSource.seeded(134))
+    private val clock = ManualClock()
+    private val ids = IdGenerator(clock, RandomSource.seeded(134))
     private val target = TargetForm.inApp(ids.next(IdKinds.TARGET), "Linux", "/root/.claude-slot-1").valueOrNull()!!
     private val project = ProjectEntry(ids.next(IdKinds.PROJECT), ids.next(IdKinds.REPOSITORY), target.id, "/root/repo", "/root/trees", "main", emptyList())
     private val profile = ManualProfile.form(ManualProfileKind.BUILD, "./gradlew 'assembleDebug'", "60").valueOrNull()!!
-    private fun store() = ManualProfiles(DocumentStore(NioVfs(dir), "profiles"), ids)
+    private fun store() = ManualProfiles(DocumentStore(NioVfs(dir), "profiles"), ids, clock)
     private val location get() = ProjectWorkspaceView.of(project, listOf(target), true).main
 
     private class Host : ProcessHost {
@@ -270,5 +271,63 @@ class ManualProfilesTest {
         assertFalse(s.poll(host2.client()))
         assertEquals(failed.id, s.snapshot().finished)
         assertFalse(s.snapshot().complete)
+    }
+
+    @Test fun historyRecordsEachFinishedRunNewestFirstAndSurvivesRestart() {
+        val s = store(); val host = Host()
+        val first = s.prepare(project, target, location, steps).valueOrNull()!!
+        s.launch(first, host.client(), head = "0123456789abcdef0123456789abcdef01234567")
+        clock.advance(kotlin.time.Duration.parse("70s"))
+        host.state = RunState.EXITED; host.exitCode = 0
+        assertTrue(s.poll(host.client()))
+        host.state = RunState.EXITED; host.exitCode = 2
+        assertFalse(s.poll(host.client()))
+        val h1 = store().history(project).valueOrNull()!!
+        assertEquals(1, h1.size)
+        with(h1.single()) {
+            assertEquals(first.id, run)
+            assertEquals(ManualOutcome.FAILED, outcome)
+            assertEquals(ManualProfileKind.BUILD, kind)
+            assertEquals("0123456789abcdef0123456789abcdef01234567", head)
+            assertEquals(kotlin.time.Duration.parse("70s"), duration)
+            assertEquals(listOf("Настройка", "Сборка", "Тесты"), this.steps.map { it.first })
+            assertEquals(listOf(true, false), this.steps.mapNotNull { it.second?.ok })
+            assertEquals(null, this.steps[2].second)
+        }
+        // Второй запуск — успешный, проверка; новые — первыми; остановка — своим исходом.
+        val host2 = Host()
+        s.launch(s.prepare(project, target, location, profile).valueOrNull()!!, host2.client())
+        host2.state = RunState.EXITED
+        assertFalse(s.poll(host2.client()))
+        val host3 = Host()
+        s.launch(s.prepare(project, target, location, steps).valueOrNull()!!, host3.client())
+        assertFalse(s.stop(host3.client()))
+        assertEquals(listOf(ManualOutcome.STOPPED, ManualOutcome.OK, ManualOutcome.FAILED), store().history(project).valueOrNull()!!.map { it.outcome })
+        assertIs<Outcome.Success<Unit>>(s.clearHistory(project))
+        assertEquals(emptyList(), store().history(project).valueOrNull())
+    }
+
+    @Test fun historyIsCappedAndCorruptHistoryDoesNotKeepThePause() {
+        val s = store()
+        repeat(ManualProfiles.MAX_HISTORY + 3) {
+            val host = Host()
+            s.launch(s.prepare(project, target, location, profile).valueOrNull()!!, host.client())
+            host.state = RunState.EXITED
+            assertFalse(s.poll(host.client()))
+        }
+        assertEquals(ManualProfiles.MAX_HISTORY, s.history(project).valueOrNull()!!.size)
+        // Портятся и документ, и его прежняя версия (.prev): иначе хранилище честно откатилось бы к ней.
+        val files = dir.resolve("profiles").toFile().listFiles()!!.filter { it.name.startsWith("history-") }
+        assertTrue(files.isNotEmpty())
+        files.forEach { it.writeText("broken") }
+        val file = files.first()
+        assertIs<Outcome.Failure>(s.history(project))
+        val host = Host()
+        s.launch(s.prepare(project, target, location, profile).valueOrNull()!!, host.client())
+        host.state = RunState.EXITED
+        assertFalse(s.poll(host.client()), "повреждённая история не держит паузу")
+        assertFalse(store().blocked)
+        assertTrue(s.snapshot().note.contains("История не записана"))
+        assertEquals("broken", file.readText(), "повреждённая история не затёрта молча")
     }
 }

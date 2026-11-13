@@ -170,6 +170,7 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
             if (list.items.size > PROBLEMS_SHOWN) Text("…и ещё ${list.items.size - PROBLEMS_SHOWN}: исправьте первые и запустите снова", style = MaterialTheme.typography.bodySmall)
         }
         if (run.output.isNotEmpty()) SelectionContainer { Text(run.output, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
+        ManualHistorySection(model, view.project, kind, location, refresh = run.finished, onProblem = onProblem)
         Text("Ручной итог не завершает задачу ИИ. Перед запуском сохраните или отмените правки; контур должен быть свободен.", style = MaterialTheme.typography.bodySmall)
     }
 }

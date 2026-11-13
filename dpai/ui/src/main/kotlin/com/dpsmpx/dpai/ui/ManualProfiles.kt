@@ -1,5 +1,7 @@
 package com.dpsmpx.dpai.ui
 
+import com.dpsmpx.dpai.core.clock.Clock
+import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Redactor
 import com.dpsmpx.dpai.core.ids.IdGenerator
@@ -167,7 +169,32 @@ data class ManualStepResult(val step: Int, val exitCode: Int?, val reason: Strin
     val ok: Boolean get() = exitCode == 0
 }
 
-data class ManualRun(val id: SessionId, val project: ProjectEntry, val target: TargetEntry, val path: String, val branch: String, val profile: ManualProfile)
+/** [startedAt] — когда записан якорь (часы приложения); у якоря прежней версии — неизвестно. */
+data class ManualRun(val id: SessionId, val project: ProjectEntry, val target: TargetEntry, val path: String, val branch: String, val profile: ManualProfile, val startedAt: Timestamp? = null)
+
+/** Чем кончился запуск: все шаги с кодом 0, ошибка шага, остановлен человеком, не подтверждён агентом. */
+enum class ManualOutcome(val title: String) { OK("успешно"), FAILED("ошибка"), STOPPED("остановлено"), UNCONFIRMED("не подтверждено") }
+
+/**
+ * Запись истории ручных запусков (D-156): что, где и чем кончилось. [steps] —
+ * имена шагов профиля и их итоги (`null` — шаг не запускался), [output] —
+ * хвост вывода, уже прошедший Redactor.
+ */
+data class ManualHistoryEntry(
+    val run: SessionId,
+    val kind: ManualProfileKind,
+    val startedAt: Timestamp?,
+    val finishedAt: Timestamp,
+    val target: String,
+    val branch: String,
+    val head: String?,
+    val steps: List<Pair<String, ManualStepResult?>>,
+    val outcome: ManualOutcome,
+    val note: String,
+    val output: String,
+) {
+    val duration: kotlin.time.Duration? get() = startedAt?.let { finishedAt - it }?.takeIf { !it.isNegative() }
+}
 
 /**
  * [step] — какой шаг запрошен последним (`null` — неизвестно, см. D-154), [results] —
@@ -199,7 +226,7 @@ data class ManualRunView(
  * останавливается (`fence-stop` закрывает запуск навсегда, опоздавший start не
  * пройдёт). Намерение потеряно или повреждено — новые шаги не запускаются.
  */
-class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerator) {
+class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerator, private val clock: Clock) {
     @Volatile private var view = load()
     private var sequence = 0L
     private var tail = ""
@@ -207,7 +234,7 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
     fun snapshot(): ManualRunView = view
 
     /** Намерение и итоги шагов запуска [run]; чужой, повреждённый или отсутствующий документ — намерение неизвестно. */
-    private data class Progress(val intent: Int?, val results: List<ManualStepResult>)
+    private data class Progress(val intent: Int?, val results: List<ManualStepResult>, val head: String? = null)
 
     private fun progress(run: SessionId): Progress {
         val o = (docs.read(PROGRESS) as? Outcome.Success)?.value?.content ?: return Progress(null, emptyList())
@@ -217,17 +244,19 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
             val r = v as? JsonObject ?: return@mapNotNull null
             ManualStepResult(r.number("step")?.toInt() ?: return@mapNotNull null, r.number("code")?.toInt(), r.text("reason").orEmpty())
         }.orEmpty()
-        return Progress(intent?.takeIf { it >= 1 }, results)
+        return Progress(intent?.takeIf { it >= 1 }, results, o.text("head")?.takeIf { HEAD.matches(it) })
     }
 
-    private fun writeProgress(run: SessionId, intent: Int, results: List<ManualStepResult>): Outcome<Unit> {
-        val doc = JsonObject.of("format" to JsonString("dpai.manual-progress"), "version" to JsonNumber.of(1), "run" to JsonString(run.value),
-            "intent" to JsonNumber.of(intent),
+    private fun writeProgress(run: SessionId, intent: Int, results: List<ManualStepResult>, head: String?): Outcome<Unit> {
+        val fields = linkedMapOf<String, com.dpsmpx.dpai.core.serialization.JsonValue>("format" to JsonString("dpai.manual-progress"), "version" to JsonNumber.of(1), "run" to JsonString(run.value),
+            "intent" to JsonNumber.of(intent))
+        head?.takeIf { HEAD.matches(it) }?.let { fields["head"] = JsonString(it) }
+        val doc = JsonObject(fields + mapOf(
             "results" to JsonArray(results.map { r ->
                 val m = linkedMapOf<String, com.dpsmpx.dpai.core.serialization.JsonValue>("step" to JsonNumber.of(r.step), "reason" to JsonString(r.reason))
                 r.exitCode?.let { m["code"] = JsonNumber.of(it) }
                 JsonObject(m)
-            }))
+            })))
         return when (val w = docs.write(PROGRESS, doc)) {
             is Outcome.Failure -> w
             is Outcome.Success -> Outcome.success(Unit)
@@ -266,6 +295,77 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
         }
     }
 
+    /** История ручных запусков проекта (D-156), новые — первыми. Повреждённый документ — отказ, а не пустая история. */
+    @Synchronized
+    fun history(project: ProjectEntry): Outcome<List<ManualHistoryEntry>> = when (val r = docs.read(historyKey(project))) {
+        is Outcome.Failure -> r
+        is Outcome.Success -> if (r.value == null) Outcome.success(emptyList()) else readHistory(r.value!!.content)?.let { Outcome.success(it) }
+            ?: Outcome.failure(DiagCode.STORAGE_CORRUPTED, "история запусков повреждена — её можно очистить")
+    }
+
+    @Synchronized
+    fun clearHistory(project: ProjectEntry): Outcome<Unit> = when (val r = docs.delete(historyKey(project))) {
+        is Outcome.Failure -> r
+        is Outcome.Success -> Outcome.success(Unit)
+    }
+
+    private fun appendHistory(project: ProjectEntry, entry: ManualHistoryEntry): Outcome<Unit> {
+        // Повреждённую историю не затирать: её видно и её можно очистить явно.
+        val old = when (val h = history(project)) {
+            is Outcome.Failure -> return h
+            is Outcome.Success -> h.value
+        }
+        val all = (listOf(entry) + old.filter { it.run != entry.run }).take(MAX_HISTORY)
+        val doc = JsonObject.of("format" to JsonString("dpai.manual-history"), "version" to JsonNumber.of(1), "entries" to JsonArray(all.map(::historyJson)))
+        return when (val w = docs.write(historyKey(project), doc)) {
+            is Outcome.Failure -> w
+            is Outcome.Success -> Outcome.success(Unit)
+        }
+    }
+
+    private fun historyJson(e: ManualHistoryEntry): JsonObject {
+        val m = linkedMapOf<String, com.dpsmpx.dpai.core.serialization.JsonValue>(
+            "run" to JsonString(e.run.value), "kind" to JsonString(e.kind.name), "finishedAt" to JsonNumber.of(e.finishedAt.epochMillis),
+            "target" to JsonString(e.target), "branch" to JsonString(e.branch), "outcome" to JsonString(e.outcome.name),
+            "note" to JsonString(e.note), "output" to JsonString(e.output),
+            "steps" to JsonArray(e.steps.map { (name, r) ->
+                val s = linkedMapOf<String, com.dpsmpx.dpai.core.serialization.JsonValue>("name" to JsonString(name))
+                if (r != null) {
+                    s["reason"] = JsonString(r.reason)
+                    r.exitCode?.let { s["code"] = JsonNumber.of(it) }
+                }
+                JsonObject(s)
+            }),
+        )
+        e.startedAt?.let { m["startedAt"] = JsonNumber.of(it.epochMillis) }
+        e.head?.let { m["head"] = JsonString(it) }
+        return JsonObject(m)
+    }
+
+    private fun readHistory(o: JsonObject): List<ManualHistoryEntry>? {
+        if (o.text("format") != "dpai.manual-history" || o.number("version") != 1L) return null
+        return ((o["entries"] as? JsonArray)?.items ?: return null).map { v ->
+            val e = v as? JsonObject ?: return null
+            val steps = ((e["steps"] as? JsonArray)?.items ?: return null).mapIndexed { i, sv ->
+                val so = sv as? JsonObject ?: return null
+                (so.text("name") ?: return null) to so.text("reason")?.let { ManualStepResult(i + 1, so.number("code")?.toInt(), it) }
+            }
+            ManualHistoryEntry(
+                run = IdKinds.SESSION.parse(e.text("run") ?: return null).valueOrNull() ?: return null,
+                kind = ManualProfileKind.entries.firstOrNull { it.name == e.text("kind") } ?: return null,
+                startedAt = e.number("startedAt")?.let(::Timestamp),
+                finishedAt = Timestamp(e.number("finishedAt") ?: return null),
+                target = e.text("target") ?: return null,
+                branch = e.text("branch") ?: return null,
+                head = e.text("head"),
+                steps = steps,
+                outcome = ManualOutcome.entries.firstOrNull { it.name == e.text("outcome") } ?: return null,
+                note = e.text("note") ?: return null,
+                output = e.text("output") ?: return null,
+            )
+        }
+    }
+
     @Synchronized
     fun runProfile(project: ProjectEntry): Outcome<RunProfile?> = when (val r = docs.read(runKey(project))) {
         is Outcome.Failure -> r
@@ -287,10 +387,11 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
     fun prepare(project: ProjectEntry, target: TargetEntry, location: WorkspaceLocation, profile: ManualProfile): Outcome<ManualRun> {
         if (blocked) return Outcome.failure(DiagCode.WORKTREE_OWNED, "ручной запуск уже держит контур на паузе")
         if (ManualProfile.read(profile.toJson()) == null || target.id != location.target || project.target != target.id || location.project != project.project || location.repository != project.repository) return Outcome.failure(DiagCode.VALUE_INVALID, "неверный профиль или target")
-        val run = ManualRun(ids.next(IdKinds.SESSION), project, target, location.path, location.branch, profile)
+        val run = ManualRun(ids.next(IdKinds.SESSION), project, target, location.path, location.branch, profile, clock.now())
         val anchor = JsonObject.of("format" to JsonString("dpai.manual-run"), "version" to JsonNumber.of(2),
             "id" to JsonString(run.id.value), "project" to ProjectBook.toJson(project), "target" to TargetBook.toJson(listOf(target)),
-            "path" to JsonString(run.path), "branch" to JsonString(run.branch), "profile" to profile.toJson())
+            "path" to JsonString(run.path), "branch" to JsonString(run.branch), "profile" to profile.toJson(),
+            "startedAt" to JsonNumber.of(run.startedAt!!.epochMillis))
         if (readRun(anchor) == null) return Outcome.failure(DiagCode.VALUE_INVALID, "снимок проекта/target не прошёл проверку")
         val r = docs.write(ACTIVE, anchor)
         // Даже частичная запись могла оставить якорь. При ошибке перечитать и блокировать при неопределённости.
@@ -301,17 +402,17 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
     }
 
     /** Только один раз, непосредственно после успешного prepare. После рестарта — только poll/stop. */
-    fun launch(run: ManualRun, client: AgentClient) {
-        startStep(run, client, 1, emptyList())
+    fun launch(run: ManualRun, client: AgentClient, head: String? = null) {
+        startStep(run, client, 1, emptyList(), head)
     }
 
     /**
      * Записать намерение «шаг [step]» и только потом послать start. Не записалось —
      * start не посылается: без записи перезапуск не узнал бы, что шаг мог начаться.
      */
-    private fun startStep(run: ManualRun, client: AgentClient, step: Int, results: List<ManualStepResult>): Boolean {
+    private fun startStep(run: ManualRun, client: AgentClient, step: Int, results: List<ManualStepResult>, head: String?): Boolean {
         val s = run.profile.steps[step - 1]
-        if (writeProgress(run.id, step, results) is Outcome.Failure) {
+        if (writeProgress(run.id, step, results, head) is Outcome.Failure) {
             note("не удалось записать ход сборки — шаг $step не запущен; остановите сборку")
             return false
         }
@@ -363,19 +464,25 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
         // У одного шага продолжения нет: неизвестное намерение (якорь прежней версии) ничего не меняет.
         val intent = known.intent ?: 1.takeIf { total == 1 }
         when {
-            intent == null -> return finish(client, run, known.results, "ход сборки не записан или повреждён — после шага $turn ничего не запускалось ($why)")
-            turn < intent -> return finish(client, run, known.results, "запуск шага $intent не подтверждён агентом — сборка остановлена, повторно шаг не запускался; запустите профиль снова")
-            turn > intent -> return finish(client, run, known.results, "агент сообщил шаг $turn, ожидался $intent — сборка остановлена")
+            intent == null -> return finish(client, run, known.results, "ход сборки не записан или повреждён — после шага $turn ничего не запускалось ($why)", ManualOutcome.UNCONFIRMED)
+            turn < intent -> return finish(client, run, known.results, "запуск шага $intent не подтверждён агентом — сборка остановлена, повторно шаг не запускался; запустите профиль снова", ManualOutcome.UNCONFIRMED)
+            turn > intent -> return finish(client, run, known.results, "агент сообщил шаг $turn, ожидался $intent — сборка остановлена", ManualOutcome.UNCONFIRMED)
         }
         val result = ManualStepResult(turn, status.exitCode.takeIf { status.reason == ExitReason.EXITED }, why)
         val results = known.results.filter { it.step < turn } + result
         view = view.copy(results = results, step = turn)
         if (result.ok && turn < total && !stopRequested) {
             // Не записалось намерение — следующий шаг не запускается, сборка завершается с итогом.
-            if (!startStep(run, client, turn + 1, results)) return finish(client, run, results, "шаг ${turn + 1} не запущен: ход сборки не записан")
+            if (!startStep(run, client, turn + 1, results, known.head)) return finish(client, run, results, "шаг ${turn + 1} не запущен: ход сборки не записан", ManualOutcome.UNCONFIRMED)
             return true
         }
-        return finish(client, run, results, if (total > 1 && result.ok && turn < total) "остановлено после шага $turn" else why)
+        val outcome = when {
+            results.size == total && results.all { it.ok } -> ManualOutcome.OK
+            result.ok -> ManualOutcome.STOPPED
+            status.reason == ExitReason.STOPPED -> ManualOutcome.STOPPED
+            else -> ManualOutcome.FAILED
+        }
+        return finish(client, run, results, if (total > 1 && result.ok && turn < total) "остановлено после шага $turn" else why, outcome)
     }
 
     @Volatile private var stopRequested = false
@@ -383,10 +490,10 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
     fun stop(client: AgentClient): Boolean {
         val run = view.active ?: return blocked
         stopRequested = true
-        return finish(client, run, progress(run.id).results, "остановлено пользователем")
+        return finish(client, run, progress(run.id).results, "остановлено пользователем", ManualOutcome.STOPPED)
     }
 
-    private fun finish(client: AgentClient, run: ManualRun, results: List<ManualStepResult>, result: String): Boolean {
+    private fun finish(client: AgentClient, run: ManualRun, results: List<ManualStepResult>, result: String, outcome: ManualOutcome): Boolean {
         when (val r = client.fenceStop(run.id)) {
             is Outcome.Failure -> { note("пауза сохраняется: ${r.errors.first().message}"); return true }
             is Outcome.Success -> Unit
@@ -395,12 +502,17 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
             val note = Redactor.STANDARD.redact(summary(run, results, result)).take(MAX_NOTE)
             val written = docs.write(RESULT, JsonObject.of("format" to JsonString("dpai.manual-result"), "version" to JsonNumber.of(1), "note" to JsonString(note), "output" to JsonString(tail)))
             if (written is Outcome.Failure) { note("не удалось записать итог; пауза сохраняется"); return true }
+            // История (D-156) — не условие снятия паузы: не записалась — сказано в итоге, пауза снимается.
+            val head = progress(run.id).head
+            val entry = ManualHistoryEntry(run.id, run.profile.kind, run.startedAt, clock.now(), run.target.label, run.branch, head,
+                run.profile.steps.mapIndexed { i, s -> s.name to results.firstOrNull { it.step == i + 1 } }, outcome, note, tail.takeLast(MAX_HISTORY_OUTPUT))
+            val historyNote = (appendHistory(run.project, entry) as? Outcome.Failure)?.let { "\nИстория не записана: ${it.diagnostics.first().message}" }.orEmpty()
             // Документ хода — от этого запуска; не удалился — следующий запуск его не примет (другой run).
             docs.delete(PROGRESS)
             val deleted = docs.delete(ACTIVE)
             if (deleted is Outcome.Failure) { note("не удалось снять паузу на диске"); return true }
             val complete = results.size == run.profile.steps.size && results.all { it.ok }
-            view = ManualRunView(null, false, note, tail, results = results, finished = run.id, complete = complete)
+            view = ManualRunView(null, false, note + historyNote, tail, results = results, finished = run.id, complete = complete)
             stopRequested = false
         }
         return false
@@ -427,6 +539,7 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
     private fun note(text: String) { view = view.copy(note = Redactor.STANDARD.redact(text).take(1000)) }
     private fun key(p: ProjectEntry, kind: ManualProfileKind) = "${kind.name.lowercase()}-${p.project.value.lowercase()}"
     private fun runKey(p: ProjectEntry) = "run-${p.project.value.lowercase()}"
+    private fun historyKey(p: ProjectEntry) = "history-${p.project.value.lowercase()}"
 
     private fun readRun(o: JsonObject): ManualRun? {
         if (o.text("format") != "dpai.manual-run" || o.number("version") !in setOf(1L, 2L)) return null
@@ -437,7 +550,7 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
         val path = o.text("path") ?: return null
         val branch = o.text("branch") ?: return null
         if (target.id != project.target || path.isEmpty() || path.any { it.code < 32 }) return null
-        return ManualRun(id, project, target, path, branch, profile)
+        return ManualRun(id, project, target, path, branch, profile, o.number("startedAt")?.takeIf { it > 0 }?.let(::Timestamp))
     }
 
     companion object {
@@ -446,6 +559,13 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
         private const val PROGRESS = "progress"
         private const val MAX_OUTPUT = 65536
         private const val MAX_NOTE = 4000
+
+        /** Записей истории на проект (D-156): старые уходят. */
+        const val MAX_HISTORY = 30
+
+        /** Хвост вывода в записи истории: ошибки сборки — в конце, 30 записей не раздувают документ. */
+        const val MAX_HISTORY_OUTPUT = 16384
+        private val HEAD = Regex("^[0-9a-f]{7,64}$")
     }
 }
 

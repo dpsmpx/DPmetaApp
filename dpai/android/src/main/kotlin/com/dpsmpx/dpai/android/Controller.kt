@@ -98,7 +98,7 @@ class Controller(private val root: File, val version: String?) {
      */
     val ecosystemAuto = com.dpsmpx.dpai.orchestrator.ecosystem.AutoEcosystem(docs, Clock.SYSTEM)
     val manualProfiles = com.dpsmpx.dpai.ui.ManualProfiles(
-        DocumentStore(NioVfs(File(root.parentFile, "manual-profiles").toPath()), "docs"), IdGenerator(Clock.SYSTEM, RandomSource.secure()))
+        DocumentStore(NioVfs(File(root.parentFile, "manual-profiles").toPath()), "docs"), IdGenerator(Clock.SYSTEM, RandomSource.secure()), Clock.SYSTEM)
 
     /** Клиент закреплённого target: смена настроек не перенаправит остановку старой команды. */
     fun profileAgent(target: TargetEntry, inApp: com.dpsmpx.dpai.execution.process.ProcessHost?): com.dpsmpx.dpai.execution.agent.AgentClient? {
