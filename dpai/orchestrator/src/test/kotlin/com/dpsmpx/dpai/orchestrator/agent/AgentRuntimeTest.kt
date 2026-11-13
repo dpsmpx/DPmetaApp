@@ -240,9 +240,12 @@ class AgentRuntimeTest {
         assertTrue(rt.start(run, RunSpec(TestChild.command("child", "hang"))).ok)
         val first = mutableListOf<AgentReply>()
         assertTrue(rt.follow(run, 0) { first += it; outputs(first.flatMap { r -> r.events }).isEmpty() })
-        val status = rt.status(run).run!!
+        // Первый вывод процесса приходит раньше, чем документ хода получает RUNNING (pid пишется
+        // после запуска): под нагрузкой читатель видел STARTING. Ждём состояния, а не угадываем момент.
+        val status = RealTime.await(30.seconds, "читатель ушёл — ход идёт") {
+            rt.status(run).run!!.also { assertTrue(it.state != RunState.EXITED, "ход не кончился с уходом читателя") }.takeIf { it.state == RunState.RUNNING }
+        }
         status.pid?.let { started += it }
-        assertEquals(RunState.RUNNING, status.state, "читатель ушёл — ход идёт")
         val last = first.flatMap { it.events }.last().sequence
         val second = mutableListOf<AgentReply>()
         assertTrue(rt.follow(run, last) { second += it; second.count { r -> r.events.isEmpty() } < 3 })
@@ -631,9 +634,10 @@ class AgentRuntimeTest {
         val run = ids.next(IdKinds.SESSION)
         assertTrue(rt.start(run, RunSpec(TestChild.command("child", "tick"))).ok)
         RealTime.await(60.seconds, "ход пишет") { outputs(rt.events(run, 0, 1000).events).firstOrNull { it.startsWith("tick ") } }
-        // Журнал подменён каталогом: следующая запись откажет.
+        // Журнал подменён каталогом: следующая запись откажет. Ход пишет журнал всё время — между
+        // удалением и созданием каталога он мог создать файл заново: тогда — ещё раз.
         val journal = dir.resolve("runs/${run.value}/events.jsonl").toFile()
-        assertTrue(journal.delete() && journal.mkdir())
+        RealTime.await(10.seconds, "журнал подменён каталогом", step = 1.milliseconds) { true.takeIf { journal.isDirectory || journal.delete() && journal.mkdir() } }
         val store = DocumentStore(NioVfs(dir), "runs/${run.value}")
         val doc = RealTime.await(30.seconds, "ход остановлен") {
             RunDoc.read(store.read(AgentRuntime.RUN_KEY).valueOrNull()!!.content)?.takeIf { it.state == RunState.EXITED }
