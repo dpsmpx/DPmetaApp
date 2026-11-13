@@ -305,6 +305,16 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     /** Адаптер не ответил за отведённое время; сеанс жив. */
     DAP_TIMEOUT(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
 
+    // --- отладчик APK по JDWP (D-161) ---
+    /** Пакет ВМ не по протоколу JDWP или длиннее предела: связь закрыта. */
+    JDWP_REPLY_INVALID(Category.FORMAT, Severity.ERROR, Retryability.UNKNOWN),
+    /** ВМ ответила на команду кодом ошибки JDWP (класс не загружен, нет сведений о переменных). */
+    JDWP_REQUEST_FAILED(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Связь с ВМ закрыта или не установлена (рукопожатие, приложение вышло, пересылка adb кончилась). */
+    JDWP_CONNECTION_LOST(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+    /** ВМ не ответила за отведённое время; связь жива. */
+    JDWP_TIMEOUT(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+
     /** Запечатанный сегмент журнала пропал или испорчен — восстановлен из копии (D-95). */
     JOURNAL_SEGMENT_RESTORED(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
 

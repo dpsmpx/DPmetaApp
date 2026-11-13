@@ -115,12 +115,12 @@ class DebugSession(
     output: OutputStream,
     private val onView: (DebugView) -> Unit,
     private val onClosed: (Diagnostic) -> Unit = {},
-) {
+) : Debuggee {
     private val worker: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "dpai-dap-session").apply { isDaemon = true } }
     private val initialized = CompletableFuture<Unit>()
 
     @Volatile
-    var view: DebugView = DebugView()
+    override var view: DebugView = DebugView()
         private set
 
     @Volatile
@@ -141,7 +141,7 @@ class DebugSession(
         },
     )
 
-    val isOpen: Boolean get() = peer.isOpen
+    override val isOpen: Boolean get() = peer.isOpen
 
     /**
      * Запустить [launch] с точками [breakpoints] (путь гостя → строки с единицы).
@@ -197,7 +197,7 @@ class DebugSession(
     }
 
     /** Точки файла [path] целиком (DAP заменяет набор файла): как их принял отладчик. */
-    fun setBreakpoints(path: String, lines: List<Int>): Outcome<List<BreakpointState>> {
+    override fun setBreakpoints(path: String, lines: List<Int>): Outcome<List<BreakpointState>> {
         val args = JsonObject.of(
             "source" to JsonObject.of("path" to json(path)),
             "breakpoints" to JsonArray(lines.distinct().sorted().map { JsonObject.of("line" to json(it)) }),
@@ -215,16 +215,16 @@ class DebugSession(
         }
     }
 
-    fun resume(): Outcome<Unit> = step("continue")
+    override fun resume(): Outcome<Unit> = step("continue")
 
-    fun next(): Outcome<Unit> = step("next")
+    override fun next(): Outcome<Unit> = step("next")
 
-    fun stepIn(): Outcome<Unit> = step("stepIn")
+    override fun stepIn(): Outcome<Unit> = step("stepIn")
 
-    fun stepOut(): Outcome<Unit> = step("stepOut")
+    override fun stepOut(): Outcome<Unit> = step("stepOut")
 
     /** Остановить идущую программу; поток — первый из `threads`. */
-    fun pause(): Outcome<Unit> {
+    override fun pause(): Outcome<Unit> {
         val thread = when (val t = peer.request("threads", null, REQUEST_TIMEOUT)) {
             is Outcome.Failure -> return t
             is Outcome.Success -> (((t.value as? JsonObject)?.get("threads") as? JsonArray)?.items?.firstOrNull() as? JsonObject)?.long("id") ?: 1L
@@ -233,7 +233,7 @@ class DebugSession(
     }
 
     /** Выбрать кадр стека [frameId]: его переменные верхнего уровня. */
-    fun selectFrame(frameId: Long): Outcome<List<DebugVariable>> = when (val v = locals(frameId)) {
+    override fun selectFrame(frameId: Long): Outcome<List<DebugVariable>> = when (val v = locals(frameId)) {
         is Outcome.Failure -> v
         is Outcome.Success -> {
             publish { it.copy(frame = frameId, variables = v.value) }
@@ -242,10 +242,10 @@ class DebugSession(
     }
 
     /** Поля переменной [ref]. */
-    fun children(ref: Long): Outcome<List<DebugVariable>> = variables(ref)
+    override fun children(ref: Long): Outcome<List<DebugVariable>> = variables(ref)
 
     /** Значение выражения [expression] в выбранном кадре. */
-    fun evaluate(expression: String): Outcome<String> {
+    override fun evaluate(expression: String): Outcome<String> {
         if (expression.isBlank() || expression.length > MAX_EXPRESSION) return Outcome.failure(DiagCode.VALUE_INVALID, "выражение — от 1 до $MAX_EXPRESSION знаков")
         // «watch», а не «repl»: в gdb «repl» — команда gdb (`x*x` — команда `x`), а нужно выражение языка.
         val args = linkedMapOf<String, JsonValue>("expression" to json(expression), "context" to json("watch"))
@@ -257,7 +257,7 @@ class DebugSession(
     }
 
     /** Остановить отладку: программа завершается (`terminateDebuggee`), связь закрывается. */
-    fun stop() {
+    override fun stop() {
         if (peer.isOpen) peer.request("disconnect", JsonObject.of("terminateDebuggee" to JsonBool(true)), STOP_TIMEOUT)
         peer.close()
         worker.shutdownNow()
