@@ -21,6 +21,9 @@ internal object ApkReview {
     /** Предел копии: APK больше — не сборка проекта на телефоне. */
     const val MAX_BYTES: Long = 512L shl 20
 
+    /** Запас свободного места сверх копии. */
+    private const val RESERVE_BYTES: Long = 64L shl 20
+
     private const val DIR = "apk-review"
 
     /** Что показано человеку: файл дерева, его копия, сведения и строка журнала. */
@@ -34,6 +37,11 @@ internal object ApkReview {
         if (file.length() > MAX_BYTES) return Outcome.failure(DiagCode.VALUE_INVALID, "APK больше ${MAX_BYTES shr 20} МБ", file.name)
         dir.deleteRecursively()
         if (!dir.mkdirs() && !dir.isDirectory) return Outcome.failure(DiagCode.STORAGE_IO_FAILED, "нет папки для проверки APK", dir.path)
+        // Защита места (D-152): копия и запас под систему.
+        val free = dir.usableSpace
+        if (free < file.length() + RESERVE_BYTES) {
+            return Outcome.failure(DiagCode.STORAGE_IO_FAILED, "не хватает места для проверки APK: нужно ${(file.length() + RESERVE_BYTES) shr 20} МБ, свободно ${free shr 20} МБ", file.name)
+        }
         val copy = File(dir, file.name)
         return try {
             val copied = file.inputStream().use { input -> copy.outputStream().use { copyAtMost(input, it, MAX_BYTES + 1) } }
