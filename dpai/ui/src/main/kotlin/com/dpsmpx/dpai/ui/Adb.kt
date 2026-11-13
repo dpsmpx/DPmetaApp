@@ -75,6 +75,62 @@ object Adb {
             port.toString(), pkg,
         )
 
+    /**
+     * Отладка приложения [pkg] (`DPmetaApp:D-126`; D-161): проверить, что оно
+     * отлаживаемое (`DEBUGGABLE`), остановить, перезапустить с ожиданием отладчика
+     * (`am set-debug-app -w` — на один запуск), дождаться pid и его регистрации в
+     * `adb jdwp`, открыть пересылку `tcp:0 → jdwp:<pid>` и сказать строкой
+     * `DPAI-JDWP <порт> <pid>` ([debugLine]); дальше ждать закрытия stdin и снять
+     * пересылку. Сервер adb живёт, пока идёт эта команда. Отказ — строка `DPAI-ERROR …`.
+     */
+    fun debugApk(port: Int, pkg: String): List<String> =
+        script(
+            """
+            s="$HOST:${'$'}1"
+            adb connect "${'$'}s" >/dev/null 2>&1 || { echo "DPAI-ERROR нет связи с adb — подключите его в «Logcat»"; exit 1; }
+            adb -s "${'$'}s" shell dumpsys package "${'$'}2" | grep -q 'flags=\[.*DEBUGGABLE' || { echo "DPAI-ERROR приложение не установлено или собрано без отладки — нужна сборка debug"; exit 1; }
+            adb -s "${'$'}s" shell am force-stop "${'$'}2"
+            adb -s "${'$'}s" shell am set-debug-app -w "${'$'}2" >/dev/null || { echo "DPAI-ERROR am set-debug-app не прошла"; exit 1; }
+            adb -s "${'$'}s" shell monkey -p "${'$'}2" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || { echo "DPAI-ERROR приложение не запустилось"; exit 1; }
+            pid=""; i=0
+            while [ ${'$'}i -lt 60 ]; do
+              pid=${'$'}(adb -s "${'$'}s" shell pidof "${'$'}2" | tr -d '\r' | cut -d' ' -f1)
+              [ -n "${'$'}pid" ] && break
+              sleep 0.5; i=${'$'}((i+1))
+            done
+            [ -n "${'$'}pid" ] || { echo "DPAI-ERROR процесс приложения не появился за 30 с"; exit 1; }
+            i=0
+            while [ ${'$'}i -lt 20 ]; do
+              timeout 1 adb -s "${'$'}s" jdwp 2>/dev/null | tr -d '\r' | grep -qx "${'$'}pid" && break
+              i=${'$'}((i+1))
+            done
+            fwd=${'$'}(adb -s "${'$'}s" forward tcp:0 "jdwp:${'$'}pid" | tr -d '\r')
+            [ -n "${'$'}fwd" ] || { echo "DPAI-ERROR пересылка jdwp не открылась"; exit 1; }
+            echo "DPAI-JDWP ${'$'}fwd ${'$'}pid"
+            read -r _
+            adb -s "${'$'}s" forward --remove "tcp:${'$'}fwd" >/dev/null 2>&1
+            adb -s "${'$'}s" shell am clear-debug-app >/dev/null 2>&1
+            """.trimIndent(),
+            port.toString(), pkg,
+        )
+
+    /** Итог строки [debugApk]: готово — порт и pid; отказ — слова; прочее — `null`. */
+    sealed interface DebugLine {
+        data class Ready(val port: Int, val pid: Int) : DebugLine
+
+        data class Error(val message: String) : DebugLine
+    }
+
+    fun debugLine(line: String): DebugLine? {
+        val t = line.trim()
+        if (t.startsWith("DPAI-ERROR ")) return DebugLine.Error(t.removePrefix("DPAI-ERROR ").take(300))
+        if (!t.startsWith("DPAI-JDWP ")) return null
+        val parts = t.split(' ')
+        val port = parts.getOrNull(1)?.toIntOrNull()?.takeIf { it in 1..65535 } ?: return null
+        val pid = parts.getOrNull(2)?.toIntOrNull()?.takeIf { it > 0 } ?: return null
+        return DebugLine.Ready(port, pid)
+    }
+
     private fun script(body: String, vararg args: String): List<String> = listOf("/bin/sh", "-c", body, "dpai-adb") + args
 
     /** Итог `adb pair` словами: ключ adb сохраняется сам, текст ошибки — как есть. */

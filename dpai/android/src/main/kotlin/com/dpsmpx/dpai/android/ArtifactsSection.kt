@@ -54,7 +54,8 @@ import java.time.format.DateTimeFormatter
 /**
  * Артефакты сборки и APK (D-157): файлы дерева по шаблонам профиля «Сборка»,
  * у APK — сведения, подпись своим ключом из Keystore, установка и копия в
- * «Загрузки». Только деревья Linux приложения: файл читается напрямую.
+ * «Загрузки»; запуск и logcat (D-160), отладка по JDWP (D-161). Только деревья
+ * Linux приложения: файл читается напрямую.
  * [patterns] — шаблоны профиля, [refresh] — признак нового итога сборки.
  */
 @Composable
@@ -179,6 +180,25 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                                 AdbBridge.launch(app, port, pkg) { r -> scope.launch { busy = null; note = r; if (r.startsWith("Запущено")) logcatFor = pkg } }
                             }
                         }) { Text("Запустить") }
+                        // Отладка установленного APK по JDWP (D-161): точки — в файлах .kt/.java этого дерева.
+                        TextButton(enabled = busy == null, onClick = {
+                            val file = host(a.path) ?: run { note = "файл вне дерева или исчез"; return@TextButton }
+                            if (AdbBridge.state.value.connectPort == null) { note = "Сначала подключите adb: «Файлы» → «Logcat» → «Подключить»"; return@TextButton }
+                            busy = "Готовлю отладку"
+                            scope.launch {
+                                val meta = withContext(Dispatchers.IO) { ApkInstaller.meta(app, file) }
+                                busy = null
+                                val pkg = (meta as? Outcome.Success)?.value?.takeIf { it.installed != null }?.packageName
+                                if (pkg == null) { note = "Приложение не установлено — сначала «Установить»"; return@launch }
+                                when (val t = com.dpsmpx.dpai.ui.DebugTargets.forApk(location.path, pkg)) {
+                                    is Outcome.Failure -> note = t.diagnostics.first().message
+                                    is Outcome.Success -> {
+                                        Debugger.start(context, t.value, location.key, location.path)
+                                        note = "Отладка $pkg — панель ниже; приложение перезапустится и подождёт отладчика"
+                                    }
+                                }
+                            }
+                        }) { Text("Отладка") }
                         TextButton(enabled = busy == null && key != null, onClick = {
                             val file = host(a.path) ?: run { note = "файл вне дерева или исчез"; return@TextButton }
                             DeviceConfirm.ask(context, "Подписать ${file.name} своим ключом", onOk = {
@@ -208,6 +228,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
             }
         }
         TextButton(enabled = busy == null, onClick = { version++ }) { Text("Обновить список") }
+        DebugPanel()
         logcatFor?.let { pkg ->
             androidx.compose.ui.window.Dialog(onDismissRequest = { logcatFor = null }, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
                 androidx.compose.material3.Surface(androidx.compose.ui.Modifier.fillMaxSize()) { LogcatPanel(initialPackage = pkg, onClose = { logcatFor = null }) }

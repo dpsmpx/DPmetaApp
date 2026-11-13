@@ -12,7 +12,8 @@ import java.security.MessageDigest
  * без оболочки (D-138): разбор команды отказывает на операторах оболочки.
  */
 object DebugTargets {
-    enum class Engine(val title: String) { GDB("gdb"), DEBUGPY("debugpy") }
+    /** Отладчик: gdb и debugpy — адаптеры DAP в Linux приложения; JDWP — своё приложение на телефоне (D-161). */
+    enum class Engine(val title: String) { GDB("gdb"), DEBUGPY("debugpy"), JDWP("Kotlin/Java") }
 
     /**
      * Цель: [build] — команда сборки перед отладкой (`null` — не нужна), [adapter] —
@@ -40,11 +41,24 @@ object DebugTargets {
 
     val GDB_ADAPTER: List<String> = listOf("gdb", "-i=dap", "-q")
 
-    /** Можно ли отлаживать файл [path]: C и C++ — gdb, Python — debugpy; остальное — нет. */
+    /** Можно ли отлаживать файл [path]: C и C++ — gdb, Python — debugpy, Kotlin и Java — по JDWP в APK; остальное — нет. */
     fun engineOf(path: String): Engine? = when (path.substringAfterLast('/').substringAfterLast('.', "").lowercase()) {
         "c", "cpp", "cc", "cxx", "c++" -> Engine.GDB
         "py", "pyw" -> Engine.DEBUGPY
+        "kt", "java" -> Engine.JDWP
         else -> null
+    }
+
+    /**
+     * Отладка установленного приложения [pkg] по JDWP (`DPmetaApp:D-126`; D-161):
+     * исходники — дерево [root]; программа — имя пакета.
+     */
+    fun forApk(root: String, pkg: String): Outcome<Target> {
+        if (!ProjectRuntime.validPaths(root, root)) return Outcome.failure(DiagCode.VALUE_INVALID, "нужна папка дерева в Linux", root)
+        return when (val p = Adb.packageName(pkg)) {
+            is Outcome.Failure -> p
+            is Outcome.Success -> Outcome.success(Target(Engine.JDWP, null, emptyList(), p.value, emptyList(), root, null))
+        }
     }
 
     /** Отладка файла [file] дерева [root]. */
@@ -60,7 +74,8 @@ object DebugTargets {
                 Outcome.success(Target(Engine.GDB, ProjectRuntime.args(root, file, script, listOf(program)), GDB_ADAPTER, program, emptyList(), cwd, file))
             }
             Engine.DEBUGPY -> Outcome.success(Target(Engine.DEBUGPY, null, PythonRuntime.debugAdapterCommand(root, file), file, emptyList(), cwd, file))
-            null -> Outcome.failure(DiagCode.UNSUPPORTED, "отладка — у файлов C, C++ и Python", file)
+            Engine.JDWP -> Outcome.failure(DiagCode.UNSUPPORTED, "Kotlin и Java отлаживаются в своём APK: «Сборка» → «Артефакты» → «Отладка» у APK", file)
+            null -> Outcome.failure(DiagCode.UNSUPPORTED, "отладка — у файлов C, C++, Python, Kotlin и Java", file)
         }
     }
 

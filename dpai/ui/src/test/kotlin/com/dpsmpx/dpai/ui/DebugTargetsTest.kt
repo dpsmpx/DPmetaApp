@@ -8,7 +8,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Цели отладки (D-159): файл C/C++ и Python, программа «Запуска» как argv без оболочки. */
+/** Цели отладки (D-159, D-161): файл C/C++ и Python, APK по JDWP, программа «Запуска» как argv без оболочки. */
 class DebugTargetsTest {
     private fun <T> ok(r: Outcome<T>): T = assertIs<Outcome.Success<T>>(r, r.toString()).value
 
@@ -31,8 +31,20 @@ class DebugTargetsTest {
         assertTrue("-m debugpy.adapter" in py.adapter[2] && "DPAI_VENV" in py.adapter[2])
         assertEquals("/r/tools/t.py", py.program)
 
-        assertEquals(DiagCode.UNSUPPORTED, assertIs<Outcome.Failure>(DebugTargets.forFile("/r", "/r/a.kt")).diagnostics.first().code)
+        // Kotlin и Java — по JDWP в своём APK (D-161): файл сам по себе не запускается.
+        assertEquals(DebugTargets.Engine.JDWP, DebugTargets.engineOf("/r/a.kt"))
+        assertEquals(DebugTargets.Engine.JDWP, DebugTargets.engineOf("/r/A.java"))
+        val kt = assertIs<Outcome.Failure>(DebugTargets.forFile("/r", "/r/a.kt")).diagnostics.first()
+        assertEquals(DiagCode.UNSUPPORTED, kt.code)
+        assertTrue("Артефакты" in kt.message, kt.message)
+        assertEquals(DiagCode.UNSUPPORTED, assertIs<Outcome.Failure>(DebugTargets.forFile("/r", "/r/a.rs")).diagnostics.first().code)
         assertIs<Outcome.Failure>(DebugTargets.forFile("r", "/r/a.c"))
+
+        val apk = ok(DebugTargets.forApk("/root/projects/app", "com.example.app"))
+        assertEquals(DebugTargets.Engine.JDWP, apk.engine)
+        assertEquals("com.example.app", apk.program)
+        assertEquals("/root/projects/app", apk.cwd)
+        assertIs<Outcome.Failure>(DebugTargets.forApk("/root/projects/app", "app; reboot"))
     }
 
     @Test
