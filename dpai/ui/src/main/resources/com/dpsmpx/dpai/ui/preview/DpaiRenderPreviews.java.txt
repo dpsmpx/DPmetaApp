@@ -43,6 +43,12 @@ public class DpaiRenderPreviews {
     public void render() throws Exception {
         File out = new File(System.getProperty("dpai.preview.out", "build/dpai-preview"));
         out.mkdirs();
+        // Картинки прошлого запуска — прочь: в каталоге только итог этого.
+        File[] old = out.listFiles();
+        if (old != null) for (File f : old) {
+            String n = f.getName();
+            if ((n.startsWith("compose-") || n.startsWith("layout-")) && n.endsWith(".png")) f.delete();
+        }
         StringBuilder index = new StringBuilder();
         for (String fqn : split(System.getProperty("dpai.preview.compose", ""))) {
             String name = fqn.substring(fqn.lastIndexOf('.') + 1);

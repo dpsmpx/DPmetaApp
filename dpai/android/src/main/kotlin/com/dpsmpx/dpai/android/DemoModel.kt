@@ -470,6 +470,8 @@ class DemoModel(
     fun aiRoute(p: ProjectEntry) = controller.manualProfiles.aiRoute(p)
     fun saveAiRoute(p: ProjectEntry, route: com.dpsmpx.dpai.ui.EditorAiRoute) = controller.manualProfiles.saveAiRoute(p, route)
     fun pcFiles(target: TargetEntry, root: String, writable: Boolean = false) = controller.pcFiles(target, root, writable)
+
+    fun pcHost(target: TargetEntry) = controller.pcHost(target)
     @Volatile private var manualStop = false
 
     fun stopManualProfile() { manualStop = true; resumeManualProfile() }

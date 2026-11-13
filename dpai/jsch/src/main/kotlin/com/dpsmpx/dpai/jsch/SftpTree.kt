@@ -46,6 +46,9 @@ interface SftpOps : AutoCloseable {
 
     fun mkdir(path: String)
 
+    /** Абсолютный путь [path] на сервере (`.` — домашний каталог входа). */
+    fun realpath(path: String): String = throw IOException("сервер SFTP не назвал путь $path")
+
     override fun close()
 }
 
@@ -173,6 +176,9 @@ class SftpTree(private val ops: SftpOps, root: String, platform: TargetPlatform,
 
     override fun close() = ops.close()
 
+    /** Домашний каталог входа SSH так, как его видит сервер SFTP (на Windows — `/C:/Users/…`). */
+    fun home(): Outcome<String> = attempt(".") { ops.realpath(".") }
+
     private fun <T> readOnly(path: String): Outcome<T> = Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "файлы ПК здесь только читаются", path)
 
     /** Ошибка связи (не «нет файла» и не отказ проверки): после неё стоит переподключиться. */
@@ -254,6 +260,8 @@ internal class JschSftpOps(private val session: Session, private val channel: Ch
     override fun remove(path: String) = call(path) { channel.rm(path) }
 
     override fun mkdir(path: String) = call(path) { channel.mkdir(path) }
+
+    override fun realpath(path: String): String = call(path) { channel.realpath(path) }
 
     override fun close() {
         runCatching { channel.disconnect() }

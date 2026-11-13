@@ -4791,6 +4791,46 @@ DPmetaApp:TODO.md.
 точности заглушек.
 **Проверка.** На телефоне — DPmetaApp:TODO.md (Android-классы на хосте не
 проверить); `XmlLayoutPreview.layoutName` — разбор пути.
+### D-169 — Предпросмотр на ПК: Robolectric в тестовой JVM проекта
+
+**Статус.** Принято 13 ноября 2026 при исполнении DPmetaApp:D-132.
+**Решение.**
+- Файл открыт в дереве на ПК (D-166) — в панели предпросмотра ещё
+  «Нарисовать на ПК»: все функции `@Preview` файла (до 19 за раз,
+  разбор — `ui.ComposePreviews`, D-167) или разметка `res/layout*`.
+- Модуль — ближайший вверх каталог с `build.gradle(.kts)`, корень —
+  от него вверх ближайший с `settings.gradle(.kts)`; путь Gradle — по
+  каталогам (`app` → `:app`, корень — `:`); `ui.PcPreview.locate`.
+- По SFTP в домашний каталог ПК (`SftpTree.home` — `realpath(".")`):
+  `~/.dpmetaapp/preview/init.gradle` (init-скрипт: только для этого
+  модуля и этого запуска — `includeAndroidResources`, тестовый исходник,
+  `testImplementation` Robolectric 4.17 и JUnit 4.13.2, системные
+  свойства), `src/dpai/preview/DpaiRenderPreviews.java` (тест рендера),
+  пустой `out/index.tsv`. Файлы проекта не меняются.
+- По SSH тем же входом (D-31): wrapper проекта — `./gradlew -q -I …
+  <модуль>:testDebugUnitTest --tests dpai.preview.DpaiRenderPreviews
+  -Pdpai.preview.*` (POSIX — `sh -c` с аргументами; Windows — PowerShell
+  `-EncodedCommand`, D-163); предел — 20 минут (первый запуск скачивает
+  образ Android Robolectric на ПК).
+- Тест — один на весь запуск (эффекты Compose в песочнице идут только в
+  первом тесте): `@GraphicsMode(NATIVE)`, 360×800 dp xhdpi, SDK 36.
+  Compose — отражением (`f(Composer, int)` в `ComposeView` внутри
+  `ComponentActivity`, иначе `Activity`): проект без Compose тоже
+  собирается; XML — с темой приложения. Картинки прошлого запуска
+  удаляются; итог — `compose-<имя>.png`, `layout-<имя>.png`, `index.tsv`
+  (`вид\tимя\tфайл\tok|причина`); имя файла вне `out` не читается.
+- PNG — на телефон по SFTP, до 16 МБ каждый; отказ сборки — код и хвост
+  вывода Gradle словами. Варианты сборки с flavor (`testFreeDebugUnitTest`)
+  и `projectDir` не по каталогу пока не поддержаны — Gradle скажет, что
+  задачи нет.
+**Почему.** DPmetaApp:D-132: на ПК — точный рендер настоящими классами
+проекта, без установки APK; сеть ПК (Maven Central для Robolectric) —
+забота ПК, DPmetaApp ходит только по SSH (D-10 DPmetaApp не задет).
+**Проверка.** `PcPreviewTest` (шаблоны, поиск модуля, команда POSIX —
+настоящим `sh`, Windows — разбор сценария, `index.tsv`) и живой
+`realProjectRenders` (`-Ddpai.test.preview=<Android-проект>`: две функции
+Compose, разметка, отказы и очистка); `SftpTreeTest.homeIsServerPath`; на
+ПК — DPmetaApp:TODO.md.
 ## Отложено
 
 Решения, которые принимаются в начале своего этапа и до этого не

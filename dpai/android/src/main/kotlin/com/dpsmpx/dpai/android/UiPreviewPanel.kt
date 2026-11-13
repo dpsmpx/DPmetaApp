@@ -36,6 +36,7 @@ import com.dpsmpx.dpai.files.FileNames
 import com.dpsmpx.dpai.files.FileTree
 import com.dpsmpx.dpai.ui.Adb
 import com.dpsmpx.dpai.ui.ComposePreviews
+import com.dpsmpx.dpai.ui.PcPreview
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -43,10 +44,11 @@ import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Предпросмотр Compose на телефоне (`DPmetaApp:D-132`; D-167): функции `@Preview`
+ * Предпросмотр интерфейсов (`DPmetaApp:D-132`). На телефоне: функции `@Preview`
  * файла [path] открываются в самом отлаживаемом приложении — `PreviewActivity` его
- * debug-сборки через adb к самому телефону; затем снимок экрана — в эту панель.
- * Пакет приложения — из `build.gradle(.kts)` модуля файла, его можно поправить.
+ * debug-сборки через adb к самому телефону, затем снимок экрана (D-167); разметка XML —
+ * из ресурсов установленного APK (D-168). Пакет приложения — из `build.gradle(.kts)`
+ * модуля файла, его можно поправить. Файл на ПК — ещё «Нарисовать на ПК» (D-169).
  */
 @Composable
 internal fun UiPreviewDialog(tree: FileTree, treeKey: String, path: String, text: String, onClose: () -> Unit) {
@@ -60,6 +62,9 @@ internal fun UiPreviewDialog(tree: FileTree, treeKey: String, path: String, text
     var note by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var shot by remember { mutableStateOf<ImageBitmap?>(null) }
+    // Дерево на ПК: рисует Robolectric в JVM проекта на самом ПК (D-169).
+    val pcPlace = LocalPcPreview.current
+    var pcShots by remember { mutableStateOf<List<PcPreviewRun.Shot>>(emptyList()) }
     LaunchedEffect(treeKey, path) {
         if (pkg.isEmpty()) withContext(Dispatchers.IO) { debugPackage(tree, path) }?.let { pkg = it }
     }
@@ -94,6 +99,29 @@ internal fun UiPreviewDialog(tree: FileTree, treeKey: String, path: String, text
         }
     }
 
+    fun drawOnPc(place: PcPreviewPlace) {
+        busy = true
+        pcShots = emptyList()
+        scope.launch {
+            try {
+                val r = withContext(Dispatchers.IO) {
+                    PcPreviewRun.run(place, tree, path, found.previews.take(PcPreview.MAX_ITEMS - 1).map { it.composable }, listOfNotNull(layout)) { step -> scope.launch { note = step } }
+                }
+                when (r) {
+                    is Outcome.Failure -> note = r.diagnostics.first().message
+                    is Outcome.Success -> {
+                        pcShots = r.value.shots
+                        val bad = r.value.shots.count { it.image == null }
+                        note = if (bad == 0) "Нарисовано на ПК: ${r.value.shots.size}" else "Нарисовано на ПК: ${r.value.shots.size - bad} из ${r.value.shots.size}"
+                        AppLogs.info(app, "предпросмотр", "ПК ${place.target.label}: ${r.value.shots.size}, без картинки $bad")
+                    }
+                }
+            } finally {
+                busy = false
+            }
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text("Предпросмотр · ${FileNames.name(path)}") },
@@ -104,6 +132,17 @@ internal fun UiPreviewDialog(tree: FileTree, treeKey: String, path: String, text
                     else "Функции @Preview открываются в самом приложении (его debug-сборка установлена на этом телефоне), через adb.",
                     style = MaterialTheme.typography.bodySmall,
                 )
+                if (pcPlace != null) {
+                    Text("Файл открыт на ПК «${pcPlace.target.label}»: Robolectric нарисует его в тестовой JVM проекта на ПК (нужны JDK и Android SDK там; файлы проекта не меняются).", style = MaterialTheme.typography.bodySmall)
+                    TextButton(enabled = !busy && (layout != null || found.previews.isNotEmpty()), onClick = { drawOnPc(pcPlace) }) { Text("Нарисовать на ПК") }
+                    for (s in pcShots) {
+                        Text(s.rendered.name.substringAfterLast('.'), style = MaterialTheme.typography.bodyMedium)
+                        val image = s.image
+                        if (image != null) Image(image, "Предпросмотр ${s.rendered.name}", Modifier.fillMaxWidth().heightIn(max = 480.dp))
+                        else Text(s.rendered.error ?: "картинка не прочиталась", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                    Text("Или на этом телефоне — debug-сборка должна быть установлена здесь:", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
+                }
                 OutlinedTextField(pkg, { pkg = it.trim().take(255) }, enabled = !busy, singleLine = true, label = { Text("Пакет debug-сборки") }, modifier = Modifier.fillMaxWidth())
                 if (layout != null) {
                     TextButton(enabled = !busy && pkg.isNotBlank(), onClick = {

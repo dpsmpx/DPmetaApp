@@ -46,6 +46,8 @@ class SftpTreeTest {
 
         override fun mkdir(path: String) { calls += "mkdir $path"; made += path }
 
+        override fun realpath(path: String): String = if (path == ".") "/C:/Users/me" else throw SftpOps.NoSuchFile(path)
+
         override fun list(path: String): List<SftpOps.Entry> {
             net()
             listed += path
@@ -75,6 +77,23 @@ class SftpTreeTest {
         assertEquals("/D:/w", SftpTree.remotePath(TargetPlatform.WINDOWS, "D:/w"))
         assertEquals("/home/me/proj", SftpTree.remotePath(TargetPlatform.POSIX, "/home/me/proj"))
         assertEquals("proj", SftpTree.remotePath(TargetPlatform.POSIX, "proj"))
+    }
+
+    @Test
+    fun homeIsServerPath() {
+        assertEquals("/C:/Users/me", assertIs<Outcome.Success<String>>(SftpTree(FakeSftp(emptyMap()), "", TargetPlatform.WINDOWS).home()).value)
+        // Сервер без realpath (двойник по умолчанию) — отказ, а не пустой путь.
+        val bare = object : SftpOps {
+            override fun list(path: String) = emptyList<SftpOps.Entry>()
+            override fun stat(path: String) = throw SftpOps.NoSuchFile(path)
+            override fun open(path: String) = throw SftpOps.NoSuchFile(path)
+            override fun write(path: String, input: InputStream) = Unit
+            override fun rename(from: String, to: String) = Unit
+            override fun remove(path: String) = Unit
+            override fun mkdir(path: String) = Unit
+            override fun close() = Unit
+        }
+        assertIs<Outcome.Failure>(SftpTree(bare, "", TargetPlatform.POSIX).home())
     }
 
     @Test

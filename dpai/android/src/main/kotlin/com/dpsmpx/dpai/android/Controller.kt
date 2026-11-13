@@ -115,6 +115,13 @@ class Controller(private val root: File, val version: String?) {
         val ssh = target.toTarget(knownHostsFile).ssh ?: return Outcome.failure(DiagCode.VALUE_INVALID, "у target нет адреса SSH", target.label)
         return com.dpsmpx.dpai.jsch.SftpTree.open(ssh, target.platform, root, listOf(KeystoreKey.identity()), writable = writable)
     }
+
+    /** Команды на ПК-target по SSH тем же входом (D-31): предпросмотр на ПК (D-169). */
+    fun pcHost(target: TargetEntry): Outcome<JschProcessHost> {
+        if (target.inApp) return Outcome.failure(DiagCode.VALUE_INVALID, "это Linux приложения, не ПК", target.label)
+        val ssh = target.toTarget(knownHostsFile).ssh ?: return Outcome.failure(DiagCode.VALUE_INVALID, "у target нет адреса SSH", target.label)
+        return Outcome.success(JschProcessHost(ssh, target.platform, identities = listOf(KeystoreKey.identity())))
+    }
     private val ids = IdGenerator(Clock.SYSTEM, RandomSource.secure())
 
     init {
