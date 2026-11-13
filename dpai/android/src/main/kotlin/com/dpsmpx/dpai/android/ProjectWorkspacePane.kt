@@ -125,10 +125,13 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
                     location?.let { WorkspaceGitPanel(model, project, it) }
                     if (selected == null) Text("Выберите задачу: её изменения сравниваются с веткой интеграции") else ChangesSection(model, selected.id)
                 }
-                WorkspacePage.CHECKS.name -> {
-                    WorkspaceProfilePanel(model, current, location, com.dpsmpx.dpai.ui.ManualProfileKind.CHECK)
+                WorkspacePage.CHECKS.name, WorkspacePage.BUILD.name -> {
+                    val kind = if (page == WorkspacePage.CHECKS.name) com.dpsmpx.dpai.ui.ManualProfileKind.CHECK else com.dpsmpx.dpai.ui.ManualProfileKind.BUILD
+                    // Место из вывода — во вкладку «Файлов» этого дерева (D-153): запрос ждёт панель дерева, страница переключается.
+                    WorkspaceProfilePanel(model, current, location, kind) { path, line ->
+                        location?.let { IdeState.jumpTo(it.key, path, line); page = WorkspacePage.FILES.name }
+                    }
                 }
-                WorkspacePage.BUILD.name -> WorkspaceProfilePanel(model, current, location, com.dpsmpx.dpai.ui.ManualProfileKind.BUILD)
             }
         }
     }

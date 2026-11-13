@@ -27,6 +27,13 @@ class EditorRunOutputTest {
         val report = output.feed((failure + "prompt".repeat(500)).toByteArray())
         assertEquals(listOf("ncurses-dev"), report?.packages)
     }
+    @Test fun runReportCarriesPlacesInCodeEvenOnSuccess() {
+        val failed = EditorRunOutput().feed(failure.toByteArray())!!
+        assertEquals(listOf(BuildProblem("file.cpp", 14, 10, ProblemSeverity.ERROR, "'ncurses.h' file not found")), failed.problems.items)
+        val warned = EditorRunOutput("a.cpp").feed("a.cpp:3:7: warning: unused variable 'x'\n[Код выхода: 0]\n".toByteArray())!!
+        assertEquals(0, warned.exitCode)
+        assertEquals(1, warned.problems.warnings)
+    }
     @Test fun noReportBeforeExitAndSuccessHasNoInstallProposal() {
         val output = EditorRunOutput()
         assertNull(output.feed("fatal error: 'ncurses.h' file not found\n".toByteArray()))

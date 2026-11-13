@@ -41,6 +41,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     private lateinit var reconnect: TextView
     private lateinit var dependencies: TextView
     private var dependencyUi: EditorDependencyUi? = null
+    private lateinit var problems: TextView
     private lateinit var ctrlKey: TextView
     private lateinit var altKey: TextView
     private lateinit var keysRow: View
@@ -315,6 +316,47 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     // ---- разметка ----
 
     private fun dp(v: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
+
+    /**
+     * Места в коде из вывода запуска (D-153): список по порядку вывода; касание —
+     * файл вкладкой на строке в том редакторе, из которого запущено. Терминал
+     * закрывается, вкладка терминала остаётся. Файл вне папки запуска (системный
+     * заголовок, библиотека) открыть нельзя — так и сказано.
+     */
+    private fun showProblems(tab: TerminalHub.Tab) {
+        val run = tab.editorRun ?: return
+        val list = run.report?.problems?.items.orEmpty()
+        if (list.isEmpty()) return
+        val rows = list.map { p ->
+            val mark = when (p.severity) {
+                com.dpsmpx.dpai.ui.ProblemSeverity.ERROR -> "✖"
+                com.dpsmpx.dpai.ui.ProblemSeverity.WARNING -> "▲"
+                com.dpsmpx.dpai.ui.ProblemSeverity.NOTE -> "·"
+            }
+            val place = com.dpsmpx.dpai.ui.BuildProblems.relative(p.path, run.root) ?: p.path
+            "$mark $place:${p.line}${p.column?.let { ":$it" }.orEmpty()}\n${p.message.take(300)}"
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Ошибки сборки — ${run.report?.problems?.summary().orEmpty()}")
+            .setItems(rows.toTypedArray()) { _, i ->
+                val p = list[i]
+                val key = run.editorRootKey
+                val rel = com.dpsmpx.dpai.ui.BuildProblems.relative(p.path, run.root)
+                when {
+                    key == null -> Toast.makeText(this, "Запуск не из редактора: откройте ${p.path}:${p.line} сами", Toast.LENGTH_LONG).show()
+                    rel == null -> Toast.makeText(this, "Файл вне папки запуска — в редакторе не открыть: ${p.path}:${p.line}", Toast.LENGTH_LONG).show()
+                    else -> {
+                        IdeState.jumpTo(key, rel, p.line)
+                        finish()
+                    }
+                }
+            }
+            .setNegativeButton("Закрыть", null)
+            .create()
+        // У диалога своё окно: FLAG_SECURE активности его не закрывает (D-86).
+        dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        dialog.show()
+    }
 
     private fun chip(text: String, onClick: () -> Unit): TextView = TextView(this).apply {
         this.text = text
@@ -605,12 +647,14 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         }
         reconnect = chip("↻ Переподключить") { TerminalHub.current?.let { TerminalHub.connect(this, it) } }
         dependencies = chip("Решения…") { TerminalHub.current?.let { dependencyUi?.offer(it, automatic = false) } }
+        problems = chip("Ошибки") { TerminalHub.current?.let(::showProblems) }
         statusRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(0xff262626.toInt())
             addView(status, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             addView(reconnect)
+            addView(problems)
             addView(dependencies)
         }
         // Ряд клавиш (терминал:A-3, §4, п. 1): девять клавиш видны целиком, без прокрутки; смахивание вверх по
@@ -777,7 +821,10 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         status.text = listOfNotNull(s.ifEmpty { null }, current?.notice).joinToString(" · ")
         val hasDependencies = current?.editorRun?.report?.useful == true
         dependencies.visibility = if (hasDependencies) View.VISIBLE else View.GONE
-        statusRow.visibility = if (status.text.isEmpty() && !hasDependencies) View.GONE else View.VISIBLE
+        val found = current?.editorRun?.report?.problems
+        problems.visibility = if (found?.items?.isNotEmpty() == true) View.VISIBLE else View.GONE
+        found?.let { problems.text = "Ошибки: ${it.summary()}" }
+        statusRow.visibility = if (status.text.isEmpty() && !hasDependencies && problems.visibility != View.VISIBLE) View.GONE else View.VISIBLE
         reconnect.visibility = if (current != null && !current.open && !current.busy) View.VISIBLE else View.GONE
         if (current != null && hasDependencies) dependencyUi?.offer(current, automatic = true)
     }

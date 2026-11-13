@@ -378,7 +378,8 @@ object TerminalHub {
                     LocalChannel(child, onOutput = { b, n ->
                         tab.session.output(b, 0, n)
                         if (tab.transport === t) tab.editorRun?.let { run ->
-                            run.output.feed(b, n)?.takeIf { it.useful }?.let { report -> run.report = report; observer?.tabs() }
+                            // Отчёт — и при успехе с предупреждениями: места в коде нужны и тогда (D-153).
+                            run.output.feed(b, n)?.takeIf { it.useful || it.problems.items.isNotEmpty() }?.let { report -> run.report = report; observer?.tabs() }
                         }
                     }, onClosed = { code -> if (tab.transport === t) closed(tab, code) })
                 }

@@ -17,6 +17,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -105,7 +106,13 @@ internal fun rememberOpenEditorFiles(key: String): OpenEditorFiles {
         val paths = stored.paths.filter(FileNames::pathValid).distinct().take(EditorTabs.MAX_OPEN)
         mutableStateOf(EditorTabs(paths, stored.active?.takeIf { it in paths }))
     }
-    return remember(key) { OpenEditorFiles(key, state) }
+    val files = remember(key) { OpenEditorFiles(key, state) }
+    // Переход из вывода сборки (D-153): запрос этого корня открывает файл вкладкой на строке.
+    val jump by IdeState.jump.collectAsState()
+    LaunchedEffect(key, jump, files.busy) {
+        if (jump?.root == key && !files.busy) IdeState.takeJump(key)?.let { files.openAt(it.path, it.line) }
+    }
+    return files
 }
 
 @Composable

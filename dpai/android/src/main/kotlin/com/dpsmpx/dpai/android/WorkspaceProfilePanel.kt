@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.android
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -34,7 +35,7 @@ import kotlinx.coroutines.withContext
 
 /** Явная пользовательская команда, один профиль каждого вида на текущий проект (D-134). */
 @Composable
-internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView, location: WorkspaceLocation?, kind: ManualProfileKind) {
+internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView, location: WorkspaceLocation?, kind: ManualProfileKind, onProblem: (path: String, line: Int) -> Unit = { _, _ -> }) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var command by rememberSaveable(view.project.project.value, kind.name) { mutableStateOf("") }
@@ -91,7 +92,31 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
             TextButton(onClick = { model.stopManualProfile(); ControllerService.resume(context) }) { Text("Безопасно остановить и снять паузу") }
         }
         if (run.note.isNotEmpty()) Text(run.note)
+        // Места в коде из вывода (D-153): касание — файл дерева вкладкой на строке.
+        var found by remember { mutableStateOf<com.dpsmpx.dpai.ui.BuildProblemList?>(null) }
+        LaunchedEffect(run.output) { found = withContext(Dispatchers.Default) { com.dpsmpx.dpai.ui.BuildProblems.parse(run.output) }.takeIf { it.items.isNotEmpty() } }
+        found?.let { list ->
+            Text("Ошибки сборки — ${list.summary()}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+            for (p in list.items.take(PROBLEMS_SHOWN)) {
+                val rel = location?.let { com.dpsmpx.dpai.ui.BuildProblems.relative(p.path, it.path) }
+                val mark = when (p.severity) {
+                    com.dpsmpx.dpai.ui.ProblemSeverity.ERROR -> "✖"
+                    com.dpsmpx.dpai.ui.ProblemSeverity.WARNING -> "▲"
+                    com.dpsmpx.dpai.ui.ProblemSeverity.NOTE -> "·"
+                }
+                Column(Modifier.fillMaxWidth().then(if (rel != null) Modifier.clickable { onProblem(rel, p.line) } else Modifier).padding(vertical = 6.dp)) {
+                    Text("$mark ${rel ?: p.path}:${p.line}${p.column?.let { ":$it" }.orEmpty()}" + if (rel == null) " — вне дерева" else "",
+                        style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace,
+                        color = if (p.severity == com.dpsmpx.dpai.ui.ProblemSeverity.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(p.message, style = MaterialTheme.typography.bodySmall, maxLines = 3)
+                }
+            }
+            if (list.items.size > PROBLEMS_SHOWN) Text("…и ещё ${list.items.size - PROBLEMS_SHOWN}: исправьте первые и запустите снова", style = MaterialTheme.typography.bodySmall)
+        }
         if (run.output.isNotEmpty()) SelectionContainer { Text(run.output, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
         Text("Ручной итог не завершает задачу ИИ. Перед запуском сохраните или отмените правки; контур должен быть свободен.", style = MaterialTheme.typography.bodySmall)
     }
 }
+
+/** Сколько мест показывать под выводом: дальше — шум от первой ошибки. */
+private const val PROBLEMS_SHOWN = 100

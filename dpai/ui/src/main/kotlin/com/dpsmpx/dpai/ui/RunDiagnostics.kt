@@ -24,6 +24,8 @@ data class RunDiagnosis(
     val environmentProblem: Boolean = false,
     val projectCommand: Boolean = false,
     val cpp: CppDependencies.Report? = null,
+    /** Места в коде из вывода запуска (D-153): ошибки компилятора и трассировки — с переходом в редактор. */
+    val problems: BuildProblemList = BuildProblemList(emptyList(), false),
 ) {
     val useful: Boolean get() = exitCode != 0
     fun withFailure(output: String): RunDiagnosis {

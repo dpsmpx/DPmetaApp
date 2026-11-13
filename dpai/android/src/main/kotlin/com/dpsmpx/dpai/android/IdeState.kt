@@ -65,6 +65,24 @@ internal object IdeState {
         flow.update { it.copy(roots = if (empty) it.roots - key else it.roots + (key to value)) }; updates.trySend(Unit)
     }
     fun flush() { updates.trySend(Unit) }
+
+    /**
+     * Переход к месту из вывода сборки (D-153): [root] — ключ корня редактора
+     * (`EditorRun.editorRootKey`, ключ места «Файлов» или рабочего дерева), [path] —
+     * путь от корня. Выполняет вкладочная панель этого корня, когда она на экране;
+     * до того запрос ждёт. Один запрос — новый заменяет прежний.
+     */
+    data class Jump(val root: String, val path: String, val line: Int)
+
+    val jump = MutableStateFlow<Jump?>(null)
+
+    fun jumpTo(root: String, path: String, line: Int) { jump.value = Jump(root, path, line.coerceAtLeast(1)) }
+
+    /** Забрать запрос своего корня; чужой остаётся ждать свою панель. */
+    fun takeJump(root: String): Jump? {
+        val j = jump.value?.takeIf { it.root == root } ?: return null
+        return if (jump.compareAndSet(j, null)) j else null
+    }
 }
 
 internal class IdeChrome {

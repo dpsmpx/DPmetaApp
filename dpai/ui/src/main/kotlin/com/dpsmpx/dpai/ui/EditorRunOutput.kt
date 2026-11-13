@@ -22,7 +22,9 @@ class EditorRunOutput(private val file: String = "main.cpp") {
         size = (size + kept).coerceAtMost(MAX_BYTES)
         val code = status.find(scan.toString(Charsets.UTF_8))?.groupValues?.get(1)?.toIntOrNull() ?: return null
         done = true
-        return RunDiagnostics.analyze(RunLanguage.of(file), tail(size).toString(Charsets.UTF_8), code)
+        val text = tail(size).toString(Charsets.UTF_8)
+        // Места в коде — и при успехе: предупреждения компилятора тоже ведут в код (D-153).
+        return RunDiagnostics.analyze(RunLanguage.of(file), text, code).copy(problems = BuildProblems.parse(text))
     }
     private fun tail(count: Int): ByteArray {
         val start = (end - count + MAX_BYTES) % MAX_BYTES
