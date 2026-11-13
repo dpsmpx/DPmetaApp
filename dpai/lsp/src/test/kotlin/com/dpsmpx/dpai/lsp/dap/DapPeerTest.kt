@@ -24,9 +24,11 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Клиент DAP на адаптере-двойнике в памяти (D-159): порядок запуска как у gdb и debugpy
- * (`launch` отвечает после `configurationDone`), событие остановки — стек и переменные,
- * шаг, вывод, выход, отказ запроса, обратный запрос адаптера, обрыв и мусор в потоке.
+ * Клиент DAP на адаптере-двойнике в памяти (D-159): порядок запуска как у gdb
+ * (`initialized` сразу после `initialize`, точки — до `launch`) и как у debugpy
+ * (`initialized` после `launch`; `launch` отвечает после `configurationDone`), событие
+ * остановки — стек и переменные, шаг, вывод, выход, отказ запроса, обратный запрос
+ * адаптера, обрыв и мусор в потоке.
  */
 class DapPeerTest {
     /** Адаптер-двойник: [reply] — ответ на запрос (`null` — не отвечать), всё полученное — в [received]. */
@@ -77,17 +79,22 @@ class DapPeerTest {
         fun die() = fromAdapter.close()
     }
 
-    /** Как gdb: `initialized` после `launch`, ответ `launch` — после `configurationDone`, затем остановка на точке. */
-    private fun gdbLike(): FakeAdapter = FakeAdapter { command, args, seq ->
+    /**
+     * [gdb] — как gdb: `initialized` сразу после ответа `initialize`; иначе — как debugpy:
+     * `initialized` после `launch`. Ответ `launch` — после `configurationDone`, затем остановка на точке.
+     */
+    private fun adapter(gdb: Boolean): FakeAdapter = FakeAdapter { command, args, seq ->
         when (command) {
-            "initialize" -> respond(seq, command, JsonObject.of("supportsConfigurationDoneRequest" to JsonBool(true)))
-            "launch" -> { holdLaunch(seq); event("initialized") }
+            "initialize" -> { respond(seq, command, JsonObject.of("supportsConfigurationDoneRequest" to JsonBool(true))); if (gdb) event("initialized") }
+            "launch" -> { holdLaunch(seq); if (!gdb) event("initialized") }
             "setBreakpoints" -> {
+                // gdb до загрузки программы — точка отложена (verified=false), подтверждение — событием.
                 val lines = (args!!["breakpoints"] as JsonArray).items.map { ((it as JsonObject)["line"] as JsonNumber).toLongExact()!! }
-                respond(seq, command, JsonObject.of("breakpoints" to JsonArray(lines.map { JsonObject.of("verified" to JsonBool(true), "line" to json(it)) })))
+                respond(seq, command, JsonObject.of("breakpoints" to JsonArray(lines.mapIndexed { i, l -> JsonObject.of("id" to json(i + 1), "verified" to JsonBool(!gdb), "line" to json(l)) })))
             }
             "configurationDone" -> {
                 respond(seq, command)
+                if (gdb) event("breakpoint", JsonObject.of("reason" to json("changed"), "breakpoint" to JsonObject.of("id" to json(1), "verified" to JsonBool(true), "line" to json(2))))
                 releaseLaunch()
                 event("output", JsonObject.of("category" to json("stdout"), "output" to json("начало\nстрока 2\n")))
                 event("output", JsonObject.of("category" to json("telemetry"), "output" to json("не показывать")))
@@ -114,27 +121,39 @@ class DapPeerTest {
 
     private fun <T> ok(r: Outcome<T>): T = assertIs<Outcome.Success<T>>(r, r.toString()).value
 
+    /** Ждать вида сеанса: до 10 с шагами по 10 мс — без системных часов (D-07). */
     private fun waitFor(session: DebugSession, what: String, test: (DebugView) -> Boolean): DebugView {
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
-        while (System.nanoTime() < deadline) {
+        val tick = java.util.concurrent.Semaphore(0)
+        repeat(1000) {
             if (test(session.view)) return session.view
-            Thread.onSpinWait()
+            tick.tryAcquire(10, TimeUnit.MILLISECONDS)
         }
         error("не дождались: $what; ${session.view}")
     }
 
     @Test
-    fun launchOrderStopStackVariablesStepAndExit() {
-        val adapter = gdbLike()
+    fun debugpyOrderLaunchThenBreakpoints() {
+        val adapter = adapter(gdb = false)
+        val session = DebugSession(adapter.clientIn, adapter.clientOut, {})
+        ok(session.start(DebugLaunches.debugpy("/usr/bin/python3", "/tmp/t.py", emptyList(), "/tmp"), mapOf("/tmp/t.py" to listOf(5))))
+        assertEquals(listOf("initialize", "launch", "setBreakpoints", "configurationDone"), adapter.received.take(4))
+        waitFor(session, "остановка") { it.status is DebugStatus.Stopped }
+        session.stop()
+    }
+
+    @Test
+    fun gdbOrderStopStackVariablesStepAndExit() {
+        val adapter = adapter(gdb = true)
         val views = CopyOnWriteArrayList<DebugView>()
         val closed = CountDownLatch(1)
         val session = DebugSession(adapter.clientIn, adapter.clientOut, { views += it }, { closed.countDown() })
         ok(session.start(DebugLaunches.gdb("/tmp/t", listOf("--level", "1"), "/tmp"), mapOf("/tmp/t.c" to listOf(2, 2))))
-        assertEquals(listOf("initialize", "launch", "setBreakpoints", "configurationDone"), adapter.received.take(4))
-        assertEquals(listOf(BreakpointState(2, true)), session.view.breakpoints["/tmp/t.c"])
+        // gdb 15 запускает программу уже по launch: точки — до него (`LINUX_IN_APP.md`, §12).
+        assertEquals(listOf("initialize", "setBreakpoints", "launch", "configurationDone"), adapter.received.take(4))
 
         val stopped = waitFor(session, "остановка со стеком") { it.status is DebugStatus.Stopped && it.variables.isNotEmpty() }
         assertEquals(DebugStatus.Stopped("breakpoint", 1, null), stopped.status)
+        assertEquals(listOf(BreakpointState(2, true, null, 1)), session.view.breakpoints["/tmp/t.c"], "отложенная точка подтверждена событием")
         assertEquals(listOf("sq", "main"), stopped.frames.map { it.name })
         assertEquals(StackFrame(7, "sq", "/tmp/t.c", 2), stopped.location)
         assertEquals(listOf(DebugVariable("x", "7", "int", 0)), stopped.variables)
@@ -164,8 +183,10 @@ class DapPeerTest {
                     // Обратный запрос адаптера: у редактора нет терминала — отказ, сеанс жив.
                     raw(JsonObject.of("seq" to json(1), "type" to json("request"), "command" to json("runInTerminal"), "arguments" to JsonObject.of()))
                     respond(seq, command, JsonObject.of())
+                    event("initialized")
                 }
-                "launch" -> { respond(seq, command, success = false, message = "Program \"/tmp/нет\" not found"); event("initialized") }
+                "launch" -> respond(seq, command, success = false, message = "Program \"/tmp/нет\" not found")
+                "configurationDone" -> respond(seq, command, success = false, message = "not launched")
             }
         }
         val session = DebugSession(adapter.clientIn, adapter.clientOut, {})

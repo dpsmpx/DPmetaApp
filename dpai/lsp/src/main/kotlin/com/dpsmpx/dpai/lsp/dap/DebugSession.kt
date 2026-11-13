@@ -24,8 +24,18 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * Что запускать под отладчиком (D-159): [command] — процесс адаптера, [adapterId] —
  * для `initialize`, [launch] — аргументы `launch`, [workDir] — каталог адаптера.
+ * [configureFirst] — адаптер готов к точкам сразу после `initialize` и запускает
+ * программу уже по `launch` (gdb 15): точки — до `launch`, иначе программа проходит
+ * мимо них (`docs/research/LINUX_IN_APP.md`, §12).
  */
-data class DebugLaunch(val name: String, val adapterId: String, val command: List<String>, val launch: JsonObject, val workDir: String)
+data class DebugLaunch(
+    val name: String,
+    val adapterId: String,
+    val command: List<String>,
+    val launch: JsonObject,
+    val workDir: String,
+    val configureFirst: Boolean = false,
+)
 
 /** Адаптеры отладки в Linux приложения (D-159): путь и аргументы — значениями, без оболочки. */
 object DebugLaunches {
@@ -37,6 +47,7 @@ object DebugLaunches {
             "stopAtBeginningOfMainSubprogram" to JsonBool(false),
         ),
         cwd,
+        configureFirst = true,
     )
 
     /** debugpy из окружения проекта: [python] — его интерпретатор, адаптер и программа идут им. */
@@ -56,8 +67,12 @@ data class StackFrame(val id: Long, val name: String, val path: String?, val lin
 /** Переменная: [ref] больше нуля — у неё есть поля ([DebugSession.children]). */
 data class DebugVariable(val name: String, val value: String, val type: String?, val ref: Long)
 
-/** Точка останова, как её принял отладчик: [line] — где встала (может сдвинуться к ближайшей строке кода). */
-data class BreakpointState(val line: Int, val verified: Boolean, val message: String? = null)
+/**
+ * Точка останова, как её принял отладчик: [line] — где встала (может сдвинуться к
+ * ближайшей строке кода); [id] — номер отладчика: по нему событие `breakpoint`
+ * подтверждает отложенную точку (gdb до загрузки программы — «pending»).
+ */
+data class BreakpointState(val line: Int, val verified: Boolean, val message: String? = null, val id: Long? = null)
 
 /** Состояние сеанса для экрана. */
 sealed interface DebugStatus {
@@ -129,10 +144,12 @@ class DebugSession(
     val isOpen: Boolean get() = peer.isOpen
 
     /**
-     * Запустить [launch] с точками [breakpoints] (путь гостя → строки с единицы):
-     * `initialize`, `launch` без ожидания, после `initialized` — точки и
-     * `configurationDone`, затем ответ `launch` (gdb и debugpy дают его только после
-     * `configurationDone`, `docs/research/LINUX_IN_APP.md`, §12).
+     * Запустить [launch] с точками [breakpoints] (путь гостя → строки с единицы).
+     * Обычно (debugpy): `initialize`, `launch` без ожидания, после `initialized` —
+     * точки и `configurationDone`, затем ответ `launch`. С [DebugLaunch.configureFirst]
+     * (gdb): после `initialize` и `initialized` — точки, затем `launch` и
+     * `configurationDone`: gdb 15 запускает программу уже по `launch`, gdb 16 — после
+     * `configurationDone`; порядок верен для обоих (`docs/research/LINUX_IN_APP.md`, §12).
      */
     fun start(launch: DebugLaunch, breakpoints: Map<String, List<Int>>, timeout: Duration = START_TIMEOUT): Outcome<Unit> {
         peer.start()
@@ -142,23 +159,41 @@ class DebugSession(
             "supportsRunInTerminalRequest" to JsonBool(false), "locale" to json("ru"),
         )
         peer.request("initialize", init, REQUEST_TIMEOUT).let { if (it is Outcome.Failure) return fail(it) }
-        val launched = peer.call("launch", launch.launch)
-        try {
-            initialized.get(timeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
-        } catch (_: TimeoutException) {
-            return fail(Outcome.failure(DiagCode.DAP_TIMEOUT, "отладчик не сообщил о готовности за ${timeout.inWholeSeconds} с", launch.name))
+        val launched = if (launch.configureFirst) {
+            awaitInitialized(launch, timeout)?.let { return it }
+            for ((path, lines) in breakpoints) setBreakpoints(path, lines)
+            peer.call("launch", launch.launch)
+        } else {
+            val call = peer.call("launch", launch.launch)
+            awaitInitialized(launch, timeout)?.let { return it }
+            // Отказ launch до готовности (нет программы) — его причина, а не «не готов».
+            if (call.isDone) (call.await(REQUEST_TIMEOUT) as? Outcome.Failure)?.let { return fail(it) }
+            for ((path, lines) in breakpoints) setBreakpoints(path, lines)
+            call
         }
-        // Отказ launch до готовности (нет программы) — его причина, а не «не готов».
-        if (launched.isDone) (launched.await(REQUEST_TIMEOUT) as? Outcome.Failure)?.let { return fail(it) }
         if (!peer.isOpen) return fail(Outcome.failure(DiagCode.DAP_ADAPTER_STOPPED, "отладчик вышел при запуске", launch.name))
-        for ((path, lines) in breakpoints) setBreakpoints(path, lines)
-        peer.request("configurationDone", null, REQUEST_TIMEOUT).let { if (it is Outcome.Failure) return fail(it) }
+        // Отказ launch (нет программы) — его причина, а не отказ configurationDone следом.
+        if (launched.isDone) (launched.await(REQUEST_TIMEOUT) as? Outcome.Failure)?.let { return fail(it) }
+        peer.request("configurationDone", null, REQUEST_TIMEOUT).let { r ->
+            if (r is Outcome.Failure) return fail((launched.takeIf { it.isDone }?.await(REQUEST_TIMEOUT) as? Outcome.Failure) ?: r)
+        }
         when (val r = launched.await(timeout)) {
             is Outcome.Failure -> return fail(r)
             is Outcome.Success -> Unit
         }
         publish { if (it.status is DebugStatus.Starting) it.copy(status = DebugStatus.Running) else it }
         return Outcome.success(Unit)
+    }
+
+    /** Ждать `initialized`; не дождались или связь кончилась — отказ запуска, иначе `null`. */
+    private fun awaitInitialized(launch: DebugLaunch, timeout: Duration): Outcome.Failure? {
+        try {
+            initialized.get(timeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
+        } catch (_: TimeoutException) {
+            return fail(Outcome.failure(DiagCode.DAP_TIMEOUT, "отладчик не сообщил о готовности за ${timeout.inWholeSeconds} с", launch.name))
+        }
+        if (!peer.isOpen) return fail(Outcome.failure(DiagCode.DAP_ADAPTER_STOPPED, "отладчик вышел при запуске", launch.name))
+        return null
     }
 
     /** Точки файла [path] целиком (DAP заменяет набор файла): как их принял отладчик. */
@@ -172,7 +207,7 @@ class DebugSession(
             is Outcome.Success -> {
                 val got = ((r.value as? JsonObject)?.get("breakpoints") as? JsonArray)?.items.orEmpty().mapIndexedNotNull { i, b ->
                     val o = b as? JsonObject ?: return@mapIndexedNotNull null
-                    BreakpointState(o.int("line") ?: lines.getOrNull(i) ?: 0, (o["verified"] as? JsonBool)?.value == true, o.text("message"))
+                    BreakpointState(o.int("line") ?: lines.getOrNull(i) ?: 0, (o["verified"] as? JsonBool)?.value == true, o.text("message"), o.long("id"))
                 }
                 publish { it.copy(breakpoints = it.breakpoints + (path to got)) }
                 Outcome.success(got)
@@ -212,7 +247,8 @@ class DebugSession(
     /** Значение выражения [expression] в выбранном кадре. */
     fun evaluate(expression: String): Outcome<String> {
         if (expression.isBlank() || expression.length > MAX_EXPRESSION) return Outcome.failure(DiagCode.VALUE_INVALID, "выражение — от 1 до $MAX_EXPRESSION знаков")
-        val args = linkedMapOf<String, JsonValue>("expression" to json(expression), "context" to json("repl"))
+        // «watch», а не «repl»: в gdb «repl» — команда gdb (`x*x` — команда `x`), а нужно выражение языка.
+        val args = linkedMapOf<String, JsonValue>("expression" to json(expression), "context" to json("watch"))
         view.frame?.let { args["frameId"] = json(it) }
         return when (val r = peer.request("evaluate", JsonObject(args), REQUEST_TIMEOUT)) {
             is Outcome.Failure -> r
@@ -252,6 +288,16 @@ class DebugSession(
                 if (category == "telemetry") return
                 val text = body?.text("output") ?: return
                 publish { v -> v.copy(output = (v.output + lines(text)).takeLast(MAX_OUTPUT_LINES)) }
+            }
+            // Отложенная точка встала (программа загружена) или сдвинулась — по номеру отладчика.
+            "breakpoint" -> {
+                val b = body?.get("breakpoint") as? JsonObject ?: return
+                val id = b.long("id") ?: return
+                publish { v ->
+                    v.copy(breakpoints = v.breakpoints.mapValues { (_, list) ->
+                        list.map { if (it.id == id) it.copy(line = b.int("line") ?: it.line, verified = (b["verified"] as? JsonBool)?.value == true, message = b.text("message")) else it }
+                    })
+                }
             }
             "exited" -> exitCode = body?.int("exitCode")
             "terminated" -> {

@@ -4507,12 +4507,17 @@ Claude Code в Linux приложения и журнал приложения �
   `output`. Сообщение не по протоколу, обрыв или ответ длиннее предела —
   остановка сеанса целиком (как D-137). Коды `DAP_REPLY_INVALID`,
   `DAP_REQUEST_FAILED`, `DAP_ADAPTER_STOPPED`, `DAP_TIMEOUT`.
-- **Порядок запуска** — по спецификации DAP: `initialize` → `launch`
-  (ответ не ждётся) → после `initialized` — `setBreakpoints` по файлам и
-  `configurationDone` → ответ `launch`. gdb и debugpy отвечают на
-  `launch` только после `configurationDone` — проверено на машине сборки
-  (`docs/research/LINUX_IN_APP.md`, §12).
-- **Адаптеры** (`DebugLaunches`): gdb 14+ — `gdb -i=dap -q`, `launch` с
+- **Порядок запуска.** debugpy — по спецификации DAP: `initialize` →
+  `launch` (ответ не ждётся) → после `initialized` — `setBreakpoints` по
+  файлам и `configurationDone` → ответ `launch`. gdb шлёт `initialized`
+  сразу после `initialize`, а gdb 15 запускает программу уже по `launch`:
+  для него (`DebugLaunch.configureFirst`) — `initialized` → `setBreakpoints`
+  → `launch` → `configurationDone`; gdb 16 работает при обоих порядках.
+  Отложенная точка подтверждается событием `breakpoint` по `id`; выражение
+  — `evaluate` с `context: watch` (`repl` у gdb — команда gdb).
+  Проверено на машине сборки и под proot (`docs/research/LINUX_IN_APP.md`,
+  §12).
+- **Адаптеры** (`DebugLaunches`): gdb 15+ — `gdb -i=dap -q`, `launch` с
   `program`, `args`, `cwd`; debugpy — `python -m debugpy.adapter` из
   окружения проекта (`ProjectRuntime`), `launch` с `program`, `args`,
   `cwd`, `console: internalConsole`, `justMyCode`. Путь и аргументы —

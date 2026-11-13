@@ -339,3 +339,39 @@ Android 15 (SDK 35), ядро `5.15.194-android13`, страница памят�
   x-access-token` и `password=<токен>`; без переменной — помощник молчит,
   Git спрашивает имя (без терминала — «terminal prompts disabled»); для
   другого хоста помощник не вызывается.
+
+## 12. Отладчики по DAP: gdb и debugpy
+
+13 ноября 2026, машина сборки (x86-64, Ubuntu 24.04): gdb 15.1
+(`GNU gdb (Ubuntu 15.1-1ubuntu1~24.04.1)`), debugpy 1.8.22 в окружении
+Python; под proot приложения (форк Termux, D-115) на копии корневой
+системы Alpine — gdb 16 из пакета Alpine `gdb` и debugpy (журнал сессии
+того же дня). Программа на C — `cc -g -O0`, точка — в функции `sq`.
+
+- **gdb отвечает по DAP** — `gdb -i=dap -q`: `initialize`, точки, `launch`,
+  остановка с `stackTrace`, `scopes`, `variables`, шаг и выход с кодом
+  работают и на машине сборки, и под proot.
+- **`initialized` у gdb — сразу после ответа `initialize`**, у debugpy —
+  после `launch`.
+- **gdb 15.1 запускает программу уже по `launch`.** Порядок «`launch` →
+  точки → `configurationDone`» (спецификация DAP) — программа проходит
+  мимо точки и выходит до `setBreakpoints`; порядок «`initialized` →
+  `setBreakpoints` → `launch` → `configurationDone`» — остановка на точке.
+  gdb 16 из Alpine работает при обоих порядках и отвечает на `launch`
+  после `configurationDone`. Клиент для gdb ставит точки до `launch`
+  (`DebugLaunch.configureFirst`, D-159).
+- **Точка до загрузки программы — отложенная:** ответ `setBreakpoints` —
+  `verified: false` и в выводе «No source file named …», «Breakpoint 1 …
+  pending»; после `launch` — событие `breakpoint` (`changed`,
+  `verified: true`) с тем же `id`.
+- **`evaluate` с `context: repl` у gdb — команда gdb**, а не выражение:
+  `x*x` — команда `x` («Cannot access memory at address 0x7»). Выражение
+  языка — `context: watch`; debugpy вычисляет выражение в обоих.
+- **debugpy** — `python -m debugpy.adapter`, `launch` с `console:
+  internalConsole`: вывод программы — событиями `output`, ответ `launch` —
+  после `configurationDone`.
+- **Копия корневой системы ломает ссылки `.l2s`** (§11): после копирования
+  каталога гостя binutils пришлось переустановить, иначе компоновщик не
+  находился.
+
+Проверка — `DapLiveTest` (`-Ddpai.test.gdb`, `-Ddpai.test.debugpy`).

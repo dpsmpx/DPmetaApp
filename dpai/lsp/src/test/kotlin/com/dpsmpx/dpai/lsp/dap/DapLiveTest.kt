@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.io.TempDir
 
 /**
- * Настоящие адаптеры (D-159): gdb в режиме DAP (`-Ddpai.test.gdb=/usr/bin/gdb`, GDB 14+,
+ * Настоящие адаптеры (D-159): gdb в режиме DAP (`-Ddpai.test.gdb=/usr/bin/gdb`, GDB 15+,
  * программа собирается `cc -g -O0`) и debugpy (`-Ddpai.test.debugpy=<python с debugpy>`).
  * Остановка в функции, стек, переменная, выражение, шаг, выход с кодом. Без свойств —
  * тесты пропускаются. Те же адаптеры под proot приложения — `docs/research/LINUX_IN_APP.md`, §12.
@@ -23,11 +23,12 @@ import org.junit.jupiter.api.io.TempDir
 class DapLiveTest {
     private fun <T> ok(r: Outcome<T>): T = assertIs<Outcome.Success<T>>(r, r.toString()).value
 
+    /** Ждать вида сеанса: до 60 с шагами по 50 мс — без системных часов (D-07). */
     private fun waitFor(session: DebugSession, what: String, test: (DebugView) -> Boolean): DebugView {
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60)
-        while (System.nanoTime() < deadline) {
+        val tick = java.util.concurrent.Semaphore(0)
+        repeat(1200) {
             if (test(session.view)) return session.view
-            Thread.onSpinWait()
+            tick.tryAcquire(50, TimeUnit.MILLISECONDS)
         }
         error("не дождались: $what; ${session.view}")
     }
@@ -37,8 +38,9 @@ class DapLiveTest {
         val session = DebugSession(process.stdout, process.stdin, {})
         try {
             ok(session.start(launch, mapOf(file to listOf(line)), 60.seconds))
-            assertTrue(session.view.breakpoints[file].orEmpty().any { it.verified }, session.view.toString())
             val stopped = waitFor(session, "остановка на точке") { it.status is DebugStatus.Stopped && it.variables.isNotEmpty() }
+            // gdb ставит точку до загрузки программы отложенной и подтверждает событием `breakpoint`.
+            assertTrue(stopped.breakpoints[file].orEmpty().any { it.verified && it.line == line }, stopped.toString())
             assertEquals("breakpoint", (stopped.status as DebugStatus.Stopped).reason)
             val at = stopped.location!!
             assertEquals(File(file).canonicalPath, File(at.path!!).canonicalPath)
