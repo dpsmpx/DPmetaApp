@@ -58,6 +58,8 @@ RULES = [
          # в шифр Keystore — только хранилище ключей приложения.
          "providers/src/main/kotlin/com/dpsmpx/dpai/providers/UrlTransport.kt",
          "android/src/main/kotlin/com/dpsmpx/dpai/android/ApiKeys.kt",
+         # Пароль файла ключа подписи APK (D-157): только в разбор PKCS#12 при импорте в Keystore.
+         "android/src/main/kotlin/com/dpsmpx/dpai/android/SigningKeys.kt",
          # Подключённый GitHub — только stdin контроллера общих инструментов (D-125).
          "execution/src/main/kotlin/com/dpsmpx/dpai/execution/tools/SharedToolsSync.kt",
          # Пароль облачной копии (D-107): только в вывод ключа шифра.

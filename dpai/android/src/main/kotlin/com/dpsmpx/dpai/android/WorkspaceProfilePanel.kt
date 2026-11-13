@@ -60,6 +60,8 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
     val scope = rememberCoroutineScope()
     // Шаги профиля (D-154): поля экрана переживают поворот; сохранённый профиль подставляется, пока поля пусты.
     val rows = rememberSaveable(view.project.project.value, kind.name, saver = StepRowsSaver) { mutableStateListOf(StepRow("", "", "1800")) }
+    // Шаблоны артефактов (D-157) — у «Сборки»: через пробел, от корня дерева.
+    var artifactsText by rememberSaveable(view.project.project.value, kind.name) { mutableStateOf("") }
     var loaded by remember(view.project, kind) { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -74,13 +76,20 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
                 if (rows.all { it.command.isBlank() }) {
                     rows.clear()
                     rows.addAll(p.steps.map { StepRow(it.name, ManualProfile.quote(it.command), it.timeoutSeconds.toString()) })
+                    if (artifactsText.isBlank()) artifactsText = p.artifacts.joinToString(" ")
                 }
             }
         }
         loaded = true
     }
     val editable = loaded && !run.blocked && !busy
-    fun form() = ManualProfile.form(kind, rows.map { Triple(it.name, it.command, it.timeout) })
+    fun form(): Outcome<ManualProfile> {
+        val globs = when (val g = com.dpsmpx.dpai.files.TreeArtifacts.patterns(artifactsText)) {
+            is Outcome.Failure -> return g
+            is Outcome.Success -> g.value
+        }
+        return ManualProfile.form(kind, rows.map { Triple(it.name, it.command, it.timeout) }, globs)
+    }
     Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
         Text(if (kind == ManualProfileKind.CHECK) "Ручная проверка" else "Ручная сборка", style = MaterialTheme.typography.titleSmall)
         Text("Шаги выполняются по порядку в выбранном дереве, без shell; следующий — только после кода 0 предыдущего. Для скрипта укажите интерпретатор явно. Секреты в команду не добавляйте.", style = MaterialTheme.typography.bodySmall)
@@ -107,6 +116,8 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
             }
         }
         TextButton(enabled = editable && rows.size < ManualProfile.MAX_STEPS, onClick = { rows.add(StepRow("", "", "1800")) }) { Text("+ Шаг") }
+        if (kind == ManualProfileKind.BUILD) OutlinedTextField(value = artifactsText, onValueChange = { artifactsText = it.take(4000) }, enabled = editable,
+            label = { Text("Артефакты: шаблоны через пробел (пусто — **/*.apk **/*.aab)") }, modifier = Modifier.fillMaxWidth())
         TextButton(enabled = editable, onClick = {
             busy = true
             scope.launch {
@@ -170,6 +181,10 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
             if (list.items.size > PROBLEMS_SHOWN) Text("…и ещё ${list.items.size - PROBLEMS_SHOWN}: исправьте первые и запустите снова", style = MaterialTheme.typography.bodySmall)
         }
         if (run.output.isNotEmpty()) SelectionContainer { Text(run.output, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
+        if (kind == ManualProfileKind.BUILD) {
+            val saved = remember(artifactsText) { (com.dpsmpx.dpai.files.TreeArtifacts.patterns(artifactsText) as? Outcome.Success)?.value.orEmpty() }
+            ArtifactsSection(model, view, location, saved, refresh = run.finished)
+        }
         ManualHistorySection(model, view.project, kind, location, refresh = run.finished, onProblem = onProblem)
         Text("Ручной итог не завершает задачу ИИ. Перед запуском сохраните или отмените правки; контур должен быть свободен.", style = MaterialTheme.typography.bodySmall)
     }

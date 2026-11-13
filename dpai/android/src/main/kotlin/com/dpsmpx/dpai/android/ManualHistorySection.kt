@@ -14,6 +14,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -48,7 +49,7 @@ internal fun ManualHistorySection(model: DemoModel, project: ProjectEntry, kind:
     var error by remember { mutableStateOf<String?>(null) }
     var open by remember { mutableStateOf<String?>(null) }
     var clearing by remember { mutableStateOf(false) }
-    var version by remember { mutableStateOf(0) }
+    var version by remember { mutableIntStateOf(0) }
     LaunchedEffect(project, refresh, version) {
         when (val r = withContext(Dispatchers.IO) { model.manualHistory(project) }) {
             is Outcome.Failure -> { error = r.errors.first().message; entries = emptyList() }

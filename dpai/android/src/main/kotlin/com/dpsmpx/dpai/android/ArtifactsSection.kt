@@ -1,0 +1,319 @@
+package com.dpsmpx.dpai.android
+
+import android.view.WindowManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogWindowProvider
+import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpai.core.diagnostics.Secret
+import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.files.FileTree
+import com.dpsmpx.dpai.files.SubTree
+import com.dpsmpx.dpai.files.TreeArtifacts
+import com.dpsmpx.dpai.ui.ProjectWorkspaceView
+import com.dpsmpx.dpai.ui.WorkspaceLocation
+import com.dpsmpx.dpai.ui.WorkspacePaths
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+
+/**
+ * Артефакты сборки и APK (D-157): файлы дерева по шаблонам профиля «Сборка»,
+ * у APK — сведения, подпись своим ключом из Keystore, установка и копия в
+ * «Загрузки». Только деревья Linux приложения: файл читается напрямую.
+ * [patterns] — шаблоны профиля, [refresh] — признак нового итога сборки.
+ */
+@Composable
+internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, location: WorkspaceLocation?, patterns: List<String>, refresh: Any?) {
+    val context = LocalContext.current
+    val app = context.applicationContext
+    val scope = rememberCoroutineScope()
+    val prefix = location?.let { WorkspacePaths.homeRelative(view.target, it.path) }
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        HorizontalDivider()
+        Text("Артефакты", Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.titleSmall)
+        if (location == null || prefix == null) {
+            Text("Артефакты видны у деревьев Linux в приложении. Файлы ПК-target откройте в терминале ПК.", style = MaterialTheme.typography.bodySmall)
+            return
+        }
+        val tree: FileTree = remember(view.project, location) {
+            val inner = SubTree(GuestPaths.homeTree(app), prefix)
+            object : FileTree by inner {
+                override fun list(dir: String) = model.workspaceAccess(view.project, location, false) { inner.list(dir) }
+            }
+        }
+        val hostRoot = remember(location) { File(GuestPaths.home(app), prefix).canonicalFile }
+        /** Файл телефона для пути дерева; ссылка наружу корня — `null`. */
+        fun host(rel: String): File? = File(hostRoot, rel).canonicalFile.takeIf { it.path.startsWith(hostRoot.path + File.separator) && it.isFile }
+
+        var found by remember { mutableStateOf<TreeArtifacts.Found?>(null) }
+        var note by remember { mutableStateOf<String?>(null) }
+        var busy by remember { mutableStateOf<String?>(null) }
+        var version by remember { mutableIntStateOf(0) }
+        var details by remember { mutableStateOf<String?>(null) }
+        var key by remember { mutableStateOf<SigningKeys.Info?>(null) }
+        LaunchedEffect(Unit) { key = withContext(Dispatchers.IO) { SigningKeys.info() } }
+        LaunchedEffect(location, patterns, refresh, version) {
+            val r = withContext(Dispatchers.IO) { TreeArtifacts.find(tree, patterns, cancelled = { !isActive }) }
+            when (r) {
+                is Outcome.Failure -> note = r.diagnostics.first().message
+                is Outcome.Success -> found = r.value
+            }
+        }
+        fun work(label: String, block: suspend () -> String?) {
+            if (busy != null) return
+            busy = label
+            scope.launch {
+                try { note = block() } finally { busy = null; version++ }
+            }
+        }
+
+        Text("Шаблоны: ${patterns.ifEmpty { TreeArtifacts.DEFAULT }.joinToString(" ")} — меняются в профиле выше.", style = MaterialTheme.typography.bodySmall)
+        SigningKeyRow(key, busy == null, onChanged = { key = it }, onNote = { note = it })
+        busy?.let { Text("$it…", style = MaterialTheme.typography.bodySmall) }
+        note?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        val list = found
+        if (list != null && list.items.isEmpty()) Text("Артефактов по шаблонам нет — соберите проект или поправьте шаблоны.", style = MaterialTheme.typography.bodySmall)
+        if (list?.limited == true) Text("Показана часть: уточните шаблоны.", style = MaterialTheme.typography.bodySmall)
+        for (a in list?.items.orEmpty()) {
+            val apk = a.path.endsWith(".apk", ignoreCase = true)
+            Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                Text(a.path.substringAfterLast('/'), style = MaterialTheme.typography.bodyMedium)
+                Text("${a.path.substringBeforeLast('/', "")} · ${size(a.size)} · ${time(a.modified)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    if (apk) {
+                        TextButton(enabled = busy == null, onClick = {
+                            work("Читаю APK") {
+                                val file = host(a.path) ?: return@work "файл вне дерева или исчез"
+                                withContext(Dispatchers.IO) {
+                                    val meta = ApkInstaller.meta(app, file)
+                                    val sig = ApkSign.inspect(file)
+                                    details = buildString {
+                                        when (meta) {
+                                            is Outcome.Success -> {
+                                                append("Пакет: ${meta.value.packageName}\nВерсия: ${meta.value.versionName ?: "?"} (${meta.value.versionCode})\n")
+                                                append("Установлено: ${meta.value.installed ?: "нет"}\n")
+                                                if (meta.value.self) append("Это APK самого DPmetaApp.\n")
+                                            }
+                                            is Outcome.Failure -> append(meta.diagnostics.first().message + "\n")
+                                        }
+                                        when (sig) {
+                                            is Outcome.Success -> {
+                                                append("Подпись: ${if (sig.value.verified) sig.value.schemes.joinToString() else "нет или неверна"}\n")
+                                                sig.value.subject?.let { append("Кем: $it\n") }
+                                                sig.value.certSha256?.let { append("Сертификат SHA-256: $it\n") }
+                                                if (key != null && sig.value.certSha256 == key?.certSha256) append("Подписан вашим ключом.\n")
+                                            }
+                                            is Outcome.Failure -> append(sig.diagnostics.first().message + "\n")
+                                        }
+                                        append("SHA-256 файла: ${ApkSign.fileSha256(file)}")
+                                    }
+                                }
+                                null
+                            }
+                        }) { Text("Сведения") }
+                        TextButton(enabled = busy == null, onClick = {
+                            if (!ApkInstaller.allowed(context)) {
+                                note = "Разрешите DPmetaApp устанавливать приложения: откроется настройка Android, затем нажмите «Установить» снова."
+                                ApkInstaller.askPermission(context)
+                                return@TextButton
+                            }
+                            val file = host(a.path) ?: run { note = "файл вне дерева или исчез"; return@TextButton }
+                            busy = "Передаю в установку"
+                            scope.launch {
+                                val meta = withContext(Dispatchers.IO) { ApkInstaller.meta(app, file) }
+                                if (meta is Outcome.Success && meta.value.self) note = "Это APK самого DPmetaApp: после установки приложение закроется и откроется заново."
+                                withContext(Dispatchers.IO) {
+                                    ApkInstaller.install(app, file) { r ->
+                                        scope.launch { note = when (r) { is Outcome.Success -> "${file.name}: ${r.value}"; is Outcome.Failure -> "${file.name}: ${r.diagnostics.first().message}" } }
+                                    }
+                                }
+                                busy = null
+                            }
+                        }) { Text("Установить") }
+                        TextButton(enabled = busy == null && key != null, onClick = {
+                            val file = host(a.path) ?: run { note = "файл вне дерева или исчез"; return@TextButton }
+                            DeviceConfirm.ask(context, "Подписать ${file.name} своим ключом", onOk = {
+                                work("Подписываю") {
+                                    val pair = withContext(Dispatchers.IO) { SigningKeys.key() } ?: return@work "ключа подписи нет"
+                                    val out = File(file.parentFile, ApkSign.signedName(file.name))
+                                    when (val r = withContext(Dispatchers.IO) { ApkSign.sign(file, out, pair.first, pair.second) }) {
+                                        is Outcome.Failure -> r.diagnostics.first().message
+                                        is Outcome.Success -> {
+                                            AppLogs.info(app, "подпись", "подписан ${file.name} → ${out.name}: ${r.value.schemes.joinToString()}, SHA-256 сертификата ${r.value.certSha256}")
+                                            "Подписан: ${out.name} (${r.value.schemes.joinToString()})"
+                                        }
+                                    }
+                                }
+                            }, onDenied = { note = it })
+                        }) { Text("Подписать") }
+                    }
+                    TextButton(enabled = busy == null, onClick = {
+                        work("Сохраняю в «Загрузки»") {
+                            val file = host(a.path) ?: return@work "файл вне дерева или исчез"
+                            if (file.length() > MAX_DOWNLOAD) return@work "файл больше ${MAX_DOWNLOAD shr 20} МБ — заберите его через терминал"
+                            val r = withContext(Dispatchers.IO) { Downloads.write(app, "dpmeta-artifacts", file.name, if (apk) "application/vnd.android.package-archive" else "application/octet-stream", file.readBytes(), file.name) }
+                            if (r is Outcome.Failure) r.diagnostics.first().message else "Сохранено: Загрузки/dpmeta-artifacts/${file.name}"
+                        }
+                    }) { Text("В Загрузки") }
+                }
+            }
+        }
+        TextButton(enabled = busy == null, onClick = { version++ }) { Text("Обновить список") }
+        details?.let { text ->
+            AlertDialog(onDismissRequest = { details = null }, title = { Text("APK") }, text = { Text(text, style = MaterialTheme.typography.bodySmall) },
+                confirmButton = { TextButton(onClick = { details = null }) { Text("Закрыть") } })
+        }
+    }
+}
+
+/** Ключ подписи: нет — «Импортировать…»; есть — субъект, отпечаток и «Удалить…». */
+@Composable
+private fun SigningKeyRow(key: SigningKeys.Info?, enabled: Boolean, onChanged: (SigningKeys.Info?) -> Unit, onNote: (String?) -> Unit) {
+    val context = LocalContext.current
+    val app = context.applicationContext
+    val scope = rememberCoroutineScope()
+    var picked by remember { mutableStateOf<ByteArray?>(null) }
+    var deleting by remember { mutableStateOf(false) }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val bytes = withContext(Dispatchers.IO) {
+                runCatching { app.contentResolver.openInputStream(uri)?.use { readAtMost(it, MAX_KEY_FILE + 1) } }.getOrNull()
+            }
+            when {
+                bytes == null -> onNote("файл ключа не прочитан")
+                bytes.size > MAX_KEY_FILE -> onNote("файл больше 1 МБ — это не хранилище ключей")
+                else -> picked = bytes
+            }
+        }
+    }
+    if (key == null) {
+        Row {
+            Text("Ключ подписи не задан.", Modifier.padding(vertical = 12.dp), style = MaterialTheme.typography.bodySmall)
+            TextButton(enabled = enabled, onClick = { pick.launch(arrayOf("application/x-pkcs12", "application/octet-stream", "*/*")) }) { Text("Импортировать…") }
+        }
+    } else {
+        Text("Ключ подписи: ${key.subject} (${key.algorithm})\nSHA-256: ${key.certSha256}", style = MaterialTheme.typography.bodySmall)
+        TextButton(enabled = enabled, onClick = { deleting = true }) { Text("Удалить ключ…") }
+    }
+    picked?.let { bytes ->
+        KeyPasswordDialog(onCancel = { bytes.fill(0); picked = null }) { password, alias ->
+            scope.launch {
+                val r = withContext(Dispatchers.IO) { SigningKeys.import(app, bytes, password, alias) }
+                when (r) {
+                    is Outcome.Success -> { bytes.fill(0); picked = null; onChanged(r.value); onNote("Ключ импортирован. Файл ключа приложение не хранит.") }
+                    is Outcome.Failure -> {
+                        val d = r.diagnostics.first()
+                        onNote(d.message)
+                        // Несколько ключей в файле — окно остаётся, чтобы ввести имя ключа.
+                        if (d.code != DiagCode.FIELD_MISSING && d.code != DiagCode.VALUE_INVALID) { bytes.fill(0); picked = null }
+                    }
+                }
+            }
+        }
+    }
+    if (deleting) AlertDialog(
+        onDismissRequest = { deleting = false },
+        title = { Text("Удалить ключ подписи?") },
+        text = { Text("Ключ сотрётся из Keystore телефона — извлечь его оттуда нельзя, восстановить — только импортом из вашего файла. Подписанные им APK останутся.", color = MaterialTheme.colorScheme.error) },
+        confirmButton = { TextButton(onClick = {
+            deleting = false
+            scope.launch {
+                when (val r = withContext(Dispatchers.IO) { SigningKeys.delete(app) }) {
+                    is Outcome.Success -> { onChanged(null); onNote("Ключ подписи удалён") }
+                    is Outcome.Failure -> onNote(r.diagnostics.first().message)
+                }
+            }
+        }) { Text("Удалить") } },
+        dismissButton = { TextButton(onClick = { deleting = false }) { Text("Отмена") } },
+    )
+}
+
+/** Пароль файла ключа и, если нужно, имя ключа. Окно — без снимков экрана; пароль не сохраняется. */
+@Composable
+private fun KeyPasswordDialog(onCancel: () -> Unit, onImport: (Secret, String?) -> Unit) {
+    var password by remember { mutableStateOf("") }
+    var alias by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Пароль хранилища ключей") },
+        text = {
+            val view = LocalView.current
+            DisposableEffect(view) {
+                (view.parent as? DialogWindowProvider)?.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+                onDispose { }
+            }
+            Column {
+                Text("Ключ попадёт в Keystore телефона; подписывать можно будет только после PIN или отпечатка.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(password, { password = it.take(256) }, label = { Text("Пароль") }, singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
+                OutlinedTextField(alias, { alias = it.take(128) }, label = { Text("Имя ключа (если в файле их несколько)") }, singleLine = true)
+            }
+        },
+        confirmButton = { TextButton(onClick = {
+            val secret = Secret(password)
+            password = ""
+            onImport(secret, alias.trim().ifEmpty { null })
+        }) { Text("Импортировать") } },
+        dismissButton = { TextButton(onClick = { password = ""; onCancel() }) { Text("Отмена") } },
+    )
+}
+
+private const val MAX_KEY_FILE = 1 shl 20
+
+/** Не больше [limit] байт потока (`readNBytes` — только с API 33). */
+private fun readAtMost(input: java.io.InputStream, limit: Int): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    val buf = ByteArray(8192)
+    while (out.size() < limit) {
+        val n = input.read(buf, 0, minOf(buf.size, limit - out.size()))
+        if (n < 0) break
+        out.write(buf, 0, n)
+    }
+    return out.toByteArray()
+}
+private const val MAX_DOWNLOAD = 256L shl 20
+
+private val TIME = DateTimeFormatter.ofPattern("dd.MM HH:mm")
+
+private fun time(ms: Long): String = TIME.format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
+
+private fun size(b: Long): String = when {
+    b < 1024 -> "$b Б"
+    b < 1 shl 20 -> "${b / 1024} КБ"
+    else -> String.format(java.util.Locale.ROOT, "%.1f МБ", b / 1048576.0)
+}

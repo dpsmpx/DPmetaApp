@@ -19,6 +19,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -51,7 +52,7 @@ internal fun TreeSearchPanel(tree: FileTree, dir: String, stateKey: String, onOp
     var replacing by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf(false) }
     var report by remember { mutableStateOf<String?>(null) }
-    var round by remember { mutableStateOf(0) }
+    var round by remember { mutableIntStateOf(0) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var query by rememberSaveable(stateKey) { mutableStateOf("") }
     var inCode by rememberSaveable(stateKey) { mutableStateOf(false) }
