@@ -79,7 +79,12 @@ fun TaskSheet(
     var confirm by remember { mutableStateOf<TaskAction?>(null) }
     var editor by remember { mutableStateOf<TaskAction?>(null) }
     val keys = remember { IdGenerator(Clock.SYSTEM, RandomSource.secure()) }
-    Poll(task, periodMs = 1500) { detail = withContext(Dispatchers.IO) { model.taskDetail(task) } }
+    // Кому передать задачу у предела её исполнителя (D-165): без автоматического перехода решает человек.
+    var offers by remember { mutableStateOf<List<com.dpsmpx.dpai.core.ids.Executor>>(emptyList()) }
+    Poll(task, periodMs = 1500) {
+        detail = withContext(Dispatchers.IO) { model.taskDetail(task) }
+        offers = withContext(Dispatchers.IO) { runCatching { model.liveOrchestrator()?.handoverCandidates(task) }.getOrNull().orEmpty() }
+    }
     // Несколько команд — по очереди, до первого отказа (область, затем зависимости).
     fun sendAll(vararg cs: (String) -> Command) {
         busy = true
@@ -142,6 +147,12 @@ fun TaskSheet(
                 }
                 // Вывод модели — только в чате сессии (D-62): переход туда — первым.
                 d.lastSession?.takeIf { it.value != shownSession }?.let { s -> androidx.compose.material3.Button(onClick = { onSession(s.value) }, Modifier.fillMaxWidth()) { Text("Открыть чат") } }
+                if (offers.isNotEmpty()) {
+                    Text("У всех слотов исполнителя задачи предел. Передать другому подключённому ИИ:", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    androidx.compose.foundation.layout.Row {
+                        for (x in offers) androidx.compose.material3.OutlinedButton(enabled = !busy, onClick = { send { k -> Command.SetExecutor(task, x, k) } }) { Text("Передать ${x.title}") }
+                    }
+                }
                 // Слово, а не идентификатор (D-88, U-3): человек читает экран, а не журнал событий.
                 Text("${Words.task(d.state)}${if (d.held) " · приостановлена" else ""} · приоритет ${Words.priority(d.priority)}", fontWeight = FontWeight.Bold)
                 // Цель длиннее четырёх строк — с многоточием и раскрытием нажатием (A-20).

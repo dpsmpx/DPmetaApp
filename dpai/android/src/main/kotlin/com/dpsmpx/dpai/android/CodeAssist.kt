@@ -90,6 +90,7 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
 
     DisposableEffect(session) {
         onDispose {
+            CodeService.forget(session)
             onMarks(emptyList())
             kotlin.concurrent.thread(name = "dpai-code-service-release") { CodeService.release(session) }
         }

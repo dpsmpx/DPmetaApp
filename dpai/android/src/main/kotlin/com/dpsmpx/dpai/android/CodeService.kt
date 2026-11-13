@@ -110,7 +110,17 @@ internal object CodeService {
     /** Сеансы по ключу — только в потоке интерфейса: им приходят диагностика и остановка. */
     private val owners = HashMap<String, MutableList<Session>>()
 
-    fun session(guestPath: String): Session = Session(guestPath)
+    fun session(guestPath: String): Session = Session(guestPath).also { s -> main.post { shownSessions[guestPath] = s } }
+
+    /** Сеанс службы, показанный сейчас для файла [guestPath] (поток интерфейса): «В ИИ» берёт у него замечания и символы (D-165). */
+    fun sessionOf(guestPath: String): Session? = shownSessions[guestPath]
+
+    /** Сеанс больше не показан (поток интерфейса). */
+    fun forget(session: Session) {
+        if (shownSessions[session.file] === session) shownSessions.remove(session.file)
+    }
+
+    private val shownSessions = HashMap<String, Session>()
 
     private const val PREFS = "dpai-code-service"
     private const val PYTHON_KIND = "python.kind"

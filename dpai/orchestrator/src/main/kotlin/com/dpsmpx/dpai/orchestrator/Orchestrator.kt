@@ -749,6 +749,13 @@ class Orchestrator(
         return accountsLogic.handoverCandidates(accounts, t.policy.executor, clock.now())
     }
 
+    /**
+     * Другие исполнители с готовым слотом, если у [executor] предел всех слотов (D-165): что
+     * предложить человеку в «В ИИ» из редактора — для новой задачи и терминала ИИ тоже.
+     */
+    fun limitOffers(executor: Executor): List<Executor> =
+        if (accountsLogic.exhausted(accounts, executor, clock.now())) accountsLogic.handoverCandidates(accounts, executor, clock.now()) else emptyList()
+
     private fun handoverOffer(task: TaskId): String? {
         val t = tasks.tasks[task] ?: return null
         val to = handoverCandidates(task).takeIf { it.isNotEmpty() } ?: return null

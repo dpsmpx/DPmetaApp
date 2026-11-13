@@ -249,6 +249,16 @@ class ManualProfilesTest {
         assertTrue(store().snapshot().note.contains("остановлено пользователем"))
     }
 
+    /** Направление «В ИИ» проекта (D-165): `dpai.editor-ai` v1, по умолчанию не задано, неизвестная версия — не читается. */
+    @Test fun editorAiRouteIsStoredPerProject() {
+        assertEquals(null, store().aiRoute(project).valueOrNull())
+        assertIs<Outcome.Success<Unit>>(store().saveAiRoute(project, EditorAiRoute.TERMINAL))
+        assertEquals(EditorAiRoute.TERMINAL, store().aiRoute(project).valueOrNull())
+        assertEquals(EditorAiRoute.NEW_TASK, EditorAiRoute.read(EditorAiRoute.NEW_TASK.toJson()))
+        val newer = com.dpsmpx.dpai.core.serialization.JsonObject(EditorAiRoute.SESSION.toJson().fields + ("version" to com.dpsmpx.dpai.core.serialization.JsonNumber.of(2)))
+        assertEquals(null, EditorAiRoute.read(newer))
+    }
+
     @Test fun runProfileIsValidatedStoredAndBuildCompletionIsReported() {
         val good = RunProfile.form(" ./bin/app --level 1 ", "/build/bin/", true).valueOrNull()!!
         assertEquals(RunProfile("./bin/app --level 1", "build/bin", true), good)

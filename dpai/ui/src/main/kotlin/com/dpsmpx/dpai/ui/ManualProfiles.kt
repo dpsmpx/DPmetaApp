@@ -392,6 +392,20 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
         }
     }
 
+    /** Направление «В ИИ» проекта (D-165); не задано — `null`, решает окно. */
+    @Synchronized
+    fun aiRoute(project: ProjectEntry): Outcome<EditorAiRoute?> = when (val r = docs.read(aiKey(project))) {
+        is Outcome.Failure -> r
+        is Outcome.Success -> if (r.value == null) Outcome.success(null) else EditorAiRoute.read(r.value!!.content)?.let { Outcome.success(it) }
+            ?: Outcome.failure(DiagCode.STORAGE_CORRUPTED, "повреждена настройка «В ИИ» проекта")
+    }
+
+    @Synchronized
+    fun saveAiRoute(project: ProjectEntry, route: EditorAiRoute): Outcome<Unit> = when (val r = docs.write(aiKey(project), route.toJson())) {
+        is Outcome.Failure -> r
+        is Outcome.Success -> Outcome.success(Unit)
+    }
+
     /** Вызывается под замком контура после проверки свободного проекта и черновиков. */
     @Synchronized
     fun prepare(project: ProjectEntry, target: TargetEntry, location: WorkspaceLocation, profile: ManualProfile): Outcome<ManualRun> {
@@ -549,6 +563,8 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
     private fun note(text: String) { view = view.copy(note = Redactor.STANDARD.redact(text).take(1000)) }
     private fun key(p: ProjectEntry, kind: ManualProfileKind) = "${kind.name.lowercase()}-${p.project.value.lowercase()}"
     private fun runKey(p: ProjectEntry) = "run-${p.project.value.lowercase()}"
+
+    private fun aiKey(p: ProjectEntry) = "editor-ai-${p.project.value.lowercase()}"
     private fun historyKey(p: ProjectEntry) = "history-${p.project.value.lowercase()}"
 
     private fun readRun(o: JsonObject): ManualRun? {

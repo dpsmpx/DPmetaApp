@@ -44,7 +44,9 @@ internal enum class EditorCommand { UNDO, REDO, SAVE, FIND, REPLACE, GOTO, COMME
 internal data class EditorCallbacks(val save: () -> Unit = {}, val close: () -> Unit = {}, val browse: () -> Unit = {}, val next: (Boolean) -> Unit = {}, val busy: Boolean = false, val canSave: Boolean = false, val canRun: Boolean = false, val preview: () -> Unit = {}, val exit: () -> Unit = {}, val run: () -> Unit = {}, val configureRun: () -> Unit = {},
     val open: ((String, Int) -> Unit)? = null, val goToLine: (Int) -> Boolean = { false },
     /** «Отладка» файла (D-159): `null` — файл не отлаживается (не C, C++, Python или нет Linux-пути). */
-    val debug: (() -> Unit)? = null)
+    val debug: (() -> Unit)? = null,
+    /** «В ИИ» (D-165): выделение и файл — ИИ проекта; `null` — файл не в дереве проекта. */
+    val ai: (() -> Unit)? = null)
 
 /** Тонкий адаптер: рендеринг/IME у Sora, снимки и история — CodeEditorBuffer (D-136). */
 internal class StudioCodeField(context: Context) : SoraEditor(context) {

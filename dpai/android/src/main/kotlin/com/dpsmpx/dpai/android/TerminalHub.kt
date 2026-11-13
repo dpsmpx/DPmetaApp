@@ -63,7 +63,7 @@ object TerminalHub {
         internal fun begin() { output = com.dpsmpx.dpai.ui.EditorRunOutput(file); report = null; offered = false }
     }
 
-    class Tab internal constructor(val id: Int, val target: TargetEntry?, val command: List<String>, label: String, val tmux: String? = null, val editorRun: EditorRun? = null) : TerminalListener {
+    class Tab internal constructor(val id: Int, val target: TargetEntry?, val command: List<String>, label: String, val tmux: String? = null, val editorRun: EditorRun? = null, val kind: String? = null) : TerminalListener {
         /**
          * Связь оборвалась, а не программа кончилась (D-111): закрытие без
          * кода выхода или неудачное подключение. Такую вкладку с оболочкой
@@ -168,6 +168,23 @@ object TerminalHub {
 
     fun openLinux(context: Context): Tab = open(context, null, emptyList(), "Linux")
 
+    /** Открытые вкладки ИИ (CLI слота: Claude Code, Codex, Gemini) — куда «В ИИ» из редактора (D-165). */
+    fun aiTabs(): List<Tab> = tabs.filter { t -> t.open && com.dpsmpx.dpai.core.ids.Executor.byKey(t.kind.orEmpty()) != null }
+
+    /**
+     * Вставить [text] во вкладку ИИ (D-165): только вставкой в скобках (режим 2004) — иначе
+     * каждая строка ушла бы программе как ввод с Enter. Enter нажимает человек.
+     */
+    fun pasteToAi(tab: Tab, text: String): com.dpsmpx.dpai.core.result.Outcome<Unit> {
+        if (!tab.open) return com.dpsmpx.dpai.core.result.Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, "вкладка «${tab.label}» не подключена")
+        if (!tab.session.read { it.bracketedPaste }) {
+            return com.dpsmpx.dpai.core.result.Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, "программа во вкладке «${tab.label}» сейчас не принимает вставку: дождитесь приглашения ИИ и повторите")
+        }
+        tab.session.paste(text)
+        current = tab
+        return com.dpsmpx.dpai.core.result.Outcome.success(Unit)
+    }
+
     /** Ещё одна вкладка туда же, куда [like]: оболочка. */
     fun openLike(context: Context, like: Tab): Tab {
         val target = like.target?.let { fresh(context, it) }
@@ -200,7 +217,7 @@ object TerminalHub {
         } else {
             null
         }
-        val tab = Tab(nextId++, target, command, label, session, editorRun)
+        val tab = Tab(nextId++, target, command, label, session, editorRun, kind)
         tabs += tab
         count.intValue = tabs.size
         current = tab

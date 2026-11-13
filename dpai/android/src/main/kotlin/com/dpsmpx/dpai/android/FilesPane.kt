@@ -528,13 +528,13 @@ private fun FileView(p: Place, path: String, onBrowse: () -> Unit, onNext: (Bool
 }
 
 @Composable
-internal fun TreeFileView(tree: FileTree, treeKey: String, path: String, readOnly: Boolean = false, guestPath: String? = null, onBrowse: (() -> Unit)? = null, onNext: (Boolean) -> Unit = {}, onActions: (EditorCallbacks) -> Unit = {}, guestRoot: String? = null, editorRootKey: String = treeKey, runGuard: () -> Outcome<Unit> = { Outcome.success(Unit) }, onOpen: ((String, Int) -> Unit)? = null, onClose: () -> Unit) {
-    androidx.compose.runtime.key(treeKey, path) { TreeFileContent(tree, treeKey, path, readOnly, guestPath, guestRoot, editorRootKey, runGuard, onBrowse, onNext, onActions, onOpen, onClose) }
+internal fun TreeFileView(tree: FileTree, treeKey: String, path: String, readOnly: Boolean = false, guestPath: String? = null, onBrowse: (() -> Unit)? = null, onNext: (Boolean) -> Unit = {}, onActions: (EditorCallbacks) -> Unit = {}, guestRoot: String? = null, editorRootKey: String = treeKey, runGuard: () -> Outcome<Unit> = { Outcome.success(Unit) }, onOpen: ((String, Int) -> Unit)? = null, onAi: ((EditorAiRequest) -> Unit)? = null, onClose: () -> Unit) {
+    androidx.compose.runtime.key(treeKey, path) { TreeFileContent(tree, treeKey, path, readOnly, guestPath, guestRoot, editorRootKey, runGuard, onBrowse, onNext, onActions, onOpen, onAi, onClose) }
 }
 
 @Composable
 private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readOnly: Boolean, guestPath: String?, guestRoot: String?, editorRootKey: String,
-    runGuard: () -> Outcome<Unit>, onBrowse: (() -> Unit)?, onNext: (Boolean) -> Unit, onActions: (EditorCallbacks) -> Unit, onOpen: ((String, Int) -> Unit)?, onClose: () -> Unit) {
+    runGuard: () -> Outcome<Unit>, onBrowse: (() -> Unit)?, onNext: (Boolean) -> Unit, onActions: (EditorCallbacks) -> Unit, onOpen: ((String, Int) -> Unit)?, onAi: ((EditorAiRequest) -> Unit)?, onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
@@ -666,7 +666,16 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
         canSave = !readOnly && recovery.ready && draft?.editor?.dirty == true, canRun = !readOnly && guestPath != null && text != null && !loading,
         preview = { if (!saving) { editing = false; keyboard?.hide() } }, exit = exit, run = { run() }, configureRun = { configureOnly = true; configure = true },
         open = onOpen, goToLine = { line -> shown?.goToLine(line)?.also { if (it) revision++ } == true },
-        debug = if (!readOnly && guestPath != null && guestRoot != null && com.dpsmpx.dpai.ui.DebugTargets.engineOf(guestPath) != null) ({ requestLeave { debugSaved() } }) else null)
+        debug = if (!readOnly && guestPath != null && guestRoot != null && com.dpsmpx.dpai.ui.DebugTargets.engineOf(guestPath) != null) ({ requestLeave { debugSaved() } }) else null,
+        // «В ИИ» (D-165): что видно сейчас — текст буфера, выделение и пометка черновика.
+        ai = onAi?.let { send ->
+            {
+                shown?.let { b ->
+                    val sel = b.state.selection
+                    send(EditorAiRequest(path, guestPath, b.text, if (sel.end > sel.start) sel.start until sel.end else null, sel.end, draft?.editor?.dirty == true))
+                }
+            }
+        })
     SideEffect { onActions(callbacks) }
     LaunchedEffect(recovery.ready) { if (recovery.ready && draft == null) draft = Drafts.file(draftKey) }
     DisposableEffect(draftKey) { onDispose { Drafts.flushNow() } }

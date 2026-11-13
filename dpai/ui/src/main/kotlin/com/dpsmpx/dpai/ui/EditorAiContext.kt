@@ -1,7 +1,33 @@
 package com.dpsmpx.dpai.ui
 
 import com.dpsmpx.dpai.core.diagnostics.Redactor
+import com.dpsmpx.dpai.core.serialization.JsonNumber
+import com.dpsmpx.dpai.core.serialization.JsonObject
+import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.tasks.Tasks
+
+/**
+ * Куда «В ИИ» из редактора (DPmetaApp:D-130; D-165) — настройка проекта,
+ * формат `dpai.editor-ai` v1: в сессию выбранной задачи, новой задачей или в
+ * открытую вкладку ИИ терминала.
+ */
+enum class EditorAiRoute(val title: String) {
+    SESSION("В сессию задачи"),
+    NEW_TASK("Новой задачей"),
+    TERMINAL("В терминал ИИ"),
+    ;
+
+    fun toJson(): JsonObject = JsonObject.of("format" to JsonString(FORMAT), "version" to JsonNumber.of(1), "route" to JsonString(name))
+
+    companion object {
+        const val FORMAT = "dpai.editor-ai"
+
+        fun read(o: JsonObject): EditorAiRoute? {
+            if ((o["format"] as? JsonString)?.value != FORMAT || (o["version"] as? JsonNumber)?.toLongExact() != 1L) return null
+            return (o["route"] as? JsonString)?.value?.let { r -> entries.firstOrNull { it.name == r } }
+        }
+    }
+}
 
 /**
  * Контекст для ИИ из редактора (DPmetaApp:D-130; D-165) — без процессов и

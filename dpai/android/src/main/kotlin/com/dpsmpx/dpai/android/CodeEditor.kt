@@ -114,6 +114,7 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
             TextButton(onClick = { view = !view }) { Text("Вид / команды") }
             TextButton(onClick = { changes = true }) { Text("Правки") }
             callbacks.debug?.let { d -> TextButton(enabled = !callbacks.busy, onClick = d) { Text("Отладка") } }
+            callbacks.ai?.let { a -> TextButton(enabled = !callbacks.busy, onClick = a) { Text("В ИИ") } }
         }
         if (view && !zen) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {

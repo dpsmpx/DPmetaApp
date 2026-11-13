@@ -74,6 +74,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
     val jump by IdeState.jump.collectAsState()
     var choose by remember { mutableStateOf(false) }
     var taskSheet by remember(project.project, taskKey) { mutableStateOf(false) }
+    var aiRequest by remember(project.project) { mutableStateOf<EditorAiRequest?>(null) }
     var draftsOpen by remember { mutableStateOf(false) }
     if (draftsOpen) FileDraftsDialog { draftsOpen = false }
     val selected = current.tasks.firstOrNull { it.id.value == taskKey }
@@ -82,6 +83,8 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
     val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val pageStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     if (taskSheet && selected != null) TaskSheet(model, selected.id, onSession = onSession) { taskSheet = false }
+    // «В ИИ» из редактора (D-165): выбранная задача — направление «в сессию».
+    aiRequest?.let { req -> EditorAiSheet(model, current.project, selected, req) { aiRequest = null } }
     val zen = ideZen()
     Column(Modifier.fillMaxSize()) {
         if (!zen) {
@@ -116,7 +119,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
         pageStates.SaveableStateProvider("${location?.key ?: "${project.project.value}:$taskKey"}:$page") {
             when (page) {
                 WorkspacePage.FILES.name -> if (location == null) Text("У задачи ещё нет доступного рабочего дерева", Modifier.padding(12.dp)) else {
-                    WorkspaceFiles(model, current, location, readOnly = current.paused || !current.ready || selected?.owner != null, modifier = Modifier.weight(1f))
+                    WorkspaceFiles(model, current, location, readOnly = current.paused || !current.ready || selected?.owner != null, modifier = Modifier.weight(1f), onAi = { aiRequest = it })
                 }
                 WorkspacePage.AI.name -> Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
                     if (selected == null) Text("Выберите задачу контура, чтобы открыть её чат и действия") else {
@@ -143,7 +146,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
 }
 
 @Composable
-private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, location: WorkspaceLocation, readOnly: Boolean, modifier: Modifier) {
+private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, location: WorkspaceLocation, readOnly: Boolean, modifier: Modifier, onAi: ((EditorAiRequest) -> Unit)? = null) {
     val context = LocalContext.current
     val prefix = WorkspacePaths.homeRelative(view.target, location.path)?.takeIf { it.isEmpty() || FileNames.pathValid(it) }
     if (prefix == null) {
@@ -180,7 +183,7 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
         if (path != null) tabStates.SaveableStateProvider(path) {
             TreeFileView(tree, "workspace:${location.key}", path, readOnly, guestPath = "${location.path.trimEnd('/')}/$path",
                 onBrowse = { openFiles.finishedBrowse(path) }, onNext = openFiles::next, onActions = { openFiles.ready(path, it) }, guestRoot = location.path.trimEnd('/').ifEmpty { "/" }, editorRootKey = location.key,
-                runGuard = { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } }, onOpen = openFiles::openAt) { openFiles.close(path) }
+                runGuard = { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } }, onOpen = openFiles::openAt, onAi = onAi) { openFiles.close(path) }
         } else if (searching) {
             TreeSearchPanel(tree, dir, "workspace:${location.key}", onOpen = { searching = false; openFiles.open(it) }, onOpenAt = { found, line -> searching = false; openFiles.openAt(found, line) },
                 replaceBlocked = when {
