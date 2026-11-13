@@ -16,6 +16,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.net.toUri
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.ids.RequestId
 import com.dpsmpx.dpai.core.result.Outcome
@@ -70,7 +71,7 @@ object RequestOverlay {
 
     /** Экран настройки разрешения для этого приложения: даёт только человек. */
     fun permissionIntent(context: Context): Intent =
-        Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, "package:${context.packageName}".toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     fun sync(context: Context, model: DemoModel, pending: Map<RequestId, RequestCard>) {
         if (!enabled(context) || !permitted(context) || appVisible) return hide()
@@ -118,6 +119,9 @@ object RequestOverlay {
         }
     }
 
+    // У ручки окна нет команды щелчка: она перетаскивает окно и вызывает performClick
+    // на ACTION_UP; все действия запроса доступны отдельными обычными кнопками.
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
     private fun show(context: Context, card: RequestCard) {
         val wm = context.getSystemService(WindowManager::class.java)
         val dp = context.resources.displayMetrics.density
@@ -261,7 +265,7 @@ object RequestOverlay {
                         armed = true
                         armedAt = now
                         armedLogin = login
-                        text = "Точно: ${b.label}?"
+                        text = context.getString(R.string.request_confirm_label, b.label)
                         postDelayed({
                             if (armed && Clock.SYSTEM.monotonicNanos() / 1_000_000 - armedAt >= ARM_TTL_MS) {
                                 armed = false
@@ -281,7 +285,7 @@ object RequestOverlay {
                         // (MIUI — разрешение на всплывающие окна в фоне), и тогда окно с подсказкой остаётся.
                         if (runCatching { context.startActivity(MainActivity.confirm(context, b.uri)) }.isSuccess) {
                             later += card.id.value
-                            status.text = "Открываю приложение: вход по PIN. Не открылось — откройте его сами: запрос на экране «Запросы»"
+                            status.text = context.getString(R.string.request_open_for_login)
                         } else {
                             status.text = "Нужен вход: откройте приложение — запрос на экране «Запросы»"
                         }
@@ -301,7 +305,7 @@ object RequestOverlay {
                                 r is Outcome.Success || Answers.queued(r) -> hide()
                                 r is Outcome.Failure -> {
                                     isEnabled = true
-                                    status.text = "Не принято: ${r.diagnostics.first().message}"
+                                    status.text = context.getString(R.string.request_failed, r.diagnostics.first().message)
                                 }
                             }
                         }

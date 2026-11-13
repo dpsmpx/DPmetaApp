@@ -17,6 +17,11 @@ android {
     namespace = "com.dpsmpx.dpai.android"
     compileSdk = 37
 
+    lint {
+        warningsAsErrors = true
+        abortOnError = true
+    }
+
     defaultConfig {
         minSdk = 30
         // Версия подсистемы «AI» — не версия APK (DPmetaApp:D-54): с ней `doctor` сверяет
@@ -52,7 +57,7 @@ android {
 
 // Агент для Termux-target — вложение APK (инструкция «Настройка» сохраняет его в «Загрузки»):
 // свежий `dpai` из :cli и обёртка Claude Code для proot — версия агента всегда та же, что у приложения.
-val packAgent by tasks.registering(Zip::class) {
+val packAgent = tasks.register<Zip>("packAgent") {
     dependsOn(":cli:installDist")
     from(rootProject.file("cli/build/install/dpai")) { into("dpai") }
     from(rootProject.file("tools/termux/claude-proot.sh")) { into("dpai") }

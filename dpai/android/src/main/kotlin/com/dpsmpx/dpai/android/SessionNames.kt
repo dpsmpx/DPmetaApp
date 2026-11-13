@@ -1,6 +1,7 @@
 package com.dpsmpx.dpai.android
 
 import android.content.Context
+import androidx.core.content.edit
 import com.dpsmpx.dpai.core.ids.TaskId
 
 /**
@@ -17,8 +18,8 @@ object SessionNames {
 
     fun set(context: Context, task: TaskId, name: String) {
         val clean = name.trim().take(80)
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().apply {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit {
             if (clean.isEmpty()) remove(task.value) else putString(task.value, clean)
-        }.apply()
+        }
     }
 }

@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.edit
 import com.dpsmpx.dpai.android.linux.LinuxSetup
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
@@ -129,7 +130,7 @@ internal object CodeService {
         if (context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(PYTHON_KIND, null) == PythonServers.Kind.HEAVY.name) PythonServers.Kind.HEAVY else PythonServers.Kind.LIGHT
 
     fun setPythonKind(context: Context, kind: PythonServers.Kind) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(PYTHON_KIND, kind.name).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString(PYTHON_KIND, kind.name) }
     }
 
     private fun other(kind: PythonServers.Kind) = if (kind == PythonServers.Kind.LIGHT) PythonServers.Kind.HEAVY else PythonServers.Kind.LIGHT

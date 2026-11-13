@@ -22,8 +22,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +37,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.SecureFlagPolicy
+import androidx.core.content.edit
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.diagnostics.Secret
@@ -50,11 +51,11 @@ import com.dpsmpx.dpai.sync.CloudRestore
 import com.dpsmpx.dpai.sync.CopyEntry
 import com.dpsmpx.dpai.sync.CopyInfo
 import com.dpsmpx.dpai.sync.GitHubCopies
+import java.io.File
+import java.nio.file.Files
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.nio.file.Files
 
 /**
  * Облачная копия контура (D-107, T20): настройки — в настройках
@@ -123,8 +124,7 @@ object CloudSync {
         if (!passphrase.isEmpty) CloudCrypto.passphraseProblem(passphrase)?.let { return it }
         if (!token.isEmpty && !ApiKeys.putNamed(context, TOKEN, token)) return "токен не сохранён: Keystore недоступен"
         if (!passphrase.isEmpty && !ApiKeys.putNamed(context, PASSPHRASE, passphrase)) return "пароль не сохранён: Keystore недоступен"
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString("owner", s.owner.trim()).putString("repo", s.repo.trim()).putString("device", s.device).putBoolean("daily", s.daily).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString("owner", s.owner.trim()).putString("repo", s.repo.trim()).putString("device", s.device).putBoolean("daily", s.daily) }
         return null
     }
 
@@ -132,7 +132,7 @@ object CloudSync {
     fun forget(context: Context) {
         ApiKeys.removeNamed(context, TOKEN)
         ApiKeys.removeNamed(context, PASSPHRASE)
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { clear() }
     }
 
     /** Проверить репозиторий и токен: приватный ли, можно ли писать. */
@@ -157,7 +157,7 @@ object CloudSync {
         if (p.getString("lastNote", null)?.let(::isForeignCopy) == true) return
         val now = Clock.SYSTEM.now().epochMillis
         if (now - p.getLong("lastAt", 0) < DAY_MS || now - p.getLong("lastTry", 0) < RETRY_MS) return
-        p.edit().putLong("lastTry", now).apply()
+        p.edit { putLong("lastTry", now) }
         Thread {
             log.info(TAG, runCatching { send(app, model) }.getOrElse { "сбой отправки: ${AppLogs.describe(it)}" })
         }.apply { isDaemon = true; name = "dpai-cloud-copy" }.start()
@@ -216,7 +216,7 @@ object CloudSync {
                 note(context, "Не отправлено: ${r.errors.firstOrNull()?.message}", false)
             }
             is Outcome.Success -> {
-                prefs.edit().putString("lastBlob", r.value.blob).putString("lastBlobDevice", s.device).apply()
+                prefs.edit { putString("lastBlob", r.value.blob).putString("lastBlobDevice", s.device) }
                 note(context, "Отправлено: ${entries.size} файлов, ${sealed.size / 1024} КиБ, коммит ${r.value.commit.take(7)}", true)
             }
         }
@@ -258,7 +258,7 @@ object CloudSync {
      * восстановления заменит её без «чужая копия».
      */
     fun stage(context: Context, f: Fetched): Outcome<String> = Controller.get(context.filesDir).manualProfiles.edit { restore(context).stage(f.entries) }.also {
-        if (it is Outcome.Success) context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("lastBlob", f.blob).putString("lastBlobDevice", f.device).remove("lastNote").apply()
+        if (it is Outcome.Success) context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString("lastBlob", f.blob).putString("lastBlobDevice", f.device).remove("lastNote") }
     }
 
     private fun restore(context: Context) = CloudRestore(NioVfs(Controller.get(context.filesDir).dataRoot.toPath()), Clock.SYSTEM)
@@ -290,9 +290,10 @@ object CloudSync {
     }
 
     private fun note(context: Context, text: String, ok: Boolean): String {
-        val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("lastNote", text)
-        if (ok) p.putLong("lastAt", Clock.SYSTEM.now().epochMillis)
-        p.apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit {
+            putString("lastNote", text)
+            if (ok) putLong("lastAt", Clock.SYSTEM.now().epochMillis)
+        }
         return text
     }
 

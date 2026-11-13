@@ -11,6 +11,22 @@ import kotlin.test.assertTrue
 /** Долгие операции «AI» (AI:A-14): повтор не запускается, итог остаётся вне экрана. */
 class LongJobsTest {
     @Test
+    fun completionBelongsToReservedRunAndSurvivesClosedScreen() {
+        val gate = CompletableDeferred<Unit>()
+        val result = CompletableDeferred<LongJobs.Done>()
+        val jobs = LongJobs(CoroutineScope(Dispatchers.Unconfined))
+        assertTrue(jobs.start("preview", "Предпросмотр", onFinished = { done ->
+            assertTrue(jobs.busy("preview"), "до передачи итога резерв не освобождается")
+            assertFalse(jobs.start("preview", "второй") { LongJobs.Done("не должен запуститься") })
+            result.complete(done)
+        }) { gate.await(); LongJobs.Done("нарисовано") })
+        // Закрытие экрана отменило бы ожидание его coroutine, но не worker LongJobs.
+        result.cancel()
+        gate.complete(Unit)
+        assertFalse(jobs.busy("preview"))
+        assertEquals("нарисовано", jobs.state.value["preview"]!!.note)
+    }
+    @Test
     fun secondStartIsRefusedWhileRunningAndResultStays() {
         val gate = CompletableDeferred<Unit>()
         val logged = mutableListOf<String>()

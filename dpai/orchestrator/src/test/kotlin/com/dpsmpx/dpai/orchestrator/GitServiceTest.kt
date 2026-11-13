@@ -98,6 +98,18 @@ class GitServiceTest {
         return r
     }
 
+    @Test
+    fun taskTitleIsCommitInputRatherThanShellSyntax() {
+        val repo = repo()
+        File(repo.root, "README.md").appendText("new\n")
+        assertTrue(git.run(GitOp.ADD, repo.root, listOf("README.md")).isSuccess)
+        val title = "dpai: quotes \" % ^ ! \$(`test`)\nsecond line\tvalue"
+        val result = git.run(GitOp.COMMIT, repo.root, listOf(title))
+        assertTrue(result.isSuccess, result.diagnostics.toString())
+        val read = host.run(ProcessSpec(listOf("git", "-C", repo.root, "log", "-1", "--format=%B")), 1.minutes).valueOrNull()!!
+        assertEquals(title.trimEnd(), read.stdout.joinToString("\n").trimEnd())
+    }
+
     private fun worktree(r: Repository, name: String, session: SessionId): WorktreeId {
         val id = ids.next(IdKinds.WORKTREE)
         val path = dir.resolve("wt-$name").toString()

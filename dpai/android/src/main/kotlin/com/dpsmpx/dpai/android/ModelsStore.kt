@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.android
 
+import android.annotation.SuppressLint
 import android.content.Context
 import com.dpsmpx.dpai.accounts.ApiProfile
 import com.dpsmpx.dpai.accounts.ApiProfileBook
@@ -49,6 +50,8 @@ import kotlinx.coroutines.launch
  * копий (`allowBackup="false"`). Ответ идёт в своей области корутин, а не
  * на экране: уход с экрана и поворот его не обрывают.
  */
+// init сохраняет только context.applicationContext; ссылки на Activity здесь нет.
+@SuppressLint("StaticFieldLeak")
 object ModelsStore {
     private const val PROFILES = "api-profiles"
     private const val CHATS = "api-chats"

@@ -16,9 +16,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,8 +42,8 @@ import kotlinx.coroutines.withContext
 
 /** Инструменты IDE над нативным полем; снимки, история и восстановление остаются общими (D-136). */
 @Composable
-internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, onChange: () -> Unit, enabled: Boolean = true,
-    modifier: Modifier = Modifier, callbacks: EditorCallbacks = EditorCallbacks(), guestPath: String? = null, guestRoot: String? = null, presentation: Boolean = false, editing: Boolean = enabled, onActivate: (() -> Unit)? = null) {
+internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, onChange: () -> Unit, modifier: Modifier = Modifier,
+    enabled: Boolean = true, callbacks: EditorCallbacks = EditorCallbacks(), guestPath: String? = null, guestRoot: String? = null, presentation: Boolean = false, editing: Boolean = enabled, onActivate: (() -> Unit)? = null) {
     val settings by IdeState.state.collectAsState()
     val zen = presentation && settings.options.zen
     val syntax = if (editing) settings.options.editorSyntax else settings.options.previewSyntax

@@ -88,6 +88,7 @@ class SftpTree(
 
     override fun list(dir: String): Outcome<List<FileEntry>> = abs(dir).then { path ->
         attempt(dir, "список не прочитан") {
+            checkDirs(dir)
             ops.list(path).filter { it.name != "." && it.name != ".." && !it.link && FileNames.segmentValid(it.name) && it.name.none { c -> c in GLOB } }
                 .map { FileEntry(it.name, it.dir, if (it.dir) 0 else it.size, it.modifiedSec * 1000) }
         }
@@ -177,8 +178,19 @@ class SftpTree(
             val e = try { ops.stat(p) } catch (_: SftpOps.NoSuchFile) { null }
             when {
                 e == null -> ops.mkdir(p)
-                e.link || !e.dir -> throw IOException("часть пути — не каталог: $cur")
+                e.link || !e.dir -> throw SftpOps.Refused("часть пути — не каталог: $cur")
             }
+        }
+    }
+
+    /** Ссылка в середине пути столь же недопустима, как ссылка на сам файл. */
+    private fun checkDirs(dir: String) {
+        if (dir.isEmpty()) return
+        var current = root.trimEnd('/')
+        for (part in dir.split('/')) {
+            current += "/$part"
+            val entry = ops.stat(current)
+            if (entry.link || !entry.dir) throw SftpOps.Refused("часть пути — ссылка или не каталог")
         }
     }
 
@@ -187,6 +199,7 @@ class SftpTree(
     /** Сведения о файле [path]: размер и время изменения (мс). */
     fun meta(path: String): Outcome<FileMeta> = abs(path).then { p ->
         attempt(path, "сведения не прочитаны") {
+            checkDirs(FileNames.parent(path))
             val e = ops.stat(p)
             if (e.link || e.dir) throw IOException("не файл")
             FileMeta(e.size, e.modifiedSec * 1000)
@@ -204,6 +217,7 @@ class SftpTree(
         }
         if (path.isEmpty()) return Outcome.failure(DiagCode.VALUE_INVALID, "не файл", path)
         return attempt(path, "файл не прочитан") {
+            checkDirs(FileNames.parent(path))
             val e = ops.stat(p)
             if (e.link || e.dir) return Outcome.failure(DiagCode.VALUE_INVALID, "не файл", path)
             if (e.size > maxBytes) return Outcome.failure(DiagCode.VALUE_INVALID, "файл больше ${maxBytes shr 20} МиБ", path)

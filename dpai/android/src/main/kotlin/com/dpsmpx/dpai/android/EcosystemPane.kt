@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.ecosystem.EcosystemProject
@@ -298,7 +299,7 @@ internal object EcosystemChoice {
         val auto = Controller.get(context.filesDir).ecosystemAuto
         val r = switch(source(context), to, auto.policy().valueOrNull() != null) { auto.disable() }
         if (r.second != null && r.first) AppLogs.get(context).info("экосистема", "политика прогона выключена: сменён источник манифеста")
-        if (r.first) context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(SOURCE, to.name).apply()
+        if (r.first) context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString(SOURCE, to.name) }
         return r
     }
 
@@ -316,7 +317,7 @@ internal object EcosystemChoice {
     fun project(context: Context): String? = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(PROJECT, null)
 
     fun remember(context: Context, key: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(PROJECT, key).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString(PROJECT, key) }
     }
 
     fun manifest(context: Context): Uri? = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(MANIFEST, null)?.let(Uri::parse)
@@ -333,7 +334,7 @@ internal object EcosystemChoice {
         }
         val previous = manifest(context)
         if (previous != null && previous != uri) runCatching { resolver.releasePersistableUriPermission(previous, flags) }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().apply { if (kept) putString(MANIFEST, uri.toString()) else remove(MANIFEST) }.apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { if (kept) putString(MANIFEST, uri.toString()) else remove(MANIFEST) }
         return kept
     }
 }

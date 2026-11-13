@@ -37,7 +37,7 @@ class LongJobs(private val scope: CoroutineScope, private val onDone: (String, D
      * `apk` гостя — один процесс за раз: база пакетов под замком); `false` —
      * не запущено.
      */
-    fun start(key: String, label: String, excludes: Set<String> = emptySet(), work: suspend () -> Done): Boolean {
+    fun start(key: String, label: String, excludes: Set<String> = emptySet(), onFinished: ((Done) -> Unit)? = null, work: suspend () -> Done): Boolean {
         synchronized(this) {
             if ((excludes + key).any { flow.value[it]?.running == true }) return false
             flow.value = flow.value + (key to Job(label, running = true))
@@ -50,7 +50,12 @@ class LongJobs(private val scope: CoroutineScope, private val onDone: (String, D
             } catch (e: Exception) {
                 Done("$label: ${com.dpsmpx.dpai.core.text.Words.failure(e)}", failed = true)
             }
-            synchronized(this@LongJobs) { flow.value = flow.value + (key to Job(label, running = false, note = done.note, output = done.output)) }
+            try {
+                // Итог принадлежит этому запуску: следующий ещё не может занять ключ.
+                onFinished?.invoke(done)
+            } finally {
+                synchronized(this@LongJobs) { flow.value = flow.value + (key to Job(label, running = false, note = done.note, output = done.output)) }
+            }
             onDone(label, done)
         }
         return true

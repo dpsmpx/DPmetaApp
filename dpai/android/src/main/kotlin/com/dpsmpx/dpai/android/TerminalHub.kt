@@ -1,6 +1,8 @@
 package com.dpsmpx.dpai.android
 
+import android.annotation.SuppressLint
 import android.content.Context
+import androidx.core.content.edit
 import com.dpsmpx.dpai.core.diagnostics.Redactor
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.result.map
@@ -19,6 +21,8 @@ import kotlin.concurrent.thread
  * только в памяти: через терминал проходит вход в Claude (D-27); ввод
  * нигде не журналируется.
  */
+// init сохраняет только context.applicationContext; ссылки на Activity здесь нет.
+@SuppressLint("StaticFieldLeak")
 object TerminalHub {
     /** Экран, который сейчас показывает вкладки; события — из потоков сети. */
     interface Observer {
@@ -241,7 +245,7 @@ object TerminalHub {
         deviceId?.let { return it }
         val prefs = context.applicationContext.getSharedPreferences("terminal", Context.MODE_PRIVATE)
         val made = prefs.getString(DEVICE, null) ?: com.dpsmpx.dpai.core.clock.RandomSource.secure().nextBytes(2).joinToString("") { "%02x".format(it) }
-            .also { prefs.edit().putString(DEVICE, it).apply() }
+            .also { prefs.edit { putString(DEVICE, it) } }
         deviceId = made
         return made
     }
@@ -283,8 +287,7 @@ object TerminalHub {
 
     private fun pendingSave(app: Context) {
         runCatching {
-            app.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit()
-                .putStringSet(PENDING, pendingEnds.map { "${it.first.id.value}\t${it.second}" }.toSet()).apply()
+            app.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit { putStringSet(PENDING, pendingEnds.map { "${it.first.id.value}\t${it.second}" }.toSet()) }
         }
     }
 

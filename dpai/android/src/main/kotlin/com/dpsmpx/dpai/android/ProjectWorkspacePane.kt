@@ -197,7 +197,7 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
         if (path != null) tabStates.SaveableStateProvider(path) {
             // У дерева ПК нет пути в Linux приложения: службы, запуск файла и отладка из редактора — у деревьев Linux (D-131).
             // Дерево на ПК — предпросмотр интерфейсов может рисовать на самом ПК (D-169).
-            androidx.compose.runtime.CompositionLocalProvider(LocalPcPreview provides if (pc) PcPreviewPlace(model, target, location.path) { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } } else null) {
+            androidx.compose.runtime.CompositionLocalProvider(LocalPcPreview provides if (pc) PcPreviewPlace(model, target, location.path, view.project, location) { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } } else null) {
                 TreeFileView(tree, "workspace:${location.key}", path, readOnly, guestPath = if (pc) null else "${location.path.trimEnd('/')}/$path",
                     onBrowse = { openFiles.finishedBrowse(path) }, onNext = openFiles::next, onActions = { openFiles.ready(path, it) }, guestRoot = if (pc) null else location.path.trimEnd('/').ifEmpty { "/" }, editorRootKey = location.key,
                     runGuard = { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } }, onOpen = openFiles::openAt, onAi = onAi) { openFiles.close(path) }

@@ -10,9 +10,9 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.text.InputType
 import android.util.TypedValue
+import android.view.ActionMode
 import android.view.GestureDetector
 import android.view.HapticFeedbackConstants
-import android.view.ActionMode
 import android.view.KeyEvent
 import android.view.Menu
 import android.view.MenuItem
@@ -24,6 +24,10 @@ import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.widget.Toast
+import androidx.core.content.edit
+import androidx.core.graphics.withSave
+import androidx.core.graphics.withScale
+import androidx.core.net.toUri
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.terminal.Attr
 import com.dpsmpx.dpai.terminal.BoxDrawing
@@ -134,7 +138,7 @@ class TerminalView(context: Context) : View(context) {
     var boldBright: Boolean = runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(BOLD_BRIGHT, true) }.getOrDefault(true)
         set(value) {
             field = value
-            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(BOLD_BRIGHT, value).apply() }
+            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putBoolean(BOLD_BRIGHT, value) } }
             invalidate()
         }
     private var cellH = 1f
@@ -216,7 +220,7 @@ class TerminalView(context: Context) : View(context) {
             // Ссылка под пальцем (адрес входа Claude из `/login`): первое касание — копия, второе — браузер
             // (DPmetaApp:D-75); иначе — клавиатура.
             val link = t.session.read { it.linkAt(it.scrollbackSize - scrollBack + r, c) }
-            if (link != null) tapLink(link) else showKeyboard()
+            if (link != null) tapLink(link) else performClick()
             return true
         }
 
@@ -267,7 +271,7 @@ class TerminalView(context: Context) : View(context) {
         fontPx = px.coerceIn(sp(MIN_SP), sp(MAX_SP))
         regrid()
         invalidate()
-        runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putFloat(FONT_PX, fontPx).apply() }
+        runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putFloat(FONT_PX, fontPx) } }
     }
 
     /** Шрифт на шаг крупнее или мельче (Ctrl+= и Ctrl+-, ⋮ экрана). */
@@ -351,7 +355,7 @@ class TerminalView(context: Context) : View(context) {
     private fun openLink(url: String) {
         try {
             // Схема — строчными: «HTTPS://» проходит LinkTaps, а фильтры браузеров сравнивают её с учётом регистра.
-            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url).normalizeScheme()).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, url.toUri().normalizeScheme()).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (_: android.content.ActivityNotFoundException) {
             Toast.makeText(context, "Нет приложения для ссылки — скопируйте её долгим нажатием", Toast.LENGTH_LONG).show()
         }
@@ -439,6 +443,15 @@ class TerminalView(context: Context) : View(context) {
         return true
     }
 
+    override fun performClick(): Boolean {
+        super.performClick()
+        showKeyboard()
+        return true
+    }
+
+    // Щелчок различает GestureDetector: onSingleTapUp вызывает performClick; отпускание
+    // после прокрутки/выделения/масштаба не должно открывать клавиатуру.
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         scale.onTouchEvent(event)
         if (programMouse(event)) return true
@@ -925,11 +938,11 @@ class TerminalView(context: Context) : View(context) {
         t.session.read { emu -> capture(emu) }
         // Щипок — масштаб рисования до конца жеста (терминал:A-9).
         canvas.drawColor(frame.defBg)
-        canvas.save()
-        if (pinch != 1f) canvas.scale(pinch, pinch)
-        canvas.translate(originX, 0f)
-        paint(canvas)
-        canvas.restore()
+        canvas.withSave {
+            if (pinch != 1f) scale(pinch, pinch)
+            translate(originX, 0f)
+            paint(this)
+        }
         place(canvas)
         speakable()
     }
@@ -1188,10 +1201,9 @@ class TerminalView(context: Context) : View(context) {
                 val need = right - left
                 val w = paint.measureText(s)
                 if (w > need * 1.05f) {
-                    canvas.save()
-                    canvas.scale(need / w, 1f, left, base)
-                    canvas.drawText(s, left, base, paint)
-                    canvas.restore()
+                    canvas.withScale(need / w, 1f, left, base) {
+                        drawText(s, left, base, paint)
+                    }
                 } else {
                     canvas.drawText(s, left, base, paint)
                 }
@@ -1276,7 +1288,7 @@ class TerminalView(context: Context) : View(context) {
             runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEEP_ON, true) }.getOrDefault(true)
 
         fun setKeepScreenOn(context: Context, on: Boolean) {
-            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEEP_ON, on).apply() }
+            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putBoolean(KEEP_ON, on) } }
         }
 
         /** Печатный ASCII: его ширина — ячейка, кусок рисуется одним вызовом. */
@@ -1297,7 +1309,7 @@ class TerminalView(context: Context) : View(context) {
             runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(SHIFT_ENTER, true) }.getOrDefault(true)
 
         fun setShiftEnterNewline(context: Context, on: Boolean) {
-            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(SHIFT_ENTER, on).apply() }
+            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putBoolean(SHIFT_ENTER, on) } }
         }
         private const val MIN_SP = 6f
         private const val MAX_SP = 40f

@@ -28,9 +28,9 @@ import kotlin.time.Duration.Companion.minutes
  */
 class GitService(private val host: ProcessHost, private val commands: GitCommands, private val clock: Clock, private val timeout: Duration = 5.minutes) {
     /** Операция над деревом по пути; ненулевой код Git — `GIT_COMMAND_FAILED` с хвостом stderr. */
-    fun run(op: GitOp, path: String, args: List<String> = emptyList(), approval: Approval? = null, maxStdoutChars: Int = Int.MAX_VALUE): Outcome<Completed> =
+    fun run(op: GitOp, path: String, args: List<String> = emptyList(), approval: Approval? = null, maxStdoutChars: Int = 1024 * 1024): Outcome<Completed> =
         commands.argv(op, path, args, clock.now(), approval).then { argv ->
-            host.run(ProcessSpec(argv), timeout, maxStdoutChars = maxStdoutChars).then { done ->
+            host.run(ProcessSpec(argv, stdin = if (op == GitOp.COMMIT) args.single() else null), timeout, maxStdoutChars = maxStdoutChars).then { done ->
                 if (done.ok) {
                     Outcome.success(done)
                 } else {
@@ -55,7 +55,7 @@ class GitService(private val host: ProcessHost, private val commands: GitCommand
             }
         }
 
-    fun status(path: String): Outcome<GitStatus> = status(path, Int.MAX_VALUE)
+    fun status(path: String): Outcome<GitStatus> = status(path, 1024 * 1024)
 
     /** Усечённый статус не доказывает отсутствие изменений/конфликтов (D-133). */
     fun status(path: String, maxChars: Int): Outcome<GitStatus> = run(GitOp.STATUS, path, maxStdoutChars = maxChars).then {

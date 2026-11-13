@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.android.linux
 
+import android.annotation.SuppressLint
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.execution.linux.NativeChild
@@ -15,6 +16,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * JVM тесты загружают ту же библиотеку, собранную для машины сборки, —
  * путь в свойстве [LIBRARY_PROPERTY].
  */
+// Абсолютный путь нужен JVM-тестам JNI; на Android загружается библиотека из APK.
+@SuppressLint("UnsafeDynamicallyLoadedCode")
 internal object NativeCalls {
     const val LIBRARY_PROPERTY = "dpai.native.library"
 

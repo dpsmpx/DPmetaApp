@@ -25,6 +25,18 @@ class LocalTreeTest {
     private fun code(r: Outcome<*>) = assertIs<Outcome.Failure>(r).errors.single().code
 
     @Test
+    fun savingExecutableKeepsItsPermissions() {
+        val path = root.resolve("gradlew")
+        Files.writeString(path, "#!/bin/sh\nexit 0\n")
+        val view = Files.getFileAttributeView(path, java.nio.file.attribute.PosixFileAttributeView::class.java) ?: return
+        val mode = java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-x---")
+        view.setPermissions(mode)
+        assertIs<Outcome.Success<FileMeta>>(LocalTree(root).write("gradlew", "#!/bin/sh\nexit 1\n".toByteArray()))
+        assertEquals(mode, view.readAttributes().permissions())
+        assertEquals("#!/bin/sh\nexit 1\n", Files.readString(path))
+    }
+
+    @Test
     fun writeReadListDelete() {
         val t = LocalTree(root)
         val meta = t.write("notes/a.md", "привет".toByteArray()).valueOrNull()!!

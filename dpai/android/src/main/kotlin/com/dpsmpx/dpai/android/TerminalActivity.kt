@@ -1,9 +1,6 @@
 package com.dpsmpx.dpai.android
 
 import android.app.Activity
-import androidx.activity.ComponentActivity
-import androidx.activity.SystemBarStyle
-import androidx.activity.enableEdgeToEdge
 import android.app.AlertDialog
 import android.content.ClipboardManager
 import android.content.Context
@@ -22,6 +19,9 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.terminal.Key
 import com.dpsmpx.dpai.terminal.Mod
@@ -862,7 +862,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         dependencies.visibility = if (hasDependencies) View.VISIBLE else View.GONE
         val found = current?.editorRun?.report?.problems
         problems.visibility = if (found?.items?.isNotEmpty() == true) View.VISIBLE else View.GONE
-        found?.let { problems.text = "Ошибки: ${it.summary()}" }
+        found?.let { problems.text = getString(R.string.terminal_problems, it.summary()) }
         statusRow.visibility = if (status.text.isEmpty() && !hasDependencies && problems.visibility != View.VISIBLE) View.GONE else View.VISIBLE
         reconnect.visibility = if (current != null && !current.open && !current.busy) View.VISIBLE else View.GONE
         if (current != null && hasDependencies) dependencyUi?.offer(current, automatic = true)

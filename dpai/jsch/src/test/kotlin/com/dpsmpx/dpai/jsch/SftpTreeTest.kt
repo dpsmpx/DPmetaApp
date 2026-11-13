@@ -89,6 +89,19 @@ class SftpTreeTest {
     private fun <T> ok(r: Outcome<T>): T = assertIs<Outcome.Success<T>>(r, r.toString()).value
 
     @Test
+    fun intermediateSymlinksCannotEscapeTree() {
+        val fake = FakeSftp(mapOf("/srv/p/escape/secret.txt" to "outside".toByteArray()), setOf("/srv/p/escape"))
+        SftpTree(fake, "/srv/p", TargetPlatform.POSIX).use { tree ->
+            assertIs<Outcome.Failure>(tree.list("escape"))
+            assertIs<Outcome.Failure>(tree.meta("escape/secret.txt"))
+            assertIs<Outcome.Failure>(tree.read("escape/secret.txt", 1024))
+            var bytes = 0
+            assertIs<Outcome.Failure>(tree.copy("escape/secret.txt", 1024) { _, n -> bytes += n })
+            assertEquals(0, bytes)
+        }
+    }
+
+    @Test
     fun windowsPathsAreSftpPaths() {
         assertEquals("/C:/Users/me/proj", SftpTree.remotePath(TargetPlatform.WINDOWS, "C:\\Users\\me\\proj"))
         assertEquals("/D:/w", SftpTree.remotePath(TargetPlatform.WINDOWS, "D:/w"))

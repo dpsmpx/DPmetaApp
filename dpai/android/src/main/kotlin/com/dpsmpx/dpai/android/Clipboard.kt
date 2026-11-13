@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
+import androidx.annotation.ChecksSdkIntAtLeast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -24,6 +25,7 @@ object Clipboard {
      * Android 13+ сам подтверждает копирование своим окном: своё
      * «Скопировано» — только на Android 12 и ниже, иначе их два (терминал:A-24).
      */
+    @get:ChecksSdkIntAtLeast(api = Build.VERSION_CODES.TIRAMISU)
     val systemConfirms: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 
     /** `ClipDescription.EXTRA_IS_SENSITIVE` (API 33) — строкой: так же его понимает и Android 12 и ниже. */

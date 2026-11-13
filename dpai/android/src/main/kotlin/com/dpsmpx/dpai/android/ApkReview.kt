@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.android
 
+import android.annotation.SuppressLint
 import android.content.Context
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
@@ -32,6 +33,8 @@ internal object ApkReview {
     }
 
     /** Копия [file] в [dir]; прежние копии удаляются — проверка идёт одна. */
+    // Консервативная проверка фактически свободного места: кэш других приложений не вытесняем.
+    @SuppressLint("UsableSpace")
     fun stage(file: File, dir: File): Outcome<File> {
         if (!file.isFile) return Outcome.failure(DiagCode.VALUE_INVALID, "файл вне дерева или исчез", file.name)
         if (file.length() > MAX_BYTES) return Outcome.failure(DiagCode.VALUE_INVALID, "APK больше ${MAX_BYTES shr 20} МБ", file.name)

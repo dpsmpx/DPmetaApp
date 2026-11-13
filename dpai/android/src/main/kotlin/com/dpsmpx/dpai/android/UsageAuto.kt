@@ -1,6 +1,7 @@
 package com.dpsmpx.dpai.android
 
 import android.content.Context
+import androidx.core.content.edit
 import com.dpsmpx.dpai.core.ids.ExecutionTargetId
 import com.dpsmpx.dpai.core.ids.IdKinds
 
@@ -22,6 +23,6 @@ object UsageAuto {
     fun set(context: Context, target: ExecutionTargetId, on: Boolean) {
         val now = enabled(context).map { it.value }.toMutableSet()
         if (on) now += target.value else now -= target.value
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putStringSet(KEY, now).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putStringSet(KEY, now) }
     }
 }

@@ -63,7 +63,7 @@ class GitCommands(private val approvals: ApprovalLedger, private val git: String
         if (worktree.isBlank() || worktree.startsWith("-") || worktree.any { it.isISOControl() }) {
             return Outcome.failure(DiagCode.VALUE_INVALID, "путь рабочего дерева недопустим", "worktree")
         }
-        args.firstOrNull { it.startsWith("-") || it.any { c -> c.isISOControl() } || it.isEmpty() }?.let {
+        args.firstOrNull { if (op == GitOp.COMMIT) it.isBlank() || '\u0000' in it else it.startsWith("-") || it.any { c -> c.isISOControl() } || it.isEmpty() }?.let {
             return Outcome.failure(DiagCode.VALUE_INVALID, "аргумент «$it» похож на параметр или пуст: параметры задаёт операция", worktree)
         }
         if (op.destructive) {
@@ -89,7 +89,8 @@ class GitCommands(private val approvals: ApprovalLedger, private val git: String
             GitOp.GREP -> listOf("grep", "-n", "-I", "--no-color", "--full-name", "-w", "-E", "-e", args[0], "--") + args.drop(1)
             GitOp.FETCH -> listOf("fetch", "--no-recurse-submodules", "--") + args
             GitOp.ADD -> listOf("add", "--") + args
-            GitOp.COMMIT -> listOf("commit", "--no-verify", "-m", args.single())
+            // Сообщение передаёт GitService через stdin: Windows shell не раскрывает текст задачи (O-06).
+            GitOp.COMMIT -> listOf("commit", "--no-verify", "-F", "-")
             GitOp.BRANCH_CREATE -> listOf("branch", "--") + args
             GitOp.WORKTREE_ADD -> listOf("worktree", "add", "-b", args[1], "--", args[0]) + args.drop(2)
             GitOp.WORKTREE_REMOVE -> listOf("worktree", "remove", "--", args.single())
