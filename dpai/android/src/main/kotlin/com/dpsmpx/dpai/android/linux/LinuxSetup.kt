@@ -181,10 +181,8 @@ object LinuxSetup {
     fun repairBroken(context: Context, force: Boolean): Outcome<List<String>> {
         val env = environment(context)
         if (env.installed() == null) return Outcome.success(emptyList())
-        val broken = when (val b = env.brokenPackages()) {
-            is Outcome.Failure -> return b
-            is Outcome.Success -> b.value
-        }
+        // База не читается (ссылка гостя на её месте, A-3) — чинить по ней нечего; команда пакетов идёт как прежде.
+        val broken = env.brokenPackages().valueOrNull().orEmpty()
         if (broken.isEmpty()) return Outcome.success(emptyList())
         val names = broken.map { it.name }
         val now = Clock.SYSTEM.monotonicNanos() / 1_000_000

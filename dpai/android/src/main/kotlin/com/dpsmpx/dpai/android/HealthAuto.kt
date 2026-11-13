@@ -1,6 +1,7 @@
 package com.dpsmpx.dpai.android
 
 import android.content.Context
+import androidx.core.content.edit
 import com.dpsmpx.dpai.android.linux.LinuxSetup
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment
@@ -105,7 +106,7 @@ object HealthAuto {
         AppLogs.info(context, "проверка", "исправлено само: $text")
         val now = com.dpsmpx.dpai.core.clock.Clock.SYSTEM.now().epochMillis
         val lines = (listOf("$now\t${text.replace('\n', ' ')}") + history(context).map { "${it.first}\t${it.second}" }).take(MAX_FIXED)
-        prefs(context).edit().putString(FIXED, lines.joinToString("\n")).apply()
+        prefs(context).edit { putString(FIXED, lines.joinToString("\n")) }
     }
 
     /** История исправлений без нажатия: время (мс эпохи) и что сделано, новые — первыми. */
@@ -120,7 +121,7 @@ object HealthAuto {
 
     /** Запомнить итог проверки [items] — для полосы и строки пульта без нового сбора. */
     fun remember(context: Context, items: Int) {
-        if (count(context) != items) prefs(context).edit().putInt(COUNT, items).apply()
+        if (count(context) != items) prefs(context).edit { putInt(COUNT, items) }
     }
 
     /**
