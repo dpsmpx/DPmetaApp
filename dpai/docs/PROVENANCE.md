@@ -27,6 +27,7 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 | `jgit` (Eclipse JGit; с ним JavaEWAH 1.1.13 — Apache-2.0, SLF4J API 1.7.30 — MIT) | 5.13.5.202508271544-r | EDL-1.0 (BSD-3-Clause) | пульт DPmetaApp (`:core:git` → приложение) во время выполнения — клоны репозиториев (`DPmetaApp:D-65`); ветка 5.13 — последняя для Java 8, на Android без недостающих API JDK 11+ | Maven Central, `org.eclipse.jgit` | 4 ноября 2026 |
 | `jsch` (JSch, форк mwiede) | 2.28.7 | BSD-3-Clause, ISC | модуль `jsch` → приложение Android во время выполнения | Maven Central, `com.github.mwiede` | 7 октября 2026 |
 | `sora` (Sora Editor и language-textmate) | 0.24.7 | LGPL-2.1-or-later; tm4e — EPL-2.0, Joni/JCodings — MIT, Gson — Apache-2.0, SnakeYAML Engine — Apache-2.0 | только Android: нативное поле и локальная подсветка (D-136); исходные грамматики проекта, без внешнего кода | Maven Central, `io.github.rosemoe`; исходники Rosemoe/sora-editor | 12 ноября 2026 |
+| `apksig` (Android apksig) | 9.4.1 | Apache-2.0 | только Android во время выполнения: подпись APK ключом автора из Android Keystore и проверка подписи (D-157); та же версия уже приходит с `agp` в сборку и проверена в `verification-metadata.xml` | Google Maven, `com.android.tools.build` | 13 ноября 2026 |
 <!-- provenance: end -->
 
 Версии совпадают с теми, что закреплены в `DPpass:gradle/libs.versions.toml`

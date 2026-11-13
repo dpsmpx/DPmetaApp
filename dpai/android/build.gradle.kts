@@ -195,6 +195,8 @@ kotlin {
 dependencies {
     implementation(libs.sora.editor)
     implementation(libs.sora.textmate)
+    // Подпись APK ключом автора из Keystore и проверка подписи (D-157).
+    implementation(libs.apksig)
     implementation(project(":ui"))
     implementation(project(":jsch"))
     implementation(project(":terminal"))

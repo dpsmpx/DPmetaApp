@@ -39,12 +39,18 @@ data class ManualStep(val name: String, val command: List<String>, val timeoutSe
  * дереве, следующий — только после кода 0 предыдущего. Формат
  * `dpai.manual-profile` v2; v1 (одна команда) читается как один шаг.
  */
-data class ManualProfile(val kind: ManualProfileKind, val steps: List<ManualStep>) {
-    val valid: Boolean get() = steps.size in 1..MAX_STEPS && steps.all { it.valid }
+data class ManualProfile(val kind: ManualProfileKind, val steps: List<ManualStep>, val artifacts: List<String> = emptyList()) {
+    /** [artifacts] — шаблоны путей артефактов от корня дерева (D-157); их смысл проверяет `files.TreeArtifacts`, здесь — только пределы. */
+    val valid: Boolean get() = steps.size in 1..MAX_STEPS && steps.all { it.valid } &&
+        artifacts.size <= MAX_ARTIFACTS && artifacts.all { it.length in 1..300 && it.none { c -> c.isISOControl() || c.isWhitespace() } }
 
-    fun toJson(): JsonObject = JsonObject.of("format" to JsonString(FORMAT), "version" to JsonNumber.of(2),
-        "kind" to JsonString(kind.name),
-        "steps" to JsonArray(steps.map { JsonObject.of("name" to JsonString(it.name), "command" to JsonArray(it.command.map(::JsonString)), "timeout" to JsonNumber.of(it.timeoutSeconds)) }))
+    fun toJson(): JsonObject {
+        val m = linkedMapOf<String, com.dpsmpx.dpai.core.serialization.JsonValue>("format" to JsonString(FORMAT), "version" to JsonNumber.of(2),
+            "kind" to JsonString(kind.name),
+            "steps" to JsonArray(steps.map { JsonObject.of("name" to JsonString(it.name), "command" to JsonArray(it.command.map(::JsonString)), "timeout" to JsonNumber.of(it.timeoutSeconds)) }))
+        if (artifacts.isNotEmpty()) m["artifacts"] = JsonArray(artifacts.map(::JsonString))
+        return JsonObject(m)
+    }
 
     /** Готовый набор шагов для частых сборок; человек правит и сохраняет сам. */
     data class Template(val title: String, val steps: List<Triple<String, String, String>>)
@@ -52,12 +58,13 @@ data class ManualProfile(val kind: ManualProfileKind, val steps: List<ManualStep
     companion object {
         const val FORMAT = "dpai.manual-profile"
         const val MAX_STEPS = 20
+        const val MAX_ARTIFACTS = 20
 
         /** Один шаг из строки команды — прежняя форма и тесты. */
         fun form(kind: ManualProfileKind, command: String, timeout: String): Outcome<ManualProfile> = form(kind, listOf(Triple(ManualStep.DEFAULT_NAME, command, timeout)))
 
         /** Шаги из полей экрана: (имя, команда, таймаут). Ошибка называет номер шага. */
-        fun form(kind: ManualProfileKind, rows: List<Triple<String, String, String>>): Outcome<ManualProfile> {
+        fun form(kind: ManualProfileKind, rows: List<Triple<String, String, String>>, artifacts: List<String> = emptyList()): Outcome<ManualProfile> {
             if (rows.isEmpty()) return Outcome.failure(DiagCode.FIELD_MISSING, "добавьте хотя бы один шаг")
             if (rows.size > MAX_STEPS) return Outcome.failure(DiagCode.VALUE_INVALID, "шагов — не больше $MAX_STEPS")
             val steps = rows.mapIndexed { i, (name, command, timeout) ->
@@ -69,12 +76,15 @@ data class ManualProfile(val kind: ManualProfileKind, val steps: List<ManualStep
                 }
                 step
             }
-            return Outcome.success(ManualProfile(kind, steps))
+            val profile = ManualProfile(kind, steps, artifacts)
+            if (!profile.valid) return Outcome.failure(DiagCode.VALUE_INVALID, "шаблонов артефактов — не больше $MAX_ARTIFACTS, каждый — без пробелов, до 300 знаков")
+            return Outcome.success(profile)
         }
 
         fun read(o: JsonObject): ManualProfile? {
             if (o.text("format") != FORMAT) return null
             val kind = ManualProfileKind.entries.firstOrNull { it.name == o.text("kind") } ?: return null
+            val artifacts = (o["artifacts"] as? JsonArray)?.items?.map { (it as? JsonString)?.value ?: return null }.orEmpty()
             val steps = when (o.number("version")) {
                 1L -> {
                     val argv = (o["command"] as? JsonArray)?.items?.map { (it as? JsonString)?.value ?: return null } ?: return null
@@ -87,7 +97,7 @@ data class ManualProfile(val kind: ManualProfileKind, val steps: List<ManualStep
                 }
                 else -> return null
             }
-            return ManualProfile(kind, steps).takeIf { it.valid }
+            return ManualProfile(kind, steps, artifacts).takeIf { it.valid }
         }
 
         /** argv обратно в строку для поля: каждое слово в одинарных кавычках, если в нём есть что экранировать. */

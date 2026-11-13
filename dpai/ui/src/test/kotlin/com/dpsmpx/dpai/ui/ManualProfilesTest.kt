@@ -160,6 +160,9 @@ class ManualProfilesTest {
 
     @Test fun stepsFormatV2RoundTripsAndV1ReadsAsOneStep() {
         assertEquals(steps, ManualProfile.read(steps.toJson()))
+        val withArtifacts = ManualProfile.form(ManualProfileKind.BUILD, listOf(Triple("Сборка", "./gradlew assembleDebug", "60")), listOf("**/*.apk", "build/app")).valueOrNull()!!
+        assertEquals(withArtifacts, ManualProfile.read(withArtifacts.toJson()))
+        assertIs<Outcome.Failure>(ManualProfile.form(ManualProfileKind.BUILD, listOf(Triple("a", "make", "60")), listOf("a b")))
         assertEquals(listOf("Настройка", "Сборка", "Тесты"), steps.steps.map { it.name })
         val v1 = ManualProfile.read(JsonObject.of("format" to JsonString("dpai.manual-profile"), "version" to JsonNumber.of(1), "kind" to JsonString("BUILD"),
             "command" to JsonArray(listOf(JsonString("make"))), "timeout" to JsonNumber.of(60)))!!
