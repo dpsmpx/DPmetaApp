@@ -675,7 +675,7 @@ fun PultApp(
                         when (g) {
                             Screens.Goes.PROJECTS -> { tab = Section.DEV; devTab = DevTab.PROJECTS }
                             // Плитка считает все открытые PR (`repo.pr.open`) — и список открывается на «Все».
-                            Screens.Goes.PULLS -> { tab = Section.DEV; devTab = DevTab.PULLS; pullFilter = Screens.PullFilter.ALL; pullProject = null }
+                            Screens.Goes.PULLS -> { tab = Section.DEV; devTab = DevTab.PULLS; pullFilter = Screens.PullFilter.WAITING; pullProject = null }
                             Screens.Goes.QUESTIONS -> { tab = Section.DEV; devTab = DevTab.QUESTIONS }
                             Screens.Goes.SYNC -> tab = Section.MORE
                         }

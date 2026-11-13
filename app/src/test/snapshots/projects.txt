@@ -1,4 +1,7 @@
 ПРОЕКТЫ
+— управление
+  Pult — неизвестно
+    ROADMAP 50 % · TODO 1
 — ядро
   Alpha — работает
     ROADMAP 50 % · PR 1 · TODO 3

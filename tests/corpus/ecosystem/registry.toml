@@ -15,6 +15,14 @@ clone = "beta"
 place = "support"
 decisions = { path = "docs/direction/DECISIONS.md", id = "Р\\d+" }
 
+# Строка управления (DPmetaApp:D-46, DPmeta:M-16): подсистемы с `dir` живут в её клоне.
+[[repo]]
+name = "Pult"
+slug = "example/Pult"
+clone = "dpmetaapp"
+place = "control"
+decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
+
 [[repo]]
 name = "DPmeta"
 slug = "example/DPmeta"
