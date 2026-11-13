@@ -668,8 +668,8 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
         preview = { if (!saving) { editing = false; keyboard?.hide() } }, exit = exit, run = { run() }, configureRun = { configureOnly = true; configure = true },
         open = onOpen, goToLine = { line -> shown?.goToLine(line)?.also { if (it) revision++ } == true },
         debug = if (!readOnly && guestPath != null && guestRoot != null && com.dpsmpx.dpai.ui.DebugTargets.engineOf(guestPath) != null) ({ requestLeave { debugSaved() } }) else null,
-        // «Предпросмотр» (D-167): у файла Kotlin с @Preview — на телефоне через adb.
-        uiPreview = if (path.endsWith(".kt") && text?.contains("@Preview") == true) ({ uiPreviewOpen = true }) else null,
+        // «Предпросмотр» (D-167, D-168): у файла Kotlin с @Preview — на телефоне через adb; у разметки XML — из APK.
+        uiPreview = if (path.endsWith(".kt") && text?.contains("@Preview") == true || XmlLayoutPreview.layoutName(path) != null) ({ uiPreviewOpen = true }) else null,
         // «В ИИ» (D-165): что видно сейчас — текст буфера, выделение и пометка черновика.
         ai = onAi?.let { send ->
             {

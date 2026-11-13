@@ -54,6 +54,8 @@ internal fun UiPreviewDialog(tree: FileTree, treeKey: String, path: String, text
     val app = context.applicationContext
     val scope = rememberCoroutineScope()
     val found = remember(path, text) { ComposePreviews.find(path, text) }
+    // Разметка XML — из ресурсов установленного APK, без его кода (D-168).
+    val layout = remember(path) { XmlLayoutPreview.layoutName(path) }
     var pkg by rememberSaveable(treeKey, path) { mutableStateOf("") }
     var note by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -97,9 +99,28 @@ internal fun UiPreviewDialog(tree: FileTree, treeKey: String, path: String, text
         title = { Text("Предпросмотр · ${FileNames.name(path)}") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text("Функции @Preview открываются в самом приложении (его debug-сборка установлена на этом телефоне), через adb.", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    if (layout != null) "Разметка берётся из установленного на телефоне APK (после правки — соберите и установите заново); код приложения не загружается: виды не из Android — рамки с именем класса."
+                    else "Функции @Preview открываются в самом приложении (его debug-сборка установлена на этом телефоне), через adb.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 OutlinedTextField(pkg, { pkg = it.trim().take(255) }, enabled = !busy, singleLine = true, label = { Text("Пакет debug-сборки") }, modifier = Modifier.fillMaxWidth())
-                if (found.previews.isEmpty()) Text("В файле нет функций @Preview верхнего уровня без параметров.", style = MaterialTheme.typography.bodySmall)
+                if (layout != null) {
+                    TextButton(enabled = !busy && pkg.isNotBlank(), onClick = {
+                        busy = true
+                        scope.launch {
+                            try {
+                                // Виды создаются в главном потоке; разметка небольшая.
+                                when (val r = XmlLayoutPreview.render(context, pkg.trim(), layout)) {
+                                    is Outcome.Failure -> note = r.diagnostics.first().message
+                                    is Outcome.Success -> { shot = r.value.asImageBitmap(); note = "$layout — ширина 360 dp" }
+                                }
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    }) { Text("Показать разметку") }
+                } else if (found.previews.isEmpty()) Text("В файле нет функций @Preview верхнего уровня без параметров.", style = MaterialTheme.typography.bodySmall)
                 for (p in found.previews) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("${p.name} · стр. ${p.line}", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
