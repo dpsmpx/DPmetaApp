@@ -18,8 +18,8 @@
 
 Только стандартная библиотека Python ≥ 3.11; без сети; ничего не пишет,
 кроме файла из --out. Коды возврата: 0 — отчёт построен; 1 — у
-репозитория из --strict есть несуществующий номер или путь; 2 — неверный
-вызов или реестр.
+репозитория из --strict есть несуществующий номер или путь или нет клона
+(проверять нечего — это не «чисто»); 2 — неверный вызов или реестр.
 """
 
 from __future__ import annotations
@@ -320,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--only", action="append", default=[], metavar="ИМЯ",
                     help="сканировать только эти репозитории как источники (номера целей читаются у всех)")
     ap.add_argument("--strict", action="append", default=[], metavar="ИМЯ",
-                    help="код 1, если у этого репозитория есть несуществующий номер или путь")
+                    help="код 1, если у этого репозитория есть несуществующий номер или путь или нет его клона")
     ap.add_argument("--out", type=Path, help="записать отчёт в файл, а не на экран")
     a = ap.parse_args(argv)
 
@@ -362,7 +362,11 @@ def main(argv: list[str] | None = None) -> int:
     bad = [f for f, ok in [*refs, *paths] if not ok and f.src in a.strict]
     for f in bad:
         print(f"xref: {f.src} {f.loc}: нет {f.target}:{f.what}", file=sys.stderr)
-    return 1 if bad else 0
+    # Проверяемый источник без клона (копия DPmeta вне рабочего дерева git) — провал, а не «чисто».
+    absent = [n for n in dict.fromkeys(a.strict) if by_name[n].root is None]
+    for n in absent:
+        print(f"xref: {n}: нет клона — ссылки не проверены", file=sys.stderr)
+    return 1 if bad or absent else 0
 
 
 if __name__ == "__main__":

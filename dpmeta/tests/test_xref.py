@@ -105,6 +105,18 @@ class XrefTest(unittest.TestCase):
         code, _ = self.run_xref("--strict", "Alpha")
         self.assertEqual(code, 0)
 
+    def test_strict_source_without_clone_fails(self):
+        # Копия без git (как dpmeta/ вне рабочего дерева): «нет клона» в отчёте и код 1, а не 0.
+        plain = self.root / "plain-copy"
+        plain.mkdir()
+        (plain / "notes.md").write_text("`Alpha:D-01`\n", encoding="utf-8")
+        code, report = self.run_xref("--clone", f"Beta={plain}", "--only", "Beta", "--strict", "Beta")
+        self.assertEqual(code, 1)
+        self.assertIn("| Beta | нет клона | — |", report)
+        # Без --strict — только отчёт.
+        code, _ = self.run_xref("--clone", f"Beta={plain}", "--only", "Beta")
+        self.assertEqual(code, 0)
+
     def test_abbreviated_path_is_not_missing(self):
         # `Alpha:docs/…` и `Alpha:…/guide.md` — сокращения, как маска `**`.
         (self.root / "beta" / "short.md").write_text(
