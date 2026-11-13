@@ -101,6 +101,24 @@ class PcPreviewTest {
         assertNull(rows[3].file, "путь за пределы out — не файл")
     }
 
+    @Test
+    fun cleanupRemovesOnlyTheFinishedRun(@TempDir home: File) {
+        val nonce = "a".repeat(32)
+        val run = File(home, "${PcPreview.DIR}/$nonce").apply { mkdirs() }
+        File(run, "picture.png").writeText("image")
+        val keep = File(home, "${PcPreview.DIR}/${"b".repeat(32)}").apply { mkdirs() }
+        File(keep, "picture.png").writeText("other run")
+        val command = ok(PcPreview.cleanupCommand(TargetPlatform.POSIX, home.path, nonce))
+        assertTrue(ok(LocalProcessHost().run(ProcessSpec(command), 1.minutes)).ok)
+        assertFalse(run.exists())
+        assertTrue(keep.exists())
+        assertIs<Outcome.Failure>(PcPreview.cleanupCommand(TargetPlatform.POSIX, "/home/me/..", nonce))
+        assertIs<Outcome.Failure>(PcPreview.cleanupCommand(TargetPlatform.POSIX, home.path, "../other"))
+        val windows = ok(PcPreview.cleanupCommand(TargetPlatform.WINDOWS, "C:/Users/O'Neil", nonce))
+        val script = String(java.util.Base64.getDecoder().decode(windows.last()), Charsets.UTF_16LE)
+        assertTrue("-LiteralPath 'C:/Users/O''Neil/${PcPreview.DIR}/$nonce'" in script)
+    }
+
     /**
      * Вся цепочка на настоящем проекте: шаблоны — в «домашний» каталог, команда
      * [PcPreview.command] — настоящим `sh`, итог — `index.tsv` и PNG. Проект — каталог

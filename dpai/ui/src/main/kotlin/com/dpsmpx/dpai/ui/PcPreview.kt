@@ -112,6 +112,22 @@ object PcPreview {
         }
     }
 
+    /** Удаляется только каталог этого завершённого запуска, после получения PNG. */
+    fun cleanupCommand(platform: TargetPlatform, home: String, nonce: String): Outcome<List<String>> {
+        val base = home.replace('\\', '/').trimEnd('/')
+        val absolute = if (platform == TargetPlatform.WINDOWS) Regex("^[A-Za-z]:/.*").matches(base) else base.startsWith('/')
+        if (!absolute || base.any { it.isISOControl() } || base.split('/').any { it == "." || it == ".." } || !Regex("^[a-f0-9]{32}$").matches(nonce)) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, "каталог временного предпросмотра недопустим")
+        }
+        val path = "$base/$DIR/$nonce"
+        return if (platform == TargetPlatform.POSIX) Outcome.success(listOf("rm", "-rf", "--", path)) else {
+            val q = EditorTerminalRun.quotePs(path)
+            val script = "try { if (Test-Path -LiteralPath $q) { Remove-Item -LiteralPath $q -Recurse -Force -ErrorAction Stop }; exit 0 } catch { exit 1 }"
+            val encoded = java.util.Base64.getEncoder().encodeToString(script.toByteArray(Charsets.UTF_16LE))
+            Outcome.success(listOf("powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded))
+        }
+    }
+
     /** Строка итога: [file] — PNG в `out` (пусто — не нарисовано), [error] — почему. */
     data class Rendered(val kind: String, val name: String, val file: String?, val error: String?)
 

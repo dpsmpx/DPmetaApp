@@ -6,6 +6,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.execution.process.ProcessSpec
+import com.dpsmpx.dpai.execution.process.run
 import com.dpsmpx.dpai.files.FileNames
 import com.dpsmpx.dpai.files.FileTree
 import com.dpsmpx.dpai.jsch.SftpTree
@@ -47,7 +49,8 @@ internal object PcPreviewRun {
         }
             ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "не найден проект Gradle: нет build.gradle(.kts) модуля или settings.gradle(.kts) выше файла", path)
         val platform = place.target.platform
-        val runDir = "${PcPreview.DIR}/" + com.dpsmpx.dpai.core.clock.RandomSource.secure().nextBytes(16).joinToString("") { "%02x".format(it) }
+        val nonce = com.dpsmpx.dpai.core.clock.RandomSource.secure().nextBytes(16).joinToString("") { "%02x".format(it) }
+        val runDir = "${PcPreview.DIR}/$nonce"
         step("Кладу init-скрипт и тест на ПК…")
         val home = when (val h = withSftp(place) { sftp ->
             val raw = when (val r = sftp.home()) {
@@ -72,29 +75,43 @@ internal object PcPreviewRun {
             is Outcome.Success -> a.value
         }
         step("Gradle рисует на ПК (${project.module}); проект остаётся на паузе до завершения…")
-        val finished = kotlinx.coroutines.CompletableDeferred<Pair<LongJobs.Done, com.dpsmpx.dpai.ui.ManualRunView>>()
+        val finished = kotlinx.coroutines.CompletableDeferred<Outcome<Result>>()
         val profile = com.dpsmpx.dpai.ui.ManualProfile(com.dpsmpx.dpai.ui.ManualProfileKind.BUILD,
             listOf(com.dpsmpx.dpai.ui.ManualStep("Предпросмотр", argv, TIMEOUT.inWholeSeconds)))
-        // Общий долговечный резерв, агент и восстановление — те же, что у ручной сборки.
-        // Закрытие панели не отпускает проект с ещё работающим Gradle (проверка PR #188).
-        if (!place.model.startManualProfile(place.project, place.location, profile) { done, view -> finished.complete(done to view) }) {
+        fun collect(done: LongJobs.Done, view: com.dpsmpx.dpai.ui.ManualRunView): Outcome<Result> {
+            val log = (done.output.joinToString("\n") + "\n" + done.note).takeLast(LOG_TAIL)
+            if (done.failed || !view.complete || view.blocked) {
+                return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "предпросмотр не завершён: $log", project.module)
+            }
+            step("Забираю картинки…")
+            return withSftp(place) { sftp ->
+                val index = (sftp.read("$runDir/${PcPreview.OUT}/${PcPreview.INDEX}", 1L shl 20) as? Outcome.Success)?.value?.toString(Charsets.UTF_8).orEmpty()
+                val rows = PcPreview.parseIndex(index).take(PcPreview.MAX_ITEMS)
+                if (rows.isEmpty()) return@withSftp Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "Gradle не нарисовал. ${log.ifBlank { "Вывода нет." }}", project.module)
+                Outcome.success(Result(rows.map { row -> Shot(row, row.file?.let { image(sftp, runDir, it) }) }, log))
+            }
+        }
+        // Worker живёт вне панели: даже после её закрытия дочитывает итог и удаляет свои PNG.
+        if (!place.model.startManualProfile(place.project, place.location, profile) { done, view ->
+            try {
+                finished.complete(collect(done, view))
+            } catch (e: Exception) {
+                finished.complete(Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "не получен предпросмотр: ${e.javaClass.simpleName}"))
+            } finally {
+                // При неподтверждённом завершении Gradle ещё может писать: папка остаётся до сверки.
+                if (!view.blocked) cleanup(place, home, nonce)
+            }
+        }) {
+            cleanup(place, home, nonce)
             return Outcome.failure(DiagCode.WORKTREE_OWNED, "идёт другая операция; дождитесь её завершения")
         }
-        val (done, view) = finished.await()
-        val log = (done.output.joinToString("\n") + "\n" + done.note).takeLast(LOG_TAIL)
-        if (done.failed || !view.complete || view.blocked) {
-            return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "предпросмотр не завершён: $log", project.module)
-        }
-        step("Забираю картинки…")
-        return withSftp(place) { sftp ->
-            val index = (sftp.read("$runDir/${PcPreview.OUT}/${PcPreview.INDEX}", 1L shl 20) as? Outcome.Success)?.value?.toString(Charsets.UTF_8).orEmpty()
-            // Строки индекса пишет код проекта на ПК — не больше, чем просили нарисовать.
-            val rows = PcPreview.parseIndex(index).take(PcPreview.MAX_ITEMS)
-            if (rows.isEmpty()) {
-                return@withSftp Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "Gradle не нарисовал. ${log.ifBlank { "Вывода нет." }}", project.module)
-            }
-            Outcome.success(Result(rows.map { row -> Shot(row, row.file?.let { image(sftp, runDir, it) }) }, log))
-        }
+        return finished.await()
+    }
+
+    private fun cleanup(place: PcPreviewPlace, home: String, nonce: String) {
+        val argv = PcPreview.cleanupCommand(place.target.platform, home, nonce).valueOrNull() ?: return
+        val host = place.model.pcHost(place.target).valueOrNull() ?: return
+        host.run(ProcessSpec(argv), kotlin.time.Duration.parse("30s"), maxStdoutChars = LOG_TAIL)
     }
 
     private fun image(sftp: SftpTree, runDir: String, file: String): ImageBitmap? {
