@@ -467,6 +467,7 @@ class DemoModel(
     fun manualHistory(p: ProjectEntry) = controller.manualProfiles.history(p)
     fun clearManualHistory(p: ProjectEntry) = controller.manualProfiles.clearHistory(p)
     fun saveRunProfile(p: ProjectEntry, profile: com.dpsmpx.dpai.ui.RunProfile) = controller.manualProfiles.saveRun(p, profile)
+    fun pcFiles(target: TargetEntry, root: String) = controller.pcFiles(target, root)
     @Volatile private var manualStop = false
 
     fun stopManualProfile() { manualStop = true; resumeManualProfile() }

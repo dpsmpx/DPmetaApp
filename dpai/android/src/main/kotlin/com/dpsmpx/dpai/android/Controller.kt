@@ -108,6 +108,13 @@ class Controller(private val root: File, val version: String?) {
     }
 
     val knownHostsFile: String = File(root, KNOWN_HOSTS).path
+
+    /** Файлы дерева [root] на ПК-target по SFTP — только чтение, тем же входом, что команды (D-162). */
+    fun pcFiles(target: TargetEntry, root: String): Outcome<com.dpsmpx.dpai.jsch.SftpTree> {
+        if (target.inApp) return Outcome.failure(DiagCode.VALUE_INVALID, "это Linux приложения, не ПК", target.label)
+        val ssh = target.toTarget(knownHostsFile).ssh ?: return Outcome.failure(DiagCode.VALUE_INVALID, "у target нет адреса SSH", target.label)
+        return com.dpsmpx.dpai.jsch.SftpTree.open(ssh, target.platform, root, listOf(KeystoreKey.identity()))
+    }
     private val ids = IdGenerator(Clock.SYSTEM, RandomSource.secure())
 
     init {

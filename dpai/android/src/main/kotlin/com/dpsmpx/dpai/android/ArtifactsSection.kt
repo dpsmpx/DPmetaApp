@@ -36,6 +36,7 @@ import androidx.compose.ui.window.DialogWindowProvider
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Secret
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.result.then
 import com.dpsmpx.dpai.files.FileTree
 import com.dpsmpx.dpai.files.SubTree
 import com.dpsmpx.dpai.files.TreeArtifacts
@@ -54,8 +55,9 @@ import java.time.format.DateTimeFormatter
 /**
  * Артефакты сборки и APK (D-157): файлы дерева по шаблонам профиля «Сборка»,
  * у APK — сведения, подпись своим ключом из Keystore, установка и копия в
- * «Загрузки»; запуск и logcat (D-160), отладка по JDWP (D-161). Только деревья
- * Linux приложения: файл читается напрямую.
+ * «Загрузки»; запуск и logcat (D-160), отладка по JDWP (D-161). Деревья Linux
+ * приложения читаются напрямую; дерево ПК-target — по SFTP только для чтения
+ * (`DPmetaApp:D-127`; D-162): «На телефон» скачивает файл, дальше — те же действия.
  * [patterns] — шаблоны профиля, [refresh] — признак нового итога сборки.
  */
 @Composable
@@ -67,19 +69,28 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
     Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
         HorizontalDivider()
         Text("Артефакты", Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.titleSmall)
-        if (location == null || prefix == null) {
-            Text("Артефакты видны у деревьев Linux в приложении. Файлы ПК-target откройте в терминале ПК.", style = MaterialTheme.typography.bodySmall)
+        val target = view.target
+        // Дерево на ПК: список и файлы — по SFTP (D-162), скачанное — в хранилище приложения.
+        val pc = location != null && target != null && !target.inApp
+        if (location == null || target == null || prefix == null && !pc) {
+            Text("Артефакты видны у деревьев Linux в приложении и на ПК-target.", style = MaterialTheme.typography.bodySmall)
             return
         }
-        val tree: FileTree = remember(view.project, location) {
-            val inner = SubTree(GuestPaths.homeTree(app), prefix)
-            object : FileTree by inner {
-                override fun list(dir: String) = model.workspaceAccess(view.project, location, false) { inner.list(dir) }
+        val tree: FileTree? = remember(view.project, location) {
+            prefix?.let { p ->
+                val inner = SubTree(GuestPaths.homeTree(app), p)
+                object : FileTree by inner {
+                    override fun list(dir: String) = model.workspaceAccess(view.project, location, false) { inner.list(dir) }
+                }
             }
         }
-        val hostRoot = remember(location) { File(GuestPaths.home(app), prefix).canonicalFile }
-        /** Файл телефона для пути дерева; ссылка наружу корня — `null`. */
-        fun host(rel: String): File? = File(hostRoot, rel).canonicalFile.takeIf { it.path.startsWith(hostRoot.path + File.separator) && it.isFile }
+        val hostRoot = remember(location) { prefix?.let { File(GuestPaths.home(app), it).canonicalFile } }
+        var downloaded by remember(location) { mutableStateOf<Map<String, File>>(emptyMap()) }
+        /** Файл телефона для пути дерева: Linux — сам файл (ссылка наружу корня — `null`), ПК — скачанный. */
+        fun host(rel: String): File? {
+            val root = hostRoot ?: return downloaded[rel]?.takeIf { it.isFile }
+            return File(root, rel).canonicalFile.takeIf { it.path.startsWith(root.path + File.separator) && it.isFile }
+        }
 
         var found by remember { mutableStateOf<TreeArtifacts.Found?>(null) }
         var note by remember { mutableStateOf<String?>(null) }
@@ -90,10 +101,16 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
         var key by remember { mutableStateOf<SigningKeys.Info?>(null) }
         LaunchedEffect(Unit) { key = withContext(Dispatchers.IO) { SigningKeys.info() } }
         LaunchedEffect(location, patterns, refresh, version) {
-            val r = withContext(Dispatchers.IO) { TreeArtifacts.find(tree, patterns, cancelled = { !isActive }) }
+            val r = withContext(Dispatchers.IO) {
+                if (tree != null) TreeArtifacts.find(tree, patterns, cancelled = { !isActive })
+                else model.pcFiles(target, location.path).then { t -> t.use { TreeArtifacts.find(it, patterns, cancelled = { !isActive }) } }
+            }
             when (r) {
                 is Outcome.Failure -> note = r.diagnostics.first().message
-                is Outcome.Success -> found = r.value
+                is Outcome.Success -> {
+                    found = r.value
+                    if (pc) downloaded = r.value.items.mapNotNull { a -> PcArtifacts.local(app, target.id.value, a.path.substringAfterLast('/'), a.size, a.modified)?.let { a.path to it } }.toMap()
+                }
             }
         }
         fun work(label: String, block: suspend () -> String?) {
@@ -117,7 +134,20 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                 Text(a.path.substringAfterLast('/'), style = MaterialTheme.typography.bodyMedium)
                 Text("${a.path.substringBeforeLast('/', "")} · ${size(a.size)} · ${time(a.modified)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(Modifier.horizontalScroll(rememberScrollState())) {
-                    if (apk) {
+                    if (pc) TextButton(enabled = busy == null, onClick = {
+                        work("Скачиваю с ПК") {
+                            val r = withContext(Dispatchers.IO) { model.pcFiles(target, location.path).then { t -> t.use { PcArtifacts.download(app, it, a.path, target.id.value) } } }
+                            when (r) {
+                                is Outcome.Failure -> r.diagnostics.first().message
+                                is Outcome.Success -> {
+                                    downloaded = downloaded + (a.path to r.value)
+                                    AppLogs.info(app, "артефакты", "с ПК ${target.label}: ${a.path} — на телефон, ${r.value.length()} байт")
+                                    "На телефоне: ${r.value.name}"
+                                }
+                            }
+                        }
+                    }) { Text(if (host(a.path) != null) "Скачать снова" else "На телефон") }
+                    if (apk && (!pc || host(a.path) != null)) {
                         TextButton(enabled = busy == null, onClick = {
                             work("Читаю APK") {
                                 val file = host(a.path) ?: return@work "файл вне дерева или исчез"
@@ -181,7 +211,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                             }
                         }) { Text("Запустить") }
                         // Отладка установленного APK по JDWP (D-161): точки — в файлах .kt/.java этого дерева.
-                        TextButton(enabled = busy == null, onClick = {
+                        if (!pc) TextButton(enabled = busy == null, onClick = {
                             val file = host(a.path) ?: run { note = "файл вне дерева или исчез"; return@TextButton }
                             if (AdbBridge.state.value.connectPort == null) { note = "Сначала подключите adb: «Файлы» → «Logcat» → «Подключить»"; return@TextButton }
                             busy = "Готовлю отладку"
@@ -199,7 +229,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                                 }
                             }
                         }) { Text("Отладка") }
-                        TextButton(enabled = busy == null && key != null, onClick = {
+                        if (!pc) TextButton(enabled = busy == null && key != null, onClick = {
                             val file = host(a.path) ?: run { note = "файл вне дерева или исчез"; return@TextButton }
                             DeviceConfirm.ask(context, "Подписать ${file.name} своим ключом", onOk = {
                                 work("Подписываю") {
@@ -216,7 +246,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                             }, onDenied = { note = it })
                         }) { Text("Подписать") }
                     }
-                    TextButton(enabled = busy == null, onClick = {
+                    if (!pc || host(a.path) != null) TextButton(enabled = busy == null, onClick = {
                         work("Сохраняю в «Загрузки»") {
                             val file = host(a.path) ?: return@work "файл вне дерева или исчез"
                             if (file.length() > MAX_DOWNLOAD) return@work "файл больше ${MAX_DOWNLOAD shr 20} МБ — заберите его через терминал"
