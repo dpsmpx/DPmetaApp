@@ -4495,6 +4495,51 @@ Claude Code в Linux приложения и журнал приложения �
 `ApkDatabaseTest`, `LinuxEnvironmentTest` (`/etc/gitconfig`),
 `HealthTest`, `RedactorTest`; на телефоне — DPmetaApp:TODO.md.
 
+### D-159 — Отладчик: клиент DAP в модуле `lsp`, gdb и debugpy в госте, точки останова в редакторе
+
+**Статус.** Принято 13 ноября 2026 при исполнении DPmetaApp:D-124.
+**Решение.**
+- **Клиент DAP** — `lsp.dap` (тот же модуль, что LSP: кадры
+  `Content-Length` общие, `LspReader`/`LspWriter`). `DapPeer`: запросы с
+  `seq`, ответы по `request_seq`, события — слушателю из потока чтения;
+  обратные запросы адаптера (`runInTerminal`, `startDebugging`) —
+  отказом: программа идёт в процессе адаптера, вывод — событиями
+  `output`. Сообщение не по протоколу, обрыв или ответ длиннее предела —
+  остановка сеанса целиком (как D-137). Коды `DAP_REPLY_INVALID`,
+  `DAP_REQUEST_FAILED`, `DAP_ADAPTER_STOPPED`, `DAP_TIMEOUT`.
+- **Порядок запуска** — по спецификации DAP: `initialize` → `launch`
+  (ответ не ждётся) → после `initialized` — `setBreakpoints` по файлам и
+  `configurationDone` → ответ `launch`. gdb и debugpy отвечают на
+  `launch` только после `configurationDone` — проверено на машине сборки
+  (`docs/research/LINUX_IN_APP.md`, §12).
+- **Адаптеры** (`DebugLaunches`): gdb 14+ — `gdb -i=dap -q`, `launch` с
+  `program`, `args`, `cwd`; debugpy — `python -m debugpy.adapter` из
+  окружения проекта (`ProjectRuntime`), `launch` с `program`, `args`,
+  `cwd`, `console: internalConsole`, `justMyCode`. Путь и аргументы —
+  отдельными значениями, без оболочки (D-138).
+- **Сеанс** — `DebugSession`: состояние (запуск, идёт, остановлен — где и
+  почему, завершён с кодом, сбой), потоки, стек, переменные верхнего
+  уровня, вывод (до 2000 строк), вычисление выражения; один сеанс отладки
+  на приложение; «Остановить» — `disconnect` с завершением программы,
+  затем процесс адаптера.
+- **Что отлаживается** (`ui.DebugTargets`): файл C/C++ — сборка
+  `clang++ -g -O0` (C — `clang -g -O0`) с проверкой тулчейна D-140 в
+  `/tmp/dpai-debug.*`; Python — файл; программа проекта — команда
+  страницы «Запуск», разобранная в argv (кавычки, без операторов
+  оболочки, `$`, `` ` `` и перенаправлений), `python file.py …` — debugpy.
+- **Точки останова** — `ui.Breakpoints` по путям гостя, строки с единицы,
+  до 200 на файл; в редакторе — касание области номеров строк
+  (`ClickEvent`, `REGION_LINE_NUMBER`), отметка — фоном номера строки, строка
+  остановки — фоном строки (стили строк Sora, ставятся перед отрисовкой);
+  правка текста точки не сдвигает — они остаются на прежних номерах.
+**Почему.** Один клиент протокола на оба отладчика; без новых
+зависимостей APK и без прав Android (DPmetaApp:D-124).
+**Проверка.** `DapPeerTest` (поддельный адаптер в памяти: порядок
+запуска, события, отказ, обрыв, предел), `DebugTargetsTest`,
+`BreakpointsTest`; `DapLiveTest` — настоящий gdb (`-Ddpai.test.gdb`) и
+debugpy (`-Ddpai.test.debugpy`): остановка в функции, стек, переменная,
+выражение, шаг, выход. На телефоне — DPmetaApp:TODO.md.
+
 ## Отложено
 
 Решения, которые принимаются в начале своего этапа и до этого не

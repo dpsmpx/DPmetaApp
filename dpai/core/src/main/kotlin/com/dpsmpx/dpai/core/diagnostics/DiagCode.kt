@@ -295,6 +295,16 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     /** Служба не ответила на запрос за отведённое время: запрос отменён, служба жива. */
     LSP_TIMEOUT(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
 
+    // --- отладчик редактора (D-159) ---
+    /** Сообщение адаптера отладки не по протоколу DAP или длиннее предела: сеанс остановлен. */
+    DAP_REPLY_INVALID(Category.FORMAT, Severity.ERROR, Retryability.UNKNOWN),
+    /** Адаптер ответил на запрос отказом (нет программы, нет потока, выражение не вычислено). */
+    DAP_REQUEST_FAILED(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Адаптер отладки вышел или его поток закрыт: сеанс кончился, запросы не дойдут. */
+    DAP_ADAPTER_STOPPED(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+    /** Адаптер не ответил за отведённое время; сеанс жив. */
+    DAP_TIMEOUT(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+
     /** Запечатанный сегмент журнала пропал или испорчен — восстановлен из копии (D-95). */
     JOURNAL_SEGMENT_RESTORED(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
 
