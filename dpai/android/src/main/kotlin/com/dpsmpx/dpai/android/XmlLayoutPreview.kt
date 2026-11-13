@@ -12,6 +12,7 @@ import android.view.ContextThemeWrapper
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.FrameLayout
+import androidx.core.graphics.createBitmap
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
 
@@ -42,6 +43,8 @@ internal object XmlLayoutPreview {
             return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "пакет $pkg не виден DPmetaApp: Android показывает приложению только пакеты, которые оно установило — поставьте APK через «Артефакты»")
         }
         val res = foreign.resources
+        // Разметка чужого APK — только по имени: класса R того приложения у DPmetaApp нет (D-168).
+        @android.annotation.SuppressLint("DiscouragedApi")
         val id = res.getIdentifier(layout, "layout", pkg)
         if (id == 0) return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "в установленном APK нет разметки $layout — соберите и установите его заново")
         val theme = runCatching { context.packageManager.getApplicationInfo(pkg, 0).theme }.getOrDefault(0)
@@ -67,7 +70,7 @@ internal object XmlLayoutPreview {
         root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST))
         val height = root.measuredHeight.coerceIn(1, maxHeight)
         root.layout(0, 0, width, height)
-        val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val bmp = createBitmap(width, height)
         val canvas = Canvas(bmp)
         canvas.drawColor(Color.WHITE)
         root.draw(canvas)
