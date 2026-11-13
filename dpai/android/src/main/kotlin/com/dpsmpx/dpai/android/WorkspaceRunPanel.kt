@@ -175,10 +175,30 @@ internal fun WorkspaceRunPanel(model: DemoModel, view: ProjectWorkspaceView, loc
                 }
             }) { Text(if (awaiting) "Жду сборку…" else if (buildFirst) "▶ Собрать и запустить" else "▶ Запустить") }
             if (awaiting) TextButton(onClick = { awaiting = false; buildId = null; note = "Ожидание снято: сборка идёт дальше, программа сама не откроется" }) { Text("Не запускать") }
+            // Отладка программы проекта (D-159): Linux приложения, одна программа с аргументами; собирается заранее (-g).
+            TextButton(enabled = editable && location != null && view.ready && target?.inApp == true && !run.blocked, onClick = {
+                val loc = location ?: return@TextButton
+                val profile = when (val p = RunProfile.form(command, dir, buildFirst)) {
+                    is Outcome.Failure -> { note = p.errors.first().message; return@TextButton }
+                    is Outcome.Success -> p.value
+                }
+                scope.launch {
+                    guard(loc)?.let { note = "Отладка не начата: $it"; return@launch }
+                    when (val t = com.dpsmpx.dpai.ui.DebugTargets.forCommand(loc.path, profile.workDir(loc.path), profile.command)) {
+                        is Outcome.Failure -> note = "Отладка не начата: " + t.diagnostics.first().message
+                        is Outcome.Success -> {
+                            Debugger.start(context, t.value, loc.key, loc.path)
+                            note = "Отладка — панель ниже; точки — касанием номера строки в «Файлах»"
+                        }
+                    }
+                }
+            }) { Text("Отладка") }
         }
+        if (target != null && !target.inApp) Text("Отладка — пока только в Linux приложения; программу на ПК отлаживайте отладчиком ПК.", style = MaterialTheme.typography.bodySmall)
         run.active?.takeIf { awaiting }?.let { a ->
             Text("Сборка: шаг ${run.step ?: "?"} из ${a.profile.steps.size}", style = MaterialTheme.typography.bodyMedium)
         }
         note?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        DebugPanel()
     }
 }
