@@ -119,6 +119,49 @@ data class ManualProfile(val kind: ManualProfileKind, val steps: List<ManualStep
     }
 }
 
+/**
+ * Запуск программы проекта (D-155): команда для терминала (с shell — человек
+ * вводит её сам, как у ▶ редактора, D-138), папка от корня дерева и
+ * «сначала собрать» — профилем «Сборка». Формат `dpai.run-profile` v1.
+ */
+data class RunProfile(val command: String, val dir: String, val buildFirst: Boolean) {
+    val valid: Boolean get() = command.isNotBlank() && command.length <= MAX_COMMAND && '\u0000' !in command && dirProblem(dir) == null
+
+    fun toJson(): JsonObject = JsonObject.of("format" to JsonString(FORMAT), "version" to JsonNumber.of(1),
+        "command" to JsonString(command), "dir" to JsonString(dir), "buildFirst" to com.dpsmpx.dpai.core.serialization.JsonBool(buildFirst))
+
+    /** Папка запуска на машине дерева: корень [root] и [dir] через `/`. */
+    fun workDir(root: String): String = if (dir.isEmpty()) root else root.trimEnd('/') + "/" + dir
+
+    companion object {
+        const val FORMAT = "dpai.run-profile"
+        const val MAX_COMMAND = 4096
+
+        fun form(command: String, dir: String, buildFirst: Boolean): Outcome<RunProfile> {
+            val d = dir.trim().trim('/')
+            dirProblem(d)?.let { return Outcome.failure(DiagCode.VALUE_INVALID, it) }
+            if (command.isBlank()) return Outcome.failure(DiagCode.FIELD_MISSING, "введите команду запуска: например, ./build/app")
+            if (command.length > MAX_COMMAND || '\u0000' in command) return Outcome.failure(DiagCode.VALUE_INVALID, "команда — до $MAX_COMMAND знаков")
+            return Outcome.success(RunProfile(command.trim(), d, buildFirst))
+        }
+
+        fun read(o: JsonObject): RunProfile? {
+            if (o.text("format") != FORMAT || o.number("version") != 1L) return null
+            val buildFirst = (o["buildFirst"] as? com.dpsmpx.dpai.core.serialization.JsonBool)?.value ?: return null
+            return RunProfile(o.text("command") ?: return null, o.text("dir") ?: return null, buildFirst).takeIf { it.valid }
+        }
+
+        /** Папка — путь от корня дерева: без `..`, `.`, пустых частей, `\\` и управляющих знаков. */
+        fun dirProblem(dir: String): String? = when {
+            dir.isEmpty() -> null
+            dir.length > 1024 -> "папка — до 1024 знаков"
+            dir.startsWith("/") -> "папка — от корня дерева, без «/» в начале"
+            dir.split('/').any { it.isEmpty() || it == "." || it == ".." || it.any { c -> c.isISOControl() || c == '\\' } } -> "папка — от корня дерева, без «..», «.» и пустых частей"
+            else -> null
+        }
+    }
+}
+
 /** Итог шага: номер с единицы, код выхода (нет — не дождались) и причина словами. */
 data class ManualStepResult(val step: Int, val exitCode: Int?, val reason: String) {
     val ok: Boolean get() = exitCode == 0
@@ -130,7 +173,17 @@ data class ManualRun(val id: SessionId, val project: ProjectEntry, val target: T
  * [step] — какой шаг запрошен последним (`null` — неизвестно, см. D-154), [results] —
  * итоги завершённых шагов этого запуска.
  */
-data class ManualRunView(val active: ManualRun?, val blocked: Boolean, val note: String, val output: String, val step: Int? = null, val results: List<ManualStepResult> = emptyList())
+data class ManualRunView(
+    val active: ManualRun?,
+    val blocked: Boolean,
+    val note: String,
+    val output: String,
+    val step: Int? = null,
+    val results: List<ManualStepResult> = emptyList(),
+    /** Последний завершённый в этом процессе запуск и прошли ли все его шаги с кодом 0 (D-155: «собрать и запустить»). */
+    val finished: SessionId? = null,
+    val complete: Boolean = false,
+)
 
 /**
  * Единственный ручной запуск и долговечная пауза всего контура (D-134).
@@ -208,6 +261,22 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
         if (blocked) return Outcome.failure(DiagCode.WORKTREE_OWNED, "профиль выполняется; настройки пока заблокированы")
         if (!profile.valid) return Outcome.failure(DiagCode.VALUE_INVALID, "неверный профиль")
         return when (val r = docs.write(key(project, profile.kind), profile.toJson())) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> Outcome.success(Unit)
+        }
+    }
+
+    @Synchronized
+    fun runProfile(project: ProjectEntry): Outcome<RunProfile?> = when (val r = docs.read(runKey(project))) {
+        is Outcome.Failure -> r
+        is Outcome.Success -> if (r.value == null) Outcome.success(null) else RunProfile.read(r.value!!.content)?.let { Outcome.success(it) }
+            ?: Outcome.failure(DiagCode.STORAGE_CORRUPTED, "повреждён профиль запуска")
+    }
+
+    @Synchronized
+    fun saveRun(project: ProjectEntry, profile: RunProfile): Outcome<Unit> {
+        if (!profile.valid) return Outcome.failure(DiagCode.VALUE_INVALID, "неверный профиль запуска")
+        return when (val r = docs.write(runKey(project), profile.toJson())) {
             is Outcome.Failure -> r
             is Outcome.Success -> Outcome.success(Unit)
         }
@@ -330,7 +399,8 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
             docs.delete(PROGRESS)
             val deleted = docs.delete(ACTIVE)
             if (deleted is Outcome.Failure) { note("не удалось снять паузу на диске"); return true }
-            view = ManualRunView(null, false, note, tail, results = results)
+            val complete = results.size == run.profile.steps.size && results.all { it.ok }
+            view = ManualRunView(null, false, note, tail, results = results, finished = run.id, complete = complete)
             stopRequested = false
         }
         return false
@@ -356,6 +426,7 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
 
     private fun note(text: String) { view = view.copy(note = Redactor.STANDARD.redact(text).take(1000)) }
     private fun key(p: ProjectEntry, kind: ManualProfileKind) = "${kind.name.lowercase()}-${p.project.value.lowercase()}"
+    private fun runKey(p: ProjectEntry) = "run-${p.project.value.lowercase()}"
 
     private fun readRun(o: JsonObject): ManualRun? {
         if (o.text("format") != "dpai.manual-run" || o.number("version") !in setOf(1L, 2L)) return null

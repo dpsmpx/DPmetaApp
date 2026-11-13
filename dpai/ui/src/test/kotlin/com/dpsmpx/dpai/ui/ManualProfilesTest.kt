@@ -244,4 +244,31 @@ class ManualProfilesTest {
         assertEquals(1, host.starts)
         assertTrue(store().snapshot().note.contains("остановлено пользователем"))
     }
+
+    @Test fun runProfileIsValidatedStoredAndBuildCompletionIsReported() {
+        val good = RunProfile.form(" ./bin/app --level 1 ", "/build/bin/", true).valueOrNull()!!
+        assertEquals(RunProfile("./bin/app --level 1", "build/bin", true), good)
+        assertEquals("/root/repo/build/bin", good.workDir("/root/repo/"))
+        assertEquals("/root/repo", RunProfile.form("./app", "", false).valueOrNull()!!.workDir("/root/repo"))
+        for (bad in listOf("../outside", "a/../../b", "a//b", "./a", "a\\b", "a\u0001")) assertIs<Outcome.Failure>(RunProfile.form("./app", bad, false), bad)
+        assertIs<Outcome.Failure>(RunProfile.form("  ", "", false))
+        assertIs<Outcome.Failure>(RunProfile.form("x".repeat(RunProfile.MAX_COMMAND + 1), "", false))
+        val s = store()
+        assertIs<Outcome.Success<Unit>>(s.saveRun(project, good))
+        assertEquals(good, store().runProfile(project).valueOrNull())
+        assertEquals(null, RunProfile.read(JsonObject.of("format" to JsonString("dpai.run-profile"), "version" to JsonNumber.of(2))))
+        // Итог сборки для «собрать и запустить»: все шаги с кодом 0 — complete, иначе нет.
+        val host = Host()
+        val ok = s.prepare(project, target, location, profile).valueOrNull()!!
+        s.launch(ok, host.client()); host.state = RunState.EXITED
+        assertFalse(s.poll(host.client()))
+        assertEquals(ok.id, s.snapshot().finished)
+        assertTrue(s.snapshot().complete)
+        val failed = s.prepare(project, target, location, steps).valueOrNull()!!
+        val host2 = Host()
+        s.launch(failed, host2.client()); host2.state = RunState.EXITED; host2.exitCode = 1
+        assertFalse(s.poll(host2.client()))
+        assertEquals(failed.id, s.snapshot().finished)
+        assertFalse(s.snapshot().complete)
+    }
 }

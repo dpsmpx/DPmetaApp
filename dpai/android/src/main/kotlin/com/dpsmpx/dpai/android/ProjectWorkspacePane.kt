@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,7 +45,7 @@ import com.dpsmpx.dpai.ui.WorkspacePaths
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private enum class WorkspacePage(val title: String) { FILES("Файлы"), AI("ИИ"), CHANGES("Изменения"), CHECKS("Проверки"), BUILD("Сборка") }
+private enum class WorkspacePage(val title: String) { FILES("Файлы"), AI("ИИ"), CHANGES("Изменения"), CHECKS("Проверки"), BUILD("Сборка"), RUN("Запуск") }
 
 /** Первый общий рабочий экран: представление одного настроенного проекта (D-132). */
 @Composable
@@ -69,12 +70,15 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
     var taskKey by rememberSaveable(project.project.value) { mutableStateOf(previous?.takeIf { it.size == 3 && it[0] == "workspace" && it[1] == project.project.value }?.get(2)?.ifEmpty { null }) }
     LaunchedEffect(project.project, taskKey) { IdeState.place("workspace\u0001${project.project.value}\u0001${taskKey.orEmpty()}") }
     var page by rememberSaveable(project.project.value) { mutableStateOf(WorkspacePage.FILES.name) }
+    // Переход к ошибке из терминала запуска (D-153, D-155): запрос для этого дерева — на «Файлы», там его выполнит панель вкладок.
+    val jump by IdeState.jump.collectAsState()
     var choose by remember { mutableStateOf(false) }
     var taskSheet by remember(project.project, taskKey) { mutableStateOf(false) }
     var draftsOpen by remember { mutableStateOf(false) }
     if (draftsOpen) FileDraftsDialog { draftsOpen = false }
     val selected = current.tasks.firstOrNull { it.id.value == taskKey }
     val location = if (taskKey == null) current.main else selected?.location
+    LaunchedEffect(jump, location?.key) { if (jump != null && jump?.root == location?.key) page = WorkspacePage.FILES.name }
     val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val pageStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     if (taskSheet && selected != null) TaskSheet(model, selected.id, onSession = onSession) { taskSheet = false }
@@ -125,6 +129,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
                     location?.let { WorkspaceGitPanel(model, project, it) }
                     if (selected == null) Text("Выберите задачу: её изменения сравниваются с веткой интеграции") else ChangesSection(model, selected.id)
                 }
+                WorkspacePage.RUN.name -> WorkspaceRunPanel(model, current, location)
                 WorkspacePage.CHECKS.name, WorkspacePage.BUILD.name -> {
                     val kind = if (page == WorkspacePage.CHECKS.name) com.dpsmpx.dpai.ui.ManualProfileKind.CHECK else com.dpsmpx.dpai.ui.ManualProfileKind.BUILD
                     // Место из вывода — во вкладку «Файлов» этого дерева (D-153): запрос ждёт панель дерева, страница переключается.

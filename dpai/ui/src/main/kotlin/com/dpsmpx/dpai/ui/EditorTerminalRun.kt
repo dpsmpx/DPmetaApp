@@ -28,9 +28,14 @@ object EditorTerminalRun {
         "cpp", "cc", "cxx", "c++" -> CppDependencies.singleFileCommand(CppDependencies.Report(0, emptyList(), emptyList()))
         else -> "" // Команда настоящего Gradle/многофайлового проекта задаётся пользователем.
     }
-    fun argv(file: String, root: String, command: String): Outcome<List<String>> {
-        if (!file.startsWith('/') || !root.startsWith('/') || file.any { it.code < 32 } || root.any { it.code < 32 } || command.isBlank() || command.length > 4096 || '\u0000' in command) {
-            return Outcome.failure(DiagCode.VALUE_INVALID, "Нужны путь файла в Linux, рабочая папка и команда запуска")
+    /**
+     * argv запуска в новой PTY: перейти в [root], выполнить [command] через `/bin/sh -c`,
+     * напечатать код выхода и остаться в оболочке. [file] — путь открытого файла
+     * (`DPAI_FILE`); у запуска программы проекта (D-155) файла нет — `null`.
+     */
+    fun argv(file: String?, root: String, command: String): Outcome<List<String>> {
+        if ((file != null && (!file.startsWith('/') || file.any { it.code < 32 })) || !root.startsWith('/') || root.any { it.code < 32 } || command.isBlank() || command.length > 4096 || '\u0000' in command) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, "Нужны путь в Linux, рабочая папка и команда запуска")
         }
         val script = """
             cd "${'$'}1" || exit
@@ -40,6 +45,7 @@ object EditorTerminalRun {
             printf '\n[Код выхода: %s]\n' "${'$'}DPAI_RUN_STATUS"
             exec /bin/sh -l
         """.trimIndent()
-        return Outcome.success(listOf("/bin/sh", "-c", script, "dpai-run", root, file, command))
+        return Outcome.success(listOf("/bin/sh", "-c", script, "dpai-run", root, file.orEmpty(), command))
     }
+
 }

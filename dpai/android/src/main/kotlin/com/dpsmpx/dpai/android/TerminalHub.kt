@@ -49,7 +49,12 @@ object TerminalHub {
      * Вкладка: к target по SSH ([target]) или к Linux-среде в приложении
      * ([target] — `null`, D-75, шаг 5).
      */
-    class EditorRun(val file: String, val root: String, val command: String, val editorRootKey: String?) {
+    /**
+     * Запуск из IDE: [file] — файл редактора (пусто у запуска программы проекта, D-155),
+     * [root] — рабочая папка запуска, [treeRoot] — корень дерева, от которого считаются
+     * пути вкладок редактора [editorRootKey] (D-153).
+     */
+    class EditorRun(val file: String, val root: String, val command: String, val editorRootKey: String?, val treeRoot: String = root) {
         val language: com.dpsmpx.dpai.ui.RunLanguage get() = com.dpsmpx.dpai.ui.RunLanguage.of(file)
         internal var output = com.dpsmpx.dpai.ui.EditorRunOutput(file)
         @Volatile var report: com.dpsmpx.dpai.ui.RunDiagnosis? = null
@@ -388,7 +393,13 @@ object TerminalHub {
                 target.toTarget(controller.knownHostsFile).ssh?.let { endpoint ->
                     JschShell(endpoint, target.platform, identities = listOf(KeystoreKey.identity())).open(
                         cols, rows, command,
-                        onOutput = { b, n -> tab.session.output(b, 0, n) },
+                        onOutput = { b, n ->
+                            tab.session.output(b, 0, n)
+                            // Запуск программы проекта на ПК (D-155): тот же разбор кода выхода и ошибок, что у Linux в приложении.
+                            if (tab.transport === t) tab.editorRun?.let { run ->
+                                run.output.feed(b, n)?.takeIf { it.useful || it.problems.items.isNotEmpty() }?.let { report -> run.report = report; observer?.tabs() }
+                            }
+                        },
                         onClosed = { code -> if (tab.transport === t) closed(tab, code) },
                     ).map { SshChannel(it) }
                 }

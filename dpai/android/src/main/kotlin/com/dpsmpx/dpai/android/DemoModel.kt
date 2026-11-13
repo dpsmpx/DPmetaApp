@@ -463,6 +463,8 @@ class DemoModel(
     fun manualProfileView() = controller.manualProfiles.snapshot()
     fun manualProfile(p: ProjectEntry, kind: com.dpsmpx.dpai.ui.ManualProfileKind) = controller.manualProfiles.profile(p, kind)
     fun saveManualProfile(p: ProjectEntry, profile: com.dpsmpx.dpai.ui.ManualProfile) = controller.manualProfiles.save(p, profile)
+    fun runProfile(p: ProjectEntry) = controller.manualProfiles.runProfile(p)
+    fun saveRunProfile(p: ProjectEntry, profile: com.dpsmpx.dpai.ui.RunProfile) = controller.manualProfiles.saveRun(p, profile)
     @Volatile private var manualStop = false
 
     fun stopManualProfile() { manualStop = true; resumeManualProfile() }

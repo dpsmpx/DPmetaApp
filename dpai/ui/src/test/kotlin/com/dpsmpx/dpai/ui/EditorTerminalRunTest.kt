@@ -47,4 +47,14 @@ class EditorTerminalRunTest {
         assertTrue(command.contains("-fuse-ld=lld"))
         assertTrue(command.contains("mktemp /tmp/dpai-cpp.XXXXXX"))
     }
+    @Test fun projectRunHasNoEditorFileAndStartsInTheChosenSubfolder() {
+        val sub = Files.createDirectories(dir.resolve("build/bin"))
+        val argv = EditorTerminalRun.argv(null, sub.toString(), "printf 'FILE:[%s]\\n' \"\$DPAI_FILE\"; pwd; exit 3").valueOrNull()!!
+        val result = LocalProcessHost().run(ProcessSpec(argv), 8.seconds).valueOrNull()!!
+        val output = result.stdout.joinToString("\n")
+        assertTrue(output.contains("FILE:[]"), output)
+        assertTrue(output.contains(sub.toString()), output)
+        assertTrue(output.contains("[Код выхода: 3]"), output)
+        assertIs<Outcome.Failure>(EditorTerminalRun.argv(null, "relative", "./app"))
+    }
 }
