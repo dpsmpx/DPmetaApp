@@ -3,6 +3,15 @@
 Вехи проекта: этапы, форматы, публичные контракты. Подробности — в git
 и PR; что решено — `docs/direction/DECISIONS.md`.
 
+## 13 ноября 2026 — карта кода в контексте хода (D-171)
+
+- `contexts.CodeMap` — объявления и импорты по файлам из `git grep -n`,
+  с пределами и указанием не вошедшего; `GitOp.GREP` (чтение) и
+  `GitService.grep`.
+- Источник `code:map` уровня `CODE` в контексте хода задачи с рабочим
+  деревом; пороги — `EfficiencyPolicy.codeMap` (`CodeMapPolicy`), в
+  `LEGACY` — выключено.
+
 ## 13 ноября 2026 — сокет сервера adb и окно перед установкой APK (T22, T23)
 
 - Сервер adb гостя слушает `localfilesystem:/root/.dpmetaapp-adb.sock`

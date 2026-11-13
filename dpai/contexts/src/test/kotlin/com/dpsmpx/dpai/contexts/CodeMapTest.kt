@@ -69,7 +69,7 @@ class CodeMapTest {
         // Четвёртый файл не влез (блоки по ~64 знака) — он и остальные названы числом.
         val few = CodeMap.render(many, truncated = false, CodeMap.Limits(maxDeclarations = 3, maxChars = 200))!!
         assertTrue(few.endsWith("… ещё файлов: 27") && few.lines().count { it.startsWith("src/") } == 3 && "не вошёл целиком" !in few, few)
-        assertNull(CodeMap.render(listOf("docs/a.md:1:class x", "a.kt:1:val y = 1"), truncated = false))
+        assertNull(CodeMap.render(listOf("notes/a.md:1:class x", "a.kt:1:val y = 1"), truncated = false))
         assertNull(CodeMap.render(emptyList(), truncated = false))
     }
 }
