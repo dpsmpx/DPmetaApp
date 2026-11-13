@@ -11,6 +11,18 @@ plugins {
 }
 
 /**
+ * Снимки экранов на JVM (docs/SCREENSHOTS.md): Robolectric с нативной графикой — только по
+ * свойству dpmeta.screenshots (`tools/screenshots.sh`). Обычная сборка и проверки его не тянут:
+ * «Android целиком» — 213 МБ. Образ — через Gradle, с проверкой суммы в verification-metadata.xml,
+ * а не загрузкой из теста (как у тестов экранов DPpass, DPpass:D-86).
+ */
+val screenshots = providers.gradleProperty("dpmeta.screenshots").isPresent
+val robolectricImage: Configuration = configurations.create("robolectricAndroid") {
+    isCanBeConsumed = false
+    isTransitive = false
+}
+
+/**
  * `versionCode` из версии DPmetaApp (D-54): `0.N.P-dev.M` → N·10000 + P·100 + M, выпуск `0.N.P` →
  * N·10000 + P·100 + 99. Растёт с этапами и сборками и всегда больше, чем у отдельной сборки «AI».
  */
@@ -25,6 +37,12 @@ fun versionCodeOf(version: String): Int {
 android {
     namespace = "com.dpsmpx.dpmeta.shell"
     compileSdk = 37
+
+    // Снимки экранов: ресурсы и манифест приложения — тестам; исходники снимков — только по свойству.
+    if (screenshots) {
+        testOptions.unitTests.isIncludeAndroidResources = true
+        sourceSets["test"].kotlin.directories += listOf("src/screenshots/kotlin")
+    }
 
     defaultConfig {
         applicationId = "com.dpsmpx.dpai"
@@ -93,4 +111,38 @@ dependencies {
     // Слот документа настроек (D-112): оболочка передаёт блок пульта в документ «AI» — Compose на classpath.
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
+    if (screenshots) {
+        testImplementation(libs.robolectric)
+        testImplementation(libs.junit4)
+        testImplementation(kotlin("test"))
+        testImplementation(platform(libs.junit.bom))
+        testRuntimeOnly(libs.junit.vintage.engine)
+        testRuntimeOnly(libs.junit.platform.launcher)
+        // Синтетическая экосистема корпуса — модели экранов пульта, как у ScreenSnapshotTest (:app).
+        testImplementation(project(":core:sync"))
+        testImplementation(project(":core:formats"))
+        testImplementation(project(":core:metrics"))
+        robolectricImage(libs.robolectric.android.all)
+    }
+}
+
+if (screenshots) {
+    tasks.withType<Test>().configureEach {
+        useJUnitPlatform()
+        val image: FileCollection = robolectricImage.incoming.artifacts.artifactFiles
+        inputs.files(image)
+        // Robolectric ничего не скачивает сам: образ уже сверен Gradle.
+        systemProperty("robolectric.offline", "true")
+        systemProperty("robolectric.enabledSdks", "36")
+        // Образ Android 16 заводит общую память через внутренности FileDescriptor JDK — только в JVM тестов.
+        jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
+        jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Drobolectric.dependency.dir=" + image.singleFile.parentFile.path) })
+        val corpus = rootProject.layout.projectDirectory.dir("tests/corpus/ecosystem")
+        inputs.dir(corpus).withPropertyName("corpus")
+        systemProperty("corpus.ecosystem", corpus.asFile.absolutePath)
+        // Куда класть PNG: по умолчанию — build/, docs/screenshots/ — свойством (tools/screenshots.sh).
+        val out = providers.gradleProperty("dpmeta.screenshots.dir").orElse(layout.buildDirectory.dir("screenshots").get().asFile.path)
+        systemProperty("screenshots.dir", out.get())
+        outputs.upToDateWhen { false }
+    }
 }
