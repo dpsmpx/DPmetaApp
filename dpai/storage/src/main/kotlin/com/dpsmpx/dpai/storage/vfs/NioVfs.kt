@@ -69,6 +69,13 @@ class NioVfs(private val root: Path) : Vfs {
         }
     }
 
+    override fun writeFresh(path: String, bytes: ByteArray) {
+        val target = p(path)
+        // deleteIfExists не идёт по ссылке; CREATE_NEW не создаёт файл через ссылку и не берёт чужой.
+        Files.deleteIfExists(target)
+        FileChannel.open(target, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use { writeFully(it, bytes) }
+    }
+
     override fun append(path: String, bytes: ByteArray) {
         FileChannel.open(p(path), StandardOpenOption.CREATE, StandardOpenOption.APPEND, StandardOpenOption.WRITE).use {
             writeFully(it, bytes)

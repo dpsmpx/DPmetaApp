@@ -20,6 +20,21 @@ class NioVfsTest {
     lateinit var dir: Path
 
     /** Часть файла (D-119): с места и длины, за концом — пусто, нет файла — `null`; то же — по умолчанию интерфейса. */
+    /** writeFresh: ссылка на месте файла убирается сама, цель не трогается; файл создаётся заново. */
+    @Test
+    fun writeFreshDoesNotFollowALink(@TempDir tmp: Path) {
+        val outside = java.nio.file.Files.writeString(tmp.resolve("outside.txt"), "цель")
+        val root = java.nio.file.Files.createDirectories(tmp.resolve("root"))
+        java.nio.file.Files.createSymbolicLink(root.resolve("t.tmp"), outside)
+        val vfs = NioVfs(root)
+        vfs.writeFresh("t.tmp", "новое".toByteArray())
+        assertEquals("цель", java.nio.file.Files.readString(outside))
+        assertFalse(java.nio.file.Files.isSymbolicLink(root.resolve("t.tmp")))
+        assertEquals("новое", java.nio.file.Files.readString(root.resolve("t.tmp")))
+        vfs.writeFresh("t.tmp", "ещё".toByteArray())
+        assertEquals("ещё", java.nio.file.Files.readString(root.resolve("t.tmp")), "остаток прошлой записи — заменён")
+    }
+
     @Test
     fun readRangeReadsAPartWithoutTheWholeFile() {
         val vfs = NioVfs(dir)
