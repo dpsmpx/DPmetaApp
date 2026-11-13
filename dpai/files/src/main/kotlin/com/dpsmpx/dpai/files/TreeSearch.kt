@@ -98,7 +98,9 @@ object TreeSearch {
                 return out.toString() to count
             }
             val m = pattern.matcher(text)
-            val sb = StringBuilder()
+            // StringBuffer, не StringBuilder: перегрузки appendReplacement/appendTail
+            // со StringBuilder есть только с Android 14 (API 34), minSdk — 30.
+            val sb = StringBuffer()
             while (m.find()) {
                 if (m.end() == m.start()) continue
                 m.appendReplacement(sb, replacement)

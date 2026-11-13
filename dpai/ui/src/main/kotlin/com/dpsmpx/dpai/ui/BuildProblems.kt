@@ -218,6 +218,7 @@ object BuildProblems {
                 i++
             }
         }
-        return bytes.toString(Charsets.UTF_8)
+        // toString(Charset) — только с Android 13 (API 33), minSdk — 30.
+        return String(bytes.toByteArray(), Charsets.UTF_8)
     }
 }
