@@ -1,0 +1,1 @@
+{"format":"dpai.manual-profile","version":2,"kind":"BUILD","steps":[{"name":"Настройка","command":["cmake","-S",".","-B","build"],"timeout":600},{"name":"Сборка","command":["cmake","--build","build","-j","2"],"timeout":3600}]}

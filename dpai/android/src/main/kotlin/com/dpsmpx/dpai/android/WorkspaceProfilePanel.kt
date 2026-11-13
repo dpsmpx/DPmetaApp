@@ -1,5 +1,17 @@
 package com.dpsmpx.dpai.android
 
+import com.dpsmpx.dpai.ui.ManualStep
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.Alignment
+import androidx.compose.runtime.toMutableStateList
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,13 +45,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Явная пользовательская команда, один профиль каждого вида на текущий проект (D-134). */
+/** Строка шага на экране: поля как ввёл человек; проверка — `ManualProfile.form`. */
+private data class StepRow(val name: String, val command: String, val timeout: String)
+
+private val StepRowsSaver = listSaver<SnapshotStateList<StepRow>, String>(
+    save = { list -> list.flatMap { listOf(it.name, it.command, it.timeout) } },
+    restore = { flat -> flat.chunked(3).filter { it.size == 3 }.map { StepRow(it[0], it[1], it[2]) }.toMutableStateList() },
+)
+
+/** Явные пользовательские шаги, один профиль каждого вида на текущий проект (D-134, D-154). */
 @Composable
 internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView, location: WorkspaceLocation?, kind: ManualProfileKind, onProblem: (path: String, line: Int) -> Unit = { _, _ -> }) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var command by rememberSaveable(view.project.project.value, kind.name) { mutableStateOf("") }
-    var timeout by rememberSaveable(view.project.project.value, kind.name) { mutableStateOf("1800") }
+    // Шаги профиля (D-154): поля экрана переживают поворот; сохранённый профиль подставляется, пока поля пусты.
+    val rows = rememberSaveable(view.project.project.value, kind.name, saver = StepRowsSaver) { mutableStateListOf(StepRow("", "", "1800")) }
     var loaded by remember(view.project, kind) { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -51,21 +71,46 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
         when (val r = withContext(Dispatchers.IO) { model.manualProfile(view.project, kind) }) {
             is Outcome.Failure -> note = r.errors.first().message
             is Outcome.Success -> r.value?.let { p ->
-                if (command.isEmpty()) command = p.command.joinToString(" ") { arg -> arg.split('\'').joinToString("\"'\"") { "'$it'" } }
-                timeout = p.timeoutSeconds.toString()
+                if (rows.all { it.command.isBlank() }) {
+                    rows.clear()
+                    rows.addAll(p.steps.map { StepRow(it.name, ManualProfile.quote(it.command), it.timeoutSeconds.toString()) })
+                }
             }
         }
         loaded = true
     }
+    val editable = loaded && !run.blocked && !busy
+    fun form() = ManualProfile.form(kind, rows.map { Triple(it.name, it.command, it.timeout) })
     Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
         Text(if (kind == ManualProfileKind.CHECK) "Ручная проверка" else "Ручная сборка", style = MaterialTheme.typography.titleSmall)
-        Text("Команда запускается в выбранном дереве без shell. Для скрипта укажите интерпретатор явно. Секреты в команду не добавляйте.", style = MaterialTheme.typography.bodySmall)
-        OutlinedTextField(value = command, onValueChange = { command = it }, enabled = loaded && !run.blocked && !busy, label = { Text("Команда и аргументы") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = timeout, onValueChange = { timeout = it }, enabled = loaded && !run.blocked && !busy, label = { Text("Таймаут, секунд") })
-        TextButton(enabled = loaded && !busy && !run.blocked, onClick = {
+        Text("Шаги выполняются по порядку в выбранном дереве, без shell; следующий — только после кода 0 предыдущего. Для скрипта укажите интерпретатор явно. Секреты в команду не добавляйте.", style = MaterialTheme.typography.bodySmall)
+        Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+            Text("Шаблон:", style = MaterialTheme.typography.bodySmall)
+            for (t in ManualProfile.templates(kind)) TextButton(enabled = editable, onClick = {
+                rows.clear()
+                rows.addAll(t.steps.map { (n, c, s) -> StepRow(n, c, s) })
+                note = "Шаблон «${t.title}» подставлен — проверьте команды и сохраните"
+            }) { Text(t.title) }
+        }
+        rows.forEachIndexed { i, row ->
+            Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Шаг ${i + 1}", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                    TextButton(enabled = editable && i > 0, onClick = { rows.add(i - 1, rows.removeAt(i)) }, modifier = Modifier.semantics { contentDescription = "Шаг ${i + 1} выше" }) { Text("↑") }
+                    TextButton(enabled = editable && i < rows.size - 1, onClick = { rows.add(i + 1, rows.removeAt(i)) }, modifier = Modifier.semantics { contentDescription = "Шаг ${i + 1} ниже" }) { Text("↓") }
+                    TextButton(enabled = editable && rows.size > 1, onClick = { rows.removeAt(i) }) { Text("Убрать") }
+                }
+                OutlinedTextField(value = row.name, onValueChange = { rows[i] = row.copy(name = it.take(ManualStep.MAX_NAME)) }, enabled = editable, label = { Text("Название") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = row.command, onValueChange = { rows[i] = row.copy(command = it) }, enabled = editable, label = { Text("Команда и аргументы") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = row.timeout, onValueChange = { rows[i] = row.copy(timeout = it.filter(Char::isDigit).take(5)) }, enabled = editable, label = { Text("Таймаут, секунд") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+            }
+        }
+        TextButton(enabled = editable && rows.size < ManualProfile.MAX_STEPS, onClick = { rows.add(StepRow("", "", "1800")) }) { Text("+ Шаг") }
+        TextButton(enabled = editable, onClick = {
             busy = true
             scope.launch {
-                val r = withContext(Dispatchers.IO) { when (val p = ManualProfile.form(kind, command, timeout)) {
+                val r = withContext(Dispatchers.IO) { when (val p = form()) {
                     is Outcome.Failure -> p
                     is Outcome.Success -> model.saveManualProfile(view.project, p.value)
                 } }
@@ -74,7 +119,7 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
             }
         }) { Text("Сохранить профиль") }
         TextButton(enabled = loaded && !busy && !run.blocked && location != null && view.ready && state[LongJobs.WORKSPACE_PROFILE]?.running != true, onClick = {
-            when (val p = ManualProfile.form(kind, command, timeout)) {
+            when (val p = form()) {
                 is Outcome.Failure -> note = p.errors.first().message
                 is Outcome.Success -> {
                     if (model.startManualProfile(view.project, location!!, p.value)) {
@@ -84,6 +129,17 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
                 }
             }
         }) { Text(if (kind == ManualProfileKind.CHECK) "Запустить проверку" else "Запустить сборку") }
+        // Ход по шагам (D-154): ✓ — код 0, ✗ — ошибка, ▶ — идёт, · — ещё не запускался.
+        run.active?.profile?.steps?.takeIf { it.size > 1 }?.forEachIndexed { i, s ->
+            val r = run.results.firstOrNull { it.step == i + 1 }
+            val mark = when {
+                r != null && r.ok -> "✓"
+                r != null -> "✗"
+                run.step == i + 1 -> "▶"
+                else -> "·"
+            }
+            Text("$mark ${i + 1}. ${s.name}" + (r?.takeIf { !it.ok }?.let { " — ${it.reason}" }.orEmpty()), style = MaterialTheme.typography.bodyMedium)
+        }
         note?.let { Text(it) }
         state[LongJobs.WORKSPACE_PROFILE]?.let { job -> if (!job.running) job.note?.let { Text(it) } }
         if (run.blocked) {
