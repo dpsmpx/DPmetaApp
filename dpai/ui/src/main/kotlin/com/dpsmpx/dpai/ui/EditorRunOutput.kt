@@ -6,7 +6,8 @@ class EditorRunOutput(private val file: String = "main.cpp") {
     private var end = 0
     private var size = 0
     private var done = false
-    private val status = Regex("(?:^|[\\r\\n])\\[Код выхода: ([0-9]{1,3})]\\r?\\n")
+    // Код со знаком и до 10 цифр: у Windows бывают коды вида -1073741819 (D-163).
+    private val status = Regex("(?:^|[\\r\\n])\\[Код выхода: (-?[0-9]{1,10})]\\r?\\n")
     @Synchronized fun feed(input: ByteArray, count: Int = input.size): RunDiagnosis? {
         require(count in 0..input.size)
         if (done || count == 0) return null

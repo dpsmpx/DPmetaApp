@@ -46,4 +46,11 @@ class EditorRunOutputTest {
         val kt = EditorRunOutput("a.kt").feed("DPAI_KOTLIN_TOOLCHAIN: not installed\n[Код выхода: 127]\n".toByteArray())!!
         assertEquals(KotlinRuntime.packages, kt.packages)
     }
+
+    /** Код выхода Windows (D-163): со знаком и длинный; PowerShell шлёт \r\n. */
+    @Test fun windowsExitCodesAreRead() {
+        val crash = EditorRunOutput().feed("Unhandled exception\r\n[Код выхода: -1073741819]\r\nPS C:\\p> ".toByteArray())
+        assertEquals(-1073741819, crash?.exitCode)
+        assertEquals(0, EditorRunOutput().feed("done\r\n[Код выхода: 0]\r\n".toByteArray())?.exitCode)
+    }
 }

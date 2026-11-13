@@ -4633,6 +4633,32 @@ debugpy (`-Ddpai.test.debugpy`): остановка в функции, стек,
 **Проверка.** `SftpTreeTest` (двойник: пути Windows, ссылки и негодные
 имена, пределы, куски, отмена, только чтение, поиск по шаблонам); живой —
 `-Ddpai.test.ssh`; на телефоне — DPmetaApp:TODO.md.
+### D-163 — Запуск на Windows-target: PowerShell `-EncodedCommand`
+
+**Статус.** Принято 13 ноября 2026 при исполнении DPmetaApp:D-128;
+снимает отказ Windows из D-155.
+**Решение.**
+- `ui.EditorTerminalRun.windowsArgv(папка, команда)` — argv
+  `powershell.exe -NoLogo -NoProfile -NoExit -ExecutionPolicy Bypass
+  -EncodedCommand <base64>`: сценарий в UTF-16LE и base64. По SSH на
+  Windows аргументы с `$`, `%`, `^`, `!`, кавычками не передаются
+  (`RemoteShell`, аудит A-06), а base64 — передаётся; оболочка входа
+  (cmd.exe или PowerShell) его не раскрывает.
+- Сценарий: вывод UTF-8; `Set-Location -LiteralPath` в папку (нет папки —
+  «Папка не найдена» и `[Код выхода: 1]`, команда не выполняется);
+  `DPAI_ROOT`; команда профиля строкой как есть (её пишет автор, как
+  `sh -c` у POSIX); код — `$LASTEXITCODE` программы, иначе `$?`;
+  `[Код выхода: N]`; `-NoExit` оставляет PowerShell в папке.
+- Пути в сценарии — строки в одинарных кавычках; кавычки, и
+  типографские тоже (PowerShell их считает кавычками), удваиваются.
+  Папка — абсолютная с диском, до 260 знаков; команда — одна строка до
+  1500 знаков; вся строка — короче 8191 (предел cmd.exe).
+- `EditorRunOutput` понимает код выхода со знаком и до 10 цифр (коды
+  Windows вида `-1073741819`).
+**Почему.** DPmetaApp:D-128.
+**Проверка.** `EditorTerminalRunTest` (сценарий из base64, кавычки,
+отказы, предел строки, проход через `RemoteShell` для Windows),
+`EditorRunOutputTest`; PowerShell на Windows-ПК — DPmetaApp:TODO.md.
 ## Отложено
 
 Решения, которые принимаются в начале своего этапа и до этого не

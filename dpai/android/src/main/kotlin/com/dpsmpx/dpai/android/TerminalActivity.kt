@@ -181,7 +181,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                 runOnUiThread {
                     val plan = when {
                         target == null -> Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.ENTITY_NOT_FOUND, "target удалён")
-                        target.platform != com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX -> Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "запуск программы на Windows-target пока не поддержан")
+                        // Windows — PowerShell по SSH с PTY (D-163).
+                        target.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.WINDOWS -> com.dpsmpx.dpai.ui.EditorTerminalRun.windowsArgv(runDir, runCommand)
                         else -> com.dpsmpx.dpai.ui.EditorTerminalRun.argv(null, runDir, runCommand)
                     }
                     when (plan) {

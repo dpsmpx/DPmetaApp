@@ -8,6 +8,7 @@ import com.dpsmpx.dpai.execution.process.ProcessSpec
 import com.dpsmpx.dpai.execution.process.run
 import kotlin.time.Duration.Companion.seconds
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -56,5 +57,30 @@ class EditorTerminalRunTest {
         assertTrue(output.contains(sub.toString()), output)
         assertTrue(output.contains("[Код выхода: 3]"), output)
         assertIs<Outcome.Failure>(EditorTerminalRun.argv(null, "relative", "./app"))
+    }
+
+    /** Windows-target (D-163): сценарий PowerShell — base64, команда как есть, кавычки удвоены, строка короче предела cmd.exe. */
+    @Test fun windowsRunIsEncodedPowerShellThatPassesSshAndCmdLimits() {
+        val folder = "C:\\Users\\Мария O'Brien\u2019s\\proj/build"
+        val command = "& \".\\app.exe\" --level 2 %PATH% \$env:X `n !x ^y"
+        val argv = EditorTerminalRun.windowsArgv(folder, command).valueOrNull()!!
+        assertEquals(listOf("powershell.exe", "-NoLogo", "-NoProfile", "-NoExit", "-ExecutionPolicy", "Bypass", "-EncodedCommand"), argv.dropLast(1))
+        val script = String(java.util.Base64.getDecoder().decode(argv.last()), Charsets.UTF_16LE)
+        val lines = script.lines()
+        assertTrue(lines.any { "Set-Location -LiteralPath 'C:\\Users\\Мария O''Brien\u2019\u2019s\\proj/build' -ErrorAction Stop" in it }, script)
+        assertTrue(command in lines, "команда — своей строкой как есть: $script")
+        assertTrue(lines.indexOf(command) < lines.indexOfFirst { "[Код выхода: \$dpaiCode]" in it }, script)
+        assertTrue("UTF8" in lines.first(), script)
+        // Строка пройдёт по SSH на Windows: base64 без $, %, кавычек.
+        val joined = com.dpsmpx.dpai.execution.ssh.RemoteShell.join(com.dpsmpx.dpai.execution.target.TargetPlatform.WINDOWS, argv).valueOrNull()!!
+        assertTrue(joined.length < EditorTerminalRun.CMD_LIMIT, joined.length.toString())
+
+        val longest = EditorTerminalRun.windowsArgv("C:\\" + "п".repeat(EditorTerminalRun.MAX_WINDOWS_DIR - 3), "x".repeat(EditorTerminalRun.MAX_WINDOWS_COMMAND)).valueOrNull()!!
+        val longJoined = com.dpsmpx.dpai.execution.ssh.RemoteShell.join(com.dpsmpx.dpai.execution.target.TargetPlatform.WINDOWS, longest).valueOrNull()!!
+        assertTrue(longJoined.length < EditorTerminalRun.CMD_LIMIT, "самый длинный запуск — ${longJoined.length} знаков")
+
+        for ((d, c) in listOf("proj" to "app.exe", "/home/x" to "app.exe", "C:\\p" to "", "C:\\p" to "a\nb", "C:\\p\nq" to "app.exe", "C:\\p" to "x".repeat(EditorTerminalRun.MAX_WINDOWS_COMMAND + 1))) {
+            assertIs<Outcome.Failure>(EditorTerminalRun.windowsArgv(d, c), "$d | ${c.take(20)}")
+        }
     }
 }

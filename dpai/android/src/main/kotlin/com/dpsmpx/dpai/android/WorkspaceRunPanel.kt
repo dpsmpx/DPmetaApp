@@ -36,7 +36,8 @@ import kotlinx.coroutines.withContext
 
 /**
  * Запуск программы проекта (D-155): команда в новой вкладке терминала на target
- * дерева — с вводом и выводом, кодом выхода и ошибками с переходом в код (D-153).
+ * дерева — с вводом и выводом, кодом выхода и ошибками с переходом в код (D-153);
+ * на Windows-target — PowerShell (D-163).
  * «Сначала собрать» запускает профиль «Сборка» (D-154) и открывает программу,
  * только если все шаги сборки прошли; ждёт этот экран — ушли с него, программа
  * сама не запустится, останется «▶ Запустить».
@@ -70,7 +71,7 @@ internal fun WorkspaceRunPanel(model: DemoModel, view: ProjectWorkspaceView, loc
         loaded = true
     }
     val target = view.target
-    val windows = target != null && !target.inApp && target.platform != TargetPlatform.POSIX
+    val windows = target != null && !target.inApp && target.platform == TargetPlatform.WINDOWS
 
     /** Проверки перед запуском — как у ▶ редактора: дерево доступно для записи, правки сохранены, ручной профиль не идёт. */
     suspend fun guard(loc: WorkspaceLocation): String? = withContext(Dispatchers.IO) {
@@ -130,7 +131,7 @@ internal fun WorkspaceRunPanel(model: DemoModel, view: ProjectWorkspaceView, loc
             Checkbox(buildFirst, { buildFirst = it }, enabled = editable)
             Text("Сначала собрать — профилем «Сборка»; программа откроется, только если все шаги прошли", style = MaterialTheme.typography.bodyMedium)
         }
-        if (windows) Text("Запуск на Windows-target пока не поддержан: откройте программу в терминале ПК.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        if (windows) Text("Windows: команда выполняется в PowerShell в папке запуска — одна строка до ${com.dpsmpx.dpai.ui.EditorTerminalRun.MAX_WINDOWS_COMMAND} знаков.", style = MaterialTheme.typography.bodySmall)
         Row {
             TextButton(enabled = editable, onClick = {
                 busy = true
@@ -143,7 +144,7 @@ internal fun WorkspaceRunPanel(model: DemoModel, view: ProjectWorkspaceView, loc
                     busy = false
                 }
             }) { Text("Сохранить") }
-            TextButton(enabled = editable && location != null && view.ready && !windows && !run.blocked, onClick = {
+            TextButton(enabled = editable && location != null && view.ready && !run.blocked, onClick = {
                 val loc = location ?: return@TextButton
                 val profile = when (val p = RunProfile.form(command, dir, buildFirst)) {
                     is Outcome.Failure -> { note = p.errors.first().message; return@TextButton }
