@@ -15,6 +15,18 @@
 APK и своё ядро. Прежние репозитории DP_AI_Orcestrator и DPpass
 заморожены: работа идёт только здесь.
 
+## Как выглядит
+
+Настоящие экраны приложения на синтетических данных — без телефона и без
+данных автора: их снимает `tools/screenshots.sh` на JVM
+([`docs/SCREENSHOTS.md`](docs/SCREENSHOTS.md)).
+
+| Пульт: сводка | Пульт: проекты | Настройки |
+|---|---|---|
+| <img src="docs/screenshots/pult-summary.png" width="240" alt="Пульт, сводка"> | <img src="docs/screenshots/pult-projects.png" width="240" alt="Пульт, проекты"> | <img src="docs/screenshots/settings.png" width="240" alt="Документ настроек"> |
+| **Справка** | **«AI»: сводка (демо)** | **«AI»: задачи (демо)** |
+| <img src="docs/screenshots/help.png" width="240" alt="Справка"> | <img src="docs/screenshots/ai-summary.png" width="240" alt="Окно AI, сводка"> | <img src="docs/screenshots/ai-tasks.png" width="240" alt="Окно AI, задачи"> |
+
 ## Что приложение умеет сейчас
 
 Срез на 25 октября 2026. Что из этого ещё не проверено на телефоне —
