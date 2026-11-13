@@ -54,7 +54,11 @@ object StorageMap {
         if (LinuxSetup.environment(app).installed() != null) {
             LinuxSetup.environment(app).writeProfile()
             // Помощник входа Git из GH_TOKEN (D-158) — и в уже установленной среде; чужой /etc/gitconfig не трогается.
+            val had = LinuxSetup.environment(app).gitConfigured()
             LinuxSetup.environment(app).writeGitConfig()
+            if (!had && LinuxSetup.environment(app).gitConfigured()) {
+                HealthAuto.fixed(app, "в Git Linux записан помощник входа GitHub (берёт токен из GH_TOKEN, если он выдан)")
+            }
         }
         when (r) {
             is Outcome.Success -> if (r.value.moved.isNotEmpty() || r.value.skipped.isNotEmpty()) {

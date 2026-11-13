@@ -149,6 +149,26 @@ class RedactorTest {
         assertEquals(Redactor.MARK, Redactor.STANDARD.redact(padded))
     }
 
+    /**
+     * Журнал приложения 13 ноября 2026 (D-158): пути отказа apk — «failed to extract <redacted>.bfd» —
+     * прятались целиком из-за сегмента `aarch64-alpine-linux-musl`. Обычный уровень их показывает;
+     * токен в сегменте пути, hex-куски через дефис и STRICT — по-прежнему скрыты.
+     */
+    @Test
+    fun packagePathsWithTripletsAreNotTokens() {
+        for (line in listOf(
+            "ERROR: binutils-2.45.1-r1: failed to extract usr/aarch64-alpine-linux-musl/bin/ld.bfd: Permission denied",
+            "ERROR: gcc-15.2.0-r5: failed to extract usr/libexec/gcc/aarch64-alpine-linux-musl/15.2.0: Permission denied",
+            "ERROR: g++-15.2.0-r5: failed to extract usr/bin/aarch64-alpine-linux-musl-c++: Permission denied",
+            "файл usr/lib/gcc/x86_64-alpine-linux-musl/15.2.0/crtbeginS.o",
+        )) assertEquals(line, r.redact(line))
+        val secretInPath = "Zx9".repeat(10)
+        assertTrue(secretInPath !in r.redact("usr/aarch64-alpine-linux-musl/$secretInPath"), "токен в соседнем сегменте скрыт")
+        val hex = "a1b2c3d4e5-f6a7b8c9d0-e1f2a3b4c5"
+        assertTrue(hex !in r.redact("dir/$hex/x"), "hex-куски через дефис — не слова")
+        assertTrue("aarch64-alpine-linux-musl" !in Redactor.STRICT.redact("usr/aarch64-alpine-linux-musl-gcc-15-extra/bin/x"), "STRICT — прежний")
+    }
+
     /** Ревью A-70: ветка задачи в уведомлении о слиянии видна — путь из id оркестратора не токен. */
     @Test
     fun taskBranchIsNotAToken() {

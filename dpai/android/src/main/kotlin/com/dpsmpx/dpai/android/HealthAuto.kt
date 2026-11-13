@@ -86,6 +86,13 @@ object HealthAuto {
     private const val COUNT = "count"
     private const val MAX_FIXED = 20
 
+    /** Пауза между починками без нажатия одного набора пакетов. */
+    private const val AUTO_EVERY_MS = 30 * 60_000L
+
+    /** Последняя починка без нажатия: набор и время (монотонные мс). */
+    @Volatile
+    private var lastAuto: Pair<Set<String>, Long>? = null
+
     /** Причина последней неудачной починки пакетов; удачная — `null`. */
     @Volatile
     var lastFailure: String? = null
@@ -129,8 +136,14 @@ object HealthAuto {
             if (!had && env.writeGitConfig().valueOrNull() == true && env.gitConfigured()) {
                 fixed(app, "в Git Linux записан помощник входа GitHub (берёт токен из GH_TOKEN, если он выдан)")
             }
-            val broken = env.brokenPackages().valueOrNull().orEmpty()
-            if (broken.isNotEmpty()) repair(app, force = false)
+            val broken = env.brokenPackages().valueOrNull().orEmpty().map { it.name }.toSet()
+            // Без нажатия — только при сети и не чаще [AUTO_EVERY_MS] на один набор: без сети `apk fix` не пройдёт.
+            val now = com.dpsmpx.dpai.core.clock.Clock.SYSTEM.monotonicNanos() / 1_000_000
+            val last = lastAuto
+            val online = app.getSystemService(android.net.ConnectivityManager::class.java)?.activeNetwork != null
+            if (broken.isNotEmpty() && online && (last == null || last.first != broken || now - last.second >= AUTO_EVERY_MS)) {
+                if (repair(app, force = false)) lastAuto = broken to now
+            }
         }
         remember(app, Health.items(HealthProbe.collect(app)).size)
     }

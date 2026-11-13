@@ -136,19 +136,31 @@ class Redactor private constructor(private val strict: Boolean) {
         if (UUID.matches(v) || TYPED_ID.matches(v)) return false
         // Путь из коротких сегментов — не токен; base64 со «/» — токен.
         // Сегмент-id оркестратора или UUID — тоже не токен: `task/tsk_…` (ветка задачи) скрывался в уведомлении слияния.
-        if ('/' in v && '+' !in v && '=' !in v) {
-            val segments = v.split('/')
+        // Обычный уровень (D-158): «++» имени программы (`…-c++`) — не знак base64, сегмент из коротких слов через
+        // `-`, `_`, `.` (`aarch64-alpine-linux-musl`) — не токен: пути отказа apk прятались целиком.
+        val p = if (strict) v else CPP_SUFFIX.replace(v, "")
+        if ('/' in p && '+' !in p && '=' !in p) {
+            val segments = p.split('/')
             // Непрозрачные смешанные сегменты base64 не становятся путём только из-за `/` (D-130).
             val opaque = segments.any { part ->
                 !TYPED_ID.matches(part) && !UUID.matches(part) && part.length >= 8 && part.any(Char::isUpperCase) && part.any(Char::isLowerCase)
             }
-            if (!opaque && segments.all { it.length < 24 || TYPED_ID.matches(it) || UUID.matches(it) }) return false
+            if (!opaque && segments.all { it.length < 24 || TYPED_ID.matches(it) || UUID.matches(it) || (!strict && words(it)) }) return false
         }
         return true
     }
 
+    /** Сегмент пути из трёх и больше коротких строчных слов (≤ 12 знаков, ≤ 3 цифр) через `-`, `_`, `.`. */
+    private fun words(segment: String): Boolean {
+        val parts = segment.split('-', '_', '.')
+        return parts.size >= 3 && parts.all { w -> w.length in 1..12 && w.all { it in 'a'..'z' || it in '0'..'9' } && w.count(Char::isDigit) <= 3 }
+    }
+
     companion object {
         const val MARK: String = "<redacted>"
+
+        /** «++» в конце имени программы (`g++`, `aarch64-alpine-linux-musl-c++`) — не знак base64. */
+        private val CPP_SUFFIX = Regex("(?<=[a-z])\\+\\+(?=$|[/._-])")
         const val PRIVATE_KEY_MARK: String = "<redacted:private-key>"
 
         val STANDARD: Redactor = Redactor(strict = false)

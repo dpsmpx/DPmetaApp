@@ -106,7 +106,8 @@ object TermuxLauncher {
             !installed(context) -> TermuxState.NOT_INSTALLED
             !supportsRunCommand(context) -> TermuxState.NO_RUN_COMMAND
             !permitted(context) -> TermuxState.NO_PERMISSION
-            requested && nowMs() - lastStartAt < STARTUP_MS -> TermuxState.STARTING
+            // Запроса ещё не было (служба только встала) или он только что ушёл — ждём, это не проблема.
+            !requested || nowMs() - lastStartAt < STARTUP_MS -> TermuxState.STARTING
             else -> TermuxState.REQUESTED_NOT_UP
         }
         return s to port
