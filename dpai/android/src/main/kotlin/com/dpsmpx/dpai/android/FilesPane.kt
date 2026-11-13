@@ -652,7 +652,7 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
                     !LinuxSetup.available(context) || LinuxSetup.environment(context).installed() == null -> Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, "Сначала установите Linux в приложении")
                     // Kotlin/Java — тот же APK, что отлаживали из «Артефактов» этого дерева (D-161).
                     com.dpsmpx.dpai.ui.DebugTargets.engineOf(file) == com.dpsmpx.dpai.ui.DebugTargets.Engine.JDWP ->
-                        Debugger.lastApk(root)?.let { com.dpsmpx.dpai.ui.DebugTargets.forApk(root, it) } ?: com.dpsmpx.dpai.ui.DebugTargets.forFile(root, file)
+                        Debugger.apkFor(file)?.let { (tree, pkg) -> com.dpsmpx.dpai.ui.DebugTargets.forApk(tree, pkg) } ?: com.dpsmpx.dpai.ui.DebugTargets.forFile(root, file)
                     else -> com.dpsmpx.dpai.ui.DebugTargets.forFile(root, file)
                 }
             }

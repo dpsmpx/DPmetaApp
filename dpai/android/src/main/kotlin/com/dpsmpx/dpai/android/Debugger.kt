@@ -84,8 +84,12 @@ object Debugger {
     /** Последний отлаживаемый пакет по корню дерева: «Отладка» над файлом .kt/.java начинает его снова. */
     private val apks = java.util.concurrent.ConcurrentHashMap<String, String>()
 
-    /** Пакет APK, который отлаживали из дерева [treeRoot] в этом запуске приложения. */
-    fun lastApk(treeRoot: String): String? = apks[treeRoot.trimEnd('/')]
+    /**
+     * APK, который отлаживали в этом запуске приложения из дерева, где лежит файл
+     * [path]: корень этого дерева и пакет (ближайший корень — если деревья вложены).
+     */
+    fun apkFor(path: String): Pair<String, String>? =
+        apks.entries.filter { path.startsWith(it.key + "/") }.maxByOrNull { it.key.length }?.let { it.key to it.value }
 
     private val worker = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "dpai-debugger").apply { isDaemon = true } }
 
