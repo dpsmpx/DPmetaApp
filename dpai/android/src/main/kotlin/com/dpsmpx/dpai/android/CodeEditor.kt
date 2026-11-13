@@ -37,6 +37,7 @@ import com.dpsmpx.dpai.ui.EditorChanges
 import com.dpsmpx.dpai.ui.EditorMatches
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Инструменты IDE над нативным полем; снимки, история и восстановление остаются общими (D-136). */
@@ -72,6 +73,9 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
     var note by remember { mutableStateOf<String?>(null) }
     var position by remember { mutableStateOf(1 to 1) }
     val context = LocalContext.current
+    // ИИ-дополнение — только у файла проекта, по кнопке (D-170).
+    val aiCompletion = rememberAiCompletion(path)
+    val aiScope = androidx.compose.runtime.rememberCoroutineScope()
     LaunchedEffect(buffer.text, query, caseSensitive, searching) {
         val text = buffer.text
         delay(150)
@@ -115,6 +119,7 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
             TextButton(onClick = { changes = true }) { Text("Правки") }
             callbacks.debug?.let { d -> TextButton(enabled = !callbacks.busy, onClick = d) { Text("Отладка") } }
             callbacks.ai?.let { a -> TextButton(enabled = !callbacks.busy, onClick = a) { Text("В ИИ") } }
+            aiCompletion?.let { a -> TextButton(enabled = enabled && !a.busy, onClick = { aiScope.launch { a.request(context, buffer) } }) { Text("ИИ: дописать") } }
             callbacks.uiPreview?.let { p -> TextButton(enabled = !callbacks.busy, onClick = p) { Text("Предпросмотр") } }
         }
         if (view && !zen) {
@@ -129,6 +134,7 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
                 TextButton(onClick = { width = when (width) { 2 -> 4; 4 -> 8; else -> 2 } }) { Text("Отступ: $width") }
                 FilterChip(tabs, { tabs = !tabs }, label = { Text("Tab") })
                 TextButton(onClick = { licenses = true }) { Text("Лицензии") }
+                aiCompletion?.let { a -> TextButton(onClick = { a.settings = true }) { Text("ИИ-дополнение…") } }
             }
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                 for ((action, label) in listOf(EditorCommand.COMMENT to "Комментарий", EditorCommand.DUPLICATE to "Дублировать", EditorCommand.DELETE_LINE to "Удалить строки", EditorCommand.MOVE_UP to "Выше", EditorCommand.MOVE_DOWN to "Ниже")) {
@@ -165,6 +171,7 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
         }
         if (!zen) Text("${CodeSyntax.language(path)} · ${position.first}:${position.second} · ${if (EditorActions.separator(buffer.text) == "\r\n") "CRLF" else "LF"}", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall)
         if (!zen) note?.let { Text(it, Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall) }
+        if (!zen) aiCompletion?.let { AiCompletionBar(it, buffer, enabled) { changed() } }
         if (guestPath != null && guestRoot != null) CodeAssist(buffer, guestPath, guestRoot, revision, enabled, width, tabs, onChange = { changed() }, onMarks = { marks = it }, compact = zen, onOpen = callbacks.open)
         // Отладка (D-159): точки — касанием номера строки у файлов C, C++, Python в Linux; строка остановки — фоном.
         val debuggable = guestPath != null && com.dpsmpx.dpai.ui.DebugTargets.engineOf(guestPath) != null

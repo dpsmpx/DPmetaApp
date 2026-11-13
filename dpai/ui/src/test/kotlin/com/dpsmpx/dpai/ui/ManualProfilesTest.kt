@@ -259,6 +259,16 @@ class ManualProfilesTest {
         assertEquals(null, EditorAiRoute.read(newer))
     }
 
+    /** ИИ-дополнение проекта (D-170): `dpai.editor-completion` v1, по умолчанию выключено. */
+    @Test fun editorCompletionIsStoredPerProject() {
+        assertEquals(CompletionSetting.OFF, store().completion(project).valueOrNull())
+        val cloud = CompletionSetting(CompletionSetting.Source.CLOUD, "acc_01J9ZQ3K8M7N6P5R4S3T2V1W0Y", "api.anthropic.com")
+        assertIs<Outcome.Success<Unit>>(store().saveCompletion(project, cloud))
+        assertEquals(cloud, store().completion(project).valueOrNull())
+        assertIs<Outcome.Success<Unit>>(store().saveCompletion(project, CompletionSetting.OFF))
+        assertEquals(CompletionSetting.OFF, store().completion(project).valueOrNull())
+    }
+
     @Test fun runProfileIsValidatedStoredAndBuildCompletionIsReported() {
         val good = RunProfile.form(" ./bin/app --level 1 ", "/build/bin/", true).valueOrNull()!!
         assertEquals(RunProfile("./bin/app --level 1", "build/bin", true), good)

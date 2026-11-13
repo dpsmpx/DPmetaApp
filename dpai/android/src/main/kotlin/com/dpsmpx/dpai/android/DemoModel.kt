@@ -469,6 +469,8 @@ class DemoModel(
     fun saveRunProfile(p: ProjectEntry, profile: com.dpsmpx.dpai.ui.RunProfile) = controller.manualProfiles.saveRun(p, profile)
     fun aiRoute(p: ProjectEntry) = controller.manualProfiles.aiRoute(p)
     fun saveAiRoute(p: ProjectEntry, route: com.dpsmpx.dpai.ui.EditorAiRoute) = controller.manualProfiles.saveAiRoute(p, route)
+    fun completion(p: ProjectEntry) = controller.manualProfiles.completion(p)
+    fun saveCompletion(p: ProjectEntry, setting: com.dpsmpx.dpai.ui.CompletionSetting) = controller.manualProfiles.saveCompletion(p, setting)
     fun pcFiles(target: TargetEntry, root: String, writable: Boolean = false) = controller.pcFiles(target, root, writable)
 
     fun pcHost(target: TargetEntry) = controller.pcHost(target)

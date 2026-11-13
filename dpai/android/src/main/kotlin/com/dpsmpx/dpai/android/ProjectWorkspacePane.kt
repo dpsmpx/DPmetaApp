@@ -119,7 +119,10 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
         pageStates.SaveableStateProvider("${location?.key ?: "${project.project.value}:$taskKey"}:$page") {
             when (page) {
                 WorkspacePage.FILES.name -> if (location == null) Text("У задачи ещё нет доступного рабочего дерева", Modifier.padding(12.dp)) else {
-                    WorkspaceFiles(model, current, location, readOnly = current.paused || !current.ready || selected?.owner != null, modifier = Modifier.weight(1f), onAi = { aiRequest = it })
+                    // Файлы проекта: ИИ-дополнение берёт источник и согласие проекта (D-170).
+                    androidx.compose.runtime.CompositionLocalProvider(LocalAiCompletion provides AiCompletionPlace(model, project)) {
+                        WorkspaceFiles(model, current, location, readOnly = current.paused || !current.ready || selected?.owner != null, modifier = Modifier.weight(1f), onAi = { aiRequest = it })
+                    }
                 }
                 WorkspacePage.AI.name -> Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
                     if (selected == null) Text("Выберите задачу контура, чтобы открыть её чат и действия") else {

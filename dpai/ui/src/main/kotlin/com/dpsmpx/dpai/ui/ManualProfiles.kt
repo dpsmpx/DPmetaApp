@@ -406,6 +406,19 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
         is Outcome.Success -> Outcome.success(Unit)
     }
 
+    /** Источник ИИ-дополнения проекта (D-170); не задан — выключено. */
+    fun completion(project: ProjectEntry): Outcome<CompletionSetting> = when (val r = docs.read(completionKey(project))) {
+        is Outcome.Failure -> r
+        is Outcome.Success -> if (r.value == null) Outcome.success(CompletionSetting.OFF) else CompletionSetting.read(r.value!!.content)?.let { Outcome.success(it) }
+            ?: Outcome.failure(DiagCode.STORAGE_CORRUPTED, "повреждена настройка ИИ-дополнения проекта")
+    }
+
+    @Synchronized
+    fun saveCompletion(project: ProjectEntry, setting: CompletionSetting): Outcome<Unit> = when (val r = docs.write(completionKey(project), setting.toJson())) {
+        is Outcome.Failure -> r
+        is Outcome.Success -> Outcome.success(Unit)
+    }
+
     /** Вызывается под замком контура после проверки свободного проекта и черновиков. */
     @Synchronized
     fun prepare(project: ProjectEntry, target: TargetEntry, location: WorkspaceLocation, profile: ManualProfile): Outcome<ManualRun> {
@@ -565,6 +578,7 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
     private fun runKey(p: ProjectEntry) = "run-${p.project.value.lowercase()}"
 
     private fun aiKey(p: ProjectEntry) = "editor-ai-${p.project.value.lowercase()}"
+    private fun completionKey(p: ProjectEntry) = "editor-completion-${p.project.value.lowercase()}"
     private fun historyKey(p: ProjectEntry) = "history-${p.project.value.lowercase()}"
 
     private fun readRun(o: JsonObject): ManualRun? {
