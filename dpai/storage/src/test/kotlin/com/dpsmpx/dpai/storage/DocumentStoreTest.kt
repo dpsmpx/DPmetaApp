@@ -27,6 +27,29 @@ class DocumentStoreTest {
         assertEquals(DiagCode.VALUE_INVALID, assertIs<Outcome.Failure>(store.write("../x", v1)).errors.single().code)
     }
 
+    @Test
+    fun oversizedReplacementKeepsReadablePreviousDocument() {
+        val store = DocumentStore(SimulatedVfs(), "data")
+        assertTrue(store.write("settings", v1).isSuccess)
+        val oversized = JsonObject.of("text" to json("x".repeat(16 * 1024 * 1024)))
+        val result = assertIs<Outcome.Failure>(store.write("settings", oversized))
+        assertEquals(DiagCode.JSON_TOO_LARGE, result.errors.single().code)
+        assertEquals(v1, store.read("settings").valueOrNull()!!.content)
+    }
+
+    @Test
+    fun keysIncludeRecoverableVersionsWithoutMainFile() {
+        val vfs = SimulatedVfs()
+        val store = DocumentStore(vfs, "data")
+        store.write("settings", v1)
+        vfs.rename("data/settings", "data/settings.tmp")
+        assertEquals(listOf("settings"), store.keys())
+        assertEquals(v1, store.read("settings").valueOrNull()!!.content)
+        vfs.rename("data/settings.tmp", "data/settings.prev")
+        assertEquals(listOf("settings"), store.keys())
+        assertEquals(v1, store.read("settings").valueOrNull()!!.content)
+    }
+
     /** Прерванная в любой точке запись: прежняя или новая версия, не смесь (ТЗ, §103). */
     @Test
     fun crashAtEveryStepLeavesOldOrNew() {

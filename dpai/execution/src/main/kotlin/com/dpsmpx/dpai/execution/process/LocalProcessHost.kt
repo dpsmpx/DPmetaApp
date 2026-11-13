@@ -33,14 +33,10 @@ class LocalProcessHost(private val clock: Clock = Clock.SYSTEM) : ProcessHost {
                 listOf(Diagnostic.fromThrowable(DiagCode.PROCESS_START_FAILED, "${spec.program}: не запустился", e)),
             )
         }
-        try {
-            process.outputStream.use { out -> spec.stdin?.let { out.write(it.toByteArray(Charsets.UTF_8)) } }
-        } catch (_: IOException) {
-            // Процесс закрыл вход сам: это не отказ запуска, а его поведение — оно видно по выводу и коду.
-        }
         val readers = listOf(
             OutputLines.reader(process.inputStream, OutputStream.STDOUT, onOutput),
             OutputLines.reader(process.errorStream, OutputStream.STDERR, onOutput),
+            OutputLines.writer(process.outputStream, spec.stdin),
         )
         return Outcome.success(Local(process, readers, clock))
     }

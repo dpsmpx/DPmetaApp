@@ -36,15 +36,27 @@ data class StoredDocument(val content: JsonObject, val hash: ContentHash, val fr
  * было, — `STORAGE_CORRUPTED`.
  */
 class DocumentStore(private val vfs: Vfs, private val dir: String) {
-    fun keys(): List<String> = try {
-        vfs.list(dir).filter { KEY.matches(it) }
+    // Несколько экземпляров над одним Vfs/каталогом разделяют атомарную операцию (C-09).
+    private val lock = synchronized(LOCKS) { LOCKS.getOrPut(vfs) { mutableMapOf() }.getOrPut(dir) { Any() } }
+
+    fun keys(): List<String> = synchronized(lock) { keysLocked() }
+
+    private fun keysLocked(): List<String> = try {
+        // После сбоя основного имени может ещё не быть (C-09): read восстанавливает tmp/prev.
+        vfs.list(dir).map { it.removeSuffix(TMP).removeSuffix(PREV) }.filter { KEY.matches(it) }.distinct().sorted()
     } catch (_: IOException) {
         emptyList()
     }
 
-    fun write(key: String, content: JsonObject): Outcome<ContentHash> {
+    fun write(key: String, content: JsonObject): Outcome<ContentHash> = synchronized(lock) { writeLocked(key, content) }
+
+    private fun writeLocked(key: String, content: JsonObject): Outcome<ContentHash> {
         checkKey(key)?.let { return it }
         val (bytes, hash) = encode(content)
+        // Не заменяем читаемую версию документом, который reader затем отвергнет (C-21).
+        if (bytes.toString(Charsets.UTF_8).length > JsonParser.Limits().maxChars) {
+            return Outcome.failure(DiagCode.JSON_TOO_LARGE, "документ больше предела чтения; прежняя версия сохранена", key)
+        }
         val main = Vfs.join(dir, key)
         val tmp = "$main$TMP"
         return try {
@@ -61,7 +73,9 @@ class DocumentStore(private val vfs: Vfs, private val dir: String) {
         }
     }
 
-    fun read(key: String): Outcome<StoredDocument?> {
+    fun read(key: String): Outcome<StoredDocument?> = synchronized(lock) { readLocked(key) }
+
+    private fun readLocked(key: String): Outcome<StoredDocument?> {
         checkKey(key)?.let { return it }
         val main = Vfs.join(dir, key)
         return try {
@@ -90,7 +104,9 @@ class DocumentStore(private val vfs: Vfs, private val dir: String) {
      * основная — последней: прерванное удаление оставляет документ
      * читаемым, а не воскрешает прежнюю версию (D-24).
      */
-    fun delete(key: String): Outcome<Unit> {
+    fun delete(key: String): Outcome<Unit> = synchronized(lock) { deleteLocked(key) }
+
+    private fun deleteLocked(key: String): Outcome<Unit> {
         checkKey(key)?.let { return it }
         val main = Vfs.join(dir, key)
         return try {
@@ -107,7 +123,9 @@ class DocumentStore(private val vfs: Vfs, private val dir: String) {
      * переводится по цепочке, проверяется и атомарно заменяется; прежняя
      * версия остаётся `.prev` — точкой отката.
      */
-    fun readMigrated(key: String, migrator: Migrator): Outcome<StoredDocument?> {
+    fun readMigrated(key: String, migrator: Migrator): Outcome<StoredDocument?> = synchronized(lock) { readMigratedLocked(key, migrator) }
+
+    private fun readMigratedLocked(key: String, migrator: Migrator): Outcome<StoredDocument?> {
         val read = read(key)
         val doc = (read as? Outcome.Success)?.value ?: return read
         return when (val m = migrator.migrate(doc.content)) {
@@ -131,6 +149,8 @@ class DocumentStore(private val vfs: Vfs, private val dir: String) {
         if (KEY.matches(key)) null else Outcome.failure(DiagCode.VALUE_INVALID, "неверный ключ документа", key)
 
     companion object {
+        private val LOCKS = java.util.WeakHashMap<Vfs, MutableMap<String, Any>>()
+
         const val FORMAT = "dpai.stored"
         const val VERSION = 1
         private const val TMP = ".tmp"

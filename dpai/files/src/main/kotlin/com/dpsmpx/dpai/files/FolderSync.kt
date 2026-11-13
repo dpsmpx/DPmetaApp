@@ -1,6 +1,7 @@
 package com.dpsmpx.dpai.files
 
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
+import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.hashing.Hashing
 import com.dpsmpx.dpai.core.result.Outcome
 
@@ -144,7 +145,48 @@ object FolderSync {
                 ok(counted)
             }
         }
+        fun metadata(tree: FileTree, path: String): Outcome<FileMeta?> {
+            var dir = ""
+            for (part in path.split('/').dropLast(1)) {
+                val entries = when (val r = tree.list(dir)) {
+                    is Outcome.Failure -> return r
+                    is Outcome.Success -> r.value
+                }
+                val child = entries.firstOrNull { it.name == part } ?: return Outcome.success(null)
+                if (!child.dir) return Outcome.failure(DiagCode.STATE_CONFLICT, "на месте каталога появился файл", path)
+                dir = FileNames.join(dir, part)
+            }
+            return when (val r = tree.list(dir)) {
+                is Outcome.Failure -> r
+                is Outcome.Success -> {
+                    val current = r.value.firstOrNull { it.name == FileNames.name(path) }
+                    if (current?.dir == true) Outcome.failure(DiagCode.STATE_CONFLICT, "на месте файла появился каталог", path)
+                    else Outcome.success(current?.meta)
+                }
+            }
+        }
+        fun unchanged(tree: FileTree, path: String, expected: FileMeta?): Boolean = when (val r = metadata(tree, path)) {
+            is Outcome.Failure -> {
+                errors += r.diagnostics
+                false
+            }
+            is Outcome.Success -> {
+                if (r.value != expected) {
+                    errors += Diagnostic.error(DiagCode.STATE_CONFLICT, "файл изменился после составления плана; нужна повторная сверка", path)
+                    false
+                } else {
+                    true
+                }
+            }
+        }
         for (item in plan) {
+            // План мог ждать ответа человека (C-18). Проверяем обе версии непосредственно
+            // перед действием, включая применение выбранного разрешения конфликта.
+            if (item.action != SyncAction.TOO_LARGE &&
+                (!unchanged(remote, item.path, item.remote) || !unchanged(local, item.path, item.local))) {
+                skipped += item.copy(action = SyncAction.CONFLICT)
+                continue
+            }
             when (item.action) {
                 SyncAction.TO_LOCAL -> toLocal(item, SyncAction.TO_LOCAL)
                 SyncAction.TO_REMOTE -> toRemote(item, SyncAction.TO_REMOTE)
