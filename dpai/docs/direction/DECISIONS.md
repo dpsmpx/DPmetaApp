@@ -4748,6 +4748,29 @@ DPmetaApp:TODO.md.
 переименование поверх и без него, создание каталогов, удаление — отказ,
 переподключение после обрыва); живой — `-Ddpai.test.ssh`; на ПК —
 DPmetaApp:TODO.md.
+### D-167 — Предпросмотр Compose на телефоне: `PreviewActivity` по adb
+
+**Статус.** Принято 13 ноября 2026 при исполнении DPmetaApp:D-132.
+**Решение.**
+- `ui.ComposePreviews.find(текст)` — функции `@Preview` файла (и
+  аннотации-обёртки вида `@PreviewLightDark` не ищутся — только
+  `@Preview`): верхнего уровня, без параметров; имя класса — фасад файла
+  (`ИмяФайлаKt` или `@file:JvmName`), пакет — строка `package`. Функции с
+  параметрами (`@PreviewParameter`) и внутри классов — списком «не
+  показываются» с причиной.
+- `ui.Adb.preview(порт, пакет, класс.функция)` — `am start -W -n
+  <пакет>/androidx.compose.ui.tooling.PreviewActivity --es composable
+  <класс.функция>`; ответ «does not exist» — нет `ui-tooling` в
+  debug-сборке (`Adb.previewResult` — подсказка
+  `debugImplementation("androidx.compose.ui:ui-tooling")`).
+- Пакет приложения — из `applicationId` и `applicationIdSuffix` debug в
+  `build.gradle(.kts)` модуля файла (`ui.ComposePreviews.applicationId`),
+  поле можно поправить; запоминается на дерево.
+- `ui.Adb.screencap(порт)` — `exec-out screencap -p`, PNG — из потока
+  процесса гостя, не строками; предел 16 МБ.
+**Почему.** DPmetaApp:D-132.
+**Проверка.** `ComposePreviewsTest`, `AdbTest`; на телефоне —
+DPmetaApp:TODO.md.
 ## Отложено
 
 Решения, которые принимаются в начале своего этапа и до этого не

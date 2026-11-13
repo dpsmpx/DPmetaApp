@@ -31,6 +31,12 @@
   debugpy на Linux-ПК, debugpy на Windows-ПК; «Отладка» на странице
   «Запуск» у дерева на ПК.
 
+## 13 ноября 2026 — предпросмотр Compose на телефоне (D-167)
+
+- `ui.ComposePreviews` — функции `@Preview` файла и пакет debug из Gradle;
+  `ui.Adb.preview`/`screencap`. В редакторе — «Предпросмотр»: функция
+  открывается `PreviewActivity` приложения по adb, снимок — в панель.
+
 ## 13 ноября 2026 — файлы ПК: просмотр и правка по SFTP (D-166)
 
 - `SftpTree(writable = true)` — запись через временный файл и

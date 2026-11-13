@@ -46,7 +46,9 @@ internal data class EditorCallbacks(val save: () -> Unit = {}, val close: () -> 
     /** «Отладка» файла (D-159): `null` — файл не отлаживается (не C, C++, Python или нет Linux-пути). */
     val debug: (() -> Unit)? = null,
     /** «В ИИ» (D-165): выделение и файл — ИИ проекта; `null` — файл не в дереве проекта. */
-    val ai: (() -> Unit)? = null)
+    val ai: (() -> Unit)? = null,
+    /** «Предпросмотр» (D-167): функции `@Preview` файла Kotlin на телефоне; `null` — их в файле нет. */
+    val uiPreview: (() -> Unit)? = null)
 
 /** Тонкий адаптер: рендеринг/IME у Sora, снимки и история — CodeEditorBuffer (D-136). */
 internal class StudioCodeField(context: Context) : SoraEditor(context) {
