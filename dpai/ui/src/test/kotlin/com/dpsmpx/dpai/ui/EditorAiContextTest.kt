@@ -81,7 +81,7 @@ class EditorAiContextTest {
         assertEquals(setOf("src/main.py"), draft.scope)
         assertTrue(draft.objective.startsWith("Добавь проверку типа\nи тест\n\n--- Контекст из редактора"))
         // Путь не годен для области (пробел) — задача без области, а не отказ.
-        val odd = EditorAiContext.task(input.copy(path = "my docs/a b.py"), "")
+        val odd = EditorAiContext.task(input.copy(path = "my notes/a b.py"), "")
         assertEquals(emptySet(), odd.scope)
         assertEquals("Работа с a b.py", odd.title)
         assertTrue(odd.objective.startsWith("Посмотри это место кода."))
