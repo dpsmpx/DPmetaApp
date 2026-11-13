@@ -88,7 +88,8 @@ internal object PcPreviewRun {
                 val index = (sftp.read("$runDir/${PcPreview.OUT}/${PcPreview.INDEX}", 1L shl 20) as? Outcome.Success)?.value?.toString(Charsets.UTF_8).orEmpty()
                 val rows = PcPreview.parseIndex(index).take(PcPreview.MAX_ITEMS)
                 if (rows.isEmpty()) return@withSftp Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "Gradle не нарисовал. ${log.ifBlank { "Вывода нет." }}", project.module)
-                Outcome.success(Result(rows.map { row -> Shot(row, row.file?.let { image(sftp, runDir, it) }) }, log))
+                val imageCount = rows.count { it.file != null }.coerceAtLeast(1)
+                Outcome.success(Result(rows.map { row -> Shot(row, row.file?.let { image(sftp, runDir, it, imageCount) }) }, log))
             }
         }
         // Worker живёт вне панели: даже после её закрытия дочитывает итог и удаляет свои PNG.
@@ -114,15 +115,12 @@ internal object PcPreviewRun {
         host.run(ProcessSpec(argv), kotlin.time.Duration.parse("30s"), maxStdoutChars = LOG_TAIL)
     }
 
-    private fun image(sftp: SftpTree, runDir: String, file: String): ImageBitmap? {
+    private fun image(sftp: SftpTree, runDir: String, file: String, imageCount: Int): ImageBitmap? {
         val bytes = (sftp.read("$runDir/${PcPreview.OUT}/$file", MAX_PNG) as? Outcome.Success)?.value ?: return null
         // Размеры — до раскодирования: PNG в 16 МиБ может развернуться в гигабайты пикселей.
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-        var sample = 1
-        while (bounds.outWidth / sample > MAX_SIDE || bounds.outHeight / sample > MAX_SIDE) sample *= 2
-        if (sample > MAX_SAMPLE) return null
+        val sample = PcPreview.imageSample(bounds.outWidth, bounds.outHeight, imageCount) ?: return null
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
     }
 
@@ -137,7 +135,4 @@ internal object PcPreviewRun {
     private const val LOG_TAIL = 2_000
     private const val MAX_PNG = 16L shl 20
 
-    /** Сторона картинки в панели — не больше; крупнее — уменьшается при чтении, в 16 раз и больше — не показывается. */
-    private const val MAX_SIDE = 4096
-    private const val MAX_SAMPLE = 8
 }

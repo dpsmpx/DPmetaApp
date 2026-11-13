@@ -119,6 +119,21 @@ class PcPreviewTest {
         assertTrue("-LiteralPath 'C:/Users/O''Neil/${PcPreview.DIR}/$nonce'" in script)
     }
 
+    @Test
+    fun imageBatchFitsMobileMemoryEvenForLargeOrHostileDimensions() {
+        for (count in 1..PcPreview.MAX_ITEMS) {
+            for ((width, height) in listOf(720 to 4000, 4096 to 4096, 4095 to 4097, Int.MAX_VALUE to Int.MAX_VALUE)) {
+                val sample = PcPreview.imageSample(width, height, count) ?: continue
+                val w = (width.toLong() + sample - 1) / sample
+                val h = (height.toLong() + sample - 1) / sample
+                assertTrue(w * h * count <= PcPreview.MAX_PIXELS, "все $count изображений помещаются в общий предел")
+            }
+        }
+        assertEquals(1, PcPreview.imageSample(720, 160, 20))
+        assertNull(PcPreview.imageSample(-1, 100, 1))
+        assertNull(PcPreview.imageSample(Int.MAX_VALUE, Int.MAX_VALUE, 1))
+    }
+
     /**
      * Вся цепочка на настоящем проекте: шаблоны — в «домашний» каталог, команда
      * [PcPreview.command] — настоящим `sh`, итог — `index.tsv` и PNG. Проект — каталог

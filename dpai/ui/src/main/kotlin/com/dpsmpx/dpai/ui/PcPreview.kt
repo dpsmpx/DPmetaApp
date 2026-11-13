@@ -24,6 +24,22 @@ object PcPreview {
     /** Сколько функций и разметок за один запуск Gradle. */
     const val MAX_ITEMS = 20
 
+    /** Вся панель держит до 8 Ми пикселей (32 МиБ ARGB), а не по большой картинке на каждый пункт. */
+    const val MAX_PIXELS: Long = 8L * 1024 * 1024
+
+    fun imageSample(width: Int, height: Int, count: Int): Int? {
+        if (width <= 0 || height <= 0 || count !in 1..MAX_ITEMS) return null
+        val budget = MAX_PIXELS / count
+        var sample = 1
+        while (sample <= 8) {
+            val w = (width.toLong() + sample - 1) / sample
+            val h = (height.toLong() + sample - 1) / sample
+            if (w <= 4096 && h <= 4096 && w * h <= budget) return sample
+            sample *= 2
+        }
+        return null
+    }
+
     private val LAYOUT = Regex("^[a-z0-9_]+$")
     private val COMPOSABLE = Regex("^[A-Za-z_$][\\w$]*(\\.[A-Za-z_$][\\w$]*)+$")
 
