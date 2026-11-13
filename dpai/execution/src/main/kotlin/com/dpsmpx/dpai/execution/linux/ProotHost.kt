@@ -48,6 +48,13 @@ data class ProotLayout(
  * Поэтому из `/dev` хоста гостю видны только [DEVICES], `/sys` — не виден
  * вовсе (D-93): `/dev/binder` — путь к системным службам от имени
  * приложения, коду из npm и репозитория он не нужен.
+ *
+ * Сервер adb гостя — на сокете в домашнем каталоге гостя ([ADB_SERVER_SOCKET],
+ * угроза T23), а не на `tcp:localhost:5037`: loopback телефона общий для всех
+ * приложений, и сервер adb не спрашивает, кто к нему подключился. Сокет лежит
+ * в данных приложения, другим приложениям Android туда хода нет. Переменная
+ * задаётся каждому процессу гостя поверх [ProcessSpec.environment] — и
+ * командам IDE, и терминалу, и ходам ИИ.
  */
 class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) : ProcessHost {
     override fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit): Outcome<RunningProcess> = host.start(wrap(spec), onOutput)
@@ -86,6 +93,7 @@ class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) 
         val environment = (spec.environment ?: GUEST_ENVIRONMENT) + mapOf(
             "PROOT_LOADER" to layout.loader,
             "PROOT_TMP_DIR" to layout.tmp,
+            "ADB_SERVER_SOCKET" to ADB_SERVER_SOCKET,
         )
         return ProcessSpec(argv, workDir = null, environment = environment, stdin = spec.stdin)
     }
@@ -106,6 +114,13 @@ class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) 
         )
 
         const val GUEST_HOME: String = "/root"
+
+        /**
+         * Где слушает сервер adb гостя (T23): unix-сокет в [GUEST_HOME] — каталог
+         * есть всегда (без каталога сервер не поднимается), путь на хосте короче
+         * предела `sun_path` в 108 байт.
+         */
+        const val ADB_SERVER_SOCKET: String = "localfilesystem:$GUEST_HOME/.dpmetaapp-adb.sock"
 
         val GUEST_ENVIRONMENT: Map<String, String> = mapOf(
             "HOME" to GUEST_HOME,

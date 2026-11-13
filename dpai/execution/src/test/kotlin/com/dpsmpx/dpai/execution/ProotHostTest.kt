@@ -56,7 +56,21 @@ class ProotHostTest {
         assertNull(spec.workDir, "каталог гостя — через -w, а не каталог процесса хоста")
         assertEquals("ввод", spec.stdin)
         val env = requireNotNull(spec.environment)
-        assertEquals(ProotHost.GUEST_ENVIRONMENT + mapOf("PROOT_LOADER" to layout.loader, "PROOT_TMP_DIR" to layout.tmp), env)
+        assertEquals(ProotHost.GUEST_ENVIRONMENT + mapOf("PROOT_LOADER" to layout.loader, "PROOT_TMP_DIR" to layout.tmp, "ADB_SERVER_SOCKET" to ProotHost.ADB_SERVER_SOCKET), env)
+    }
+
+    /** T23: сервер adb гостя — не на общем loopback телефона, а на сокете в данных приложения. */
+    @Test
+    fun adbServerListensOnAPrivateSocket() {
+        val socket = ProotHost.ADB_SERVER_SOCKET
+        assertTrue(socket.startsWith("localfilesystem:${ProotHost.GUEST_HOME}/"), socket)
+        assertFalse(socket.contains("tcp:") || socket.contains("5037"), socket)
+        // Путь на хосте — корень гостя плюс путь сокета — короче предела sun_path (108 байт с нулём).
+        assertTrue(("/data/user/999/com.dpsmpx.dpai/files/linux/rootfs" + socket.removePrefix("localfilesystem:")).length < 108)
+        val rec = Recorder()
+        // Своё окружение команды (слот, профиль запуска) переменную не убирает и не подменяет.
+        ProotHost(rec, layout).start(ProcessSpec(listOf("adb", "devices"), environment = mapOf("ADB_SERVER_SOCKET" to "tcp:localhost:5037"))) {}
+        assertEquals(socket, requireNotNull(rec.spec).environment?.get("ADB_SERVER_SOCKET"))
     }
 
     @Test
@@ -64,7 +78,7 @@ class ProotHostTest {
         val rec = Recorder()
         ProotHost(rec, layout).start(ProcessSpec(listOf("claude"), environment = mapOf("HOME" to "/slots/a", "PATH" to "/usr/bin"))) {}
         val spec = requireNotNull(rec.spec)
-        assertEquals(mapOf("HOME" to "/slots/a", "PATH" to "/usr/bin", "PROOT_LOADER" to layout.loader, "PROOT_TMP_DIR" to layout.tmp), spec.environment)
+        assertEquals(mapOf("HOME" to "/slots/a", "PATH" to "/usr/bin", "PROOT_LOADER" to layout.loader, "PROOT_TMP_DIR" to layout.tmp, "ADB_SERVER_SOCKET" to ProotHost.ADB_SERVER_SOCKET), spec.environment)
         assertEquals(listOf(ProotHost.GUEST_HOME), pairs(spec.command, "-w"))
     }
 

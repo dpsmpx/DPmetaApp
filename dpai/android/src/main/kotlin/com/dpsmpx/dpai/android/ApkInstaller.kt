@@ -48,8 +48,12 @@ internal object ApkInstaller {
 
     @Volatile private var registered = false
 
-    /** Отправить APK в системную установку; [done] — итог словами системы (из потока приложения). */
-    fun install(context: Context, apk: File, done: (Outcome<String>) -> Unit) {
+    /**
+     * Отправить APK в системную установку; [about] — что ставится (пакет, подпись,
+     * сумма — [ApkReview.logLine]) для журнала; [done] — итог словами системы (из
+     * потока приложения). Ставить — копию, показанную человеку ([ApkReview]).
+     */
+    fun install(context: Context, apk: File, about: String, done: (Outcome<String>) -> Unit) {
         val app = context.applicationContext
         register(app)
         val installer = app.packageManager.packageInstaller
@@ -70,7 +74,7 @@ internal object ApkInstaller {
                 val pi = PendingIntent.getBroadcast(app, session, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
                 s.commit(pi.intentSender)
             }
-            AppLogs.info(app, "установка", "APK отправлен в установку: ${apk.name}")
+            AppLogs.info(app, "установка", "APK отправлен в установку: ${apk.name} — $about")
         } catch (e: Exception) {
             waiting.remove(session)
             runCatching { installer.abandonSession(session) }

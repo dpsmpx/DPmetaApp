@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -97,6 +98,8 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
         var busy by remember { mutableStateOf<String?>(null) }
         var version by remember { mutableIntStateOf(0) }
         var details by remember { mutableStateOf<String?>(null) }
+        var pending by remember { mutableStateOf<Pair<ApkReview.Review, ApkAction>?>(null) }
+        DisposableEffect(Unit) { onDispose { pending?.let { ApkReview.discard(it.first) } } }
         var logcatFor by remember { mutableStateOf<String?>(null) }
         var key by remember { mutableStateOf<SigningKeys.Info?>(null) }
         LaunchedEffect(Unit) { key = withContext(Dispatchers.IO) { SigningKeys.info() } }
@@ -119,6 +122,56 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
             scope.launch {
                 try { note = block() } finally { busy = null; version++ }
             }
+        }
+
+        /** Копия APK и её сведения — в окно перед действием (D-157, T22); `null` — окно открыто. */
+        suspend fun review(file: File, action: ApkAction): String? =
+            when (val r = withContext(Dispatchers.IO) { ApkReview.prepare(app, file, key?.certSha256) }) {
+                is Outcome.Failure -> r.diagnostics.first().message
+                is Outcome.Success -> {
+                    pending = r.value to action
+                    null
+                }
+            }
+
+        fun install(r: ApkReview.Review) {
+            if (busy != null) return ApkReview.discard(r)
+            busy = "Передаю в установку"
+            scope.launch {
+                try {
+                    withContext(Dispatchers.IO) {
+                        ApkInstaller.install(app, r.copy, r.log) { res ->
+                            scope.launch { note = when (res) { is Outcome.Success -> "${r.source.name}: ${res.value}"; is Outcome.Failure -> "${r.source.name}: ${res.diagnostics.first().message}" } }
+                        }
+                    }
+                } finally {
+                    // Сессия установки уже получила байты копии.
+                    ApkReview.discard(r)
+                    busy = null
+                }
+            }
+        }
+
+        fun sign(r: ApkReview.Review) {
+            val what = r.meta?.let { "${it.packageName} ${it.versionName ?: ""}".trim() } ?: r.source.name
+            DeviceConfirm.ask(context, "Подписать своим ключом: $what", onOk = {
+                work("Подписываю") {
+                    try {
+                        val pair = withContext(Dispatchers.IO) { SigningKeys.key() } ?: return@work "ключа подписи нет"
+                        val out = File(r.source.parentFile, ApkSign.signedName(r.source.name))
+                        // Подписывается копия, сведения которой видел человек, а не файл дерева.
+                        when (val s = withContext(Dispatchers.IO) { ApkSign.sign(r.copy, out, pair.first, pair.second) }) {
+                            is Outcome.Failure -> s.diagnostics.first().message
+                            is Outcome.Success -> {
+                                AppLogs.info(app, "подпись", "подписан ${r.source.name} (${r.log}) → ${out.name}: ${s.value.schemes.joinToString()}, SHA-256 сертификата ${s.value.certSha256}")
+                                "Подписан: ${out.name} (${s.value.schemes.joinToString()})"
+                            }
+                        }
+                    } finally {
+                        ApkReview.discard(r)
+                    }
+                }
+            }, onDenied = { ApkReview.discard(r); note = it })
         }
 
         Text("Шаблоны: ${patterns.ifEmpty { TreeArtifacts.DEFAULT }.joinToString(" ")} — меняются в профиле выше.", style = MaterialTheme.typography.bodySmall)
@@ -151,30 +204,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                         TextButton(enabled = busy == null, onClick = {
                             work("Читаю APK") {
                                 val file = host(a.path) ?: return@work "файл вне дерева или исчез"
-                                withContext(Dispatchers.IO) {
-                                    val meta = ApkInstaller.meta(app, file)
-                                    val sig = ApkSign.inspect(file)
-                                    details = buildString {
-                                        when (meta) {
-                                            is Outcome.Success -> {
-                                                append("Пакет: ${meta.value.packageName}\nВерсия: ${meta.value.versionName ?: "?"} (${meta.value.versionCode})\n")
-                                                append("Установлено: ${meta.value.installed ?: "нет"}\n")
-                                                if (meta.value.self) append("Это APK самого DPmetaApp.\n")
-                                            }
-                                            is Outcome.Failure -> append(meta.diagnostics.first().message + "\n")
-                                        }
-                                        when (sig) {
-                                            is Outcome.Success -> {
-                                                append("Подпись: ${if (sig.value.verified) sig.value.schemes.joinToString() else "нет или неверна"}\n")
-                                                sig.value.subject?.let { append("Кем: $it\n") }
-                                                sig.value.certSha256?.let { append("Сертификат SHA-256: $it\n") }
-                                                if (key != null && sig.value.certSha256 == key?.certSha256) append("Подписан вашим ключом.\n")
-                                            }
-                                            is Outcome.Failure -> append(sig.diagnostics.first().message + "\n")
-                                        }
-                                        append("SHA-256 файла: ${ApkSign.fileSha256(file)}")
-                                    }
-                                }
+                                details = withContext(Dispatchers.IO) { ApkReview.describe(ApkInstaller.meta(app, file), ApkSign.inspect(file), ApkSign.fileSha256(file), key?.certSha256) }
                                 null
                             }
                         }) { Text("Сведения") }
@@ -185,17 +215,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                                 return@TextButton
                             }
                             val file = host(a.path) ?: run { note = "файл вне дерева или исчез"; return@TextButton }
-                            busy = "Передаю в установку"
-                            scope.launch {
-                                val meta = withContext(Dispatchers.IO) { ApkInstaller.meta(app, file) }
-                                if (meta is Outcome.Success && meta.value.self) note = "Это APK самого DPmetaApp: после установки приложение закроется и откроется заново."
-                                withContext(Dispatchers.IO) {
-                                    ApkInstaller.install(app, file) { r ->
-                                        scope.launch { note = when (r) { is Outcome.Success -> "${file.name}: ${r.value}"; is Outcome.Failure -> "${file.name}: ${r.diagnostics.first().message}" } }
-                                    }
-                                }
-                                busy = null
-                            }
+                            work("Проверяю APK") { review(file, ApkAction.INSTALL) }
                         }) { Text("Установить") }
                         // Запуск установленного APK и сразу его logcat (D-160): adb к самому телефону.
                         TextButton(enabled = busy == null, onClick = {
@@ -231,19 +251,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                         }) { Text("Отладка") }
                         if (!pc) TextButton(enabled = busy == null && key != null, onClick = {
                             val file = host(a.path) ?: run { note = "файл вне дерева или исчез"; return@TextButton }
-                            DeviceConfirm.ask(context, "Подписать ${file.name} своим ключом", onOk = {
-                                work("Подписываю") {
-                                    val pair = withContext(Dispatchers.IO) { SigningKeys.key() } ?: return@work "ключа подписи нет"
-                                    val out = File(file.parentFile, ApkSign.signedName(file.name))
-                                    when (val r = withContext(Dispatchers.IO) { ApkSign.sign(file, out, pair.first, pair.second) }) {
-                                        is Outcome.Failure -> r.diagnostics.first().message
-                                        is Outcome.Success -> {
-                                            AppLogs.info(app, "подпись", "подписан ${file.name} → ${out.name}: ${r.value.schemes.joinToString()}, SHA-256 сертификата ${r.value.certSha256}")
-                                            "Подписан: ${out.name} (${r.value.schemes.joinToString()})"
-                                        }
-                                    }
-                                }
-                            }, onDenied = { note = it })
+                            work("Проверяю APK") { review(file, ApkAction.SIGN) }
                         }) { Text("Подписать") }
                     }
                     if (!pc || host(a.path) != null) TextButton(enabled = busy == null, onClick = {
@@ -268,8 +276,36 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
             AlertDialog(onDismissRequest = { details = null }, title = { Text("APK") }, text = { Text(text, style = MaterialTheme.typography.bodySmall) },
                 confirmButton = { TextButton(onClick = { details = null }) { Text("Закрыть") } })
         }
+        // Перед установкой и подписью — пакет, версия, подпись и сумма копии (D-157, T22).
+        pending?.let { (r, action) ->
+            val cancel = { ApkReview.discard(r); pending = null }
+            AlertDialog(
+                onDismissRequest = cancel,
+                title = { Text(if (action == ApkAction.INSTALL) "Установить ${r.source.name}?" else "Подписать ${r.source.name} своим ключом?") },
+                text = {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        if (r.self && action == ApkAction.INSTALL) {
+                            Text(
+                                "Это APK самого DPmetaApp: он заменит работающее приложение, оно закроется и откроется заново. Ставьте, только если собирали его сами.",
+                                Modifier.padding(bottom = 8.dp), color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        Text(r.text, style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            if (action == ApkAction.INSTALL) "Ставится проверенная копия: изменения файла в дереве после этой проверки в установку не попадут." else "Подписывается проверенная копия; подписанный файл ляжет рядом с исходным.",
+                            Modifier.padding(top = 8.dp), style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                },
+                confirmButton = { TextButton(onClick = { pending = null; if (action == ApkAction.INSTALL) install(r) else sign(r) }) { Text(if (action == ApkAction.INSTALL) "Установить" else "Подписать") } },
+                dismissButton = { TextButton(onClick = cancel) { Text("Отмена") } },
+            )
+        }
     }
 }
+
+/** Что делается с APK после окна сведений. */
+private enum class ApkAction { INSTALL, SIGN }
 
 /** Ключ подписи: нет — «Импортировать…»; есть — субъект, отпечаток и «Удалить…». */
 @Composable
