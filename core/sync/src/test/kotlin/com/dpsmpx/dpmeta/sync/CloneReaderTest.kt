@@ -108,12 +108,16 @@ class CloneReaderTest {
     @Test
     fun subsystemReadsTheHostCloneInItsDirectory() {
         val clones = Clones(File(tmp, "clones"), { Outcome.success(Unit) }, setOf("file"))
-        clones.sync(host.toString(), remote("host", mapOf("dpai/TODO.md" to "- [ ] «AI»\n", "TODO.md" to "- [ ] корень\n")), null, build)
+        clones.sync(host.toString(), remote("host", mapOf("dpai/TODO.md" to "- [ ] «AI»\n", "TODO.md" to "- [ ] корень\n", "dpai/docs/reports/2026-11-01-xref.md" to "# срез\n")), null, build)
         val r = CloneReader(clones, Rest(), host, build)
         val ai = project("dpsmpx/DP_AI_Orcestrator", dir = "dpai")
         assertEquals("dpsmpx/DPmetaApp", r.key(ai))
         assertEquals("- [ ] «AI»\n", (r.file(ai, "TODO.md") as Outcome.Success).value.value)
         assertTrue(r.file(ai, "../TODO.md") is Outcome.Failure, "путь вне каталога подсистемы — отказ")
+        // Каталог подсистемы — из клона DPmetaApp (срезы DPmeta, eco.reports).
+        assertEquals(listOf("2026-11-01-xref.md"), (r.names(ai, "docs/reports") as Outcome.Success).value)
+        assertTrue(r.names(ai, "nope") is Outcome.Failure, "каталога нет — «нет»")
+        assertEquals(null, r.names(project("dpsmpx/Beta"), "docs"), "клона нет — каталоги не показываются")
     }
 
     @Test
@@ -122,10 +126,26 @@ class CloneReaderTest {
         clones.sync("dpsmpx/Alpha", remote("alpha", mapOf("TODO.md" to "- [ ] из клона\n")), null, build)
         val rest = Rest()
         // Автор снял отметку (D-70): клон, где может быть работа ИИ, остаётся, но пульт читает GitHub.
-        val r = CloneReader(clones, rest, host, build) { false }
+        val r = CloneReader(clones, rest, host, build, selected = { false })
         assertEquals("rest:TODO.md", (r.file(project("dpsmpx/Alpha"), "TODO.md") as Outcome.Success).value.value)
         assertEquals(listOf("main"), (r.branches(project("dpsmpx/Alpha")) as Outcome.Success).value.value.map { it.name })
         assertTrue(File(clones.dir("dpsmpx/Alpha"), ".git").isDirectory, "клон не удалён")
+    }
+
+    @Test
+    fun historyComesOnlyFromASelectedCloneOfTheProjectItself() {
+        val clones = Clones(File(tmp, "clones"), { Outcome.success(Unit) }, setOf("file"))
+        clones.sync("dpsmpx/Alpha", remote("alpha", mapOf("TODO.md" to "- [ ] пункт\n")), null, build)
+        clones.sync(host.toString(), remote("host", mapOf("dpai/TODO.md" to "- [ ] «AI»\n")), null, build)
+        val rules = CloneReader.HistoryRules(java.time.ZoneOffset.ofHours(3), setOf("Claude"), setOf("dpsmpx"))
+        val alpha = project("dpsmpx/Alpha")
+        val h = (CloneReader(clones, Rest(), host, build, rules).history(alpha) as Outcome.Success).value.value
+        assertEquals(2, h.days.sumOf { it.commits }, "main и work, без ветки сборок")
+        assertEquals(listOf("work"), h.ahead.map { it.name })
+        assertEquals(null, CloneReader(clones, Rest(), host, build).history(alpha), "без правил — истории нет")
+        assertEquals(null, CloneReader(clones, Rest(), host, build, rules, selected = { false }).history(alpha), "клон не отмечен — истории нет")
+        assertEquals(null, CloneReader(clones, Rest(), host, build, rules).history(project("dpsmpx/DP_AI_Orcestrator", dir = "dpai")), "подсистема — в истории DPmetaApp")
+        assertEquals(null, CloneReader(clones, Rest(), host, build, rules).history(project("dpsmpx/Beta")), "клона нет — истории нет, без отказа")
     }
 
     @Test

@@ -11,20 +11,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
 
 /**
  * Что пришло из своего уведомления: ссылка `dpai://…` или ответ, ждущий
  * подтверждения на экране (D-44). Экран забирает и очищает.
  */
-data class Incoming(val link: String? = null, val confirm: String? = null, val stop: Boolean = false)
+/** Что пришло в окно «AI»: ссылка, подтверждение, остановка или вкладка ([tab] — имя `AiTab`, пункт панели приложения, D-112). */
+data class Incoming(val link: String? = null, val confirm: String? = null, val stop: Boolean = false, val tab: String? = null, val settings: Boolean = false, val settingsSub: String? = null)
 
 /** Единственная activity: экраны — Compose (D-34), данные — контроллер или демо (D-35). */
 class MainActivity : ComponentActivity() {
@@ -40,6 +33,9 @@ class MainActivity : ComponentActivity() {
             OPEN -> intent.getStringExtra(EXTRA_LINK)?.let { incoming.value = Incoming(link = it) }
             CONFIRM -> intent.getStringExtra(EXTRA_URI)?.let { incoming.value = Incoming(confirm = it) }
             STOP_CONFIRM -> incoming.value = Incoming(stop = true)
+            OPEN_TAB -> intent.getStringExtra(EXTRA_TAB)?.let { incoming.value = Incoming(tab = it) }
+            // Подэкран — только из известного списка: чужая строка открывает корень настроек.
+            OPEN_SETTINGS -> incoming.value = Incoming(settings = true, settingsSub = intent.getStringExtra(EXTRA_SUB)?.takeIf { it in SETTINGS_SUBS })
         }
     }
 
@@ -97,6 +93,29 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_LINK = "link"
         const val EXTRA_URI = "uri"
 
+        /** Вкладка «AI» с пункта левой панели приложения (`DPmetaApp:D-112`): IDE — «Файлы». */
+        const val OPEN_TAB = "com.dpsmpx.dpai.OPEN_TAB"
+        const val EXTRA_TAB = "tab"
+
+        /** Окно «AI» на вкладке [tab]: уже открытое выходит вперёд, второго нет (UX-1). */
+        fun tab(context: Context, tab: com.dpsmpx.dpai.ui.AiTab): Intent =
+            internal(context).setAction(OPEN_TAB).putExtra(EXTRA_TAB, tab.name).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+
+        /** «Настройки AI» из документа настроек приложения (`DPmetaApp:D-112`). */
+        const val OPEN_SETTINGS = "com.dpsmpx.dpai.OPEN_SETTINGS"
+
+        private const val EXTRA_SUB = "sub"
+
+        /** [sub] — подэкран («Linux в приложении», «Журнал»…): `null` — корень настроек. */
+        fun settings(context: Context, sub: String? = null): Intent =
+            internal(context).setAction(OPEN_SETTINGS).putExtra(EXTRA_SUB, sub).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+
+        /** Пункт «IDE» левой панели приложения: «Файлы» — дерево, редактор и терминал проекта. */
+        fun ide(context: Context): Intent = tab(context, com.dpsmpx.dpai.ui.AiTab.FILES)
+
+        /** Экран «Проверка» в «Настройках AI» (DPmetaApp:D-123): с полосы и строки «AI» пульта. */
+        fun check(context: Context): Intent = settings(context, SETTINGS_CHECK)
+
         /** Намерение во внутренний вход экрана — для своих `PendingIntent`. */
         fun internal(context: Context): Intent = Intent().setClassName(context, INTERNAL_ENTRY)
 
@@ -114,53 +133,3 @@ class MainActivity : ComponentActivity() {
 
 /** Имена внутренних действий и вход (D-44). */
 private const val INTERNAL_ENTRY = "com.dpsmpx.dpai.android.InternalEntry"
-
-/**
- * Тема всего приложения (DPmetaApp:D-74): цвета обоев телефона (Android 12+),
- * на Android 11 — запасная схема `AppPalette`; светлая и тёмная — по теме
- * телефона. Смысловые цвета — не отсюда, а `toneColor` (тоже `AppPalette`).
- */
-@Composable
-fun DpaiTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
-    val context = LocalContext.current
-    val scheme = when {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        else -> fallbackScheme(dark)
-    }
-    MaterialTheme(colorScheme = scheme, content = content)
-}
-
-/**
- * Запасная схема Android 11 из `AppPalette` — все роли, а не три цвета поверх фиолетовых по умолчанию (UX-5).
- * Копия — у пульта (`DPmetaApp:app/…/ui/PultUi.kt`, он не зависит от оболочки «AI»): новая роль — в обе.
- */
-fun fallbackScheme(dark: Boolean): androidx.compose.material3.ColorScheme {
-    val p = com.dpsmpx.dpai.ui.AppPalette.scheme(dark)
-    fun c(v: Long) = androidx.compose.ui.graphics.Color(v)
-    return if (dark) {
-        darkColorScheme(
-            primary = c(p.primary), onPrimary = c(p.onPrimary), primaryContainer = c(p.primaryContainer), onPrimaryContainer = c(p.onPrimaryContainer),
-            secondary = c(p.secondary), onSecondary = c(p.onSecondary), secondaryContainer = c(p.secondaryContainer), onSecondaryContainer = c(p.onSecondaryContainer),
-            tertiary = c(p.tertiary), onTertiary = c(p.onTertiary), tertiaryContainer = c(p.tertiaryContainer), onTertiaryContainer = c(p.onTertiaryContainer),
-            background = c(p.background), onBackground = c(p.onBackground), surface = c(p.surface), onSurface = c(p.onSurface),
-            surfaceVariant = c(p.surfaceVariant), onSurfaceVariant = c(p.onSurfaceVariant), outline = c(p.outline), outlineVariant = c(p.outlineVariant),
-            error = c(p.error), onError = c(p.onError), errorContainer = c(p.errorContainer), onErrorContainer = c(p.onErrorContainer),
-            surfaceContainerLowest = c(p.surfaceContainerLowest), surfaceContainerLow = c(p.surfaceContainerLow), surfaceContainer = c(p.surfaceContainer),
-            surfaceContainerHigh = c(p.surfaceContainerHigh), surfaceContainerHighest = c(p.surfaceContainerHighest),
-            inverseSurface = c(p.inverseSurface), inverseOnSurface = c(p.inverseOnSurface), inversePrimary = c(p.inversePrimary),
-        )
-    } else {
-        lightColorScheme(
-            primary = c(p.primary), onPrimary = c(p.onPrimary), primaryContainer = c(p.primaryContainer), onPrimaryContainer = c(p.onPrimaryContainer),
-            secondary = c(p.secondary), onSecondary = c(p.onSecondary), secondaryContainer = c(p.secondaryContainer), onSecondaryContainer = c(p.onSecondaryContainer),
-            tertiary = c(p.tertiary), onTertiary = c(p.onTertiary), tertiaryContainer = c(p.tertiaryContainer), onTertiaryContainer = c(p.onTertiaryContainer),
-            background = c(p.background), onBackground = c(p.onBackground), surface = c(p.surface), onSurface = c(p.onSurface),
-            surfaceVariant = c(p.surfaceVariant), onSurfaceVariant = c(p.onSurfaceVariant), outline = c(p.outline), outlineVariant = c(p.outlineVariant),
-            error = c(p.error), onError = c(p.onError), errorContainer = c(p.errorContainer), onErrorContainer = c(p.onErrorContainer),
-            surfaceContainerLowest = c(p.surfaceContainerLowest), surfaceContainerLow = c(p.surfaceContainerLow), surfaceContainer = c(p.surfaceContainer),
-            surfaceContainerHigh = c(p.surfaceContainerHigh), surfaceContainerHighest = c(p.surfaceContainerHighest),
-            inverseSurface = c(p.inverseSurface), inverseOnSurface = c(p.inverseOnSurface), inversePrimary = c(p.inversePrimary),
-        )
-    }
-}

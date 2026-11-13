@@ -123,12 +123,25 @@ class InAppAgentHost(private val runtime: AgentRuntime, home: String) : ProcessH
          * процессов хода строится от [guestEnvironment] (гостя, а не
          * Android); `null` — от окружения процесса (тесты на JVM).
          */
-        fun create(home: String, clock: Clock, version: String, native: NativeProcesses, guest: ProcessHost, guestEnvironment: Map<String, String>? = null): InAppAgentHost =
+        /**
+         * [secrets] — секреты, выданные ИИ автором (`DPmetaApp:D-114`; D-144): читаются
+         * на каждый запуск процесса и добавляются к окружению гостя — не к `RunSpec`,
+         * поэтому в документ хода на диске не попадают.
+         */
+        fun create(
+            home: String,
+            clock: Clock,
+            version: String,
+            native: NativeProcesses,
+            guest: ProcessHost,
+            guestEnvironment: Map<String, String>? = null,
+            secrets: () -> Map<String, String> = { emptyMap() },
+        ): InAppAgentHost =
             InAppAgentHost(
                 AgentRuntime(
                     home, clock, version, selfCommand = emptyList(), host = guest,
                     jobHelper = null, supervision = ThreadSupervision(native, clock), osFacts = { OsFacts.NONE },
-                    baseEnvironment = guestEnvironment?.let { e -> { e } } ?: System::getenv,
+                    baseEnvironment = guestEnvironment?.let { e -> { e + secrets() } } ?: System::getenv,
                 ),
                 home,
             )

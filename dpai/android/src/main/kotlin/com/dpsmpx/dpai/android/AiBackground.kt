@@ -40,7 +40,7 @@ object AiBackground {
 
     /**
      * Служба контроллера — то же правило, что у экрана «AI» (D-36, D-39): есть
-     * target с каталогом слота и человек не останавливал службу кнопкой —
+     * target с каталогом слота или включены общие инструменты, и человек не останавливал службу кнопкой —
      * поднять. Чтение targets — не в главном потоке; из фона Android 12+
      * службу не пустит — это пропуск, а не падение ([ControllerService.start]).
      */
@@ -48,7 +48,7 @@ object AiBackground {
         if (ControllerService.running) return
         thread(name = "dpai-background", isDaemon = true) {
             val live = runCatching { Controller.get(context.filesDir).targets().any { it.configDir != null } }.getOrDefault(false)
-            if (live && !ControllerService.running) ControllerService.start(context)
+            if ((live || SharedVerify.enabled(context)) && !ControllerService.running) ControllerService.start(context)
         }
     }
 }

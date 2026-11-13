@@ -73,3 +73,19 @@
 (`docs/content/products/<product>/`): какие входы, какой метод и версия
 промпта, где записи выходов. Первый продукт —
 `docs/content/products/personal_presentation/PROVENANCE.md`.
+
+## Зависимости инструментов — Д54
+
+11 ноября 2026: tools/requirements.txt закрепляет протестированные
+PyYAML 6.0.3, jsonschema 4.26.0, attrs 26.1.0,
+jsonschema-specifications 2025.9.1, referencing 0.37.0, rpds-py 2026.6.3,
+typing-extensions 4.16.0, numpy 2.3.5, Pillow 13.0.0.
+Прямые и транзитивные runtime-зависимости перечислены явно; extras
+не используются. 356 SHA-256 взяты из JSON API официального PyPI для
+конкретных версий: https://pypi.org/pypi/PyYAML/6.0.3/json
+и аналогично для остальных пакетов. Доверие первичной записи — TLS PyPI.
+Обновление — новым набором версий, хешей и проверкой инструментов.
+Источники лицензий — metadata релизов PyPI: MIT/BSD/Apache-2.0,
+у Pillow также HPND. В Termux numpy/Pillow устанавливаются системным
+пакетным менеджером; pip-lock не утверждает совместимость всех колёс
+PyPI с Android.

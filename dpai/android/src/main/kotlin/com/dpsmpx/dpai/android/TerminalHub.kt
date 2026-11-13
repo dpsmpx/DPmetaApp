@@ -49,7 +49,21 @@ object TerminalHub {
      * Вкладка: к target по SSH ([target]) или к Linux-среде в приложении
      * ([target] — `null`, D-75, шаг 5).
      */
-    class Tab internal constructor(val id: Int, val target: TargetEntry?, val command: List<String>, label: String, val tmux: String? = null) : TerminalListener {
+    /**
+     * Запуск из IDE: [file] — файл редактора (пусто у запуска программы проекта, D-155),
+     * [root] — рабочая папка запуска, [treeRoot] — корень дерева, от которого считаются
+     * пути вкладок редактора [editorRootKey] (D-153).
+     */
+    class EditorRun(val file: String, val root: String, val command: String, val editorRootKey: String?, val treeRoot: String = root) {
+        val language: com.dpsmpx.dpai.ui.RunLanguage get() = com.dpsmpx.dpai.ui.RunLanguage.of(file)
+        internal var output = com.dpsmpx.dpai.ui.EditorRunOutput(file)
+        @Volatile var report: com.dpsmpx.dpai.ui.RunDiagnosis? = null
+            internal set
+        internal var offered = false
+        internal fun begin() { output = com.dpsmpx.dpai.ui.EditorRunOutput(file); report = null; offered = false }
+    }
+
+    class Tab internal constructor(val id: Int, val target: TargetEntry?, val command: List<String>, label: String, val tmux: String? = null, val editorRun: EditorRun? = null, val kind: String? = null) : TerminalListener {
         /**
          * Связь оборвалась, а не программа кончилась (D-111): закрытие без
          * кода выхода или неудачное подключение. Такую вкладку с оболочкой
@@ -154,6 +168,23 @@ object TerminalHub {
 
     fun openLinux(context: Context): Tab = open(context, null, emptyList(), "Linux")
 
+    /** Открытые вкладки ИИ (CLI слота: Claude Code, Codex, Gemini) — куда «В ИИ» из редактора (D-165). */
+    fun aiTabs(): List<Tab> = tabs.filter { t -> t.open && com.dpsmpx.dpai.core.ids.Executor.byKey(t.kind.orEmpty()) != null }
+
+    /**
+     * Вставить [text] во вкладку ИИ (D-165): только вставкой в скобках (режим 2004) — иначе
+     * каждая строка ушла бы программе как ввод с Enter. Enter нажимает человек.
+     */
+    fun pasteToAi(tab: Tab, text: String): com.dpsmpx.dpai.core.result.Outcome<Unit> {
+        if (!tab.open) return com.dpsmpx.dpai.core.result.Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, "вкладка «${tab.label}» не подключена")
+        if (!tab.session.read { it.bracketedPaste }) {
+            return com.dpsmpx.dpai.core.result.Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, "программа во вкладке «${tab.label}» сейчас не принимает вставку: дождитесь приглашения ИИ и повторите")
+        }
+        tab.session.paste(text)
+        current = tab
+        return com.dpsmpx.dpai.core.result.Outcome.success(Unit)
+    }
+
     /** Ещё одна вкладка туда же, куда [like]: оболочка. */
     fun openLike(context: Context, like: Tab): Tab {
         val target = like.target?.let { fresh(context, it) }
@@ -176,7 +207,7 @@ object TerminalHub {
      * же сессию.
      */
     @Synchronized
-    fun open(context: Context, target: TargetEntry?, command: List<String>, label: String, kind: String? = null): Tab {
+    fun open(context: Context, target: TargetEntry?, command: List<String>, label: String, kind: String? = null, editorRun: EditorRun? = null): Tab {
         val session = if (kind != null && target != null && target.tmux && target.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX) {
             // Занятые: открытые вкладки и сессии, которые ещё не удалось завершить (закрыты без сети).
             pendingLoad(context.applicationContext)
@@ -186,7 +217,7 @@ object TerminalHub {
         } else {
             null
         }
-        val tab = Tab(nextId++, target, command, label, session)
+        val tab = Tab(nextId++, target, command, label, session, editorRun, kind)
         tabs += tab
         count.intValue = tabs.size
         current = tab
@@ -355,6 +386,7 @@ object TerminalHub {
         val resumeOnly = status == RECONNECTING && tab.command.isNotEmpty()
         tab.resumed = resumeOnly && tab.tmux != null
         tab.status = status
+        tab.editorRun?.begin()
         tab.session.attach(t)
         observer?.tabs()
         thread(name = "dpai-term-connect", isDaemon = true) {
@@ -365,14 +397,26 @@ object TerminalHub {
             val o: Outcome<TermChannel>? = if (target == null || target.inApp) {
                 // Linux-среда в приложении (и target «в приложении»): псевдотерминал через JNI, без SSH (D-75, шаг 5).
                 com.dpsmpx.dpai.android.linux.LinuxSetup.shell(app, com.dpsmpx.dpai.execution.linux.WindowSize(cols, rows), command).map { child ->
-                    LocalChannel(child, onOutput = { b, n -> tab.session.output(b, 0, n) }, onClosed = { code -> if (tab.transport === t) closed(tab, code) })
+                    LocalChannel(child, onOutput = { b, n ->
+                        tab.session.output(b, 0, n)
+                        if (tab.transport === t) tab.editorRun?.let { run ->
+                            // Отчёт — и при успехе с предупреждениями: места в коде нужны и тогда (D-153).
+                            run.output.feed(b, n)?.takeIf { it.useful || it.problems.items.isNotEmpty() }?.let { report -> run.report = report; observer?.tabs() }
+                        }
+                    }, onClosed = { code -> if (tab.transport === t) closed(tab, code) })
                 }
             } else {
                 val controller = Controller.get(app.filesDir)
                 target.toTarget(controller.knownHostsFile).ssh?.let { endpoint ->
                     JschShell(endpoint, target.platform, identities = listOf(KeystoreKey.identity())).open(
                         cols, rows, command,
-                        onOutput = { b, n -> tab.session.output(b, 0, n) },
+                        onOutput = { b, n ->
+                            tab.session.output(b, 0, n)
+                            // Запуск программы проекта на ПК (D-155): тот же разбор кода выхода и ошибок, что у Linux в приложении.
+                            if (tab.transport === t) tab.editorRun?.let { run ->
+                                run.output.feed(b, n)?.takeIf { it.useful || it.problems.items.isNotEmpty() }?.let { report -> run.report = report; observer?.tabs() }
+                            }
+                        },
                         onClosed = { code -> if (tab.transport === t) closed(tab, code) },
                     ).map { SshChannel(it) }
                 }

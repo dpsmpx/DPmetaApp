@@ -1,0 +1,49 @@
+{
+  "name": "studio-light",
+  "colors": {
+    "editor.background": "#fdfbff",
+    "editor.foreground": "#1c1b1f",
+    "editor.selectionBackground": "#dcd8f5",
+    "editorCursor.foreground": "#6750a4",
+    "editor.lineHighlightBackground": "#f0edf5"
+  },
+  "tokenColors": [
+    {
+      "scope": "comment",
+      "settings": {
+        "foreground": "#5d7057",
+        "fontStyle": "italic"
+      }
+    },
+    {
+      "scope": "keyword,storage.type",
+      "settings": {
+        "foreground": "#673ab7"
+      }
+    },
+    {
+      "scope": "string",
+      "settings": {
+        "foreground": "#8a4c0b"
+      }
+    },
+    {
+      "scope": "constant.numeric,constant.language",
+      "settings": {
+        "foreground": "#006b55"
+      }
+    },
+    {
+      "scope": "entity.name.function",
+      "settings": {
+        "foreground": "#175a91"
+      }
+    },
+    {
+      "scope": "variable.other.interpolation",
+      "settings": {
+        "foreground": "#8a3059"
+      }
+    }
+  ]
+}

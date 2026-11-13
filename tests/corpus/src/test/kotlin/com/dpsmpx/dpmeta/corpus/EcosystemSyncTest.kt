@@ -60,6 +60,11 @@ class EcosystemSyncTest {
         val meta = state.project("DPmeta")!!
         assertEquals(Measure.observed(1L), meta.decisions, "подсистема читается из каталога DPmetaApp")
         assertEquals(setOf("readme", "roadmap"), meta.errors.map { it.kind }.toSet())
+        // Документы DPmeta (eco.*): контракты, открытые риски, очередь, срезы каталога docs/reports.
+        assertEquals(Measure.observed(2L), state.dpmetaCount("contracts"))
+        assertEquals(Measure.observed(2L), state.dpmetaCount("risksOpen"), "открыт и частично")
+        assertEquals(Measure.observed(1L), state.dpmetaCount("syncQueue"))
+        assertEquals(Measure.observed(1L), state.dpmetaCount("reports"))
         assertTrue(meta.errors.all { it.code == DiagCode.ENTITY_NOT_FOUND.name })
         assertEquals(Measure.observed(1L), state.activeProjects)
         assertEquals(Measure.observed(3L), state.questionsOpen)

@@ -22,6 +22,21 @@ class AppDiskTest {
 
     private fun file(rel: String, text: String = "x") = root.resolve(rel).also { it.parent.toFile().mkdirs(); it.toFile().writeText(text) }
 
+    /** Раздел слотов ИИ `~/ai` (D-143, DPmetaApp:D-111) — секрет целиком; проекты и инструменты — видны и пишутся. */
+    @Test
+    fun aiSlotsSectionIsHiddenProjectsAndToolsAreNot() {
+        file("${AppDisk.LINUX_HOME}/ai/claude-1/.credentials.json")
+        file("${AppDisk.LINUX_HOME}/ai/claude-1/CLAUDE.md")
+        file("${AppDisk.LINUX_HOME}/projects/dpsmpx/DPmetaApp/README.md")
+        file("${AppDisk.LINUX_HOME}/tools/models/tiny.gguf")
+        assertTrue(AppDisk.hidden("${AppDisk.LINUX_HOME}/ai"))
+        assertTrue(AppDisk.hidden("${AppDisk.LINUX_HOME}/ai/claude-1/CLAUDE.md"))
+        assertNull(AppDisk.resolve(root, "${AppDisk.LINUX_HOME}/ai/claude-1/CLAUDE.md"))
+        assertFalse("ai" in AppDisk.children(root, AppDisk.LINUX_HOME))
+        assertTrue(AppDisk.writable("${AppDisk.LINUX_HOME}/projects/dpsmpx/DPmetaApp/README.md"))
+        assertTrue(listOf("projects", "tools").all { it in AppDisk.children(root, AppDisk.LINUX_HOME) })
+    }
+
     @Test
     fun secretsAreNeitherListedNorReachable() {
         file("control-token", "TOKEN")
@@ -36,14 +51,33 @@ class AppDiskTest {
         file("${AppDisk.LINUX_HOME}/.config/other/settings")
 
         assertEquals(listOf("journal-copies", "linux", "live"), AppDisk.children(root, ""), "токена нет в списке")
-        assertEquals(listOf(".claude", ".config", "project"), AppDisk.children(root, AppDisk.LINUX_HOME), "каталоги слотов и .ssh — не видны")
-        assertEquals(listOf("other"), AppDisk.children(root, "${AppDisk.LINUX_HOME}/.config"), "ключ сервера локальной модели — не виден (D-105)")
+        assertEquals(listOf("project"), AppDisk.children(root, AppDisk.LINUX_HOME), "скрытые конфиги гостя закрыты по умолчанию")
+        assertEquals(emptyList(), AppDisk.children(root, "${AppDisk.LINUX_HOME}/.config"), "конфиги не открываются и по прямому пути")
         assertEquals(emptyList(), AppDisk.children(root, "${AppDisk.LINUX_HOME}/.claude"), ".credentials.json — не виден нигде")
         for (secret in listOf("control-token", "${AppDisk.LINUX_HOME}/.config/llama/api-key", "${AppDisk.LINUX_HOME}/.claude-slot-1/settings.json", "${AppDisk.LINUX_HOME}/.ssh/id_ed25519", "${AppDisk.LINUX_HOME}/.claude/.credentials.json")) {
             assertNull(AppDisk.resolve(root, secret), "по прямому пути — тоже нет: $secret")
         }
         assertNotNull(AppDisk.resolve(root, "live/live.journal"))
         assertNull(AppDisk.resolve(root, "../outside"), "выход из корня")
+    }
+
+    @Test
+    fun credentialsAndHistoriesAreHiddenAlsoInsideProjects() {
+        for (name in listOf(".git-credentials", ".netrc", ".npmrc", ".pypirc", ".codex/auth.json", ".gemini/auth.json",
+            ".claude.json", ".gnupg/key", ".bash_history", ".ash_history", ".env", ".env.local", ".config/gh/hosts.yml")) {
+            for (parent in listOf(AppDisk.LINUX_HOME, "${AppDisk.LINUX_HOME}/project")) {
+                val relative = "$parent/$name"
+                file(relative)
+                assertTrue(AppDisk.hidden(relative), relative)
+                assertNull(AppDisk.resolve(root, relative), relative)
+                assertFalse(AppDisk.writable(relative), relative)
+            }
+        }
+        for (name in listOf(".gitignore", ".gitattributes", ".editorconfig")) {
+            val relative = "${AppDisk.LINUX_HOME}/project/$name"
+            file(relative)
+            assertNotNull(AppDisk.resolve(root, relative))
+        }
     }
 
     @Test

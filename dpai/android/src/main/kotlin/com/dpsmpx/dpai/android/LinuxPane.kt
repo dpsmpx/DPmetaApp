@@ -78,8 +78,8 @@ fun LinuxScreen(onBack: () -> Unit) {
         allOutput = false
         jobs.start(LongJobs.LINUX_APK, label, excludes = LongJobs.GUEST) {
             when (val r = job()) {
-                is Outcome.Success -> LongJobs.Done(done(r.value), (r.value.stdout + r.value.stderr).takeLast(MAX_OUTPUT))
-                is Outcome.Failure -> LongJobs.Done("$label: ${r.errors.first().message}")
+                is Outcome.Success -> LongJobs.Done(done(r.value), (r.value.stdout + r.value.stderr).takeLast(MAX_OUTPUT), failed = !r.value.ok)
+                is Outcome.Failure -> LongJobs.Done("$label: ${r.errors.first().message}", failed = true)
             }
         }
     }
@@ -95,14 +95,9 @@ fun LinuxScreen(onBack: () -> Unit) {
         when {
             !available -> Text("Недоступно на этом телефоне: нужен процессор arm64.", style = MaterialTheme.typography.bodySmall)
             !checked -> Text("Проверяю…", style = MaterialTheme.typography.bodySmall)
-            installed == null -> Button(enabled = !running, onClick = {
-                jobs.start(LongJobs.LINUX_INSTALL, "Установка Alpine", excludes = LongJobs.GUEST) {
-                    when (val r = LinuxSetup.install(context)) {
-                        is Outcome.Success -> LongJobs.Done(r.value?.let { "Установлено: файлов ${it.files}, ${it.bytes / 1_048_576} МБ" } ?: "Уже установлено")
-                        is Outcome.Failure -> LongJobs.Done("Не установлено: ${r.errors.first().message}")
-                    }
-                }
-            }) { Text(if (install?.running == true) "Устанавливаю Alpine…" else "Установить Alpine") }
+            installed == null -> Button(enabled = !running, onClick = { LinuxJobs.install(context) }) {
+                Text(if (install?.running == true) "Устанавливаю Alpine…" else "Установить Alpine")
+            }
             else -> {
                 Text("Установлено: $installed", style = MaterialTheme.typography.bodySmall)
                 // Терминал — первым и заметным (терминал §4, п. 9).
@@ -112,9 +107,11 @@ fun LinuxScreen(onBack: () -> Unit) {
                     TextButton(enabled = !running && packages.isNotBlank(), onClick = { apk(LinuxEnvironment.Apk.ADD, "Поставить") }) { Text("Поставить") }
                     TextButton(enabled = !running && packages.isNotBlank(), onClick = { apk(LinuxEnvironment.Apk.DEL, "Убрать") }) { Text("Убрать") }
                     TextButton(enabled = !running, onClick = { apk(LinuxEnvironment.Apk.UPGRADE, "Обновить всё") }) { Text("Обновить всё") }
+                    // Claude Code (D-75, шаг 5): Git, Node.js и npm — apk без /proc, затем npm; в конце — версия.
+                    TextButton(enabled = !running, onClick = { allOutput = false; LinuxJobs.claude(context) }) { Text("Поставить Claude Code") }
                     // Codex CLI и Gemini CLI (D-100): Node.js и npm из Alpine, пакеты npm, в конце — версии.
                     TextButton(enabled = !running, onClick = {
-                        run("Установка Codex и Gemini", { LinuxSetup.run(context, LinuxEnvironment.executorsInstall()) }) {
+                        run("Установка Codex и Gemini", { LinuxSetup.runSteps(context, LinuxEnvironment.executorsInstall()) }) {
                             if (it.ok) "Codex и Gemini: установлены" else "Установка завершилась с кодом ${it.exitCode} — причина в выводе ниже"
                         }
                     }) { Text("Установить Codex и Gemini") }
@@ -158,14 +155,16 @@ fun LinuxScreen(onBack: () -> Unit) {
                 )
                 if (howto) {
                     Text(
-                        "1. Поставьте nodejs npm полем «Пакеты» выше (apk в терминале здесь не сработает).\n" +
-                            "2. В терминале — npm i -g @anthropic-ai/claude-code.\n" +
-                            "3. «Добавить слот ▾» → Claude: появится target «в приложении» на вкладке Targets; войдите его «Терминал ▾» → «Claude в терминале» → /login.",
+                        "1. «Поставить Claude Code» выше: Git, Node.js и npm из Alpine, затем Claude Code из npm (нужно около 1 ГБ свободного места).\n" +
+                            "2. «Добавить слот ▾» → Claude: появится target «в приложении» на вкладке Targets.\n" +
+                            "3. Войдите: его «Терминал ▾» → «Claude в терминале» → /login — по разу на слот.\n" +
+                            "Пакеты Alpine — полем «Пакеты»: apk в терминале здесь не сработает.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
             }
         }
+        if (installed != null && SharedVerify.available(context)) SharedVerifyCard()
         // Ход — полосой (AI:A-14); итог операции — строкой, пока его не убрали.
         for (j in listOfNotNull(install, work)) {
             if (j.running) {

@@ -117,7 +117,9 @@ class ControllerService : Service() {
             }
             keeper = Executors.newSingleThreadScheduledExecutor().also { k ->
                 k.scheduleWithFixedDelay({
-                    runCatching { if (ticking) lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES)) }
+                    runCatching {
+                        if (ticking || LongJobs.get(app).busy(LongJobs.SHARED_VERIFY, LongJobs.WORKSPACE_PROFILE)) lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
+                    }
                 }, 1, 1, TimeUnit.MINUTES)
             }
             timer = Executors.newSingleThreadScheduledExecutor().also { t ->
@@ -127,40 +129,74 @@ class ControllerService : Service() {
                     // Такт, умерший молча, оставлял уведомление «контроллер работает», `running = true`
                     // и застывший экран — приложение говорило «работаю», когда работа встала.
                     try {
-                        // Targets с каталогом Claude не осталось — контроллеру нечего опрашивать: служба уходит,
-                        // а не шагает демо в фоне (ревью 8 октября 2026, A-28). Экран поднимет её, когда target появится.
+                        model.resumeManualProfile()
+                        // Без targets служба занимается только общими инструментами; демо в фоне не шагает (A-28).
                         if (!model.hasLive()) {
-                            log.step("служба контроллера: нет targets с каталогом Claude")
-                            stopSelf()
+                            if (!SharedVerify.enabled(app) && !LongJobs.get(app).busy(LongJobs.SHARED_VERIFY, LongJobs.WORKSPACE_PROFILE)) {
+                                log.step("служба контроллера: нет targets и фоновых инструментов")
+                                stopSelf()
+                                return@scheduleWithFixedDelay
+                            }
+                            try {
+                                SharedVerify.tick(app)
+                            } catch (e: Exception) {
+                                log.warn("общие инструменты", AppLogs.describe(e))
+                            }
+                            val working = LongJobs.get(app).busy(LongJobs.SHARED_VERIFY)
+                            // Один DP-Verify не держит CPU в ожидании PIN/изменений; долгую проверку поддерживает keeper.
+                            if (working) lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES)) else if (lock.isHeld) lock.release()
+                            val line = if (working) "DP-Verify: проверка и синхронизация" else "DP-Verify: ожидание следующей попытки"
+                            if (line != shown) {
+                                shown = line
+                                getSystemService(NotificationManager::class.java).notify(ID, notification(line))
+                            }
+                            failures = 0
                             return@scheduleWithFixedDelay
                         }
                         lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
                         ticking = true
                         meter.begin()
+                        // Проверка общей папки идёт отдельно: не задерживает такт и ждёт lease инструментов.
+                        try {
+                            SharedVerify.tick(app)
+                        } catch (e: Exception) {
+                            log.warn("общие инструменты", AppLogs.describe(e))
+                        }
                         // Сбой такта — в журнал приложения, а не молча (D-43): контур идёт дальше.
                         val ok = try {
+                            // Части такта — в замер (D-158): медленный такт называет, что ждало.
+                            var at = Clock.SYSTEM.monotonicNanos()
                             model.step(null).notifications.forEach(notifier::show)
+                            meter.part("шаг контура", at)
                             // Лимиты слотов с автообновлением — раз в минуту, и без открытой сводки.
                             val auto = UsageAuto.enabled(app)
                             val tick = Clock.SYSTEM.monotonicNanos()
                             if (auto.isNotEmpty() && tick - lastUsage >= TimeUnit.MILLISECONDS.toNanos(UsageAuto.EVERY_MS)) {
                                 lastUsage = tick
+                                at = Clock.SYSTEM.monotonicNanos()
                                 model.refreshUsage(auto)
+                                meter.part("лимиты", at)
                             }
                             // Копия настроек — после изменения и раз в час (D-51).
+                            at = Clock.SYSTEM.monotonicNanos()
                             SettingsBackups.tick(app, Controller.get(app.filesDir))
+                            meter.part("копия настроек", at)
                             // Задачи из экосистемы по политике прогона — раз в час (D-106); сбой — в журнал, такт идёт.
+                            at = Clock.SYSTEM.monotonicNanos()
                             try {
                                 EcosystemAuto.tick(app, model, notifier, log)
                             } catch (e: Exception) {
                                 log.error("экосистема", AppLogs.describe(e))
                             }
+                            meter.part("экосистема", at)
                             // Облачная копия — раз в сутки, если включена (D-107); после шага такта контур стоит.
+                            at = Clock.SYSTEM.monotonicNanos()
                             try {
                                 CloudSync.tick(app, model, log)
                             } catch (e: Exception) {
                                 log.error("облачная копия", AppLogs.describe(e))
                             }
+                            meter.part("облачная копия", at)
                             true
                         } catch (e: Exception) {
                             // Сбой шага — тоже сбой подряд: контур, который не строится (журнал не открылся), не работает.
@@ -169,7 +205,10 @@ class ControllerService : Service() {
                         }
                         ticking = false
                         if (ok) failures = 0
-                        meter.end(ok)
+                        meter.end(ok)?.takeIf { it.ms >= SLOW_TICK_MS }?.let { t ->
+                            log.warn("такт", "медленный: ${t.ms} мс; " + t.parts.entries.filter { it.value > 0 }.sortedByDescending { it.value }
+                                .joinToString(", ") { "${it.key} ${it.value} мс" }.ifEmpty { "части не замерены" })
+                        }
                         // Строка уведомления — числа контура (AI:A-26), без текста задач; только когда изменилась.
                         try {
                             val line = counts(model)
@@ -190,6 +229,12 @@ class ControllerService : Service() {
                         if (now - lastSummary >= TimeUnit.MINUTES.toNanos(1)) {
                             lastSummary = now
                             summary(log, meter, model, device)
+                            // Проверка приложения (D-158): безопасное — само; раз в минуту, без процессов в такте.
+                            try {
+                                HealthAuto.tick(app)
+                            } catch (e: Exception) {
+                                log.warn("проверка", AppLogs.describe(e))
+                            }
                             // Termux-target на этом телефоне: sshd не слушает — запустить его в Termux (D-46).
                             try {
                                 TermuxLauncher.ensureSshd(app, Controller.get(app.filesDir).targets())?.let { log.info("termux", it) }
@@ -215,6 +260,7 @@ class ControllerService : Service() {
      */
     private fun summary(log: com.dpsmpx.dpai.orchestrator.log.AppLog, meter: TickMeter, model: DemoModel, device: com.dpsmpx.dpai.orchestrator.log.DeviceProbe) {
         val t = meter.drain()
+        lastStats = t
         val snap = model.published
         val tasks = snap?.board?.columns?.sumOf { it.cards.size }
         val facts = listOf(
@@ -225,6 +271,8 @@ class ControllerService : Service() {
     }
 
     override fun onDestroy() {
+        (applicationContext as? DpaiApplication)?.sharedToolsSessionClosed()
+        (applicationContext as? DpaiApplication)?.controllerStopped()
         runCatching { AppLogs.get(applicationContext).step("служба контроллера остановлена") }
         ControlServer.stop()
         running = false
@@ -284,6 +332,14 @@ class ControllerService : Service() {
         private const val ID = 1001
         private const val STOP = "com.dpsmpx.dpai.STOP_CONTROLLER"
         private const val STEP_SECONDS = 3L
+
+        /** Такт дольше — строка «[такт] медленный» с частями (D-158). */
+        private const val SLOW_TICK_MS = 5_000L
+
+        /** Замер тактов последней сводки — для проверки приложения (D-158); службы не было — `null`. */
+        @Volatile
+        var lastStats: com.dpsmpx.dpai.orchestrator.log.TickStats? = null
+            private set
 
         /**
          * Сколько сбоев такта подряд терпим, прежде чем уйти (D-87): такт, который падает

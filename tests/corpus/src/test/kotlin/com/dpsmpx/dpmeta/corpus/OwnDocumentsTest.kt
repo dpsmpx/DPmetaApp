@@ -2,6 +2,11 @@ package com.dpsmpx.dpmeta.corpus
 
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpmeta.formats.DecisionLog
+import com.dpsmpx.dpmeta.formats.BriefFormat
+import com.dpsmpx.dpmeta.formats.AlertFormat
+import com.dpsmpx.dpmeta.formats.CommandFormat
+import com.dpsmpx.dpmeta.formats.EventCatalogFormat
+import com.dpsmpx.dpmeta.formats.CommandSpec
 import com.dpsmpx.dpmeta.formats.PanelFormat
 import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.formats.Roadmap
@@ -62,6 +67,61 @@ class OwnDocumentsTest {
             assertTrue(r.byName(panel.project) != null, "${f.name}: проекта ${panel.project} нет в реестре")
             assertTrue(panel.items.isNotEmpty(), "${f.name}: пустая панель")
         }
+    }
+
+    /** Шаблоны поручений (F-23): шесть из ТЗ на месте, каждый разбирается и собирается без пустых мест. */
+    @Test
+    fun ownBriefsParseAndRender() {
+        val files = File(repo, "config/briefs").listFiles { f -> f.extension == "md" }.orEmpty().sortedBy { it.name }
+        val keys = files.map { it.nameWithoutExtension }.toSet()
+        for (k in listOf("continue-branch", "roadmap-task", "answer-question", "fix-checks", "dpmeta-pass", "dpmeta-doc-audit")) {
+            assertTrue(k in keys, "нет шаблона $k")
+        }
+        val builtIn = mapOf("project" to "DPmetaApp", "repo" to "dpsmpx/DPmetaApp", "base" to "main")
+        for (f in files) {
+            val b = BriefFormat.parse(f.readText(), f.nameWithoutExtension, "config/briefs/${f.name}").ok(f.name)
+            val text = b.render(builtIn, b.fields.associate { it.name to "значение ${it.name}" }).ok("${f.name}: сборка")
+            assertTrue("{{" !in text && "}}" !in text, "${f.name}: в тексте осталось место")
+            b.fields.forEach { assertTrue("значение ${it.name}" in text, "${f.name}: поле ${it.name} не подставлено") }
+        }
+    }
+
+    /**
+     * Реестр команд (F-40, F-43; D-82): разбирается, проекты — из реестра DPmeta, не из
+     * архива; уровень 1 — только `repo.ff`, и он — для любого проекта.
+     */
+    @Test
+    fun ownCommandsParseAndNameRegistryProjects() {
+        val r = RegistryFormat.parse(text("dpmeta/tools/ecosystem.toml")).ok("реестр DPmeta")
+        val commands = CommandFormat.parse(text("config/commands.toml"), "config/commands.toml").ok("config/commands.toml").commands
+        assertTrue(commands.size >= 5, "команд: ${commands.size}")
+        for (c in commands) {
+            if (c.anyProject) continue
+            val p = r.byName(c.project) ?: fail("${c.id}: проекта ${c.project} нет в реестре")
+            assertTrue(p.place.shown, "${c.id}: проект ${c.project} — в архиве")
+        }
+        assertEquals(listOf("repo.ff"), commands.filter { it.level == 1 }.map { it.id })
+        assertTrue(commands.first { it.id == "repo.ff" }.project == CommandSpec.ANY)
+    }
+
+    /**
+     * Каталог событий и правила тревог (F-37, F-51; D-85): разбираются; в каталоге —
+     * все типы ТЗ, §8.1, и каждый вид ленты; правило F-37 — у каждого пункта по умолчанию.
+     */
+    @Test
+    fun ownEventsAndAlertsParse() {
+        val catalog = EventCatalogFormat.parse(text("config/events.toml"), "config/events.toml").ok("config/events.toml")
+        val tz = text("docs/direction/TECHNICAL_TASK.md")
+        val section = tz.substringAfter("### 8.1 Каталог событий").substringBefore("\n## ")
+        val named = Regex("^\\| ([^|]+) \\|", RegexOption.MULTILINE).findAll(section)
+            .flatMap { m -> Regex("`([a-z][a-z0-9_.]*)`").findAll(m.groupValues[1]).map { it.groupValues[1] } }.toSet()
+        assertTrue(named.size >= 40, "типов в §8.1: ${named.size}")
+        assertEquals(named, catalog.types.map { it.type }.toSet(), "каталог — ровно типы ТЗ, §8.1")
+        for (t in com.dpsmpx.dpmeta.metrics.Feed.TYPES.values) assertTrue(catalog.type(t) != null, "вид ленты $t — не в каталоге")
+        val rules = AlertFormat.parse(text("config/alerts.toml"), catalog, "config/alerts.toml").ok("config/alerts.toml").rules
+        assertEquals(14, rules.size, "правил по умолчанию F-37")
+        assertTrue(rules.all { it.enabled })
+        assertEquals(listOf("claude.input"), rules.filter { !it.quiet }.map { it.id }, "звучит в тихие часы — только «Claude ждёт»")
     }
 
     @Test

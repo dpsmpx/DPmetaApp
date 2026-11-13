@@ -1,0 +1,22 @@
+# Каталог для образцов правил: правила разбираются против него (D-85).
+schema = 1
+
+[[event]]
+type = "alpha.opened"
+title = "Альфа открыта"
+source = ["sync"]
+channel = "dev"
+fields = ["title"]
+numbers = ["hours"]
+
+[[event]]
+type = "alpha.closed"
+title = "Альфа закрыта"
+source = ["sync"]
+channel = "dev"
+
+[[event]]
+type = "beta.signal"
+title = "Бета"
+source = ["push"]
+channel = "claude"

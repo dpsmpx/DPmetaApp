@@ -50,6 +50,7 @@ L = {
         "branches_n": "веток", "commits_in": "коммитов",
         "lines": {"tests": "тесты и проверки", "code": "код", "docs": "документы и решения"},
         "lines_title": "Строк в основных ветках ядра", "per_project": "По репозиториям на момент среза, тыс. строк",
+        "per_repo_tbl": "строк по репозиториям на момент среза", "repo_col": "Репозиторий",
         "tests_title": "Строк в файлах тестов на момент среза, тыс.", "hostcheck": "Автоматические проверки Galdhold (hostcheck)",
         "decisions_title": "Записей в журналах решений ядра", "decisions_per": "Записей в журнале решений, по репозиториям",
         "doc_counters": "Документы знания на момент среза",
@@ -78,11 +79,12 @@ L = {
         "ev_ver": {"re-measured": "перемерено", "reported": "записано проектом", "observed": "видно на площадке",
                    "decision": "записанное решение", "self-reported": "со слов автора"},
         "m_metric": "Величина", "m_formula": "Формула", "m_value": "Значение",
+        "tbl_stages": "Стадии проектов", "tbl_formulas": "Как считалось: величины, формулы и значения",
         "m_period": "Период", "m_cutoff": "Срез", "m_method": "Методика", "m_repos": "Репозиториев в счёте",
         "m_excluded": "Не входят в счёт", "m_hidden": "На странице не публикуются",
         "hidden": ["имена веток, сообщения коммитов, адреса почты и пути файлов",
                    "имя и описание закрытого проекта, который ещё не назван публично, — только его числа в общих суммах",
-                   "время суток коммитов (личный распорядок)", "код и выдержки из закрытых репозиториев (Д17)",
+                   "время суток коммитов (личный распорядок)", "код и выдержки из закрытых репозиториев",
                    "оценки готовности в процентах — у проектов нет их определения"],
         "markers": "ромб под осью — веха дня",
         "partial": "учтено до {t}",  # день уже назван в начале подписи
@@ -110,6 +112,7 @@ L = {
         "branches_n": "branches", "commits_in": "commits",
         "lines": {"tests": "tests and checks", "code": "code", "docs": "documents and decisions"},
         "lines_title": "Lines in core main branches", "per_project": "By repository at snapshot time, thousand lines",
+        "per_repo_tbl": "lines by repository at snapshot time", "repo_col": "Repository",
         "tests_title": "Lines in test files at snapshot time, thousands", "hostcheck": "Galdhold automated checks (hostcheck)",
         "decisions_title": "Entries in core decision logs", "decisions_per": "Decision log entries by repository",
         "doc_counters": "Knowledge documents at snapshot time",
@@ -138,6 +141,7 @@ L = {
         "ev_ver": {"re-measured": "re-measured", "reported": "reported by the project", "observed": "observed on the platform",
                    "decision": "recorded decision", "self-reported": "stated by the author"},
         "m_metric": "Quantity", "m_formula": "Formula", "m_value": "Value",
+        "tbl_stages": "Project stages", "tbl_formulas": "How it was counted: quantities, formulas and values",
         "m_period": "Period", "m_cutoff": "Snapshot", "m_method": "Method", "m_repos": "Repositories in scope",
         "m_excluded": "Not counted", "m_hidden": "Not published on this page",
         "hidden": ["branch names, commit messages, email addresses and file paths",
@@ -157,6 +161,28 @@ BINS = [2, 5, 10, 20, 40]
 CYCLE_EDGES = [15, 30, 60, 180, 720]
 
 
+# Внутренние коды (номера контрактов, решений, рисков, пунктов очереди) на публичной странице не нужны (Д50):
+# посетителю они ничего не говорят; источник остаётся в данных (scope.yaml) и в документах.
+_CODE = r"(?:(?:DPmeta|DPmetaApp|Galdhold|DPlang|DP-Verify|SocialMediaImage)[ :])?(?:C|M|D|E|SQ|RISK|ADR)-\d+|[ДРP]\d+"
+_CODE_PARENS = re.compile(r"\s*\((?:[^()]*?\s)?(?:" + _CODE + r")(?:[^()]*)\)")
+_CODE_ALONE = re.compile(r"\b(DPmeta|DPmetaApp|Galdhold|DPlang|DP-Verify|SocialMediaImage)[ :](?:C|M|D|E|SQ|RISK|ADR)-\d+(?:\s*[…,–-]\s*(?:C|M|D|E|SQ|RISK|ADR)-\d+)*")
+
+
+_TIP = re.compile(r"<g><title>[^<]*</title>")
+_HIT = re.compile(r'<(?:rect|circle)\b[^>]*class="c-hit"/>')
+
+
+def light_svg(svg: str) -> str:
+    """SVG без подсказок наведения и невидимых целей под них (Д51): у фигуры остаются свои `<title>` и `<desc>`."""
+    out = _HIT.sub("", _TIP.sub("<g>", svg))
+    return out.replace("<g></g>", "")
+
+
+def public_text(text: str) -> str:
+    """Текст без внутренних кодов (Д50): «(Д5)», «(DPmeta C-07)» — прочь; «DPmeta C-01» — «DPmeta»."""
+    return _CODE_ALONE.sub(r"\1", _CODE_PARENS.sub("", text)).strip()
+
+
 class Fig:
     """Сборщик фигур одного набора на одном языке."""
 
@@ -166,6 +192,10 @@ class Fig:
         self.facts_used: list[str] = []
 
     # ------------------------------------------------------------ общее
+    def ru_part(self, text: str) -> str:
+        """Русский текст данных без перевода: на английской странице — с `lang="ru"` (WCAG 3.1.2, P-11)."""
+        return E(text) if self.lang == "ru" else f'<span lang="ru">{E(text)}</span>'
+
     def labels(self) -> list[str]:
         return [str(int(d[8:])) for d in self.days]
 
@@ -217,7 +247,9 @@ class Fig:
         return max((str(e["date"]) for e in ev if e.get("date")), default=None)
 
     def both(self, wide: str, narrow: str) -> str:
-        return f'<div class="fig-wide">{wide}</div><div class="fig-narrow">{narrow}</div>'
+        """Лёгкий сайт (Д51): на страницу идёт одна раскладка — узкая, на любой ширине не шире 480 px;
+        без подсказок у столбцов и клеток (значения — в «Таблице значений»). Широкая не выводится."""
+        return f'<div class="fig-one">{light_svg(narrow)}</div>'
 
     def caption(self, kinds: list[str], source: str, legend: list[tuple[str, str]] = (), note: str = "") -> str:
         keys = "".join(f'<span class="key"><span class="sw {cls}"></span>{E(name)}</span>' for cls, name in legend)
@@ -230,7 +262,14 @@ class Fig:
             out += f" {E(note)}"
         return out + "</span></figcaption>"
 
-    def table(self, head: list[str], rows: list[list], numeric_from: int = 1) -> str:
+    def scroll(self, table: str, label: str) -> str:
+        """Таблица в блоке своей прокрутки вбок: с именем и фокусом с клавиатуры — без них блок прокрутки
+        не прокрутить без мыши и диктор не назовёт (P-10 аудита страниц 8.11.2026); признак прокрутки —
+        тени у края (`.tscroll` в style.css), без скриптов."""
+        return f'<div class="tscroll" role="region" tabindex="0" aria-label="{E(label)}">{table}</div>'
+
+    def table(self, head: list[str], rows: list[list], numeric_from: int = 1, label: str = "", summary: str = "") -> str:
+        """Таблица значений под графиком; summary — подпись раскрывашки, если таблиц у фигуры больше одной."""
         num = ' class="num"'
         th = "".join(f'<th{num if i >= numeric_from else ""} scope="col">{E(h)}</th>' for i, h in enumerate(head))
         trs = []
@@ -242,8 +281,9 @@ class Fig:
                 else:
                     cells.append(f'<td{num if i >= numeric_from else ""}>{E(str(c))}</td>')
             trs.append("<tr>" + "".join(cells) + "</tr>")
-        return (f'<details class="fdata"><summary>{E(self.t["table"])}</summary><div class="tscroll">'
-                f'<table class="facts num-table"><thead><tr>{th}</tr></thead><tbody>{"".join(trs)}</tbody></table></div></details>')
+        name = f'{self.t["table"]}: {label}' if label else self.t["table"]
+        tbl = f'<table class="facts num-table"><thead><tr>{th}</tr></thead><tbody>{"".join(trs)}</tbody></table>'
+        return f'<details class="fdata"><summary>{E(summary or self.t["table"])}</summary>{self.scroll(tbl, name)}</details>'
 
     def totals_note(self) -> str:
         """Пояснение у фигур по репозиториям: закрытый проект без имени — только в суммах."""
@@ -278,9 +318,9 @@ class Fig:
                 rows.append(self.stage_row(key))
         cut = fmt_value(p.data["period"]["cutoff"], "datetime", self.lang)
 
-        stages = (f'<div class="tscroll"><table class="facts stages"><thead><tr><th scope="col">{E(t["project"])}</th>'
-                  f'<th scope="col">{E(t["role"])}</th><th scope="col">{E(t["stage"])}</th></tr></thead>'
-                  f'<tbody>{"".join(rows)}</tbody></table></div>')
+        stages = self.scroll(f'<table class="facts stages"><thead><tr><th scope="col">{E(t["project"])}</th>'
+                             f'<th scope="col">{E(t["role"])}</th><th scope="col">{E(t["stage"])}</th></tr></thead>'
+                             f'<tbody>{"".join(rows)}</tbody></table>', t["tbl_stages"])
         body = (f'<p class="snap-when"><span class="dkind dk-measured">{E(t["snapshot"])}</span> {E(cut)}</p>'
                 f'<div class="tiles">{"".join(tiles)}</div>{stages}'
                 + self.caption(["measured", "reported", "facts"], f'{t["src_git"]}; {t["src_readme"]}; {t["src_facts"]}'))
@@ -318,7 +358,7 @@ class Fig:
                 for i, d in enumerate(p.days)]
         rows = [[r[0]] + [self.n(x) for x in r[1:]] for r in rows]
         table = self.table([t["date"], t["total"], t["groups"]["galdhold"], t["groups"]["core_other"], t["groups"]["support"],
-                            t["merges_n"]], rows)
+                            t["merges_n"]], rows, label=title)
         cap = self.caption(["measured"], t["src_git"], [(cls, name) for cls, _, name in series], t["markers"] + ".")
         return self.figure("activity", svg + cap + table)
 
@@ -332,13 +372,14 @@ class Fig:
                                       ("pf-ce", ce, t["core_est"], "c-core")):
             tips = [f"{self.day_long(i)}: {self.n(vals[i])}" for i in range(p.n)]
             desc = f"{title}: {self.n(vals[0])} → {self.n(vals[-1])}."
-            svg = charts.stacked_area(uid, {"w": 320}, title, desc, self.labels(), self.months(), [(cls, vals, title)],
+            svg = charts.stacked_area(uid, charts.MULT, title, desc, self.labels(), self.months(), [(cls, vals, title)],
                                       self.lang, 190, tips)
             parts.append(f'<div class="mult"><p class="mult-t">{E(title)} <b>{E(self.n(vals[-1]))}</b></p>{svg}</div>')
         rows = [[fmt_short(d, self.lang), self.n(cc[i]), self.n(cm[i]), self.n(ce[i])] for i, d in enumerate(p.days)]
         body = (f'<div class="mults">{"".join(parts)}</div>'
                 + self.caption(["derived"], f'{t["src_git"]}; Σ {t["since_start"]}')
-                + self.table([t["date"], t["cum_commits"], t["cum_merges"], t["core_est"]], rows))
+                + self.table([t["date"], t["cum_commits"], t["cum_merges"], t["core_est"]], rows,
+                             label=f'{t["cum_commits"]}, {t["cum_merges"]}, {t["core_est"]}'))
         return self.figure("cumulative", body)
 
     def repos(self) -> str:
@@ -369,7 +410,7 @@ class Fig:
                 for _, rs in groups for r in rs]
         head = [t["project"], t["commits_n"], t["merges_n"], t["first_seen"]]
         return self.figure("repos", svg + self.caption(["measured"], t["src_git"], legend, self.totals_note())
-                           + self.table(head, rows))
+                           + self.table(head, rows, label=title))
 
     def authorship(self) -> str:
         p, t = self.p, self.t
@@ -385,7 +426,7 @@ class Fig:
                            weekend=self.weekend()))
         rows = [[fmt_short(d, self.lang), self.n(ai[i] + hu[i]), self.n(ai[i]), self.n(hu[i])] for i, d in enumerate(p.days)]
         return self.figure("authorship", svg + self.caption(["measured"], t["src_git"], [(c, nm) for c, _, nm in series])
-                           + self.table([t["date"], t["total"], t["ai"], t["human"]], rows))
+                           + self.table([t["date"], t["total"], t["ai"], t["human"]], rows, label=title))
 
     def parallel(self) -> str:
         p, t = self.p, self.t
@@ -427,7 +468,7 @@ class Fig:
                 f'<div class="pgrid"><div><p class="mult-t">{E(t["cycle"])}</p>{cyc}</div>'
                 f'<div><p class="mult-t">{E(t["now"])}</p>{now}</div></div>'
                 + self.caption(["measured", "derived"], t["src_git"], legend_states)
-                + self.table(head, rows))
+                + self.table(head, rows, label=t["branches_day"]))
         return self.figure("parallel", body)
 
     def codebase(self) -> str:
@@ -453,7 +494,7 @@ class Fig:
             name = p.name(k, self.lang)
             rows.append({"label": name, "segs": [(c, snap[x], t["lines"][x]) for (c, _, _), x in zip(layers, order)],
                          "value": self.k(total), "tip": f"{name}: " + ", ".join(f"{t['lines'][x]} {self.k(snap[x])}" for x in LINE_KINDS),
-                         "_t": total})
+                         "_t": total, "_cells": [self.n(snap[x]) for x in LINE_KINDS] + [self.n(total)]})
         rows.sort(key=lambda r: -r["_t"])
         bdesc = "; ".join(r["tip"] for r in rows)
         bars = self.both(charts.hbars("pf-locp-w", charts.WIDE, t["per_project"], bdesc, rows, self.lang),
@@ -461,7 +502,11 @@ class Fig:
         trows = [[fmt_short(d, self.lang)] + [self.n(cl[k][i]) for k in LINE_KINDS] + [self.n(tot[i])] for i, d in enumerate(p.days)]
         body = (area + f'<p class="mult-t">{E(t["per_project"])}</p>' + bars
                 + self.caption(["measured"], t["src_git_main"], [(c, nm) for c, _, nm in layers], self.totals_note())
-                + self.table([t["date"]] + [t["lines"][k] for k in LINE_KINDS] + [t["total"]], trows))
+                + self.table([t["date"]] + [t["lines"][k] for k in LINE_KINDS] + [t["total"]], trows, label=t["lines_title"])
+                # деление по репозиториям — не только в подсказке мыши, которой на сайте нет (Д51, P-19)
+                + self.table([t["repo_col"]] + [t["lines"][k] for k in LINE_KINDS] + [t["total"]],
+                             [[r["label"]] + r["_cells"] for r in rows], label=t["per_repo_tbl"],
+                             summary=f'{t["table"]}: {t["per_repo_tbl"]}'))
         return self.figure("codebase", body)
 
     def verification(self) -> str:
@@ -487,7 +532,8 @@ class Fig:
         body = (f'<div class="pgrid pgrid-wide"><div><p class="mult-t">{E(t["hostcheck"])}</p>{chk}'
                 + self.caption(["reported"], t["src_readme"]) + "</div>"
                 f'<div><p class="mult-t">{E(t["tests_title"])}</p>{tests}' + self.caption(["measured"], t["src_git_main"]) + "</div></div>"
-                + self.table([t["date"], t["hostcheck"]], [[fmt_short(x["date"], self.lang), self.n(x["value"])] for x in pts]))
+                + self.table([t["date"], t["hostcheck"]], [[fmt_short(x["date"], self.lang), self.n(x["value"])] for x in pts],
+                             label=t["hostcheck"]))
         return self.figure("verification", body)
 
     def knowledge(self) -> str:
@@ -520,7 +566,8 @@ class Fig:
                 f'<div><p class="mult-t">{E(t["decisions_per"])}</p>{bars}</div></div>'
                 f'<p class="mult-t">{E(t["doc_counters"])}</p><div class="tiles">{"".join(items)}</div>'
                 + self.caption(["measured"], t["src_git_main"], [("c-human", t["decisions_title"])], self.totals_note())
-                + self.table([t["date"], t["decisions_title"]], [[fmt_short(d, self.lang), self.n(dec[i])] for i, d in enumerate(p.days)]))
+                + self.table([t["date"], t["decisions_title"]], [[fmt_short(d, self.lang), self.n(dec[i])] for i, d in enumerate(p.days)],
+                             label=t["decisions_title"]))
         return self.figure("knowledge", body)
 
     def ecosystem(self) -> str:
@@ -549,7 +596,7 @@ class Fig:
             arrow = "⇄" if r.get("both") else "→"
             plan = f' <span class="meta">({E(t["planned"])})</span>' if r.get("planned") else ""
             rels.append(f'<li><b>{E(p.name(r["from"], self.lang))} {arrow} {E(p.name(r["to"], self.lang))}</b> — '
-                        f'{E(r[self.lang])}{plan} <span class="meta">{E(r["source"])}</span></li>')
+                        f'{E(r[self.lang])}{plan} <span class="meta">{E(public_text(r["source"]))}</span></li>')
         body = (f'<div class="layers">{"".join(layers)}</div><p class="mult-t">{E(t["relations"])}</p>'
                 f'<ul class="rels">{"".join(rels)}</ul>'
                 + self.caption(["facts"], f'{t["src_scope"]}; {t["src_facts"]}', note=self.totals_note()))
@@ -576,10 +623,11 @@ class Fig:
         per = p.data["period"]
         rows = []
         for mid, m in METRICS.items():
-            rows.append(f'<tr><th scope="row"><code>{E(mid)}</code></th><td>{E(getattr(m, self.lang))}</td>'
+            # формула — без внутренних кодов (Д50): «репозиториев ядра (Д5)» → «репозиториев ядра»
+            rows.append(f'<tr><th scope="row"><code>{E(mid)}</code></th><td>{E(public_text(getattr(m, self.lang)))}</td>'
                         f'<td class="num">{E(p.formatted(mid, self.lang))}</td></tr>')
         excluded = p.scope.get("excluded", [])
-        excl = "".join(f'<li><code>{E(x["slug"].split("/")[-1])}</code> — {E(x["reason"])}</li>'
+        excl = "".join(f'<li><code>{E(x["slug"].split("/")[-1])}</code> — {self.ru_part(public_text(x["reason"]))}</li>'
                        for x in excluded if x.get("kind") not in ("personal", "archive"))
         personal = sum(1 for x in excluded if x.get("kind") == "personal")
         if personal:  # личные репозитории — без имён (Д2, ОР-8; фильтр Д39)
@@ -595,10 +643,10 @@ class Fig:
                 f'<dt>{E(t["m_cutoff"])}</dt><dd>{E(fmt_value(per["cutoff"], "datetime", self.lang))}</dd>'
                 f'<dt>{E(t["m_method"])}</dt><dd>v{p.data["method"]["version"]} · {E(p.id)}</dd>'
                 f'<dt>{E(t["m_repos"])}</dt><dd>{len(p.keys)}</dd></dl>')
-        body = (head + f'<div class="tscroll"><table class="facts formulas"><thead><tr><th scope="col">{E(t["m_metric"])}</th>'
-                f'<th scope="col">{E(t["m_formula"])}</th><th scope="col" class="num">{E(t["m_value"])}</th></tr></thead>'
-                f'<tbody>{"".join(rows)}</tbody></table></div>'
-                f'<div class="pgrid"><div><p class="mult-t">{E(t["m_excluded"])}</p><ul class="plain">{excl}</ul></div>'
+        body = (head + self.scroll(f'<table class="facts formulas"><thead><tr><th scope="col">{E(t["m_metric"])}</th>'
+                                   f'<th scope="col">{E(t["m_formula"])}</th><th scope="col" class="num">{E(t["m_value"])}</th></tr></thead>'
+                                   f'<tbody>{"".join(rows)}</tbody></table>', t["tbl_formulas"])
+                + f'<div class="pgrid"><div><p class="mult-t">{E(t["m_excluded"])}</p><ul class="plain">{excl}</ul></div>'
                 f'<div><p class="mult-t">{E(t["m_hidden"])}</p><ul class="plain">{hidden}</ul></div></div>')
         return self.figure("method", body)
 

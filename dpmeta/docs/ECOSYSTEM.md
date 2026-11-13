@@ -1,5 +1,10 @@
 # Карта экосистемы
 
+Решение от 11 ноября 2026 (M-17): действующие роли —
+`docs/PROJECT_ROLES.md`. Таблицы ниже отражают прежние физические
+переносы; новые назначения старше рекомендаций объединить всё или
+архивировать DPmonetization.
+
 Какие репозитории есть, за что каждый отвечает, чего не делает и как они
 связаны. О себе прав сам репозиторий (M-02): у каждого строка ссылается
 на его документы; при расхождении исправляется эта карта. Состояние — на
@@ -113,7 +118,7 @@ Andors-Love — в текущей системе (`DPvisualisation:D-23`,
 | репозиторий | место | что это | связи |
 |---|---|---|---|
 | `dpsmpx/dpsmpx` (публичный) | — (не проект, C-07) | README страницы профиля GitHub | читают DPprofile (`DPprofile:docs/sources/REGISTRY.md`, S-04) и SocialMediaImage (`SocialMediaImage:IC-04`…`SocialMediaImage:IC-06`); правит только автор (C-07) |
-| `dpsmpx/DPmonetization` (закрытый) | архив (`DPmetaApp:D-58`, 4 ноября 2026) | с 5 октября 2026: «Strategic Project Intelligence» — анализ портфеля проектов; прерванный каркас ядра без тестов (SQ-22). Стадии и шлюзы готовности — метриками DPmetaApp, второй системы портфеля нет | связей нет |
+| `dpsmpx/DPmonetization` (закрытый) | будущая часть SocialMediaImage (M-17); сейчас неактивен, GitHub не архивировать | с 5 октября 2026: «Strategic Project Intelligence» — анализ портфеля проектов; прерванный каркас ядра без тестов (SQ-22). Стадии и шлюзы готовности — метриками DPmetaApp, второй системы портфеля нет | связей нет |
 | DP_Ecosystem, DP_Repeated_Tasks, PixRogue, tanks_blitz_stat_chat и другие публичные | архив | ранние и малые проекты; DP_Ecosystem и DP_Repeated_Tasks начаты после Galdhold, но автор их убрал; DP_Repeated_Tasks — часть DP_Clock (`DPmetaApp:D-55`, 4 ноября 2026) | источники DPprofile (`DPprofile:D-13`) |
 | форки (`andors-trail-load`, `gravitydefied`, `CreepyCodeCollection`, `pascalabcnet`) | — | чужие проекты | вне предмета, кроме коммитов автора (`DPprofile:D-13`) |
 | репозитории 2023–2024 (`day_plan`, `rnd_day` и другие) | архив | старые проекты | не упоминаются (`SocialMediaImage:docs/identity/PROJECT_MAP.md`) |
@@ -153,7 +158,9 @@ Andors-Love — в текущей системе (`DPvisualisation:D-23`,
   DPmeta ── tools/manifest.py: проекты, места, открытые SQ ──► DPmetaApp: подсистема «AI» dpai/ (прежде DP_AI_Orcestrator)
 
 Без связей, кроме счёта прогресса (C-10): DP_game_market_analytic_system
-DPmonetization — в архиве (`DPmetaApp:D-58`): связей нет.
+DPmonetization — будущая часть SocialMediaImage (M-17). Пока неактивен;
+место `archive` в машинном реестре исключает его из текущей карты и не
+означает поручение архивировать GitHub-репозиторий.
 
 С 25 октября 2026 обе стороны C-10…C-13 — подсистемы DPmetaApp
 (socialmediaimage/, dpvisualisation/, dpmeta/, dpai/): связи остаются

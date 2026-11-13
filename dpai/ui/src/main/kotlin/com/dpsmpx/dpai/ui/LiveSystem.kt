@@ -115,6 +115,7 @@ class LiveSystem(
      * сети. `null` — Linux не установлен.
      */
     private val inAppGuest: com.dpsmpx.dpai.execution.process.ProcessHost? = null,
+    private val externalPause: () -> Boolean = { false },
 ) : ControlView, AutoCloseable {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
@@ -215,6 +216,13 @@ class LiveSystem(
         )
     val problems = mutableListOf<Diagnostic>()
 
+    /**
+     * PR проекта через `gh` на его target (D-108): команды — через агента target, как шаги
+     * проверки; отправка ветки — Git того же target. `null` — у контура нет проекта с репозиторием.
+     */
+    var github: com.dpsmpx.dpai.orchestrator.github.GitHubDesk? = null
+        private set
+
     init {
         // Потеря хвоста журнала и карантин — в те же «проблемы», что и остальные отказы (D-87),
         // и в журнал приложения (D-43): список проблем на сводке короткий, а потеря записей — навсегда.
@@ -249,11 +257,19 @@ class LiveSystem(
         // Шаги проверки — через агента target: по SSH рабочий каталог задаёт он (AgentStepRunner).
         val verifier = projectTarget?.let { t -> Verifier(AgentStepRunner(manager.client(t.id).valueOrNull()!!, ids, clock, onRetry = { d -> onProblem(com.dpsmpx.dpai.core.diagnostics.Diagnostic.of(d.code, "вызов агента повторён: ${d.message}", d.subject, causes = d.causes)) }), clock) }
             ?: Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock)
+        github = projectTarget?.let { t ->
+            git?.let { g ->
+                com.dpsmpx.dpai.orchestrator.github.GitHubDesk(
+                    AgentStepRunner(manager.client(t.id).valueOrNull()!!, ids, clock), g, project!!.root, project.integrationBranch,
+                    com.dpsmpx.dpai.orchestrator.github.ActionJournal(vfs), clock,
+                )
+            }
+        }
         o = Orchestrator(
             clock, ids, random, journal, router, config,
             working.map { TargetSlot(it.id, emptySet(), maxSessions = 1, label = it.label) }, git, verifier,
             snapshots = snapshots, snapshotEvery = SEGMENT.toLong(), documents = DocumentStore(vfs, "docs"),
-            onEvents = onEvents, onProblem = onProblem,
+            onEvents = onEvents, onProblem = onProblem, externalPause = externalPause,
         )
         orchestrator = o
         // Слот target — после первой пробы входа: подписка выбирается по аккаунту (см. [placeSlot]).
@@ -432,6 +448,7 @@ class LiveSystem(
     }
 
     override fun step() {
+        if (externalPause()) return
         if (!probesStarted) {
             probesStarted = true
             for (e in usable) probeSlot(e.id)

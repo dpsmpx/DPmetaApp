@@ -151,7 +151,7 @@ class ClaudeCodeCliRunner(
         val spec = RunSpec(
             command = ExecutorCli.argv(command, request, l.provider, resume = l.providerStarted),
             workDir = request.workDir,
-            setEnv = request.setEnv,
+            setEnv = request.setEnv + (com.dpsmpx.dpai.execution.tools.SharedTools.EXECUTOR_ENV to request.executor.name),
             unsetEnv = request.unsetEnv,
             timeout = request.timeout,
             stdin = request.prompt,

@@ -2,8 +2,17 @@ package com.dpsmpx.dpai.orchestrator.log
 
 import com.dpsmpx.dpai.core.clock.Clock
 
-/** Такты за отрезок сводки: сколько, средняя и наибольшая длительность, наибольший разрыв между началами. */
-data class TickStats(val count: Int, val avgMs: Long, val maxMs: Long, val maxGapMs: Long, val failures: Int)
+/**
+ * Такты за отрезок сводки: сколько, средняя и наибольшая длительность, наибольший разрыв
+ * между началами; [slowest] — самая долгая часть самого долгого такта (D-158), если части замерялись.
+ */
+data class TickStats(val count: Int, val avgMs: Long, val maxMs: Long, val maxGapMs: Long, val failures: Int, val slowest: Pair<String, Long>? = null)
+
+/** Один такт: длительность и части по [TickMeter.part] — для строки «медленный такт» (D-158). */
+data class Tick(val ms: Long, val parts: Map<String, Long>) {
+    /** Самая долгая часть; частей нет — `null`. */
+    val slowest: Pair<String, Long>? get() = parts.maxByOrNull { it.value }?.toPair()
+}
 
 /**
  * Замер тактов контроллера для сводки журнала (D-43). Разрыв между
@@ -19,6 +28,8 @@ class TickMeter(private val clock: Clock) {
     private var max = 0L
     private var maxGap = 0L
     private var failures = 0
+    private val parts = LinkedHashMap<String, Long>()
+    private var maxSlowest: Pair<String, Long>? = null
 
     @Synchronized
     fun begin() {
@@ -26,24 +37,41 @@ class TickMeter(private val clock: Clock) {
         if (lastStart >= 0) maxGap = maxOf(maxGap, (now - lastStart) / 1_000_000)
         lastStart = now
         startedAt = now
+        parts.clear()
     }
 
-    /** Конец такта; [ok] = `false` — такт кончился исключением. */
+    /**
+     * Часть такта (D-158): от [startedNanos] до сейчас под именем [name] — шаг контура,
+     * лимиты, копия настроек; одна и та же часть дважды — сумма. Медленный такт без
+     * частей ничего не говорит, с ними — что именно ждало.
+     */
     @Synchronized
-    fun end(ok: Boolean = true) {
+    fun part(name: String, startedNanos: Long) {
         if (startedAt < 0) return
+        val ms = (clock.monotonicNanos() - startedNanos) / 1_000_000
+        parts[name] = (parts[name] ?: 0) + ms
+    }
+
+    /** Конец такта; [ok] = `false` — такт кончился исключением. Итог — такт с частями; не начат — `null`. */
+    @Synchronized
+    fun end(ok: Boolean = true): Tick? {
+        if (startedAt < 0) return null
         val ms = (clock.monotonicNanos() - startedAt) / 1_000_000
         startedAt = -1
         count++
         total += ms
+        val tick = Tick(ms, LinkedHashMap(parts))
+        if (ms >= max) maxSlowest = tick.slowest
         max = maxOf(max, ms)
         if (!ok) failures++
+        return tick
     }
 
     /** Итог отрезка и начало следующего; разрыв считается и через границу отрезков. */
     @Synchronized
     fun drain(): TickStats {
-        val s = TickStats(count, if (count == 0) 0 else total / count, max, maxGap, failures)
+        val s = TickStats(count, if (count == 0) 0 else total / count, max, maxGap, failures, maxSlowest)
+        maxSlowest = null
         count = 0
         total = 0
         max = 0

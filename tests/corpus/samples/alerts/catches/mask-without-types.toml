@@ -1,0 +1,7 @@
+schema = 1
+
+[[rule]]
+id = "alpha"
+title = "Альфа"
+on = "gamma.*"
+action = "notify"

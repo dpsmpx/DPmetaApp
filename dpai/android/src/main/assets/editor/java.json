@@ -1,0 +1,51 @@
+{
+  "name": "Java",
+  "scopeName": "source.java",
+  "patterns": [
+    {
+      "begin": "//",
+      "end": "$",
+      "name": "comment.line"
+    },
+    {
+      "begin": "/\\*",
+      "end": "\\*/",
+      "name": "comment.block"
+    },
+    {
+      "begin": "\"\"\"",
+      "end": "\"\"\"",
+      "name": "string.quoted.triple"
+    },
+    {
+      "begin": "\"",
+      "end": "\"|$",
+      "name": "string.quoted.double",
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape"
+        }
+      ]
+    },
+    {
+      "begin": "'",
+      "end": "'|$",
+      "name": "string.quoted.single",
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape"
+        }
+      ]
+    },
+    {
+      "match": "\\b(?:0[xX][\\da-fA-F]+|0[bB][01]+|\\d+(?:[\\._]\\d+)*(?:[eE][+-]?\\d+)?)[uUlLfF]*\\b",
+      "name": "constant.numeric"
+    },
+    {
+      "match": "\\b(?:abstract|assert|boolean|break|byte|case|catch|char|class|const|continue|default|do|double|else|enum|extends|final|finally|float|for|if|implements|import|instanceof|int|interface|long|native|new|null|package|private|protected|public|record|return|sealed|short|static|strictfp|super|switch|synchronized|this|throw|throws|transient|true|false|try|var|void|volatile|while|yield|permits)\\b",
+      "name": "keyword.control.java"
+    }
+  ]
+}

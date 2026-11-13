@@ -1,0 +1,343 @@
+# Каталог событий пульта (ТЗ, §8.1, F-51; D-85).
+#
+# Уведомить можно о любом событии каталога (D-22). Событие неизвестного типа
+# движок отбрасывает с RULE_INVALID, а не превращает в «прочее».
+#
+#   type     тип латиницей, части через точку
+#   title    подпись для экрана
+#   source   sync — синхронизация, push — мгновенный канал, listener — слушатель
+#            уведомлений, app — само приложение
+#   channel  вид канала уведомлений (F-38): claude, dev, social, site, questions, sync
+#   fields   текстовые поля для условий; проект и текст события — у всех
+#   numbers  числовые поля для условий «не меньше / не больше»
+#
+# Новый тип — строка здесь и источник, который его порождает.
+
+schema = 1
+
+[[event]]
+type = "pr.opened"
+title = "PR открыт"
+source = ["sync"]
+channel = "dev"
+fields = ["branch", "author", "title"]
+
+[[event]]
+type = "pr.updated"
+title = "PR обновлён"
+source = ["sync"]
+channel = "dev"
+fields = ["branch", "author", "title"]
+
+[[event]]
+type = "pr.ready"
+title = "PR переведён из черновика"
+source = ["sync"]
+channel = "dev"
+fields = ["branch", "author", "title"]
+
+[[event]]
+type = "pr.merged"
+title = "PR влит"
+source = ["sync"]
+channel = "dev"
+fields = ["branch", "author", "title"]
+
+[[event]]
+type = "pr.closed"
+title = "PR закрыт"
+source = ["sync"]
+channel = "dev"
+fields = ["branch", "author", "title"]
+
+[[event]]
+type = "pr.comment"
+title = "Комментарий в PR"
+source = ["sync"]
+channel = "dev"
+fields = ["author"]
+
+[[event]]
+type = "pr.review"
+title = "Ревью PR"
+source = ["sync"]
+channel = "dev"
+fields = ["author"]
+
+[[event]]
+type = "pr.waiting_author"
+title = "PR ждёт автора дольше порога"
+source = ["app"]
+channel = "dev"
+fields = ["title"]
+numbers = ["hours"]
+
+[[event]]
+type = "checks.red"
+title = "Проверки красные"
+source = ["sync"]
+channel = "dev"
+fields = ["pr"]
+
+[[event]]
+type = "checks.unknown"
+title = "Проверки не распознаны"
+source = ["sync"]
+channel = "dev"
+fields = ["pr"]
+
+[[event]]
+type = "main.commit"
+title = "Коммит в main"
+source = ["sync"]
+channel = "dev"
+fields = ["author", "message"]
+
+[[event]]
+type = "branch.unmerged.stale"
+title = "Ветка с невлитой работой без движения"
+source = ["app"]
+channel = "dev"
+fields = ["branch"]
+numbers = ["days"]
+
+[[event]]
+type = "decision.new"
+title = "Новое решение"
+source = ["sync"]
+channel = "dev"
+fields = ["number"]
+
+[[event]]
+type = "roadmap.step.done"
+title = "Отмечен шаг ROADMAP"
+source = ["sync"]
+channel = "dev"
+fields = ["number"]
+
+[[event]]
+type = "todo.author.new"
+title = "Новый пункт «За автором»"
+source = ["sync"]
+channel = "questions"
+fields = ["number"]
+
+[[event]]
+type = "question.new"
+title = "Новый вопрос автору"
+source = ["sync"]
+channel = "questions"
+fields = ["source"]
+
+[[event]]
+type = "dpmeta.report.new"
+title = "Новый срез DPmeta"
+source = ["sync"]
+channel = "dev"
+fields = ["number"]
+
+[[event]]
+type = "dpmeta.risk.changed"
+title = "Изменился статус риска DPmeta"
+source = ["sync"]
+channel = "dev"
+fields = ["number"]
+
+[[event]]
+type = "activity.started"
+title = "Проект — «работает»"
+source = ["app"]
+channel = "dev"
+
+[[event]]
+type = "activity.stopped"
+title = "Проект — «свободен»"
+source = ["app"]
+channel = "dev"
+
+[[event]]
+type = "claude.turn.done"
+title = "Claude закончил ответ"
+source = ["push"]
+channel = "claude"
+fields = ["branch", "session", "reason"]
+
+[[event]]
+type = "claude.needs_input"
+title = "Claude ждёт разрешения или ввода"
+source = ["push"]
+channel = "claude"
+fields = ["session", "kind"]
+
+[[event]]
+type = "claude.turn.failed"
+title = "Ход Claude оборвался ошибкой API"
+source = ["push"]
+channel = "claude"
+fields = ["session"]
+
+[[event]]
+type = "claude.session.ended"
+title = "Сессия Claude завершена"
+source = ["push"]
+channel = "claude"
+fields = ["session"]
+
+[[event]]
+type = "claude.routine.fired"
+title = "Запущен маршрут"
+source = ["app"]
+channel = "claude"
+fields = ["route", "account"]
+numbers = ["left"]
+
+[[event]]
+type = "claude.usage.threshold"
+title = "Расход выше порога"
+source = ["sync", "app"]
+channel = "claude"
+fields = ["profile", "model"]
+numbers = ["amount"]
+
+[[event]]
+type = "claude.rate_limited"
+title = "Отказ по лимиту"
+source = ["sync", "app"]
+channel = "claude"
+fields = ["profile", "model"]
+
+[[event]]
+type = "chat.answer.done"
+title = "Ответ чата дописан в фоне"
+source = ["app"]
+channel = "claude"
+fields = ["profile"]
+
+[[event]]
+type = "site.down"
+title = "Сайт не отвечает"
+source = ["sync", "app"]
+channel = "site"
+fields = ["page"]
+numbers = ["code"]
+
+[[event]]
+type = "site.status.changed"
+title = "Сменился код ответа сайта"
+source = ["sync", "app"]
+channel = "site"
+fields = ["page"]
+numbers = ["code"]
+
+[[event]]
+type = "site.header.changed"
+title = "Сменился заголовок сайта"
+source = ["sync", "app"]
+channel = "site"
+fields = ["page", "header"]
+
+[[event]]
+type = "site.tls.expiring"
+title = "Истекает сертификат сайта"
+source = ["sync", "app"]
+channel = "site"
+fields = ["page"]
+numbers = ["days"]
+
+[[event]]
+type = "site.deploy.done"
+title = "Выгрузка сайта прошла"
+source = ["app"]
+channel = "site"
+fields = ["page"]
+
+[[event]]
+type = "social.comment.new"
+title = "Новый комментарий"
+source = ["sync"]
+channel = "social"
+fields = ["platform", "account", "post"]
+
+[[event]]
+type = "social.comment.reply_to_me"
+title = "Ответ на ответ автора"
+source = ["sync"]
+channel = "social"
+fields = ["platform", "account", "post"]
+
+[[event]]
+type = "social.comment.unanswered"
+title = "Комментарий без ответа"
+source = ["app"]
+channel = "social"
+fields = ["platform"]
+numbers = ["hours"]
+
+[[event]]
+type = "social.followers.changed"
+title = "Изменились подписчики"
+source = ["sync"]
+channel = "social"
+fields = ["platform", "account"]
+numbers = ["value", "change"]
+
+[[event]]
+type = "social.followers.milestone"
+title = "Подписчики перешли веху"
+source = ["sync"]
+channel = "social"
+fields = ["platform", "account"]
+numbers = ["value"]
+
+[[event]]
+type = "social.followers.drop"
+title = "Резкое падение подписчиков"
+source = ["sync"]
+channel = "social"
+fields = ["platform", "account"]
+numbers = ["value", "change"]
+
+[[event]]
+type = "social.auth.expired"
+title = "Вход в площадку истёк"
+source = ["sync"]
+channel = "social"
+fields = ["platform", "account"]
+
+[[event]]
+type = "social.quota.exceeded"
+title = "Кончилась квота площадки"
+source = ["sync"]
+channel = "social"
+fields = ["platform", "account"]
+
+[[event]]
+type = "termux.command.done"
+title = "Команда Termux завершилась"
+source = ["app"]
+channel = "dev"
+fields = ["command"]
+numbers = ["code"]
+
+[[event]]
+type = "termux.command.failed"
+title = "Команда Termux не удалась"
+source = ["app"]
+channel = "dev"
+fields = ["command"]
+numbers = ["code"]
+
+[[event]]
+type = "sync.failed"
+title = "Источник не синхронизировался"
+source = ["app"]
+channel = "sync"
+fields = ["source", "code"]
+numbers = ["count"]
+
+[[event]]
+type = "app.notification"
+title = "Уведомление приложения из белого списка"
+source = ["listener"]
+channel = "claude"
+fields = ["package", "title"]

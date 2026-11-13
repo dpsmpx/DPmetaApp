@@ -22,12 +22,17 @@ class FakeTransport(private val respond: (HttpCall) -> FakeReply) : Transport {
 }
 
 /** Ответ из строк; [hook] — перед строкой с номером: отмена, обрыв. */
-class FakeReply(override val status: Int, body: String, private val hook: (Int, Cancel) -> Unit = { _, _ -> }) : HttpReply {
+class FakeReply(
+    override val status: Int,
+    body: String,
+    private val headers: Map<String, String> = emptyMap(),
+    private val hook: (Int, Cancel) -> Unit = { _, _ -> },
+) : HttpReply {
     private val lines = body.split("\n")
     private var i = 0
     lateinit var cancel: Cancel
 
-    override fun header(name: String): String? = null
+    override fun header(name: String): String? = headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
 
     override fun readLine(): String? {
         hook(i, cancel)

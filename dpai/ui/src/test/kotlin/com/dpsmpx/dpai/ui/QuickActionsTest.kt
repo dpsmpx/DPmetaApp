@@ -74,7 +74,8 @@ class QuickActionsTest {
             listOf(
                 src("doc:README.md", Sensitivity.INTERNAL, "ключ $token в тексте"),
                 src("env:prod", Sensitivity.SECRET, "PASSWORD=hunter2"),
-                src("doc:long.md", Sensitivity.PUBLIC, "x".repeat(ContextScreens.MAX_CHARS + 10)),
+                // Обычный текст: сплошные 40+ букв скрываются как возможный ключ (D-130).
+                src("doc:long.md", Sensitivity.PUBLIC, "word ".repeat((ContextScreens.MAX_CHARS + 14) / 5).take(ContextScreens.MAX_CHARS + 10)),
             ),
             null, clock.now(),
             omitted = listOf(OmittedSource("doc:big.md", SourceLevel.DOCUMENT, 9000), OmittedSource("doc:copy.md", SourceLevel.DOCUMENT, 10, sameAs = "doc:README.md")),

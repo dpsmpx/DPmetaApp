@@ -19,6 +19,23 @@ class NioVfsTest {
     @TempDir
     lateinit var dir: Path
 
+    /** Часть файла (D-119): с места и длины, за концом — пусто, нет файла — `null`; то же — по умолчанию интерфейса. */
+    @Test
+    fun readRangeReadsAPartWithoutTheWholeFile() {
+        val vfs = NioVfs(dir)
+        vfs.write("m.gguf", ByteArray(100) { it.toByte() })
+        assertContentEquals(byteArrayOf(10, 11, 12), vfs.readRange("m.gguf", 10, 3))
+        assertContentEquals(byteArrayOf(98, 99), vfs.readRange("m.gguf", 98, 50))
+        assertEquals(0, vfs.readRange("m.gguf", 100, 5)!!.size)
+        assertNull(vfs.readRange("нет", 0, 5))
+        // Умолчание интерфейса — чтением целиком (у SimulatedVfs своего нет).
+        val plain = SimulatedVfs()
+        plain.write("m.gguf", ByteArray(100) { it.toByte() })
+        assertContentEquals(vfs.readRange("m.gguf", 40, 7), plain.readRange("m.gguf", 40, 7))
+        assertContentEquals(byteArrayOf(98, 99), plain.readRange("m.gguf", 98, 50))
+        assertEquals(0, plain.readRange("m.gguf", 200, 7)!!.size)
+    }
+
     @Test
     fun basicOperationsOnRealFiles() {
         val vfs = NioVfs(dir)

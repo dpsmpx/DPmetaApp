@@ -52,7 +52,7 @@ class AgentArgs private constructor(private val values: Map<String, List<String>
 /** Ответ на команду агента, кроме долгих `follow` и `mcp`: одна строка `dpai.agent-reply`. */
 object AgentCommands {
     /** Команды с ответом одной строкой. */
-    val SINGLE_REPLY: Set<String> = setOf("doctor", "start", "supervise", "status", "events", "stop")
+    val SINGLE_REPLY: Set<String> = setOf("profiles", "fence-stop", "doctor", "start", "supervise", "status", "events", "stop")
 
     /**
      * Ответ [runtime] на [command] с параметрами [args]; [stdin] — вход
@@ -61,6 +61,7 @@ object AgentCommands {
      * отвечает подсказкой.
      */
     fun reply(runtime: AgentRuntime, command: String, args: AgentArgs, stdin: () -> String): AgentReply? {
+        if (command == "profiles") return AgentReply("profiles", ok = true)
         if (command == "doctor") return runtime.doctor()
         if (command !in SINGLE_REPLY) return null
         val run = args.single("run")?.let { IdKinds.SESSION.parse(it).valueOrNull() } ?: return null
@@ -89,6 +90,7 @@ object AgentCommands {
             "supervise" -> runtime.supervise(run)
             "status" -> runtime.status(run)
             "events" -> runtime.events(run, args.single("after")?.toLongOrNull() ?: 0, args.single("limit")?.toIntOrNull() ?: 500)
+            "fence-stop" -> runtime.fenceStop(run)
             "stop" -> runtime.stop(run, (args.single("grace-seconds")?.toLongOrNull() ?: 5).seconds)
             else -> null
         }

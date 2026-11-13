@@ -57,6 +57,8 @@ include(
     ":files",
     // LocalAIService (D-105): подсказки локальной модели; ядро от неё не зависит.
     ":localai",
+    // Клиент языковых служб редактора (D-137): JSON-RPC и LSP, без процессов.
+    ":lsp",
     ":sync",
     ":analytics",
     ":orchestrator",

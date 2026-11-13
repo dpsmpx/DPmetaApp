@@ -56,11 +56,41 @@ kotlin {
     }
 }
 
+// Один исходник контроллера: APK получает его при сборке, копия кода вручную не ведётся.
+abstract class SharedVerifyAssets : DefaultTask() {
+    @get:InputFile
+    abstract val controller: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val output: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val target = output.get().file("shared-verify/runtime.py").asFile
+        target.parentFile.mkdirs()
+        controller.get().asFile.copyTo(target, overwrite = true)
+    }
+}
+val sharedVerifyAssets by tasks.registering(SharedVerifyAssets::class) {
+    controller.set(rootProject.layout.projectDirectory.file("tools/shared_verify/runtime.py"))
+    output.set(layout.buildDirectory.dir("generated/shared-verify-assets"))
+}
+androidComponents.onVariants { variant ->
+    variant.sources.assets?.addGeneratedSourceDirectory(sharedVerifyAssets, SharedVerifyAssets::output)
+}
+// AGP 9: модель Lint читает generated assets через preBuild, без зависимости от mergeAssets.
+tasks.named("preBuild") { dependsOn(sharedVerifyAssets) }
+
 dependencies {
     implementation(project(":app"))
     implementation("com.dpsmpx.dpai:android")
     // Числа строки «AI» сводки (D-76) — `Measure` ядра: передаются из «AI» в пульт через этот модуль.
     implementation("com.dpsmpx.dpai:core")
+    // Разделы приложения для левой панели окна «AI» (D-112) — `AppSection` модели экранов.
+    implementation("com.dpsmpx.dpai:ui")
     // DpmetaActivity наследует пульт — ComponentActivity нужна и на classpath компиляции.
     implementation(libs.activity.compose)
+    // Слот документа настроек (D-112): оболочка передаёт блок пульта в документ «AI» — Compose на classpath.
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.material3)
 }

@@ -189,6 +189,8 @@ class ActivationServiceTest {
         assertEquals(DiagCode.STORAGE_CORRUPTED, d.single().code)
         assertNull(broken.state.activeConfig, "повреждённое — не заменяется конфигурацией по умолчанию")
         assertEquals(1, Quarantine(blobs, clock).list().valueOrNull()!!.size)
+        assertIs<ActivationResult.Activated>(broken.activate(ir("valid-minimal.json"), "after-quarantine", "recovered"))
+        assertEquals("recovered", service().also { it.restore() }.state.active!!.sourceChecksum)
     }
 
     /** Повреждение части состояния — находка с местом, а не молчание (D-06, CLAUDE.md «ничего молча»). */
@@ -500,7 +502,17 @@ class OrchestratorTest {
         val book = HealthBook()
         val plan = CandidatePlanner.plan(multi, XrayBackend.CAPABILITIES, null, book, null, 0)
         val engine = ShareCannotBind()
-        val share = ShareSpec(listOf(ShareSpec.Endpoint(IpAddress.parse("192.168.43.1")!!, 24)), 41234, Secret("u-test"), Secret("p-test-0123456789"))
+        val share = ShareSpec(
+            listOf(ShareSpec.Endpoint(IpAddress.parse("192.168.43.1")!!, 24)), 41234,
+            Secret(
+                java.util.Base64.getEncoder().encodeToString(
+                    ByteArray(32) {
+                        1
+                    },
+                ),
+            ),
+            Secret(java.util.Base64.getEncoder().encodeToString(ByteArray(32) { 2 })),
+        )
         var checks = 0
         // Первый кандидат не проходит проверку здоровья — второй пробуется уже без раздачи.
         val health = HealthChecker { _, _ ->

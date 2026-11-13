@@ -84,6 +84,16 @@ class AgentClient(
     fun stop(run: SessionId, grace: Duration = 5.seconds): Outcome<AgentReply> =
         call("stop", runArgs(run) + listOf("--grace-seconds", grace.inWholeSeconds.coerceAtLeast(1).toString()))
 
+    /** Проверить поддержку безопасной остановки до ручного запуска (D-134). */
+    fun profiles(): Outcome<Unit> = call("profiles", homeArgs()).then { r ->
+        if (r.command == "profiles") Outcome.success(Unit) else Outcome.failure(DiagCode.AGENT_REPLY_INVALID, "агент не поддерживает ручные профили", subject)
+    }
+
+    fun fenceStop(run: SessionId): Outcome<AgentReply> = call("fence-stop", runArgs(run)).then { r ->
+        if (r.command == "fence-stop" && r.run?.id == run && r.run.state == RunState.EXITED && r.stop != null && r.stop.survivors.isEmpty()) Outcome.success(r)
+        else Outcome.failure(DiagCode.AGENT_STOP_PENDING, "остановка запуска ещё не подтверждена", subject)
+    }
+
     fun doctor(): Outcome<DoctorReport> = call("doctor", homeArgs()).then { r -> require(r, "doctor") { it.doctor } }
 
     private fun homeArgs(): List<String> = home?.let { listOf("--home", it) }.orEmpty()

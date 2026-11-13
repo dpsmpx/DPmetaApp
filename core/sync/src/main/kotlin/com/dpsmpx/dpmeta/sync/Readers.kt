@@ -182,6 +182,18 @@ class DirectoryReader(private val root: Path, private val hostDir: String = "dpm
         }
     }
 
+    /** Имена файлов каталога проекта на диске (корпус, клоны `dpmeta-cli`); каталога нет — «нет». */
+    override fun names(project: ProjectEntry, dir: String): Outcome<List<String>>? {
+        checkPath(dir).let { if (it is Outcome.Failure) return it }
+        val d = dir(project).resolve(dir)
+        if (!Files.isDirectory(d)) return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "каталога нет", "${project.name}:$dir")
+        return try {
+            Files.list(d).use { s -> Outcome.success(s.filter { Files.isRegularFile(it) }.map { it.fileName.toString() }.sorted().toList()) }
+        } catch (e: IOException) {
+            Outcome.failure(DiagCode.STORAGE_IO_FAILED, "каталог не читается: ${e.javaClass.simpleName}", "${project.name}:$dir")
+        }
+    }
+
     companion object {
         const val PULLS = "pulls.json"
         const val MERGED = "merged.json"
@@ -203,8 +215,16 @@ class CloneReader(
     private val rest: SourceReader,
     private val host: RepoRef,
     private val excluded: (String) -> Boolean,
+    private val history: HistoryRules? = null,
     private val selected: (String) -> Boolean = { true },
 ) : SourceReader {
+    /**
+     * Как считать историю из клона (D-66): пояс дней и свои авторы — ИИ и
+     * человек (чужие — исходные проекты форков — не в счёте). Задаёт
+     * оболочка из `Rules.kt`; `null` — история не читается.
+     */
+    data class HistoryRules(val zone: java.time.ZoneOffset, val ai: Set<String>, val human: Set<String>)
+
     override val source: ObservationSource = rest.source
 
     /** Головы веток последнего чтения: `commit` по ним не спрашивает ни клон, ни REST. */
@@ -248,6 +268,43 @@ class CloneReader(
             is Outcome.Failure -> r
             is Outcome.Success -> r.value?.let { bytes -> Outcome.success(Got(bytes.toString(Charsets.UTF_8), Hashing.sha256(bytes))) }
                 ?: Outcome.failure(DiagCode.GITHUB_NOT_FOUND, "файла нет в клоне: $full", "${project.name}:$path")
+        }
+    }
+
+    /**
+     * История из клона (D-66): у подсистемы — нет (её коммиты — в истории
+     * DPmetaApp), у клона, не отмеченного автором или без основной ветки, —
+     * тоже (`null`: задача пропускается, а не отказ). Журнал решений — по
+     * шаблону номера из реестра.
+     */
+    override fun history(project: ProjectEntry): Outcome<Got<com.dpsmpx.dpmeta.git.CommitHistory>>? {
+        val rules = history ?: return null
+        if (project.dir != null) return null
+        val key = key(project)
+        val main = clones.main(key)?.takeIf { selected(key) } ?: return null
+        val journal = project.decisions?.let { ids ->
+            val rx = (ids.regex() as? Outcome.Success)?.value ?: return@let null
+            ids.path to { text: String -> (com.dpsmpx.dpmeta.formats.DecisionLog.parse(text, rx, "${project.name}:${ids.path}") as? Outcome.Success)?.value?.entries?.size }
+        }
+        return when (val r = clones.history(key, main, rules.zone, rules.ai, rules.human, excluded, journal)) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> {
+                val json = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(Sync.historyJson(r.value))
+                Outcome.success(Got(r.value, Hashing.sha256(json)))
+            }
+        }
+    }
+
+    /** Имена в каталоге [dir] проекта из основной ветки клона; клона нет — у REST каталогов нет (`null`). */
+    override fun names(project: ProjectEntry, dir: String): Outcome<List<String>>? {
+        checkPath(dir).let { if (it is Outcome.Failure) return it }
+        val key = key(project)
+        val main = clones.main(key)?.takeIf { selected(key) } ?: return null
+        val full = project.dir?.let { "$it/$dir" } ?: dir
+        return when (val r = clones.list(key, main, full)) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> r.value?.let { l -> Outcome.success(l.filter { !it.dir }.map { it.name }) }
+                ?: Outcome.failure(DiagCode.GITHUB_NOT_FOUND, "каталога нет в клоне: $full", "${project.name}:$dir")
         }
     }
 

@@ -31,6 +31,25 @@ class NioVfs(private val root: Path) : Vfs {
         null
     }
 
+    override fun readRange(path: String, offset: Long, length: Int): ByteArray? {
+        require(offset >= 0 && length >= 0) { "часть файла — с неотрицательного места" }
+        val ch = try {
+            FileChannel.open(p(path), StandardOpenOption.READ)
+        } catch (_: NoSuchFileException) {
+            return null
+        }
+        return ch.use {
+            val buf = ByteBuffer.allocate(minOf(length.toLong(), (it.size() - offset).coerceAtLeast(0)).toInt())
+            var at = offset
+            while (buf.hasRemaining()) {
+                val n = it.read(buf, at)
+                if (n < 0) break
+                at += n
+            }
+            buf.array().copyOf(buf.position())
+        }
+    }
+
     override fun exists(path: String): Boolean = Files.isRegularFile(p(path))
 
     override fun isDirectory(path: String): Boolean = Files.isDirectory(p(path), java.nio.file.LinkOption.NOFOLLOW_LINKS)

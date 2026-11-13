@@ -12,9 +12,20 @@ mock-исполнение, нагрузка и хаос (ТЗ, §88–§97). К�
 | Свойства | `<модуль>/src/test`, средства — `testkit` | инварианты на случайных входах с зерном | этап 1 |
 | Межмодульные | `tests/integration` | сценарии через `orchestrator` на `MockRunner` | этапы 4, 14 |
 | Интеграционные с внешним | тесты модулей, включаются свойством | настоящий SSH target — `-Ddpai.test.ssh=пользователь@хост:порт:posix\|windows:команда-агента` (`AgentCommandTest`); Git, Termux, Claude Code CLI | этапы 3, 4, 9 |
+| Linux-среда на настоящем proot | `execution` (`ProotLiveTest`), `orchestrator` (`LinuxInstallLiveTest`), включаются свойством | proot (форк Termux, `tools/linux/build-proot.sh`) и Alpine из APK, но x86_64 и под фильтром seccomp, как у приложения Android 15 (`tools/linux/android-seccomp.py`): `ProotHost`, `apk` без `/proc`, узкий `/dev` без `/sys`, вызовы, запрещённые Android, без смерти процесса, рецепт «Поставить Claude Code», Claude Code в госте и разбор его отказа входа; среда — `tools/linux/host-env.sh <каталог>` (нужны NDK и python3), затем `-Ddpai.test.proot=<каталог>` | D-75, D-82, D-115; 9 ноября 2026 |
+| Языковая служба C++ на настоящем clangd | `lsp` (`ClangdLiveTest`), включается свойством | проект из двух файлов с `compile_commands.json`: флаги и каталог заголовков проекта, диагностика с версией текста, дополнение членов, подсказка, переход в заголовок, подпись, использования, переименование, форматирование, исправление готовой правкой; `-Ddpai.test.clangd=<путь к clangd>` | D-137; 12 ноября 2026 |
+| Отладка Kotlin/Java на настоящей ВМ | `lsp` (`JdwpLiveTest`), идёт сам, если рядом с JVM тестов есть `javac` | программа `javac -g`, JVM с `-agentlib:jdwp` ждёт отладчика: точка в классе, загруженном после подключения, стек, `this` и переменные кадров, выражение-имя, шаг, исключение, пойманное своим кодом, — мимо, непойманное — остановка с текстом, выход | D-161; 13 ноября 2026 |
 | Инварианты ТЗ, §118 | `orchestrator` (`Invariants`) | одиннадцать инвариантов: сессия — задача, target, слот; одна активная сессия на задачу; слияние — с одобрением; id и номера событий; нет секретов в диагностике; DONE — с итогом проверки; деревья — с живым владельцем и без общих путей; проверяются после каждого такта в сценариях | этап 19 |
 | Сквозные | `tests/integration` | задача → назначение → сессия → события → проверка → завершение (ТЗ, §88): `V1ScenariosTest`, сценарии V1 1–4 | этап 14 |
 | Нагрузка, хаос, выносливость | `tests/integration` (`PerformanceTest`, `RecoveryTest` в `orchestrator`, `ChaosLoopTest` — хаос ТЗ, §117 на модельном времени за минуту, `EnduranceTest`) | ТЗ, §93–§95, §116, §117; выносливость — только явно: `-Ddpai.endurance.minutes=1440`, отчёт `build/audits/final-stability/` | этапы 13, 17, 19 |
+
+Замеры `PerformanceTest` отделены от обычной `test` (D-121): после
+завершения сборки — `./gradlew :tests:integration:performanceTest
+--no-parallel --max-workers=1`. `tools/verify/run.sh full` запускает оба
+шага последовательно; `affected` — когда затронут межмодульный набор.
+JUnit замеров — `tests/integration/build/test-results/performanceTest/`,
+текстовые числа текущего прогона — `tests/integration/build/perf/results.txt`.
+Выносливость остаётся в обычной `test` и включается явно, как прежде.
 
 ## 2. Детерминизм
 
@@ -159,6 +170,14 @@ Linux-target в облачной сессии (8 октября 2026) — Ubuntu
 `JschProcessHostTest`, `SshKeysTest` прошли с теми же свойствами
 `dpai.test.ssh*`; кириллица в аргументах на такой локали —
 `PROCESS_ARGUMENT_UNENCODABLE`, а не `?` (`docs/EXECUTION_MODEL.md`, §5).
+
+Отладка по SSH (D-164) — `JschStreamHostTest` 13 ноября 2026 на
+`openssh-server` 9.6 в контейнере (`127.0.0.1:2222`, вход ключом ECDSA,
+отдельный known_hosts) с `-Ddpai.test.ssh=root@127.0.0.1:2222:posix`,
+`.identity`, `.knownHosts`, `-Ddpai.test.gdb=/usr/bin/gdb` (15.1) и
+`-Ddpai.test.debugpy=<python с debugpy 1.8.22>`: байты кадра с CRLF и все
+256 значений байта — без изменений, остановка закрытием stdin — код 0,
+сеансы gdb и debugpy — точка, переменная, выход с кодом 3.
 
 Termux-target — Realme C21Y по USB (D-33): в Termux `openssh`, `sshd`
 слушает 8022, ключ `dpai_test` — в `~/.ssh/authorized_keys`; с ПК —

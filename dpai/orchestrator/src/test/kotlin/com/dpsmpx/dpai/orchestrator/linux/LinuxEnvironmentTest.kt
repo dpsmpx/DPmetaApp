@@ -149,6 +149,47 @@ class LinuxEnvironmentTest {
         assertEquals("TOKEN", token.toFile().readText())
     }
 
+    /**
+     * `/etc/gitconfig` гостя (D-158): помощник входа GitHub из `GH_TOKEN` — без значения токена;
+     * чужой файл не перезаписывается; ссылка на месте файла заменяется файлом, `/etc`-ссылка — отказ.
+     */
+    @Test
+    fun gitConfigIsAppOwnedAndNeverHoldsTheToken() {
+        val env = LinuxEnvironment(NioVfs(dir))
+        val etc = dir.resolve("linux/rootfs/etc")
+        assertFalse(env.gitConfigured())
+        assertEquals(true, env.writeGitConfig().valueOrNull())
+        val text = etc.resolve("gitconfig").toFile().readText()
+        assertEquals(LinuxEnvironment.GIT_CONFIG, text)
+        assertTrue(env.gitConfigured())
+        // Строка помощника — как проверена Git гостя (`docs/research/LINUX_IN_APP.md`, §11).
+        assertTrue(
+            "\thelper = \"!f() { test \\\"\$1\\\" = get || exit 0; test -n \\\"\$GH_TOKEN\\\" || exit 0; echo username=x-access-token; " +
+                "echo \\\"password=\$GH_TOKEN\\\"; }; f\"" in text,
+            text,
+        )
+        assertTrue(text.startsWith(LinuxEnvironment.GIT_MARK) && "[credential \"https://github.com\"]" in text)
+        assertEquals(true, env.writeGitConfig().valueOrNull(), "свой файл — повтор без изменений")
+
+        // Настроил человек — его файл остаётся.
+        etc.resolve("gitconfig").toFile().writeText("[user]\n\tname = Автор\n")
+        assertEquals(false, env.writeGitConfig().valueOrNull())
+        assertEquals("[user]\n\tname = Автор\n", etc.resolve("gitconfig").toFile().readText())
+        assertFalse(env.gitConfigured())
+
+        // Ссылка гостя на месте файла — заменяется файлом, цель цела; /etc-ссылка — отказ.
+        val token = dir.resolve("control-token").also { it.toFile().writeText("TOKEN") }
+        etc.resolve("gitconfig").toFile().delete()
+        assumeTrue(runCatching { Files.createSymbolicLink(etc.resolve("gitconfig"), etc.fileSystem.getPath("../../../control-token")) }.isSuccess, "символьные ссылки недоступны")
+        assertEquals(true, env.writeGitConfig().valueOrNull())
+        assertEquals("TOKEN", token.toFile().readText())
+        assertFalse(Files.isSymbolicLink(etc.resolve("gitconfig")))
+        etc.toFile().deleteRecursively()
+        Files.createSymbolicLink(etc, etc.fileSystem.getPath("../.."))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (env.writeGitConfig() as Outcome.Failure).errors.single().code)
+        assertFalse(dir.resolve("gitconfig").toFile().exists())
+    }
+
     @Test
     fun packagesOnlyByNameAndApkWithoutProc() {
         val add = LinuxEnvironment.apk(LinuxEnvironment.Apk.ADD, listOf("git", " nodejs ", "npm", "")).valueOrNull()!!
@@ -160,12 +201,37 @@ class LinuxEnvironmentTest {
         }
         assertEquals(DiagCode.FIELD_MISSING, (LinuxEnvironment.apk(LinuxEnvironment.Apk.DEL, emptyList()) as Outcome.Failure).errors.single().code)
         assertEquals(listOf("apk", "upgrade", "-U", "--no-progress"), LinuxEnvironment.apk(LinuxEnvironment.Apk.UPGRADE, emptyList()).valueOrNull()!!.command)
-        assertEquals("/root/.claude-slot-2", LinuxEnvironment.slotDir(2))
+        assertEquals(listOf("apk", "fix", "-U", "--no-progress", "--depends", "build-base"), LinuxEnvironment.apk(LinuxEnvironment.Apk.FIX, listOf("build-base")).valueOrNull()!!.command)
+        assertEquals(DiagCode.FIELD_MISSING, (LinuxEnvironment.apk(LinuxEnvironment.Apk.FIX, emptyList()) as Outcome.Failure).errors.single().code)
+        assertEquals("/root/ai/claude-2", LinuxEnvironment.slotDir(2))
+    }
+
+    /**
+     * Установки — по шагам: `apk` — только своим шагом, без `/proc` (D-82); внутри оболочки гостя
+     * (с `/proc`) apk-tools 3 на Android откажет — жёсткая ссылка из `/proc/self/fd`.
+     */
+    @Test
+    fun installsRunApkOnlyAsItsOwnStepWithoutProc() {
+        val recipes = mapOf(
+            "claude" to LinuxEnvironment.claudeInstall(),
+            "codex и gemini" to LinuxEnvironment.executorsInstall(),
+            "llama.cpp" to LinuxEnvironment.llamaInstall(),
+        )
+        for ((name, steps) in recipes) {
+            assertTrue(ProotHost.needsNoProc(steps.first().command), "$name: первый шаг — apk без /proc")
+            for (step in steps.drop(1)) {
+                assertFalse(step.command.any { Regex("""(^|[;&|\s])apk\s""").containsMatchIn(it) }, "$name: apk внутри оболочки — ${step.command}")
+            }
+        }
+        val claude = LinuxEnvironment.claudeInstall()
+        assertEquals(listOf("apk", "add", "-U", "--no-progress", "git", "nodejs", "npm", "bash"), claude[0].command)
+        assertEquals(listOf("/bin/sh", "-lc", "npm install -g @anthropic-ai/claude-code@2.1.322 && claude --version"), claude[1].command)
+        assertEquals(listOf("llama-server", "--version"), LinuxEnvironment.llamaInstall().last().command)
     }
 
     @Test
     fun llamaServerListensOnlyOnThisDeviceAndTakesOnlyGgufFromUserDirs() {
-        assertEquals(listOf("/bin/sh", "-lc", "apk add llama-server && llama-server --version"), LinuxEnvironment.llamaInstall().command)
+        assertEquals(listOf("apk", "add", "-U", "--no-progress", "llama-server"), LinuxEnvironment.llamaInstall().first().command)
         val ok = LinuxEnvironment.llamaServe("/root/files/models/qwen2.5-1.5b q4.gguf", 8080, 4096, 4).valueOrNull()!!
         assertEquals(
             listOf(

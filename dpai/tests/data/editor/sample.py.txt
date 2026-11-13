@@ -1,0 +1,4 @@
+def greet(name):
+    # return in a comment
+    message = "return # still a string"
+    return 42

@@ -437,6 +437,142 @@ class DemoModel(
         runCatching { built?.orchestrator?.taskDiff(task) }.getOrNull()
             ?: Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "контроллер не запущен", "task $task")
 
+    @Volatile
+    private var workspaceCached: com.dpsmpx.dpai.ui.ProjectWorkspaceView? = null
+
+    /** Снимок без IO target; занятый такт не задерживает интерфейс (D-132). */
+    fun workspace(): com.dpsmpx.dpai.ui.ProjectWorkspaceView? {
+        val p = controller.project() ?: return null
+        if (!lock.tryLock()) return workspaceCached?.takeIf { it.project == p }
+            ?: com.dpsmpx.dpai.ui.ProjectWorkspaceView.of(p, controller.targets(), false)
+        return try { workspaceLocked(p).also { workspaceCached = it } } finally { lock.unlock() }
+    }
+
+    private fun workspaceLocked(p: ProjectEntry): com.dpsmpx.dpai.ui.ProjectWorkspaceView {
+        val targets = controller.targets()
+        val o = (built as? LiveSystem)?.orchestrator?.takeIf {
+            liveFor == (targets to p) && it.projectConfig.repository == p.repository() && it.worktrees.repositories[p.repository] == p.repository()
+        }
+        return com.dpsmpx.dpai.ui.ProjectWorkspaceView.of(p, targets, o != null,
+            o?.tasks?.tasks?.values.orEmpty(), o?.sessions ?: com.dpsmpx.dpai.sessions.SessionsState.EMPTY,
+            o?.tasks?.tasks?.keys?.mapNotNull { t -> o.taskWorktree(t)?.let { t to it } }?.toMap().orEmpty()).copy(paused = controller.manualProfiles.blocked)
+    }
+
+    private val workspaceWriteGate = com.dpsmpx.dpai.ui.WorkspaceWriteGate(lock) { controller.project()?.let(::workspaceLocked) }
+
+    fun manualProfileView() = controller.manualProfiles.snapshot()
+    fun manualProfile(p: ProjectEntry, kind: com.dpsmpx.dpai.ui.ManualProfileKind) = controller.manualProfiles.profile(p, kind)
+    fun saveManualProfile(p: ProjectEntry, profile: com.dpsmpx.dpai.ui.ManualProfile) = controller.manualProfiles.save(p, profile)
+    fun runProfile(p: ProjectEntry) = controller.manualProfiles.runProfile(p)
+    fun manualHistory(p: ProjectEntry) = controller.manualProfiles.history(p)
+    fun clearManualHistory(p: ProjectEntry) = controller.manualProfiles.clearHistory(p)
+    fun saveRunProfile(p: ProjectEntry, profile: com.dpsmpx.dpai.ui.RunProfile) = controller.manualProfiles.saveRun(p, profile)
+    fun aiRoute(p: ProjectEntry) = controller.manualProfiles.aiRoute(p)
+    fun saveAiRoute(p: ProjectEntry, route: com.dpsmpx.dpai.ui.EditorAiRoute) = controller.manualProfiles.saveAiRoute(p, route)
+    fun pcFiles(target: TargetEntry, root: String) = controller.pcFiles(target, root)
+    @Volatile private var manualStop = false
+
+    fun stopManualProfile() { manualStop = true; resumeManualProfile() }
+
+    private fun manualClient(target: TargetEntry): com.dpsmpx.dpai.execution.agent.AgentClient? {
+        val host = context?.takeIf { target.inApp }?.let { com.dpsmpx.dpai.android.linux.LinuxSetup.agentHost(it, controller.version) }
+        return controller.profileAgent(target, host)
+    }
+
+    /** Единственный worker живёт вне экрана. После рестарта start не повторяется (D-134). */
+    fun resumeManualProfile() {
+        val app = context ?: return
+        val active = controller.manualProfiles.snapshot().active ?: return
+        if (!controller.manualProfiles.blocked) return
+        LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST) {
+            val client = manualClient(active.target)
+                ?: return@start LongJobs.Done("target недоступен; пауза сохраняется", failed = true)
+            watchManual(client)
+        }
+    }
+
+    fun startManualProfile(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, profile: com.dpsmpx.dpai.ui.ManualProfile): Boolean {
+        val app = context ?: return false
+        return LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST) {
+            val target = controller.targets().firstOrNull { it.id == location.target }
+                ?: return@start LongJobs.Done("target удалён", failed = true)
+            // Сборка в Linux приложения пишет на диск телефона — под защитой места (DPmetaApp:D-113); на ПК-target место — его.
+            if (profile.kind == com.dpsmpx.dpai.ui.ManualProfileKind.BUILD && target.inApp) {
+                (StorageSpace.check(app, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.BUILD, null, "ручная сборка проекта") as? Outcome.Failure)
+                    ?.let { return@start LongJobs.Done(it.diagnostics.first().message, failed = true) }
+            }
+            val client = manualClient(target) ?: return@start LongJobs.Done("агент target недоступен", failed = true)
+            val capability = client.profiles()
+            if (capability is Outcome.Failure) return@start LongJobs.Done("обновите агент target для ручных профилей: ${capability.errors.first().message}", failed = true)
+            val prepared = lock.withLock {
+                val fresh = controller.project()
+                val allowed = fresh?.let { workspaceLocked(it).allow(p, location, true) }
+                    ?: return@withLock Outcome.failure(DiagCode.STATE_CONFLICT, "проект отключён")
+                if (allowed is Outcome.Failure) return@withLock allowed
+                if (controller.targets().firstOrNull { it.id == target.id } != target || (built as? LiveSystem)?.orchestrator?.manualProfileFree() != true) {
+                    return@withLock Outcome.failure(DiagCode.WORKTREE_OWNED, "контур занят; дождитесь завершения сессий и команд")
+                }
+                if (!Drafts.recovery.value.ready) return@withLock Outcome.failure(DiagCode.STATE_CONFLICT, "сначала дождитесь восстановления черновиков")
+                if (Drafts.dirtyIn(location, target.inApp)) return@withLock Outcome.failure(DiagCode.STATE_CONFLICT, "сначала сохраните или отмените правки редактора в этом дереве")
+                controller.manualProfiles.prepare(p, target, location, profile)
+            }
+            if (prepared is Outcome.Failure) return@start LongJobs.Done(prepared.errors.first().message, failed = true)
+            manualStop = false
+            // Проверка Git уже под долговечной паузой: такт не сменит дерево между status и start.
+            val git = workspaceGit(p, location)
+            val status = git.valueOrNull()
+            if (status == null || status.branch != location.branch || status.head == null || status.conflicted.isNotEmpty()) {
+                controller.manualProfiles.stop(client)
+                return@start LongJobs.Done("проверьте ветку, HEAD и конфликты дерева: ${git.diagnostics.firstOrNull()?.message.orEmpty()}", failed = true)
+            }
+            // HEAD дерева — в историю запуска (D-156): какая версия кода собиралась.
+            controller.manualProfiles.launch((prepared as Outcome.Success).value, client, status.head)
+            watchManual(client)
+        }
+    }
+
+    private suspend fun watchManual(client: com.dpsmpx.dpai.execution.agent.AgentClient): LongJobs.Done {
+        while (controller.manualProfiles.blocked) {
+            val keep = if (manualStop) controller.manualProfiles.stop(client) else controller.manualProfiles.poll(client)
+            if (!keep) break
+            kotlinx.coroutines.delay(1500)
+        }
+        manualStop = false
+        val final = controller.manualProfiles.snapshot()
+        return LongJobs.Done(final.note, final.output.lines().takeLast(100))
+    }
+
+    /** Только захват ссылки — под замком; сам Git работает вне него (D-133). */
+    fun workspaceGit(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation): Outcome<com.dpsmpx.dpai.git.GitStatus> {
+        if (!lock.tryLock()) return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.WORKTREE_OWNED, "контроллер занят; повторите обновление Git")
+        val read = try {
+            val current = controller.project() ?: return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, "проект отключён")
+            when (val allowed = workspaceLocked(current).allow(p, location, false)) {
+                is Outcome.Failure -> return allowed
+                is Outcome.Success -> (built as LiveSystem).orchestrator.workspaceGitProbe(location.path)
+            }
+        } finally { lock.unlock() }
+        return when (read) {
+            is Outcome.Failure -> read
+            is Outcome.Success -> read.value()
+        }
+    }
+
+    /** Сверка идентичности и локальное действие под замком, общим с запуском хода. Не для UI-потока. */
+    fun <T> workspaceAccess(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, write: Boolean, action: () -> Outcome<T>): Outcome<T> {
+        if (!write) {
+            val current = workspace() ?: return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, "проект отключён")
+            return when (val allowed = current.allow(p, location, false)) {
+                is Outcome.Failure -> allowed
+                is Outcome.Success -> action()
+            }
+        }
+        return workspaceWriteGate.perform(p, location, action)
+    }
+
+    /** PR проекта через `gh` на его target (D-108): `null` — контур не запущен или у него нет проекта с репозиторием. */
+    fun github(): com.dpsmpx.dpai.orchestrator.github.GitHubDesk? = runCatching { (built as? LiveSystem)?.github }.getOrNull()
+
     /** Итоговые сообщения ходов задачи (D-42) — целиком; из памяти контура или документа задачи, без замка. */
     fun taskMessages(task: TaskId): List<com.dpsmpx.dpai.orchestrator.TurnMessage> =
         runCatching { built?.orchestrator?.turnMessages(task) }.getOrNull().orEmpty()
@@ -469,6 +605,10 @@ class DemoModel(
     /** Слоты аккаунтов на target — их включение и состояние. */
     fun slotsOf(target: ExecutionTargetId): List<com.dpsmpx.dpai.accounts.SlotState> =
         runCatching { (built as? LiveSystem)?.orchestrator?.accounts?.slots?.values?.filter { it.targetId == target }?.sortedBy { it.id.value } }.getOrNull().orEmpty()
+
+    /** Подписки Claude — для подписи маршрута (D-116): в какой подписке он создан. */
+    fun subscriptions(): List<com.dpsmpx.dpai.accounts.SubscriptionState> =
+        runCatching { (built as? LiveSystem)?.orchestrator?.accounts?.subscriptions?.values?.sortedBy { it.id.value } }.getOrNull().orEmpty()
 
     /** Есть ли настоящий контроллер: тогда такт — в службе переднего плана. */
     fun hasLive(): Boolean = controller.targets().any { it.configDir != null }

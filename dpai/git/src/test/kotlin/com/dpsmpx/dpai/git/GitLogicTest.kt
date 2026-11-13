@@ -91,7 +91,7 @@ class GitLogicTest {
                 GitOp.COMMIT, GitOp.WORKTREE_REMOVE, GitOp.MERGE, GitOp.BRANCH_CREATE, GitOp.ADD, GitOp.PUSH -> listOf("x")
                 GitOp.WORKTREE_ADD -> listOf("/p", "b")
                 GitOp.MERGE_BASE, GitOp.MERGES_BETWEEN -> listOf("main", "HEAD")
-                GitOp.DIFF_FROM, GitOp.DIFF_STAT_FROM -> listOf("main")
+                GitOp.DIFF_FROM, GitOp.DIFF_STAT_FROM, GitOp.REV_PARSE -> listOf("main")
                 else -> emptyList()
             }
             val argv = c.argv(op, "/w", args, clock.now()).valueOrNull() ?: error("$op")

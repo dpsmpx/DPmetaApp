@@ -8,6 +8,7 @@ import com.dpsmpx.dpai.core.serialization.JsonNumber
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
+import com.dpsmpx.dpmeta.model.Event
 
 /** Событие ленты (ТЗ, F-05): когда, какой проект, вид и текст для показа. */
 data class FeedEvent(val at: Timestamp, val project: String, val kind: String, val text: String) {
@@ -37,6 +38,19 @@ object Feed {
         "decision" to "новое решение",
         "roadmap" to "шаг ROADMAP",
     )
+
+    /** Типы каталога событий (§8.1; D-85) для видов ленты: вид ленты — хранимый код, тип — для правил тревог. */
+    val TYPES: Map<String, String> = linkedMapOf(
+        "main" to "main.commit",
+        "pr.opened" to "pr.opened",
+        "pr.merged" to "pr.merged",
+        "pr.closed" to "pr.closed",
+        "decision" to "decision.new",
+        "roadmap" to "roadmap.step.done",
+    )
+
+    /** Событие ленты — событием каталога для движка тревог; вид без типа — `null`. Предмет — текст события. */
+    fun event(e: FeedEvent): Event? = TYPES[e.kind]?.let { Event(it, e.at, e.project, e.text, key = e.text) }
 
     private fun payload(p: ProjectState?, kind: String): JsonObject? = p?.sections?.get(kind)?.payload as? JsonObject
 

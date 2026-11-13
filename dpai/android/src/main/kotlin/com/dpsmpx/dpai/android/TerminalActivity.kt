@@ -39,6 +39,9 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     private lateinit var statusRow: LinearLayout
     private lateinit var status: TextView
     private lateinit var reconnect: TextView
+    private lateinit var dependencies: TextView
+    private var dependencyUi: EditorDependencyUi? = null
+    private lateinit var problems: TextView
     private lateinit var ctrlKey: TextView
     private lateinit var altKey: TextView
     private lateinit var keysRow: View
@@ -62,11 +65,14 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         // Терминал всегда тёмный: значки панелей — светлые и при светлой теме телефона (терминал:A-20).
         enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
         setContentView(layout())
+        dependencyUi = EditorDependencyUi(this, ::renderTabs)
         applyKeyboard()
         // Метка устройства, targets и незавершённые сессии tmux — с диска заранее, не в главном потоке (D-111).
         thread(name = "dpai-term-warm", isDaemon = true) { TerminalHub.warm(applicationContext) }
         // После смерти процесса Android восстанавливает экран, а вкладок (только в памяти, D-27) уже нет:
         // открыть заново ту, с которой экран начинался, а не показывать мёртвый чёрный экран.
+        // Возврат Activity после смерти процесса никогда не повторяет пользовательскую программу.
+        if (savedInstanceState != null) { intent?.removeExtra(EXTRA_RUN_FILE); intent?.removeExtra(EXTRA_RUN_COMMAND) }
         val lost = savedInstanceState != null && TerminalHub.tabs.isEmpty()
         if (savedInstanceState == null || TerminalHub.tabs.isEmpty()) handle(intent)
         // Новая сессия вместо прежней — словами, а не молча (терминал:A-24).
@@ -88,11 +94,17 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     override fun onResume() {
         super.onResume()
         RequestOverlay.appVisible = true
+        view.post { renderTabs() }
     }
 
     override fun onPause() {
         RequestOverlay.appVisible = false
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        dependencyUi?.close()
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -125,6 +137,28 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         if (intent?.getBooleanExtra(EXTRA_LINUX, false) == true) {
             // «Открыть в терминале» вкладки «Файлы» (D-99): оболочка гостя сразу в этой папке.
             val dir = intent.getStringExtra(EXTRA_DIR)
+            val code = intent.getStringExtra(EXTRA_RUN_FILE)
+            val run = intent.getStringExtra(EXTRA_RUN_COMMAND)
+            // Запуск программы проекта в Linux приложения (D-155): без файла редактора.
+            if (code == null && run != null && dir != null) {
+                intent.removeExtra(EXTRA_RUN_COMMAND)
+                val treeRoot = intent.getStringExtra(EXTRA_TREE_ROOT) ?: dir
+                when (val plan = com.dpsmpx.dpai.ui.EditorTerminalRun.argv(null, dir, run)) {
+                    is Outcome.Success -> show(TerminalHub.open(this, null, plan.value, "▶ ${dir.trimEnd('/').substringAfterLast('/')}",
+                        editorRun = TerminalHub.EditorRun("", dir, run, intent.getStringExtra(EXTRA_EDITOR_ROOT), treeRoot)))
+                    is Outcome.Failure -> android.widget.Toast.makeText(this, plan.errors.first().message, android.widget.Toast.LENGTH_LONG).show()
+                }
+                return
+            }
+            if (code != null && run != null && dir != null) {
+                intent.removeExtra(EXTRA_RUN_FILE); intent.removeExtra(EXTRA_RUN_COMMAND)
+                when (val plan = com.dpsmpx.dpai.ui.EditorTerminalRun.argv(code, dir, run)) {
+                    is Outcome.Success -> show(TerminalHub.open(this, null, plan.value, "▶ ${code.substringAfterLast('/')}",
+                        editorRun = TerminalHub.EditorRun(code, dir, run, intent.getStringExtra(EXTRA_EDITOR_ROOT))))
+                    is Outcome.Failure -> android.widget.Toast.makeText(this, plan.errors.first().message, android.widget.Toast.LENGTH_LONG).show()
+                }
+                return
+            }
             show(
                 if (dir == null) {
                     TerminalHub.openLinux(this)
@@ -135,6 +169,34 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             return
         }
         val id = intent?.getStringExtra(EXTRA_TARGET) ?: return
+        // Запуск программы проекта на ПК-target (D-155): команда — один раз, вкладка без tmux.
+        val runCommand = intent.getStringExtra(EXTRA_RUN_COMMAND)
+        val runDir = intent.getStringExtra(EXTRA_DIR)
+        if (runCommand != null && runDir != null) {
+            intent.removeExtra(EXTRA_RUN_COMMAND)
+            val editorRoot = intent.getStringExtra(EXTRA_EDITOR_ROOT)
+            val treeRoot = intent.getStringExtra(EXTRA_TREE_ROOT) ?: runDir
+            thread(name = "dpai-term-run", isDaemon = true) {
+                val target = Controller.get(filesDir).targets().firstOrNull { it.id.value == id }
+                runOnUiThread {
+                    val plan = when {
+                        target == null -> Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.ENTITY_NOT_FOUND, "target удалён")
+                        // Windows — PowerShell по SSH с PTY (D-163).
+                        target.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.WINDOWS -> com.dpsmpx.dpai.ui.EditorTerminalRun.windowsArgv(runDir, runCommand)
+                        else -> com.dpsmpx.dpai.ui.EditorTerminalRun.argv(null, runDir, runCommand)
+                    }
+                    when (plan) {
+                        is Outcome.Success -> show(TerminalHub.open(this, target, plan.value, "▶ ${target!!.label} · ${runDir.trimEnd('/').substringAfterLast('/')}",
+                            editorRun = TerminalHub.EditorRun("", runDir, runCommand, editorRoot, treeRoot)))
+                        is Outcome.Failure -> {
+                            Toast.makeText(this, plan.errors.first().message, Toast.LENGTH_LONG).show()
+                            if (TerminalHub.tabs.isEmpty()) finish()
+                        }
+                    }
+                }
+            }
+            return
+        }
         val claude = intent.getBooleanExtra(EXTRA_CLAUDE, false)
         val login = intent.getBooleanExtra(EXTRA_LOGIN, false)
         thread(name = "dpai-term-open", isDaemon = true) {
@@ -293,6 +355,47 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     // ---- разметка ----
 
     private fun dp(v: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
+
+    /**
+     * Места в коде из вывода запуска (D-153): список по порядку вывода; касание —
+     * файл вкладкой на строке в том редакторе, из которого запущено. Терминал
+     * закрывается, вкладка терминала остаётся. Файл вне папки запуска (системный
+     * заголовок, библиотека) открыть нельзя — так и сказано.
+     */
+    private fun showProblems(tab: TerminalHub.Tab) {
+        val run = tab.editorRun ?: return
+        val list = run.report?.problems?.items.orEmpty()
+        if (list.isEmpty()) return
+        val rows = list.map { p ->
+            val mark = when (p.severity) {
+                com.dpsmpx.dpai.ui.ProblemSeverity.ERROR -> "✖"
+                com.dpsmpx.dpai.ui.ProblemSeverity.WARNING -> "▲"
+                com.dpsmpx.dpai.ui.ProblemSeverity.NOTE -> "·"
+            }
+            val place = com.dpsmpx.dpai.ui.BuildProblems.relative(p.path, run.treeRoot, cwd = run.root) ?: p.path
+            "$mark $place:${p.line}${p.column?.let { ":$it" }.orEmpty()}\n${p.message.take(300)}"
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Ошибки сборки — ${run.report?.problems?.summary().orEmpty()}")
+            .setItems(rows.toTypedArray()) { _, i ->
+                val p = list[i]
+                val key = run.editorRootKey
+                val rel = com.dpsmpx.dpai.ui.BuildProblems.relative(p.path, run.treeRoot, cwd = run.root)
+                when {
+                    key == null -> Toast.makeText(this, "Запуск не из редактора: откройте ${p.path}:${p.line} сами", Toast.LENGTH_LONG).show()
+                    rel == null -> Toast.makeText(this, "Файл вне папки запуска — в редакторе не открыть: ${p.path}:${p.line}", Toast.LENGTH_LONG).show()
+                    else -> {
+                        IdeState.jumpTo(key, rel, p.line)
+                        finish()
+                    }
+                }
+            }
+            .setNegativeButton("Закрыть", null)
+            .create()
+        // У диалога своё окно: FLAG_SECURE активности его не закрывает (D-86).
+        dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        dialog.show()
+    }
 
     private fun chip(text: String, onClick: () -> Unit): TextView = TextView(this).apply {
         this.text = text
@@ -582,12 +685,16 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             setPadding(dp(12), dp(4), dp(12), dp(4))
         }
         reconnect = chip("↻ Переподключить") { TerminalHub.current?.let { TerminalHub.connect(this, it) } }
+        dependencies = chip("Решения…") { TerminalHub.current?.let { dependencyUi?.offer(it, automatic = false) } }
+        problems = chip("Ошибки") { TerminalHub.current?.let(::showProblems) }
         statusRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(0xff262626.toInt())
             addView(status, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             addView(reconnect)
+            addView(problems)
+            addView(dependencies)
         }
         // Ряд клавиш (терминал:A-3, §4, п. 1): девять клавиш видны целиком, без прокрутки; смахивание вверх по
         // клавише — второй знак (ESC ~, TAB |, ← HOME, ↓ PGDN, ↑ PGUP, → END); «⋯» — остальное.
@@ -751,8 +858,14 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         if (hardKeyboard()) tabsRow.addView(moreChip())
         val s = current?.status.orEmpty()
         status.text = listOfNotNull(s.ifEmpty { null }, current?.notice).joinToString(" · ")
-        statusRow.visibility = if (status.text.isEmpty()) View.GONE else View.VISIBLE
+        val hasDependencies = current?.editorRun?.report?.useful == true
+        dependencies.visibility = if (hasDependencies) View.VISIBLE else View.GONE
+        val found = current?.editorRun?.report?.problems
+        problems.visibility = if (found?.items?.isNotEmpty() == true) View.VISIBLE else View.GONE
+        found?.let { problems.text = "Ошибки: ${it.summary()}" }
+        statusRow.visibility = if (status.text.isEmpty() && !hasDependencies && problems.visibility != View.VISIBLE) View.GONE else View.VISIBLE
         reconnect.visibility = if (current != null && !current.open && !current.busy) View.VISIBLE else View.GONE
+        if (current != null && hasDependencies) dependencyUi?.offer(current, automatic = true)
     }
 
     companion object {
@@ -760,6 +873,10 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         const val EXTRA_CLAUDE = "com.dpsmpx.dpai.terminal.CLAUDE"
         const val EXTRA_LOGIN = "com.dpsmpx.dpai.terminal.LOGIN"
         const val EXTRA_LINUX = "com.dpsmpx.dpai.terminal.LINUX"
+        private const val EXTRA_RUN_FILE = "com.dpsmpx.dpai.terminal.RUN_FILE"
+        private const val EXTRA_TREE_ROOT = "com.dpsmpx.dpai.terminal.TREE_ROOT"
+        private const val EXTRA_EDITOR_ROOT = "com.dpsmpx.dpai.terminal.EDITOR_ROOT"
+        private const val EXTRA_RUN_COMMAND = "com.dpsmpx.dpai.terminal.RUN_COMMAND"
         const val EXTRA_DIR = "com.dpsmpx.dpai.terminal.DIR"
 
         /**
@@ -795,6 +912,29 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             if (targetId != null) i.putExtra(EXTRA_TARGET, targetId).putExtra(EXTRA_CLAUDE, claude).putExtra(EXTRA_LOGIN, login)
             if (context !is Activity) i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(i)
+        }
+
+        /**
+         * Запуск программы проекта (D-155) в новой вкладке: [target] — `null` или «в
+         * приложении» — Linux приложения, иначе ПК по SSH (только POSIX). [dir] — папка
+         * запуска, [treeRoot] — корень дерева для перехода к ошибкам во вкладки [editorRootKey].
+         */
+        internal fun startRun(context: Context, target: com.dpsmpx.dpai.ui.TargetEntry?, dir: String, command: String, editorRootKey: String, treeRoot: String) {
+            val intent = Intent(context, TerminalActivity::class.java)
+                .putExtra(EXTRA_DIR, dir).putExtra(EXTRA_RUN_COMMAND, command)
+                .putExtra(EXTRA_EDITOR_ROOT, editorRootKey).putExtra(EXTRA_TREE_ROOT, treeRoot)
+            if (target == null || target.inApp) intent.putExtra(EXTRA_LINUX, true) else intent.putExtra(EXTRA_TARGET, target.id.value)
+            if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        }
+
+        /** Явный запуск в собственной PTY, без ввода команды в уже работающую программу (D-138). */
+        internal fun startCode(context: Context, file: String, dir: String, command: String, editorRootKey: String? = null) {
+            val intent = Intent(context, TerminalActivity::class.java).putExtra(EXTRA_LINUX, true)
+                .putExtra(EXTRA_DIR, dir).putExtra(EXTRA_RUN_FILE, file).putExtra(EXTRA_RUN_COMMAND, command)
+                .putExtra(EXTRA_EDITOR_ROOT, editorRootKey)
+            if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
         }
 
         /** Открыть терминал Linux-среды в приложении (D-75, шаг 5); [dir] — каталог гостя, в котором начать (D-99). */

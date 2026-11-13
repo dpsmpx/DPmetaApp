@@ -11,7 +11,7 @@ import sys
 PROJ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 TEXT_EXT = (".md", ".kt", ".kts", ".py", ".sh", ".toml", ".properties", ".json", ".jsonl",
-            ".txt", ".yml", ".yaml", ".xml", ".gitignore", ".bat", ".ps1", ".c")
+            ".txt", ".yml", ".yaml", ".xml", ".gitignore", ".bat", ".ps1", ".c", ".h")
 
 TZ = "docs/direction/MASTER_TECHNICAL_TASK.md"
 DECISIONS = "docs/direction/DECISIONS.md"

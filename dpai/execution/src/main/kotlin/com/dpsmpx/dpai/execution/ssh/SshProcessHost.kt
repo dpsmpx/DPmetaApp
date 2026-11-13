@@ -36,10 +36,11 @@ object RemoteShell {
             }
             TargetPlatform.WINDOWS -> {
                 // cmd.exe раскрывает % и ^ даже в кавычках; кавычка внутри аргумента
-                // по-разному разбирается программами. Такие аргументы не передаются.
-                val bad = args.firstOrNull { a -> a.isEmpty() || a.any { it == '"' || it == '%' || it == '^' || it == '!' || it.isISOControl() } }
+                // по-разному разбирается программами. PowerShell как DefaultShell
+                // раскрывает ещё $ и обратный апостроф (аудит A-06).
+                val bad = args.firstOrNull { a -> a.isEmpty() || a.any { it == '"' || it == '%' || it == '^' || it == '!' || it == '$' || it == '`' || it.isISOControl() } }
                 if (bad != null) {
-                    Outcome.failure(DiagCode.UNSUPPORTED, "аргумент с \", %, ^, ! или управляющими знаками не передаётся на Windows по SSH")
+                    Outcome.failure(DiagCode.UNSUPPORTED, "аргумент с символами раскрытия cmd/PowerShell или управляющими знаками не передаётся на Windows по SSH")
                 } else {
                     Outcome.success(args.joinToString(" ") { if (WINDOWS_SAFE.matches(it)) it else Detacher.quoteWindows(it) })
                 }

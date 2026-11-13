@@ -1,0 +1,19 @@
+{
+  "name": "studio-light-plain",
+  "colors": {
+    "editor.background": "#fdfbff",
+    "editor.foreground": "#1c1b1f",
+    "editor.selectionBackground": "#dcd8f5",
+    "editorCursor.foreground": "#6750a4",
+    "editor.lineHighlightBackground": "#f0edf5"
+  },
+  "tokenColors": [
+    {
+      "settings": {
+        "foreground": "#1c1b1f",
+        "background": "#fdfbff",
+        "fontStyle": ""
+      }
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+schema = 1
+
+[[rule]]
+id = "alpha"
+title = "Альфа"
+on = "alpha.opened"
+action = "notify"
+
+[[rule]]
+id = "alpha"
+title = "Снова"
+on = "alpha.closed"
+action = "feed"

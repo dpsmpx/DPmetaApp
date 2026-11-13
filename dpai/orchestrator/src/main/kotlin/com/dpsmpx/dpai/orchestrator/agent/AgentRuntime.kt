@@ -110,7 +110,7 @@ class AgentRuntime(
      * (D-75): на target — отдельный процесс ОС ([ProcessSupervision]), в
      * приложении — поток ([ThreadSupervision]).
      */
-    private val supervision: Supervision = ProcessSupervision(home, selfCommand, detacher ?: Detacher(), clock),
+    private val supervision: Supervision = ProcessSupervision(home, selfCommand, detacher ?: Detacher(), clock, AgentService(home, clock, version)),
     /** Память машины для `doctor`: на JVM — сведения JDK ([JvmOsFacts]), в приложении — `/proc/meminfo`. */
     private val osFacts: () -> OsFacts = JvmOsFacts::read,
     /**
@@ -122,6 +122,7 @@ class AgentRuntime(
     private val baseEnvironment: () -> Map<String, String> = System::getenv,
 ) {
     private val vfs = NioVfs(File(home).toPath())
+    private val taskHost = com.dpsmpx.dpai.execution.tools.SharedToolsHost(host) { SharedToolsStore(vfs).read() }
     private val ids = IdGenerator(clock, RandomSource.secure())
     private val pace = java.util.concurrent.CountDownLatch(1)
 
@@ -135,7 +136,51 @@ class AgentRuntime(
 
     private fun journalPath(id: SessionId) = "${runDir(id)}/events.jsonl"
 
+    private val fences = DocumentStore(vfs, "run-fences")
+
+    private fun fenced(id: SessionId): Boolean = when (val r = fences.read(id.value.lowercase())) {
+        is Outcome.Failure -> true
+        is Outcome.Success -> r.value != null
+    }
+
+    private fun fenceMark(confirmed: Boolean) = JsonObject.of("format" to JsonString("dpai.run-fence"), "version" to JsonNumber.of(1), "confirmed" to JsonBool(confirmed))
+
+    private fun confirmFence(id: SessionId, reply: AgentReply): AgentReply = when (val w = fences.write(id.value.lowercase(), fenceMark(true))) {
+        is Outcome.Failure -> AgentReply.failure("fence-stop", w.diagnostics)
+        is Outcome.Success -> reply.copy(command = "fence-stop")
+    }
+
+    /** Постоянный запрет ID и отдельное доказательство безопасного выхода переживают очистку журнала (D-134). */
+    fun fenceStop(id: SessionId): AgentReply {
+        val saved = fences.read(id.value.lowercase())
+        if (saved is Outcome.Failure) return AgentReply.failure("fence-stop", saved.diagnostics)
+        val content = (saved as Outcome.Success).value?.content
+        if (content != null && ((content["format"] as? JsonString)?.value != "dpai.run-fence" || (content["version"] as? JsonNumber)?.toLongExact() != 1L)) return AgentReply.failure("fence-stop", listOf(Diagnostic.error(DiagCode.STORAGE_CORRUPTED, "неизвестный формат запрета запуска", "run $id")))
+        val confirmed = (content?.get("confirmed") as? JsonBool)?.value == true
+        val mark = fences.write(id.value.lowercase(), fenceMark(confirmed))
+        if (mark is Outcome.Failure) return AgentReply.failure("fence-stop", mark.diagnostics)
+        val observed = observe(id)
+        if (observed is Outcome.Failure) {
+            if (observed.errors.any { it.code != DiagCode.ENTITY_NOT_FOUND }) return AgentReply.failure("fence-stop", observed.diagnostics)
+            val tomb = docs(id).read(PRUNED_KEY)
+            if (tomb is Outcome.Failure) return AgentReply.failure("fence-stop", tomb.diagnostics)
+            if ((tomb as Outcome.Success).value != null && !confirmed) return AgentReply.failure("fence-stop", listOf(Diagnostic.error(DiagCode.AGENT_RUN_LOST, "журнал очищен без подтверждения безопасного выхода; пауза сохраняется", "run $id")))
+            return confirmFence(id, AgentReply("fence-stop", ok = true, run = RunStatus(id, RunState.EXITED, reason = ExitReason.STOPPED), stop = StopResult(false, emptyList())))
+        }
+        val stopped = stop(id, RunningProcess.DEFAULT_GRACE)
+        if (!stopped.ok || stopped.run?.state != RunState.EXITED) return stopped.copy(command = "fence-stop")
+        val status = stopped.run!!
+        val records = EventJournal.readCommittedAfter(vfs, journalPath(id), (status.lastSequence - 16).coerceAtLeast(0))
+        if (records is Outcome.Failure) return AgentReply.failure("fence-stop", records.diagnostics)
+        val exit = (records as Outcome.Success).value.first.lastOrNull { it.event.type == EventType.TARGET_PROCESS_EXITED && (it.event.payload["turn"] as? JsonNumber)?.toLongExact() == status.turn.toLong() }
+        if (exit == null && status.reason != ExitReason.START_FAILED) return AgentReply.failure("fence-stop", listOf(Diagnostic.error(DiagCode.STORAGE_CORRUPTED, "нет подтверждённого события выхода; пауза сохраняется", "run $id")))
+        val survivors = (exit?.event?.payload?.get("survivors") as? JsonArray)?.items
+        if (survivors?.isNotEmpty() == true || stopped.stop?.survivors?.isNotEmpty() == true) return AgentReply.failure("fence-stop", listOf(Diagnostic.error(DiagCode.PROCESS_ORPHANS_LEFT, "после остановки остались процессы; проект остаётся на паузе", "run $id")))
+        return confirmFence(id, stopped)
+    }
+
     fun start(id: SessionId, spec: RunSpec): AgentReply {
+        if (fenced(id)) return AgentReply.failure("start", listOf(Diagnostic.error(DiagCode.INVALID_TRANSITION, "идентификатор запуска закрыт навсегда", "run $id")))
         prune(RETENTION, keep = id)
         val store = docs(id)
         val previous = when (val r = store.read(RUN_KEY)) {
@@ -171,6 +216,25 @@ class AgentRuntime(
             }
             is Outcome.Success -> AgentReply("start", ok = true, run = doc.status(last))
         }
+    }
+
+    /**
+     * Служба агента на ПК (D-109): `dpai agent serve` — запускает супервизоры по
+     * просьбам `start` своими потомками, пока её не остановят. Только на target с
+     * процессами ОС; в приложении (поток-супервизор) — отказ.
+     */
+    fun serve(stop: () -> Boolean = { false }): AgentReply {
+        val sup = supervision as? ProcessSupervision
+            ?: return AgentReply.failure("serve", listOf(Diagnostic.error(DiagCode.UNSUPPORTED, "служба агента — только на ПК", "service")))
+        AgentService(home, clock, version).serve(sup.self(), launch = { id -> sup.spawn(id) }, stop = stop)
+        return AgentReply("serve", ok = true)
+    }
+
+    /** Состояние службы агента (D-109) — ответом `service` тем же протоколом. */
+    fun serviceStatus(): AgentReply {
+        val sup = supervision as? ProcessSupervision
+        val status = AgentService(home, clock, version).status { s -> sup?.serviceAlive(s) ?: false }
+        return AgentReply("service", ok = true, service = status)
     }
 
     fun supervise(id: SessionId): AgentReply {
@@ -215,7 +279,7 @@ class AgentRuntime(
         var current = doc.copy(supervisorPid = self.pid, supervisorStartedAt = self.startedAt, bootAt = self.bootAt)
         // Супервизор записывает себя до запуска процесса: так stop находит его и просит, а не пишет сам (A-4).
         store.write(RUN_KEY, current.toJson()).let { if (it is Outcome.Failure) return AgentReply.failure("supervise", it.diagnostics) }
-        if (stopRequest(store, doc.turn) != null) {
+        if (stopRequest(id, store, doc.turn) != null) {
             // Остановку попросили раньше, чем ход начался: процесс не запускается.
             if (stdin != null) store.delete(INPUT_KEY)
             emit(EventType.TARGET_PROCESS_EXITED, exitPayload(doc.turn, null, ExitReason.STOPPED, emptyList()))
@@ -224,6 +288,7 @@ class AgentRuntime(
             return AgentReply("supervise", ok = true, run = current.status(journal.position))
         }
         val env = HashMap(baseEnvironment()).apply {
+            remove(com.dpsmpx.dpai.execution.tools.SharedTools.EXECUTOR_ENV)
             doc.spec.unsetEnv.forEach { remove(it) }
             putAll(doc.spec.setEnv)
         }
@@ -231,7 +296,7 @@ class AgentRuntime(
         val captured = StringBuilder()
         // Вывод ждёт блокировки, пока не записано TARGET_PROCESS_STARTED: в журнале ход начинается с него.
         val process: RunningProcess = synchronized(lock) {
-            val started = host.start(ProcessSpec(doc.spec.command, doc.spec.workDir, env, stdin)) { line ->
+            val started = taskHost.start(ProcessSpec(doc.spec.command, doc.spec.workDir, env, stdin)) { line ->
                 // Вывод пробы входа — только в памяти (D-69): в журнал идёт сведённый итог при выходе.
                 if (capture && line.stream == OutputStream.STDOUT) {
                     synchronized(captured) { if (captured.length < CAPTURE_LIMIT) captured.append(line.text).append('\n') }
@@ -303,7 +368,7 @@ class AgentRuntime(
                 reason = ExitReason.EXITED
                 break
             }
-            val stopRequest = stopRequest(store, doc.turn)
+            val stopRequest = stopRequest(id, store, doc.turn)
             val timedOut = doc.spec.timeout?.let { clock.monotonicNanos() - begin >= it.inWholeNanoseconds } ?: false
             val lostJournal = journalError.get()
             if (stopRequest != null || timedOut || lostJournal != null) {
@@ -340,7 +405,8 @@ class AgentRuntime(
     }
 
     /** Пауза остановки, если для этого хода её попросили. */
-    private fun stopRequest(store: DocumentStore, turn: Int): Duration? {
+    private fun stopRequest(id: SessionId, store: DocumentStore, turn: Int): Duration? {
+        if (fenced(id)) return RunningProcess.DEFAULT_GRACE
         val req = (store.read(STOP_KEY) as? Outcome.Success)?.value?.content ?: return null
         if ((req["turn"] as? JsonNumber)?.toLongExact() != turn.toLong()) return null
         return (req["graceSeconds"] as? JsonNumber)?.toLongExact()?.seconds ?: RunningProcess.DEFAULT_GRACE
@@ -494,7 +560,7 @@ class AgentRuntime(
         // Супервизор мёртв — у журнала нет писателя; выход записывает stop.
         EventJournal.open(vfs, journalPath(id)).valueOrNull()?.let { journal ->
             val recorder = EventRecorder(ids, clock).apply { resumeFrom(journal.records()) }
-            journal.append(recorder.envelope(EventType.TARGET_PROCESS_EXITED, StreamRef.of(id), clock.now(), exitPayload(doc.turn, null, ExitReason.STOPPED, emptyList())))
+            journal.append(recorder.envelope(EventType.TARGET_PROCESS_EXITED, StreamRef.of(id), clock.now(), exitPayload(doc.turn, null, ExitReason.STOPPED, emptyList(), r)))
         }
         store.write(RUN_KEY, exited.toJson())
         val diags = if (r.survivors.isEmpty()) {

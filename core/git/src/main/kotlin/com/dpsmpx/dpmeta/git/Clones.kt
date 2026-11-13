@@ -154,20 +154,24 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
     }
 
     private fun fetch(project: String, remote: URI, dir: File, creds: CredentialsProvider?, excluded: (String) -> Boolean): Outcome<Report> = open(dir).use { repo ->
-        Git(repo).use { git ->
-            val main = mainOf(repo)
+        Git(repo).use fetched@ { git ->
             // Адрес — тот, что прошёл пропуск: переименованный в реестре репозиторий не тянется со старого адреса.
             // Пишется, только если другой: конфиг клона правит и git гостя (D-72) — лишняя запись спорит с ним.
             if (repo.config.getString("remote", "origin", "url") != remote.toString()) {
                 repo.config.apply { setString("remote", "origin", "url", remote.toString()) }.save()
             }
-            val remoteRefs = Git.lsRemoteRepository().setRemote(remote.toString()).setHeads(true).setCredentialsProvider(creds).call()
-            val mainSha = remoteRefs.firstOrNull { it.name == Constants.R_HEADS + main }?.objectId?.name
-            val refs = remoteRefs.map { it.name.removePrefix(Constants.R_HEADS) }
+            // T19, аудит K-01: основную ветку называет сервер. Конфиг и origin/HEAD
+            // пишет гость; для доверенной головы им пользоваться нельзя.
+            val remoteRefs = Git.lsRemoteRepository().setRemote(remote.toString()).setTags(false).setCredentialsProvider(creds).callAsMap()
+            val refs = remoteRefs.keys.filter { it.startsWith(Constants.R_HEADS) }.map { it.removePrefix(Constants.R_HEADS) }
+            val main = remoteRefs[Constants.HEAD]?.target?.name?.removePrefix(Constants.R_HEADS)?.takeIf { it in refs }
+                ?: return@fetched failure(DiagCode.VALUE_INVALID, "сервер не назвал основную ветку", project)
+            val mainSha = remoteRefs[Constants.R_HEADS + main]?.objectId?.name
             val keep = refs.filter { it == main || !excluded(it) }.sorted()
             val before = keep.associateWith { repo.resolve(Constants.R_REMOTES + "origin/" + it) }
             git.fetch()
-                .setRemote("origin")
+                // K-02: адрес целиком, не RemoteConfig("origin") с url.*.insteadOf.
+                .setRemote(remote.toString())
                 .setRefSpecs(keep.map { RefSpec("+${Constants.R_HEADS}$it:${Constants.R_REMOTES}origin/$it") })
                 .setCredentialsProvider(creds)
                 .call()
@@ -236,6 +240,74 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
             ?: present("main")
             ?: repo.config.getString("dpmeta", null, "main")
             ?: repo.branch
+    }
+
+    /**
+     * Рабочее дерево клона — работа ИИ (D-70): текущая ветка (`null` — HEAD отсоединён),
+     * её коммит и голова `origin/<ветка>` в клоне (`null` — такой ветки GitHub нет). Для
+     * экрана команд реестра (D-82): видно, на чём идёт команда и отстаёт ли дерево.
+     */
+    data class Worktree(val branch: String?, val sha: String?, val upstream: String?) {
+        /** Дерево совпадает с веткой GitHub — догонять нечего. */
+        val even: Boolean get() = sha != null && sha == upstream
+    }
+
+    /** [Worktree] клона; клона нет — `ENTITY_NOT_FOUND`. Рабочее дерево не читается и не меняется. */
+    fun worktree(project: String): Outcome<Worktree> = withRepo(project) { repo ->
+        val head = repo.exactRef(Constants.HEAD)
+        val branch = head?.takeIf { it.isSymbolic }?.target?.name?.takeIf { it.startsWith(Constants.R_HEADS) }?.removePrefix(Constants.R_HEADS)
+        val sha = head?.objectId?.name
+        val upstream = branch?.let { repo.exactRef(Constants.R_REMOTES + "origin/" + it)?.objectId?.name }
+        Worktree(branch, sha, upstream)
+    }
+
+    /** Итог догона рабочего дерева (D-123): сдвинуто, уже вровень или оставлено — с причиной. */
+    sealed interface CatchUp {
+        data class Moved(val branch: String, val from: String, val to: String, val commits: Int) : CatchUp
+
+        data object Even : CatchUp
+
+        /** GitHub впереди, но дерево не тронуто: свои правки или коммиты, отказ git. */
+        data class Held(val why: String) : CatchUp
+
+        /** Догонять нечего или не с чем: HEAD отсоединён, у ветки нет ветки GitHub. */
+        data class Skipped(val why: String) : CatchUp
+    }
+
+    /**
+     * Рабочее дерево клона догоняет свою ветку GitHub (`origin/<ветка>`, уже скачанную
+     * [sync]) — только перемоткой (`--ff-only`) и только если в дереве нет правок,
+     * не сохранённых в Git, и своих коммитов (D-123, уточняет D-70). Иначе ничего не
+     * трогается — [CatchUp.Held] с причиной: работа ИИ и человека не теряется. Сети нет.
+     */
+    fun catchUp(project: String): Outcome<CatchUp> = withRepo(project) { repo ->
+        val head = repo.exactRef(Constants.HEAD)
+        val branch = head?.takeIf { it.isSymbolic }?.target?.name?.takeIf { it.startsWith(Constants.R_HEADS) }?.removePrefix(Constants.R_HEADS)
+            ?: return@withRepo CatchUp.Skipped("HEAD отсоединён от ветки")
+        val local = head.objectId ?: return@withRepo CatchUp.Skipped("в ветке $branch нет коммитов")
+        val upstream = repo.exactRef(Constants.R_REMOTES + "origin/" + branch)?.objectId
+            ?: return@withRepo CatchUp.Skipped("у ветки $branch нет ветки GitHub")
+        if (local == upstream) return@withRepo CatchUp.Even
+        val behind = RevWalk(repo).use { walk ->
+            val a = walk.parseCommit(local)
+            val b = walk.parseCommit(upstream)
+            if (!walk.isMergedInto(a, b)) return@withRepo CatchUp.Held("в ветке $branch есть свои коммиты — она разошлась с GitHub")
+            walk.reset()
+            walk.markStart(b)
+            walk.markUninteresting(a)
+            walk.count()
+        }
+        Git(repo).use { git ->
+            try {
+                if (git.status().call().hasUncommittedChanges()) return@withRepo CatchUp.Held("в рабочем дереве есть правки, не сохранённые в Git")
+                val r = git.merge().include(upstream).setFastForward(org.eclipse.jgit.api.MergeCommand.FastForwardMode.FF_ONLY).setCommit(true).call()
+                if (r.mergeStatus != org.eclipse.jgit.api.MergeResult.MergeStatus.FAST_FORWARD) return@withRepo CatchUp.Held("git не перемотал: ${r.mergeStatus}")
+            } catch (e: GitAPIException) {
+                // Неотслеживаемый файл на месте нового и т. п. — дерево не тронуто.
+                return@withRepo CatchUp.Held("git отказал: ${e.javaClass.simpleName}")
+            }
+        }
+        CatchUp.Moved(branch, local.name, upstream.name, behind)
     }
 
     /** Ветки GitHub в клоне с головами; клона нет — `ENTITY_NOT_FOUND`. Символьная `origin/HEAD` — не ветка. */
@@ -308,7 +380,9 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
 
     /** Байты объекта [id] вида [type], если id совпадает с хешем содержимого; иначе — `CorruptObjectException`. */
     private fun verified(repo: Repository, id: ObjectId, type: Int): ByteArray {
-        val bytes = repo.open(id, type).bytes
+        val loader = repo.open(id, type)
+        if (type == Constants.OBJ_BLOB && loader.size > MAX_DOCUMENT) throw org.eclipse.jgit.errors.LargeObjectException.ExceedsLimit(MAX_DOCUMENT, loader.size)
+        val bytes = if (type == Constants.OBJ_BLOB) loader.getBytes(MAX_DOCUMENT.toInt()) else loader.bytes
         val actual = ObjectInserter.Formatter().idFor(type, bytes)
         if (actual != id) throw org.eclipse.jgit.errors.CorruptObjectException(id, "содержимое не совпадает с id")
         return bytes
@@ -316,15 +390,160 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
 
     /** Файл ветки GitHub [branch] по пути от корня; нет файла (или это каталог) — `null`, нет клона или ветки — отказ. */
     fun file(project: String, branch: String, path: String): Outcome<ByteArray?> = withRepo(project) { repo ->
+        require(Repository.isValidRefName("${Constants.R_REMOTES}origin/$branch")) { "неверное имя ветки" }
         val tree = repo.resolve("${Constants.R_REMOTES}origin/$branch^{tree}") ?: return@withRepo null
         // Каталог — не файл: байты объекта-дерева на экран не идут (проверка PR #173).
-        TreeWalk.forPath(repo, path, tree)?.use { tw -> if (tw.isSubtree) null else repo.open(tw.getObjectId(0)).bytes }
+        TreeWalk.forPath(repo, path, tree)?.use { tw -> if (tw.isSubtree) null else repo.open(tw.getObjectId(0)).let { loader ->
+            if (loader.size > MAX_DOCUMENT) throw org.eclipse.jgit.errors.LargeObjectException.ExceedsLimit(MAX_DOCUMENT, loader.size)
+            loader.getBytes(MAX_DOCUMENT.toInt())
+        } }
     }
 
     /** Размер файла ветки [branch] без чтения его в память; нет файла — `null`. */
     fun size(project: String, branch: String, path: String): Outcome<Long?> = withRepo(project) { repo ->
+        require(Repository.isValidRefName("${Constants.R_REMOTES}origin/$branch")) { "неверное имя ветки" }
         val tree = repo.resolve("${Constants.R_REMOTES}origin/$branch^{tree}") ?: return@withRepo null
         TreeWalk.forPath(repo, path, tree)?.use { tw -> if (tw.isSubtree) null else repo.open(tw.getObjectId(0)).size }
+    }
+
+    /**
+     * История проекта из клона (D-66) — теми же определениями, что у наборов
+     * прогресса сайта (`SocialMediaImage:tools/cs/progress/collect.py`):
+     *
+     * - коммиты своих авторов ([ai] и [human]) во всех ветках GitHub, кроме
+     *   [excluded] (ветки сборок); слияния — не коммиты работы;
+     * - копия изменения после rebase или cherry-pick считается один раз: копия
+     *   в ветке — та же пара «автор, время автора», что у учтённого коммита,
+     *   и тот же patch-id;
+     * - день — по времени автора в поясе [zone]; где коммит сейчас — в
+     *   основной ветке [main] или только в ветке;
+     * - слияния PR в основную ветку — по дню коммита слияния;
+     * - журнал решений [journal] (путь и счёт записей по тексту) — число
+     *   записей на конец дня по основной ветке (первый родитель), только в дни,
+     *   когда оно менялось;
+     * - ветки впереди основной: свои коммиты сверх неё (копии влитого — не в
+     *   счёт), время последнего.
+     *
+     * Имена авторов, сообщения коммитов и пути файлов в итог не идут.
+     */
+    fun history(
+        project: String,
+        main: String,
+        zone: java.time.ZoneOffset,
+        ai: Set<String>,
+        human: Set<String>,
+        excluded: (String) -> Boolean,
+        journal: Pair<String, (String) -> Int?>? = null,
+    ): Outcome<CommitHistory> = withRepo(project) { repo ->
+        val mainId = repo.resolve("${Constants.R_REMOTES}origin/$main") ?: return@withRepo CommitHistory.EMPTY
+        val refs = repo.refDatabase.getRefsByPrefix(Constants.R_REMOTES + "origin/")
+            .filter { !it.isSymbolic && !excluded(it.name.removePrefix(Constants.R_REMOTES + "origin/")) }
+        RevWalk(repo).use { walk ->
+            val inMain = HashSet<ObjectId>()
+            walk.markStart(walk.parseCommit(mainId))
+            for (c in walk) inMain += c.copy()
+            walk.reset()
+            for (r in refs) walk.markStart(walk.parseCommit(r.objectId))
+            val all = ArrayList<Seen>()
+            for (c in walk) {
+                val who = c.authorIdent?.name.orEmpty()
+                val main0 = c in inMain
+                all += Seen(c.copy(), who, c.authorIdent?.`when`?.time?.div(1000) ?: c.commitTime.toLong(), c.commitTime.toLong(), c.parentCount, main0,
+                    main0 && c.parentCount == 2 && PR_MERGE.containsMatchIn(c.shortMessage))
+            }
+            val own = all.filter { it.parents <= 1 && (it.author in ai || it.author in human) }.sortedWith(compareBy({ it.at }, { !it.main }, { it.id.name }))
+            // Копии — только среди коммитов с одной парой «автор, время»: patch-id считается лишь у них.
+            val groups = own.groupBy { it.author to it.at }.filterValues { it.size > 1 }
+            val patch = HashMap<ObjectId, String?>()
+            for (g in groups.values) for (c in g) patch[c.id] = patchId(repo, walk.parseCommit(c.id))
+            val mainPatches = own.filter { it.main }.mapNotNull { patch[it.id] }.toSet()
+            val seenPatches = HashSet<String>()
+            val counted = ArrayList<Seen>()
+            val copies = HashSet<ObjectId>()
+            for (c in own) {
+                val p = patch[c.id]
+                if (!c.main && p != null && (p in mainPatches || p in seenPatches)) {
+                    copies += c.id
+                    continue
+                }
+                if (p != null) seenPatches += p
+                counted += c
+            }
+            fun day(sec: Long) = java.time.Instant.ofEpochSecond(sec).atOffset(zone).toLocalDate().toString()
+            val days = java.util.TreeMap<String, IntArray>()
+            for (c in counted) {
+                val d = days.getOrPut(day(c.at)) { IntArray(6) }
+                d[0]++
+                d[if (c.author in ai) 1 else 2]++
+                d[if (c.main) 3 else 4]++
+            }
+            for (c in all) if (c.prMerge) days.getOrPut(day(c.ct)) { IntArray(6) }[5]++
+            // Ветки впереди основной: свои коммиты сверх неё, кроме копий влитого.
+            val ahead = refs.filter { it.objectId != mainId }.mapNotNull { r ->
+                walk.reset()
+                walk.markStart(walk.parseCommit(r.objectId))
+                walk.markUninteresting(walk.parseCommit(mainId))
+                var n = 0
+                var last = Long.MIN_VALUE
+                for (c in walk) {
+                    val who = c.authorIdent?.name.orEmpty()
+                    if (c.parentCount > 1 || (who !in ai && who !in human) || c.copy() in copies) continue
+                    n++
+                    last = maxOf(last, c.authorIdent?.`when`?.time?.div(1000) ?: c.commitTime.toLong())
+                }
+                if (n == 0) null else CommitHistory.Ahead(r.name.removePrefix(Constants.R_REMOTES + "origin/"), n, Timestamp(last * 1000))
+            }.sortedBy { it.name }
+            val decisions = journal?.let { (path, count) -> journal(repo, mainId, path, count, ::day) }.orEmpty()
+            CommitHistory(
+                first = counted.minOfOrNull { it.at }?.let(::day),
+                days = days.map { (d, v) -> CommitHistory.Day(d, v[0], v[1], v[2], v[3], v[4], v[5]) },
+                decisions = decisions,
+                ahead = ahead,
+                complete = !File(repo.directory, "shallow").isFile,
+            )
+        }
+    }
+
+    /** Коммит в проходе истории: только то, что нужно счёту (без сообщения и почты). */
+    private class Seen(val id: ObjectId, val author: String, val at: Long, val ct: Long, val parents: Int, val main: Boolean, val prMerge: Boolean)
+
+    /** Patch-id изменения (как `git patch-id`): у копии после rebase он тот же; корень — к пустому дереву. */
+    private fun patchId(repo: Repository, c: RevCommit): String? = try {
+        org.eclipse.jgit.diff.PatchIdDiffFormatter().use { f ->
+            f.setRepository(repo)
+            val parent = if (c.parentCount > 0) RevWalk(repo).use { it.parseCommit(c.getParent(0)).tree } else null
+            f.format(parent, c.tree)
+            f.calulatedPatchId.name
+        }
+    } catch (e: IOException) {
+        null
+    }
+
+    /** Записи журнала на конец дня по основной ветке (первый родитель): только дни, когда число менялось. */
+    private fun journal(repo: Repository, mainId: ObjectId, path: String, count: (String) -> Int?, day: (Long) -> String): List<Pair<String, Int>> {
+        // Свой обход: режим «первый родитель» задаётся до первого шага.
+        val chain = RevWalk(repo).use { walk ->
+            walk.isFirstParent = true
+            walk.markStart(walk.parseCommit(mainId))
+            walk.toList().reversed()
+        }
+        val out = java.util.TreeMap<String, Int>()
+        var blob: ObjectId? = null
+        var value: Int? = null
+        // Время по цепочке не убывает: коммит с часами «из прошлого» после позднего не переписывает прошедший день.
+        var time = Long.MIN_VALUE
+        for (c in chain) {
+            time = maxOf(time, c.commitTime.toLong())
+            val id = TreeWalk.forPath(repo, path, c.tree)?.use { tw -> if (tw.isSubtree) null else tw.getObjectId(0) }
+            if (id != blob) {
+                blob = id
+                value = id?.let { count(String(repo.open(it, Constants.OBJ_BLOB).bytes, Charsets.UTF_8)) }
+            }
+            value?.let { out[day(time)] = it }
+        }
+        // Только дни перемен: тот же счёт, что накануне, не повторяется.
+        var prev: Int? = null
+        return out.entries.mapNotNull { (d, n) -> if (n == prev) null else (d to n).also { prev = n } }
     }
 
     /** Строка каталога клона: имя и вид; каталоги — первыми, как в REST (F-09). */
@@ -359,6 +578,10 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
             failure(DiagCode.STORAGE_IO_FAILED, "клон не читается: ${e.javaClass.simpleName}", project)
         } catch (e: JGitInternalException) {
             failure(DiagCode.STORAGE_IO_FAILED, "клон не читается: ${e.javaClass.simpleName}", project)
+        } catch (e: org.eclipse.jgit.errors.LargeObjectException) {
+            failure(DiagCode.JSON_TOO_LARGE, "документ Git превышает предел чтения на телефоне", project)
+        } catch (e: IllegalArgumentException) {
+            failure(DiagCode.VALUE_INVALID, "недопустимая ветка, путь или объект Git", project)
         }
     }
 
@@ -445,6 +668,11 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
     }
 
     companion object {
+        /** Единый предел текстового документа клона и его показа на телефоне — 2 МиБ. */
+        const val MAX_DOCUMENT = 2L * 1_048_576
+        /** Слияние PR кнопкой GitHub: «Merge pull request #N from владелец/ветка». */
+        private val PR_MERGE = Regex("^Merge pull request #\\d+ from \\S+")
+
         @Volatile
         private var current: Gate? = null
 

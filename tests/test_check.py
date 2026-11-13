@@ -66,6 +66,19 @@ CLEAN = {
         "package core\n\nsealed interface Outcome<out T>\nclass OperationResult<out T>\nclass Diagnostic\n"
         "enum class DiagCode { A }\nclass Secret(private val v: String)\ninterface Clock\n"),
     "dpai/core/src/main/kotlin/Use.kt": "package core\n\nclass ManualClock : Clock\nval x: Outcome<Int>? = null\n",
+    # Реестр команд (F-43, D-82): проект подсистемы — из реестра DPmeta, его скрипт — на месте.
+    "dpmeta/tools/ecosystem.toml": (
+        'schema = 1\n\n[[repo]]\nname = "DPmetaApp"\nslug = "dpsmpx/DPmetaApp"\nplace = "control"\n\n'
+        '[[repo]]\nname = "DPmeta"\nslug = "dpsmpx/DPmeta"\nplace = "sync"\ndir = "dpmeta"\n\n'
+        '[[repo]]\nname = "Old"\nslug = "dpsmpx/Old"\nplace = "archive"\n\n'
+        '[[repo]]\nname = "DPlearn"\nslug = "dpsmpx/DPlearn"\nplace = "core"\n'),
+    "dpmeta/tools/check.sh": "#!/bin/sh\nexit 0\n",
+    "config/commands.toml": (
+        'schema = 1\n\n[[command]]\nid = "dpmeta.check"\ntitle = "Проверки"\nproject = "DPmeta"\npath = "/bin/bash"\n'
+        'args = ["tools/check.sh"]\nplan = "background"\nlevel = 0\npackages = ["bash"]\n\n'
+        '[[command]]\nid = "dplearn.next"\ntitle = "План"\nproject = "DPlearn"\npath = "tools/dpl"\nplan = "background"\nlevel = 0\n\n'
+        '[[command]]\nid = "repo.ff"\ntitle = "Догнать"\nproject = "*"\npath = "/usr/bin/git"\n'
+        'args = ["merge", "--ff-only", "@{upstream}"]\nplan = "background"\nlevel = 1\ntimeout = 2\n'),
 }
 # Wrapper Gradle: копия в корне — та же, что в dpai/ (D-28); пакетный файл — с CRLF, как его пишет Gradle.
 for _rel, _text in {"gradlew": "#!/bin/sh\nexec java\n", "gradlew.bat": "@echo off\r\nexit /b 0\r\n",
@@ -73,6 +86,13 @@ for _rel, _text in {"gradlew": "#!/bin/sh\nexec java\n", "gradlew.bat": "@echo o
                     "gradle/wrapper/gradle-wrapper.properties": "distributionUrl=x\n"}.items():
     CLEAN[_rel] = _text
     CLEAN["dpai/" + _rel] = _text
+
+VERIFICATION = (
+    '<verification-metadata><configuration><verify-metadata>true</verify-metadata></configuration>'
+    '<components><component group="example" name="tool" version="1"><artifact name="tool.jar">'
+    '<sha256 value="' + 'a' * 64 + '"/></artifact></component></components></verification-metadata>\n')
+for _rel in ("gradle/verification-metadata.xml", "dpai/gradle/verification-metadata.xml"):
+    CLEAN[_rel] = VERIFICATION
 
 
 def readme_for(roadmap):
@@ -147,6 +167,48 @@ class LayoutTest(CheckCase):
 
     def test_workflow_is_forbidden(self):
         self.assertCatches(self.sample({".github/workflows/ci.yml": "on: push\n"}).run("repo.layout"), "D-13")
+
+
+COMMAND = ('[[command]]\nid = "x.y"\ntitle = "Т"\nproject = "DPmeta"\npath = "/bin/bash"\nargs = ["tools/check.sh"]\n'
+           'plan = "background"\nlevel = 0\n')
+
+
+class CommandsTest(CheckCase):
+    """config.commands — реестр команд (F-43, D-82)."""
+
+    def commands(self, body):
+        return self.sample({"config/commands.toml": "schema = 1\n\n" + body}).run("config.commands")
+
+    def test_clean_registry(self):
+        self.assertClean(self.commands(COMMAND))
+
+    def test_missing_registry(self):
+        self.assertCatches(self.sample(remove=("config/commands.toml",)).run("config.commands"), "нет реестра команд")
+
+    def test_level_two(self):
+        self.assertCatches(self.commands(COMMAND.replace("level = 0", "level = 2")), "уровней 2 и 3 в реестре нет")
+
+    def test_unknown_key(self):
+        self.assertCatches(self.commands(COMMAND + 'env = "X=1"\n'), "неизвестный ключ «env»")
+
+    def test_duplicate_id(self):
+        self.assertCatches(self.commands(COMMAND + "\n" + COMMAND), "уже был")
+
+    def test_project_not_in_registry_or_archived(self):
+        self.assertCatches(self.commands(COMMAND.replace('"DPmeta"', '"Nope"')), "нет в реестре")
+        self.assertCatches(self.commands(COMMAND.replace('"DPmeta"', '"Old"')), "нет в реестре")
+
+    def test_subsystem_script_must_exist(self):
+        self.assertCatches(self.commands(COMMAND.replace("tools/check.sh", "tools/gone.sh")), "нет файла `dpmeta/tools/gone.sh`")
+
+    def test_paths_stay_inside(self):
+        self.assertCatches(self.commands(COMMAND + 'workdir = "../x"\n'), "workdir")
+        self.assertCatches(self.commands(COMMAND.replace('"/bin/bash"', '"/root/x"')), "программа гостя")
+        self.assertCatches(self.commands(COMMAND.replace('"/bin/bash"', '"../x.sh"')), "без «..»")
+
+    def test_bad_package_and_timeout(self):
+        self.assertCatches(self.commands(COMMAND + 'packages = ["Python3"]\n'), "пакетов Alpine")
+        self.assertCatches(self.commands(COMMAND + "timeout = 31\n"), "1…30 минут")
 
 
 class SubsystemScopeTest(CheckCase):
@@ -230,6 +292,19 @@ class CoreSingleTest(CheckCase):
         self.assertClean(s.run("core.single"))
 
 
+class VerificationTest(CheckCase):
+    def test_metadata_required_for_both_builds(self):
+        for path in ("gradle/verification-metadata.xml", "dpai/gradle/verification-metadata.xml"):
+            self.assertCatches(self.sample(remove=[path]).run("build.verification"), "нет обязательных")
+
+    def test_broken_hash_and_bypass_are_refused(self):
+        path = "gradle/verification-metadata.xml"
+        self.assertCatches(self.sample({path: VERIFICATION.replace('a' * 64, 'bad')}).run("build.verification"), "SHA-256")
+        skipped = VERIFICATION.replace('</configuration>', '<trusted-artifacts><trust group=".*" regex="true"/></trusted-artifacts></configuration>')
+        self.assertCatches(self.sample({path: skipped}).run("build.verification"), "trusted-artifacts")
+        self.assertCatches(self.sample({path: '<broken'}).run("build.verification"), "повреждён XML")
+
+
 class WrapperTest(CheckCase):
     def test_root_copy_differs(self):
         s = self.sample({"gradle/wrapper/gradle-wrapper.properties": "distributionUrl=y\n"})
@@ -300,6 +375,39 @@ class GradleTest(unittest.TestCase):
         self.assertIsNotNone(r.error)
         self.assertEqual([], r.findings)
         self.assertEqual(3, quiet_report([r]))
+
+    def test_measurements_start_in_separate_call_after_root_build(self):
+        calls = []
+
+        def run(cmd, cwd):
+            calls.append((cmd, cwd))
+            return 0, "BUILD SUCCESSFUL\n12 actionable tasks: 12 executed\n"
+
+        r = check.check_gradle(ROOT, java="/jdk/bin/java", sdk="/sdk", run=run)
+        self.assertEqual(0, quiet_report([r], strict=True))
+        self.assertEqual(len(calls), 2)
+        self.assertIn("build", calls[0][0])
+        self.assertEqual(calls[1][1], os.path.join(ROOT, "dpai"))
+        self.assertIn(":tests:integration:performanceTest", calls[1][0])
+        self.assertIn("--no-parallel", calls[1][0])
+        self.assertIn("--max-workers=1", calls[1][0])
+
+    def test_failed_measurements_fail_full(self):
+        replies = iter([(0, "BUILD SUCCESSFUL\n"), (1, "PerformanceTest > eventIngest FAILED\n")])
+        r = check.check_gradle(ROOT, java="/jdk/bin/java", sdk="/sdk", run=lambda cmd, cwd: next(replies))
+        self.assertTrue(any("eventIngest" in f for f in r.findings))
+        self.assertEqual(1, quiet_report([r], strict=True))
+
+    def test_failed_root_build_does_not_start_measurements(self):
+        calls = []
+
+        def run(cmd, cwd):
+            calls.append(cmd)
+            return 1, "BUILD FAILED\n"
+
+        r = check.check_gradle(ROOT, java="/jdk/bin/java", sdk="/sdk", run=run)
+        self.assertEqual(1, quiet_report([r]))
+        self.assertEqual(len(calls), 1)
 
     def test_strict_only_with_full(self):
         import contextlib
@@ -671,6 +779,9 @@ class ForbiddenTest(CheckCase):
             ('val cmd = listOf("rsync", "-a", "dist/", host)\n', "выгрузка сайта"),
             ('const val HOST = "ssh.beget.com"\n', "выгрузка сайта"),
             ('val url = "https://api.anthropic.com/v1/organizations/invites"\n', "Admin API"),
+            # Лимиты workspace меняются POST — пути нет в списке чтения (D-44, D-81).
+            ('val url = "https://api.anthropic.com/v1/organizations/workspaces/w/rate_limits/r"\n', "Admin API"),
+            ('val url = "https://api.anthropic.com/v1/organizations/analytics/usage_admin"\n', "Admin API"),
             ("import org.jsoup.Jsoup\n", "скрейпинга"),
             ('fun f(w: WebView) = w.evaluateJavascript("x", null)\n', "автоматизации браузера"),
         ]:
@@ -683,6 +794,8 @@ class ForbiddenTest(CheckCase):
             # Выгрузка — у подсистемы сайта (D-40, D-48); отчёты Usage и Cost — только чтение (D-08).
             "socialmediaimage/app/src/main/kotlin/Deploy.kt": 'val cmd = listOf("rsync", "-a")\n',
             "dpai/providers/src/main/kotlin/Usage.kt": 'val u = "https://api.anthropic.com/v1/organizations/usage_report/messages"\n',
+            # Список чтения D-81: аналитика расхода и стоимости, лимиты скорости организации.
+            "dpai/providers/src/main/kotlin/Admin.kt": 'val a = "/v1/organizations/analytics/usage"\nval c = "/v1/organizations/analytics/cost"\nval l = "/v1/organizations/rate_limits"\n',
             "core/sync/src/main/kotlin/S.kt": "// без rsync и jsoup — D-20, D-40\nval x = 1 // не rsync: D-40\n",
             "core/sync/src/test/kotlin/T.kt": 'val sample = "rsync"\n',
         })

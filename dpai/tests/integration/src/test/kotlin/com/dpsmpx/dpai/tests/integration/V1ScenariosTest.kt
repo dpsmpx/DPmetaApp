@@ -30,6 +30,9 @@ import com.dpsmpx.dpai.git.GitOp
 import com.dpsmpx.dpai.git.Repository
 import com.dpsmpx.dpai.notifications.NotificationDecision
 import com.dpsmpx.dpai.orchestrator.Orchestrator
+import com.dpsmpx.dpai.orchestrator.EventRecorder
+import com.dpsmpx.dpai.orchestrator.MergeEvent
+import com.dpsmpx.dpai.orchestrator.mergeEnvelopes
 import com.dpsmpx.dpai.orchestrator.ProjectConfig
 import com.dpsmpx.dpai.orchestrator.TargetSlot
 import com.dpsmpx.dpai.orchestrator.control.ControlSnapshot
@@ -281,6 +284,7 @@ class V1ScenariosTest {
         val ctx = orchestrator.lastContext(t)!!
         val transcript = ctx.sources.firstOrNull { it.key == com.dpsmpx.dpai.orchestrator.Orchestrator.TRANSCRIPT_SOURCE }
         assertTrue(transcript != null && "цель: перенос" in transcript.content, ctx.sources.map { it.key }.toString())
+        assertEquals(com.dpsmpx.dpai.security.Origin.MODEL, transcript.origin, "история не становится инструкциями оркестратора")
         assertEquals(null, orchestrator.pinned(t), "выбор — на один ход")
         assertTrue(orchestrator.chat(t).any { it.text.startsWith("перенос на ") })
     }
@@ -373,6 +377,36 @@ class V1ScenariosTest {
         assertEquals(emptyList<TaskId>(), orchestrator.merged)
     }
 
+    /**
+     * Аудит O-02: сливается коммит, прошедший проверку, а не то, что в ветке к
+     * моменту ответа. Коммит в ветку задачи после проверки — «Слить» отказывает,
+     * main не тронут; в тексте запроса — проверенный коммит.
+     */
+    @Test
+    fun mergeOnlyTheVerifiedCommit() {
+        setUp(slots = 1)
+        val t = task("фича", MockScenario.SLOW_OUTPUT)
+        orchestrator.tick()
+        val tree = orchestrator.worktrees.worktrees.values.single { it.owner != null }
+        File(tree.path, "feature.txt").writeText("новая возможность\n")
+        runUntilQuiet(3)
+        assertEquals(TaskState.DONE, state(t))
+        val request = mergeRequest()
+        val verified = host.run(ProcessSpec(listOf("git", "-C", tree.path, "rev-parse", "HEAD")), 1.minutes).valueOrNull()!!.stdout.single().trim()
+        assertTrue(verified.take(12) in request.body, request.body)
+        // После проверки в ветку задачи попал чужой коммит.
+        File(tree.path, "late.txt").writeText("непроверенное\n")
+        for (cmd in listOf(listOf("add", "late.txt"), listOf("-c", "user.name=t", "-c", "user.email=t@localhost", "commit", "-q", "-m", "после проверки"))) {
+            host.run(ProcessSpec(listOf("git", "-C", tree.path) + cmd), 1.minutes)
+        }
+        val answer = orchestrator.answer(request.id, "merge", null, request.hash, "автор")
+        assertEquals(OperationStatus.FAILED, answer.status)
+        assertTrue(answer.diagnostics.any { "изменилась после проверки" in it.message }, answer.diagnostics.toString())
+        assertFalse(File(repo.root, "feature.txt").exists(), "main не тронут")
+        assertFalse(File(repo.root, "late.txt").exists())
+        assertEquals(emptyList<TaskId>(), orchestrator.merged)
+    }
+
     /** Запрос истёк, слияние ждёт (A-51): такт спрашивает снова, а не теряет слияние. */
     @Test
     fun expiredMergeRequestIsAskedAgain() {
@@ -433,6 +467,31 @@ class V1ScenariosTest {
 
         val unknown = orchestrator.taskDiff(com.dpsmpx.dpai.core.ids.IdKinds.TASK.let { ids.next(it) })
         assertEquals(DiagCode.ENTITY_NOT_FOUND, (unknown as Outcome.Failure).errors.single().code)
+    }
+
+    /** Предложение старой версии не содержит проверенного SHA: после перезапуска слияние запрещено. */
+    @Test
+    fun legacyMergeProposalCannotMergeUnpinnedBranch() {
+        setUp(slots = 1)
+        val t = task("фича", MockScenario.SLOW_OUTPUT)
+        orchestrator.tick()
+        val tree = orchestrator.worktrees.worktrees.values.single { it.owner != null }
+        File(tree.path, "feature.txt").writeText("проверенная возможность\n")
+        runUntilQuiet(3)
+        assertEquals(TaskState.DONE, state(t))
+        val pending = orchestrator.mergesState.pending.values.single()
+        val legacy = pending.copy(proposal = pending.proposal.copy(arguments = pending.proposal.arguments.take(1)))
+        val recorder = EventRecorder(ids, clock).apply {
+            resumeFrom(EventJournal.readCommitted(NioVfs(dir), "data/journal.log").valueOrNull()!!)
+        }
+        assertTrue(journal.appendAll(recorder.mergeEnvelopes(listOf(MergeEvent.Requested(legacy, clock.now())))).isSuccess)
+        boot()
+        val request = mergeRequest()
+        val answer = orchestrator.answer(request.id, "merge", null, request.hash, "автор")
+        assertEquals(OperationStatus.FAILED, answer.status)
+        assertTrue(answer.diagnostics.any { "без проверенного коммита" in it.message }, answer.diagnostics.toString())
+        assertFalse(File(repo.root, "feature.txt").exists(), "main не изменяется старым предложением")
+        assertEquals(emptyList<TaskId>(), orchestrator.merged)
     }
 
     private fun mergeRequest() = orchestrator.pendingRequests().single { it.purpose == "task.merge" }

@@ -84,6 +84,8 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     STORAGE_UNAVAILABLE(Category.STORAGE, Severity.ERROR, Retryability.NON_RETRYABLE),
     STORAGE_CORRUPTED(Category.INTEGRITY, Severity.ERROR, Retryability.NON_RETRYABLE),
     STORAGE_RECOVERED_LKG(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
+    /** Места не хватит (DPmetaApp:D-113): после загрузки, установки, клона или сборки приложение выйдет за предел или на телефоне останется меньше 1 ГБ. */
+    STORAGE_SPACE_LOW(Category.STORAGE, Severity.ERROR, Retryability.NON_RETRYABLE),
     JOURNAL_TAIL_TRUNCATED(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
     JOURNAL_CORRUPTED(Category.INTEGRITY, Severity.ERROR, Retryability.NON_RETRYABLE),
     SNAPSHOT_INVALID(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
@@ -272,6 +274,46 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     PROVIDER_REPLY_INVALID(Category.FORMAT, Severity.ERROR, Retryability.UNKNOWN),
     /** У API-профиля нет ключа или он не расшифровывается (новая установка, сброс Keystore). */
     PROVIDER_KEY_MISSING(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+
+    // --- маршруты Claude Code (D-116; ТЗ DPmetaApp, F-18, F-20) ---
+    /** Сервис не принял токен маршрута `/fire` (401, 403): токен неверен или отозван — нужен новый. */
+    ROUTINE_TOKEN_INVALID(Category.NETWORK, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Предел запусков маршрута (429): 30 в час на маршрут, 100 — на аккаунт; повтор — позже или другим маршрутом. */
+    ROUTINE_LIMIT_REACHED(Category.NETWORK, Severity.ERROR, Retryability.RETRYABLE),
+
+    // --- уведомления пульта DPmetaApp (ТЗ DPmetaApp, §6.9, F-51, F-52; DPmetaApp:D-85) ---
+    /** Событие неизвестного каталогу типа или правило тревоги с неизвестным типом, полем, неверным `regex`. */
+    RULE_INVALID(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
+
+    // --- языковые службы редактора (D-137) ---
+    /** Сообщение языковой службы не по протоколу или длиннее предела: не догадка, а отказ. */
+    LSP_REPLY_INVALID(Category.FORMAT, Severity.ERROR, Retryability.UNKNOWN),
+    /** Служба ответила на запрос ошибкой (нет символа под курсором, файл не открыт, переименование невозможно). */
+    LSP_REQUEST_FAILED(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Языковая служба вышла или её поток закрыт: запросы не дойдут, пока её не запустят снова. */
+    LSP_SERVER_STOPPED(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+    /** Служба не ответила на запрос за отведённое время: запрос отменён, служба жива. */
+    LSP_TIMEOUT(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+
+    // --- отладчик редактора (D-159) ---
+    /** Сообщение адаптера отладки не по протоколу DAP или длиннее предела: сеанс остановлен. */
+    DAP_REPLY_INVALID(Category.FORMAT, Severity.ERROR, Retryability.UNKNOWN),
+    /** Адаптер ответил на запрос отказом (нет программы, нет потока, выражение не вычислено). */
+    DAP_REQUEST_FAILED(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Адаптер отладки вышел или его поток закрыт: сеанс кончился, запросы не дойдут. */
+    DAP_ADAPTER_STOPPED(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+    /** Адаптер не ответил за отведённое время; сеанс жив. */
+    DAP_TIMEOUT(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+
+    // --- отладчик APK по JDWP (D-161) ---
+    /** Пакет ВМ не по протоколу JDWP или длиннее предела: связь закрыта. */
+    JDWP_REPLY_INVALID(Category.FORMAT, Severity.ERROR, Retryability.UNKNOWN),
+    /** ВМ ответила на команду кодом ошибки JDWP (класс не загружен, нет сведений о переменных). */
+    JDWP_REQUEST_FAILED(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Связь с ВМ закрыта или не установлена (рукопожатие, приложение вышло, пересылка adb кончилась). */
+    JDWP_CONNECTION_LOST(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+    /** ВМ не ответила за отведённое время; связь жива. */
+    JDWP_TIMEOUT(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
 
     /** Запечатанный сегмент журнала пропал или испорчен — восстановлен из копии (D-95). */
     JOURNAL_SEGMENT_RESTORED(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),

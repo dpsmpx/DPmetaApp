@@ -14,7 +14,7 @@ class LongJobsTest {
     fun secondStartIsRefusedWhileRunningAndResultStays() {
         val gate = CompletableDeferred<Unit>()
         val logged = mutableListOf<String>()
-        val jobs = LongJobs(CoroutineScope(Dispatchers.Unconfined)) { label, note -> logged += "$label — $note" }
+        val jobs = LongJobs(CoroutineScope(Dispatchers.Unconfined)) { label, done -> logged += "$label — ${done.note}" }
         assertTrue(jobs.start("apk", "Поставить") { gate.await(); LongJobs.Done("Поставить: готово", listOf("OK")) })
         assertTrue(jobs.busy("apk"))
         assertFalse(jobs.start("apk", "Поставить") { LongJobs.Done("второй") }, "вторая установка параллельно не идёт")
@@ -33,6 +33,16 @@ class LongJobsTest {
         assertFalse(jobs.start(LongJobs.LLAMA, "Установка llama.cpp", excludes = LongJobs.GUEST) { LongJobs.Done("готово") }, "apk гостя — один процесс за раз")
         gate.complete(Unit)
         assertTrue(jobs.start(LongJobs.LLAMA, "Установка llama.cpp", excludes = LongJobs.GUEST) { LongJobs.Done("готово") })
+    }
+
+    /** Неудача — с выводом в журнал: по строке итога «код 159» причину не найти (D-115). */
+    @Test
+    fun failedJobHandsItsOutputToTheJournal() {
+        val logged = mutableListOf<LongJobs.Done>()
+        val jobs = LongJobs(CoroutineScope(Dispatchers.Unconfined)) { _, done -> logged += done }
+        jobs.start("apk", "Поставить Claude Code") { LongJobs.Done("код 159", listOf("Bad system call"), failed = true) }
+        jobs.start("llama", "Поставить llama.cpp") { error("нет места") }
+        assertEquals(listOf(true to listOf("Bad system call"), true to emptyList()), logged.map { it.failed to it.output })
     }
 
     @Test

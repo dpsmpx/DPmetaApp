@@ -90,6 +90,43 @@ data class StopResult(val forced: Boolean, val survivors: List<Long>) {
     }
 }
 
+/**
+ * Состояние службы агента на ПК (D-109) — ответ `dpai agent service status`:
+ * [state] — [RUNNING] (свежий признак жизни, тот самый процесс), [SILENT]
+ * (признак есть, но служба молчит) или [ABSENT] (службы не было); номер
+ * процесса, версия, время старта и последнего признака — если известны.
+ * Прежний контроллер этой команды не задаёт, и поле ему не встречается.
+ */
+data class ServiceStatus(val state: String, val pid: Long?, val version: String?, val startedAt: Long?, val beatAt: Long?) {
+    val running: Boolean get() = state == RUNNING
+
+    fun toJson(): JsonObject {
+        val f = linkedMapOf<String, JsonValue>("state" to JsonString(state))
+        pid?.let { f["pid"] = JsonNumber.of(it) }
+        version?.let { f["version"] = JsonString(it) }
+        startedAt?.let { f["startedAt"] = JsonNumber.of(it) }
+        beatAt?.let { f["beatAt"] = JsonNumber.of(it) }
+        return JsonObject(f)
+    }
+
+    companion object {
+        const val RUNNING = "running"
+        const val SILENT = "silent"
+        const val ABSENT = "absent"
+
+        fun read(f: JsonFields): ServiceStatus? {
+            val state = f.string("state")
+            val pid = f.optLong("pid")
+            val version = f.optString("version")
+            val startedAt = f.optLong("startedAt")
+            val beatAt = f.optLong("beatAt")
+            f.finish()
+            if (state == null || state !in setOf(RUNNING, SILENT, ABSENT)) return null
+            return ServiceStatus(state, pid, version, startedAt, beatAt)
+        }
+    }
+}
+
 /** Проба программы на target: есть ли она и какая версия (`claude --version`, `git --version`). */
 data class ToolProbe(val found: Boolean, val version: String?, val detail: String?) {
     fun toJson(): JsonObject {
@@ -194,6 +231,8 @@ data class AgentReply(
     val doctor: DoctorReport? = null,
     /** Страница событий обрезана по объёму: за ней есть ещё (v2). */
     val more: Boolean = false,
+    /** Служба агента на ПК — только в ответе `service` (D-109). */
+    val service: ServiceStatus? = null,
 ) {
     fun toJson(): JsonObject {
         val f = linkedMapOf<String, JsonValue>(*FormatHeader.write(FORMAT, if (more) VERSION else 1))
@@ -205,6 +244,7 @@ data class AgentReply(
         stop?.let { f["stop"] = it.toJson() }
         doctor?.let { f["doctor"] = it.toJson() }
         if (more) f["more"] = JsonBool(true)
+        service?.let { f["service"] = it.toJson() }
         return JsonObject(f)
     }
 
@@ -252,9 +292,10 @@ data class AgentReply(
             val stop = f.optObj("stop")?.let(StopResult::read)
             val doctor = f.optObj("doctor")?.let(DoctorReport::read)
             val more = (f.raw("more", required = false) as? JsonBool)?.value ?: false
+            val service = f.optObj("service")?.let(ServiceStatus::read)
             f.finish()
             if (d.hasErrors || command == null || ok == null) return Outcome.Failure(d.all.ifEmpty { listOf(Diagnostic.error(DiagCode.AGENT_REPLY_INVALID, "ответ неполон")) })
-            return Outcome.success(AgentReply(command, ok, diagnostics, run, events, stop, doctor, more))
+            return Outcome.success(AgentReply(command, ok, diagnostics, run, events, stop, doctor, more, service))
         }
     }
 }

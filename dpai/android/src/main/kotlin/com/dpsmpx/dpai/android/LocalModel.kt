@@ -56,7 +56,7 @@ object LocalModel {
     private var generation = 0L
 
     /** Установка `llama-server` (D-105): итог — строка для экрана. Блокирующий вызов — с фонового потока. */
-    fun install(context: Context): String = when (val r = LinuxSetup.run(context, LinuxEnvironment.llamaInstall())) {
+    fun install(context: Context): String = when (val r = LinuxSetup.runSteps(context, LinuxEnvironment.llamaInstall())) {
         is Outcome.Success -> if (r.value.ok) "llama.cpp: ${(r.value.stdout + r.value.stderr).lastOrNull { it.isNotBlank() } ?: "установлен"}" else "Установка завершилась с кодом ${r.value.exitCode}"
         is Outcome.Failure -> "Установка: ${r.errors.first().message}"
     }

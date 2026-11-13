@@ -19,6 +19,7 @@ import com.dpsmpx.dpai.orchestrator.linux.RootfsInstaller
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import java.io.File
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Linux-среда в приложении на Android (D-75, шаг 5): где лежат proot и
@@ -39,6 +40,8 @@ object LinuxSetup {
     fun environment(context: Context): LinuxEnvironment = LinuxEnvironment(NioVfs(context.filesDir.toPath()))
 
     fun layout(context: Context): ProotLayout {
+        // Разделы хранилища и перенос из прежних мест — до первого запуска гостя (D-143).
+        com.dpsmpx.dpai.android.StorageMap.prepare(context)
         val lib = context.applicationInfo.nativeLibraryDir
         val tmp = File(context.cacheDir, "linux-tmp").apply { mkdirs() }
         val rootfs = File(context.filesDir, environment(context).rootfs)
@@ -93,7 +96,15 @@ object LinuxSetup {
     /** Распаковать Alpine из APK, если ещё не; `null` — уже установлена. */
     fun install(context: Context): Outcome<RootfsInstaller.Summary?> {
         if (!available(context)) return Outcome.failure(DiagCode.UNSUPPORTED, "Linux в приложении — только на телефоне с arm64")
-        return environment(context).install(VERSION) { context.assets.open(ASSET) }
+        return environment(context).install(VERSION) { context.assets.open(ASSET) }.also {
+            // `~/tools/bin` в PATH оболочек входа и карта — сразу после установки (D-143).
+            if (it is Outcome.Success && it.value != null) {
+                environment(context).writeProfile()
+                // Помощник входа Git из GH_TOKEN (D-158): без токена молчит.
+                environment(context).writeGitConfig()
+                com.dpsmpx.dpai.android.StorageMap.refresh(context)
+            }
+        }
     }
 
     /** DNS гостя — серверы сети телефона: перед каждым запуском, сеть могла смениться. */
@@ -103,7 +114,99 @@ object LinuxSetup {
         return environment(context).writeDns(servers)
     }
 
+    /**
+     * DNS гостя — и при смене сети (D-158): гость, запущенный до смены Wi-Fi на мобильную
+     * сеть, иначе спрашивал бы прежние серверы («DNS: transient error»). Слушатель — один
+     * на процесс; Linux не установлен — файл не пишется.
+     */
+    fun watchDns(context: Context) {
+        if (!dnsWatched.compareAndSet(false, true)) return
+        val app = context.applicationContext
+        val cm = app.getSystemService(ConnectivityManager::class.java) ?: return
+        runCatching {
+            cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                override fun onLinkPropertiesChanged(network: android.net.Network, lp: android.net.LinkProperties) {
+                    val env = environment(app)
+                    if (env.installed() == null) return
+                    val servers = lp.dnsServers.mapNotNull { it.hostAddress }
+                    if (servers.isEmpty() || servers == lastDns) return
+                    if (env.writeDns(servers) is Outcome.Success) lastDns = servers
+                }
+            })
+        }
+    }
+
+    private val dnsWatched = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    @Volatile
+    private var lastDns: List<String>? = null
+
+    /**
+     * Автор коммитов Git гостя (D-158): `git config --global` с полями, которые вписал
+     * человек; приложение значений не подставляет. Имя и почта — отдельными аргументами,
+     * без оболочки.
+     */
+    fun setGitIdentity(context: Context, name: String, email: String): Outcome<Unit> {
+        com.dpsmpx.dpai.ui.Health.identityNameProblem(name)?.let { return Outcome.failure(DiagCode.VALUE_INVALID, it) }
+        com.dpsmpx.dpai.ui.Health.identityEmailProblem(email)?.let { return Outcome.failure(DiagCode.VALUE_INVALID, it) }
+        if (environment(context).installed() == null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сначала установите Linux")
+        for ((key, value) in listOf("user.name" to name.trim(), "user.email" to email.trim())) {
+            val r = host(context).run(ProcessSpec(listOf("git", "config", "--global", key, value)), 30.seconds)
+            when {
+                r is Outcome.Failure -> return r
+                r is Outcome.Success && !r.value.ok -> return Outcome.failure(
+                    DiagCode.PROCESS_EXIT_NONZERO, "git config: код ${r.value.exitCode} — ${(r.value.stderr + r.value.stdout).lastOrNull().orEmpty()}",
+                )
+            }
+        }
+        com.dpsmpx.dpai.android.AppLogs.info(context, "проверка", "задан автор коммитов Git в Linux (имя и почта — по вводу автора)")
+        return Outcome.success(Unit)
+    }
+
     private fun host(context: Context): ProotHost = ProotHost(NativeProcessHost(JniProcesses(), Clock.SYSTEM), layout(context))
+
+    /** Последняя починка без нажатия (D-158): набор пакетов и время — не чаще [REPAIR_EVERY_MS]. */
+    @Volatile
+    private var lastRepair: Pair<Set<String>, Long>? = null
+
+    /** Пауза между починками без нажатия одного и того же набора. */
+    private const val REPAIR_EVERY_MS = 10 * 60_000L
+
+    /**
+     * Пакеты Alpine, которые база `apk` отметила повреждёнными (D-158), — `apk fix` тех же
+     * пакетов: иначе каждая следующая команда пакетов падает их ошибками («3 errors; …»).
+     * Итог — имена починенных; чинить нечего или [force] нет и тот же набор чинили меньше
+     * [REPAIR_EVERY_MS] назад — пусто. Не вышло — отказ с именами и причиной.
+     */
+    fun repairBroken(context: Context, force: Boolean): Outcome<List<String>> {
+        val env = environment(context)
+        if (env.installed() == null) return Outcome.success(emptyList())
+        // База не читается (ссылка гостя на её месте, A-3) — чинить по ней нечего; команда пакетов идёт как прежде.
+        val broken = env.brokenPackages().valueOrNull().orEmpty()
+        if (broken.isEmpty()) return Outcome.success(emptyList())
+        val names = broken.map { it.name }
+        val now = Clock.SYSTEM.monotonicNanos() / 1_000_000
+        lastRepair?.let { (set, at) -> if (!force && set == names.toSet() && now - at < REPAIR_EVERY_MS) return Outcome.success(emptyList()) }
+        lastRepair = names.toSet() to now
+        val spec = when (val s = LinuxEnvironment.apk(LinuxEnvironment.Apk.REPAIR, names)) {
+            is Outcome.Failure -> return s
+            is Outcome.Success -> s.value
+        }
+        refreshDns(context)
+        val list = names.joinToString(", ")
+        val r = when (val run = host(context).run(spec, 15.minutes, maxStdoutChars = 200_000)) {
+            is Outcome.Failure -> return Outcome.failure(DiagCode.PROCESS_START_FAILED, "пакеты Alpine $list повреждены прежней установкой; починка не запустилась: ${run.errors.first().message}")
+            is Outcome.Success -> run.value
+        }
+        val left = env.brokenPackages().valueOrNull().orEmpty().map { it.name }
+        if (r.ok && left.isEmpty()) {
+            com.dpsmpx.dpai.android.HealthAuto.fixed(context, "восстановлены пакеты Alpine, повреждённые прежней установкой: $list")
+            com.dpsmpx.dpai.android.StorageMap.refresh(context)
+            return Outcome.success(names)
+        }
+        val why = com.dpsmpx.dpai.ui.Health.apkReason((r.stderr + r.stdout).joinToString("\n"))
+        return Outcome.failure(DiagCode.PROCESS_EXIT_NONZERO, "пакеты Alpine ${left.ifEmpty { names }.joinToString(", ")} повреждены прежней установкой, и починить их не вышло (apk: код ${r.exitCode}): $why")
+    }
 
     /** Пакеты Alpine (`apk` без `/proc`, D-82): итог и вывод — для экрана. */
     fun apk(context: Context, action: LinuxEnvironment.Apk, packages: List<String>): Outcome<Completed> {
@@ -112,15 +215,38 @@ object LinuxSetup {
             is Outcome.Failure -> return s
             is Outcome.Success -> s.value
         }
+        if (action == LinuxEnvironment.Apk.ADD) {
+            (com.dpsmpx.dpai.android.StorageSpace.check(context, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.PACKAGES, null, packages.joinToString(" ")) as? Outcome.Failure)?.let { return it }
+        }
         refreshDns(context)
-        return host(context).run(spec, 15.minutes, maxStdoutChars = 200_000)
+        // Повреждённые прежде пакеты валят итог любой команды (D-158): сначала — их починка.
+        if (action != LinuxEnvironment.Apk.REPAIR) (repairBroken(context, force = true) as? Outcome.Failure)?.let { return it }
+        return host(context).run(spec, 15.minutes, maxStdoutChars = 200_000).also { com.dpsmpx.dpai.android.StorageMap.refresh(context) }
     }
 
-    /** Команда в госте с выводом для экрана (установка Codex и Gemini, D-100): DNS — сети телефона. */
-    fun run(context: Context, spec: ProcessSpec): Outcome<Completed> {
+    /**
+     * Шаги установки в госте по очереди (Claude Code, Codex и Gemini, llama.cpp): `apk` — без
+     * `/proc` (D-82), остальное — с ним; первый неудачный шаг — итог. Вывод — всех шагов, для
+     * экрана; DNS — сети телефона.
+     */
+    fun runSteps(context: Context, steps: List<ProcessSpec>): Outcome<Completed> {
         if (environment(context).installed() == null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сначала установите Linux")
         refreshDns(context)
-        return host(context).run(spec, 20.minutes, maxStdoutChars = 200_000)
+        if (steps.any { ProotHost.needsNoProc(it.command) }) (repairBroken(context, force = true) as? Outcome.Failure)?.let { return it }
+        val out = mutableListOf<String>()
+        val err = mutableListOf<String>()
+        var cut = false
+        for (spec in steps) {
+            val r = when (val one = host(context).run(spec, 20.minutes, maxStdoutChars = 200_000)) {
+                is Outcome.Failure -> return one
+                is Outcome.Success -> one.value
+            }
+            out += r.stdout
+            err += r.stderr
+            cut = cut || r.truncated
+            if (!r.ok) return Outcome.success(Completed(r.exitCode, out, err, cut))
+        }
+        return Outcome.success(Completed(0, out, err, cut))
     }
 
     /**
@@ -133,13 +259,20 @@ object LinuxSetup {
         // Команда вкладки (например, `claude` слота «в приложении») — через оболочку гостя по полному пути.
         val argv = if (command.isEmpty()) listOf("/bin/sh", "-l") else command.mapIndexed { i, a -> if (i == 0 && a == "sh") "/bin/sh" else a }
         // 24-битный цвет (терминал:A-23): COLORTERM — как у kitty и Windows Terminal.
-        val spec = ProcessSpec(argv, environment = ProotHost.GUEST_ENVIRONMENT + ("TERM" to "xterm-256color") + ("COLORTERM" to com.dpsmpx.dpai.ui.TerminalLaunch.COLORTERM))
+        // Секреты, выданные ИИ автором (DPmetaApp:D-114), — и терминалу; слот во вкладке убирает перекрывающие вход сам (`env -u`).
+        val env = ProotHost.GUEST_ENVIRONMENT + com.dpsmpx.dpai.android.SecretGrants.environment(context) +
+            ("TERM" to "xterm-256color") + ("COLORTERM" to com.dpsmpx.dpai.ui.TerminalLaunch.COLORTERM)
+        val spec = ProcessSpec(argv, environment = env)
         val wrapped = host(context).wrap(spec)
         return JniProcesses().spawn(wrapped.command, wrapped.environment.orEmpty(), null, size)
     }
 
     /** Каталог агента target «в приложении»: в данных приложения, гостю виден по тому же пути. */
     private const val AGENT_HOME = "agent-in-app"
+
+    /** Та же настройка, которую агент перечитывает перед каждым новым ИИ-ходом (D-125). */
+    fun sharedToolsStore(context: Context): com.dpsmpx.dpai.orchestrator.agent.SharedToolsStore =
+        com.dpsmpx.dpai.orchestrator.agent.SharedToolsStore(NioVfs(File(context.filesDir, AGENT_HOME).toPath()))
 
     @Volatile
     private var agent: com.dpsmpx.dpai.orchestrator.agent.InAppAgentHost? = null
@@ -159,7 +292,12 @@ object LinuxSetup {
         synchronized(this) {
             agent?.let { return it }
             val home = File(context.filesDir, AGENT_HOME).apply { mkdirs() }.path
-            return com.dpsmpx.dpai.orchestrator.agent.InAppAgentHost.create(home, Clock.SYSTEM, version ?: "dev", JniProcesses(), guestHost(context)!!, ProotHost.GUEST_ENVIRONMENT)
+            val app = context.applicationContext
+            return com.dpsmpx.dpai.orchestrator.agent.InAppAgentHost.create(
+                home, Clock.SYSTEM, version ?: "dev", JniProcesses(), guestHost(context)!!, ProotHost.GUEST_ENVIRONMENT,
+                // Секреты, выданные ИИ автором (DPmetaApp:D-114; D-144): на каждый запуск, не в документ хода.
+                secrets = { com.dpsmpx.dpai.android.SecretGrants.environment(app) },
+            )
                 .also { agent = it }
         }
     }
@@ -182,6 +320,22 @@ object LinuxSetup {
                 return ProotHost(NativeProcessHost(JniProcesses(), Clock.SYSTEM), layout.copy(binds = layout.binds + ProotLayout.Bind(home, home))).start(spec, onOutput)
             }
         }
+    }
+
+    /**
+     * Процессы-собеседники гостя (D-137): языковая служба рядом с деревом,
+     * с той же раскладкой и привязками, что у [guestHost]. Сети службе не
+     * нужно — DNS не трогается. Linux не установлен — `null`.
+     */
+    fun guestStreams(context: Context): com.dpsmpx.dpai.execution.process.StreamHost? {
+        if (!available(context) || environment(context).installed() == null) return null
+        val home = File(context.filesDir, AGENT_HOME).apply { mkdirs() }.path
+        val app = context.applicationContext
+        val native = JniProcesses()
+        return com.dpsmpx.dpai.execution.process.NativeStreamHost(native, wrap = { spec ->
+            val layout = layout(app)
+            ProotHost(NativeProcessHost(native, Clock.SYSTEM), layout.copy(binds = layout.binds + ProotLayout.Bind(home, home))).wrap(spec)
+        })
     }
 
     /** Завершить оболочку: процесс-лидер сеанса получает HUP, proot с `--kill-on-exit` уносит гостя с собой. */

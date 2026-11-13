@@ -64,6 +64,104 @@ class ClonesTest {
     // В тестах «GitHub» — локальный репозиторий: file: разрешён только здесь, в приложении — только https.
     private fun clones() = Clones(File(tmp, "clones"), open, setOf("file"))
 
+    /** Новый коммит «GitHub» в main — и синхронизация клона, которая его скачивает (без перемотки дерева). */
+    private fun pushAndSync(c: Clones, uri: URI, path: String, text: String) {
+        Git.open(work).use { git ->
+            git.checkout().setName("main").call()
+            commit(git, path, text, "Ещё $path")
+            git.push().setRemote("origin").add("main").call()
+        }
+        assertIs<Outcome.Success<Clones.Report>>(c.sync("Alpha", uri, null, build))
+    }
+
+    /**
+     * Догон рабочего дерева (D-123, уточняет D-70): чистое дерево без своих коммитов перематывается
+     * на `origin/main`; правки, не сохранённые в Git, и свои коммиты — дерево не трогается, причина
+     * названа; HEAD отсоединён — догонять не с чем.
+     */
+    @Test
+    fun cleanWorktreeCatchesUpAndLocalWorkIsNeverTouched() {
+        val uri = remote()
+        val c = clones()
+        c.sync("Alpha", uri, null, build).valueOrNull()!!
+        assertEquals(Clones.CatchUp.Even, c.catchUp("Alpha").valueOrNull())
+        val dir = c.dir("Alpha")
+
+        pushAndSync(c, uri, "a.md", "один\n")
+        pushAndSync(c, uri, "b.md", "два\n")
+        assertTrue(!File(dir, "a.md").exists(), "синхронизация сама дерево не трогает (D-70)")
+        val moved = assertIs<Clones.CatchUp.Moved>(c.catchUp("Alpha").valueOrNull())
+        assertEquals("main", moved.branch)
+        assertEquals(2, moved.commits)
+        assertEquals("два\n", File(dir, "b.md").readText())
+        assertTrue(c.worktree("Alpha").valueOrNull()!!.even)
+
+        // Правка, не сохранённая в Git, — дерево не трогается.
+        File(dir, "TODO.md").writeText("правка ИИ\n")
+        pushAndSync(c, uri, "c.md", "три\n")
+        val dirty = assertIs<Clones.CatchUp.Held>(c.catchUp("Alpha").valueOrNull())
+        assertTrue("правки" in dirty.why, dirty.why)
+        assertEquals("правка ИИ\n", File(dir, "TODO.md").readText())
+        assertTrue(!File(dir, "c.md").exists())
+
+        // Свой коммит — ветка разошлась: тоже не трогается.
+        Git.open(dir).use { git -> commit(git, "TODO.md", "правка ИИ\n", "Свой коммит") }
+        val ahead = assertIs<Clones.CatchUp.Held>(c.catchUp("Alpha").valueOrNull())
+        assertTrue("свои коммиты" in ahead.why, ahead.why)
+        assertTrue(!File(dir, "c.md").exists())
+
+        // HEAD отсоединён — догонять не с чем.
+        Git.open(dir).use { git -> git.checkout().setName(git.repository.resolve("HEAD").name).call() }
+        assertIs<Clones.CatchUp.Skipped>(c.catchUp("Alpha").valueOrNull())
+        assertEquals(DiagCode.ENTITY_NOT_FOUND, assertIs<Outcome.Failure>(c.catchUp("Нет")).diagnostics.first().code)
+    }
+
+    @Test
+    fun oversizedDocumentIsRefusedBeforeLoadingAndMalformedRevisionDoesNotEscapeOutcome() {
+        val uri = remote()
+        Git.open(work).use { git ->
+            commit(git, "large.md", "x".repeat(Clones.MAX_DOCUMENT.toInt() + 1), "Большой документ")
+            git.push().setRemote("origin").add("main").call()
+        }
+        val c = clones()
+        val sha = c.sync("Alpha", uri, null, build).valueOrNull()!!.mainSha!!
+        assertEquals(DiagCode.JSON_TOO_LARGE, assertIs<Outcome.Failure>(c.file("Alpha", "main", "large.md")).diagnostics.first().code)
+        assertEquals(DiagCode.JSON_TOO_LARGE, assertIs<Outcome.Failure>(c.fileAt("Alpha", sha, "large.md")).diagnostics.first().code)
+        assertIs<Outcome.Failure>(c.file("Alpha", "main@{", "TODO.md"))
+    }
+
+    @Test
+    fun guestCannotChooseTrustedMainThroughConfigOrOriginHead() {
+        val uri = remote()
+        val c = clones()
+        val expected = c.sync("Alpha", uri, null, build).valueOrNull()!!.mainSha
+        Git.open(c.dir("Alpha")).use { git ->
+            git.repository.config.apply { setString("dpmeta", null, "main", "work") }.save()
+            git.repository.updateRef("refs/remotes/origin/HEAD").link("refs/remotes/origin/work")
+        }
+        val report = c.sync("Alpha", uri, null, build).valueOrNull()!!
+        assertEquals("main", report.main)
+        assertEquals(expected, report.mainSha)
+    }
+
+    @Test
+    fun guestUrlRewriteCannotRedirectFetch() {
+        val uri = remote()
+        val c = clones()
+        c.sync("Alpha", uri, null, build).valueOrNull()!!
+        Git.open(c.dir("Alpha")).use { git ->
+            git.repository.config.apply {
+                setString("url", File(tmp, "not-a-repository").toURI().toString(), "insteadOf", uri.toString())
+            }.save()
+        }
+        Git.open(work).use { git ->
+            commit(git, "TODO.md", "- [ ] новый пункт\n", "Обновление")
+            git.push().setRemote("origin").add("main").call()
+        }
+        assertIs<Outcome.Success<*>>(c.sync("Alpha", uri, null, build))
+        assertEquals("- [ ] новый пункт\n", String(c.file("Alpha", "main", "TODO.md").valueOrNull()!!))
+    }
+
     @Test
     fun clonesWithoutBuildBranchesAndReadsFilesFromGitHubBranches() {
         val uri = remote()
@@ -193,6 +291,30 @@ class ClonesTest {
         assertEquals("- [x] пункт\n", String((c.file("Alpha", "main", "TODO.md") as Outcome.Success).value!!))
         assertEquals("- [ ] пункт\n", File(c.dir("Alpha"), "TODO.md").readText(), "рабочее дерево — ИИ (D-70): обновление его не трогает")
         assertTrue(r.conflicts.isEmpty())
+    }
+
+    /** Рабочее дерево для экрана команд (D-82): ветка, её коммит, голова GitHub; отставание видно. */
+    @Test
+    fun worktreeShowsBranchCommitAndGitHubHead() {
+        val uri = remote()
+        val c = clones()
+        assertEquals(DiagCode.ENTITY_NOT_FOUND, assertIs<Outcome.Failure>(c.worktree("Alpha")).errors.single().code)
+        c.sync("Alpha", uri, null, build)
+        val fresh = (c.worktree("Alpha") as Outcome.Success).value
+        assertEquals("main", fresh.branch)
+        assertTrue(fresh.even)
+        Git.open(work).use { git ->
+            commit(git, "TODO.md", "- [x] пункт\n", "Сделано")
+            git.push().setRemote("origin").add("main").call()
+        }
+        c.sync("Alpha", uri, null, build)
+        val behind = (c.worktree("Alpha") as Outcome.Success).value
+        assertEquals(fresh.sha, behind.sha, "синхронизация дерево не трогает")
+        assertTrue(!behind.even && behind.upstream != null)
+        Git.open(c.dir("Alpha")).use { git -> git.checkout().setName(behind.upstream).call() }
+        val detached = (c.worktree("Alpha") as Outcome.Success).value
+        assertNull(detached.branch)
+        assertNull(detached.upstream)
     }
 
     @Test

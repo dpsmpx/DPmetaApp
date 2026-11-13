@@ -1,0 +1,49 @@
+{
+  "name": "studio-dark",
+  "colors": {
+    "editor.background": "#1e1e24",
+    "editor.foreground": "#e6e1e5",
+    "editor.selectionBackground": "#454565",
+    "editorCursor.foreground": "#d0bcff",
+    "editor.lineHighlightBackground": "#27272f"
+  },
+  "tokenColors": [
+    {
+      "scope": "comment",
+      "settings": {
+        "foreground": "#8b9b87",
+        "fontStyle": "italic"
+      }
+    },
+    {
+      "scope": "keyword,storage.type",
+      "settings": {
+        "foreground": "#cbb2ff"
+      }
+    },
+    {
+      "scope": "string",
+      "settings": {
+        "foreground": "#d5bd9b"
+      }
+    },
+    {
+      "scope": "constant.numeric,constant.language",
+      "settings": {
+        "foreground": "#94d3c1"
+      }
+    },
+    {
+      "scope": "entity.name.function",
+      "settings": {
+        "foreground": "#b8d6fa"
+      }
+    },
+    {
+      "scope": "variable.other.interpolation",
+      "settings": {
+        "foreground": "#efb8c8"
+      }
+    }
+  ]
+}

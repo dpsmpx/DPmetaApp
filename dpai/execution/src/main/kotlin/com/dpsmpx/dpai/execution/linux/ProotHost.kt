@@ -33,6 +33,12 @@ data class ProotLayout(
  * завершаются вместе с ней. Без этого proot ждёт всех трассируемых, и
  * выход хода не виден, пока жив фоновый сервер, запущенный Claude.
  *
+ * Жёсткие ссылки — символьными (`--link2symlink`, D-158): Android запрещает
+ * `link()` в данных приложения, а пакеты Alpine (binutils, gcc, g++) несут
+ * жёсткие ссылки — без ключа `apk` их не распаковывал и отмечал пакет
+ * повреждённым. Форк Termux (D-115) делает ссылку на скрытый `.l2s.*` рядом
+ * и отвечает вызову успехом (`docs/research/LINUX_IN_APP.md`, §11).
+ *
  * `apk` — без `/proc` у гостя: apk-tools 3 создаёт файлы через `O_TMPFILE`
  * и `linkat` из `/proc/self/fd`, а это жёсткая ссылка, которую Android
  * запрещает; без `/proc` apk пишет временный файл и переименовывает его
@@ -42,6 +48,13 @@ data class ProotLayout(
  * Поэтому из `/dev` хоста гостю видны только [DEVICES], `/sys` — не виден
  * вовсе (D-93): `/dev/binder` — путь к системным службам от имени
  * приложения, коду из npm и репозитория он не нужен.
+ *
+ * Сервер adb гостя — на сокете в домашнем каталоге гостя ([ADB_SERVER_SOCKET],
+ * угроза T23), а не на `tcp:localhost:5037`: loopback телефона общий для всех
+ * приложений, и сервер adb не спрашивает, кто к нему подключился. Сокет лежит
+ * в данных приложения, другим приложениям Android туда хода нет. Переменная
+ * задаётся каждому процессу гостя поверх [ProcessSpec.environment] — и
+ * командам IDE, и терминалу, и ходам ИИ.
  */
 class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) : ProcessHost {
     override fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit): Outcome<RunningProcess> = host.start(wrap(spec), onOutput)
@@ -52,6 +65,7 @@ class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) 
         val argv = buildList {
             add(layout.proot)
             add("--kill-on-exit")
+            add(LINK2SYMLINK)
             // Root-подделка: apk и права файлов корневой системы ждут uid 0.
             add("-0")
             add("-r")
@@ -79,11 +93,15 @@ class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) 
         val environment = (spec.environment ?: GUEST_ENVIRONMENT) + mapOf(
             "PROOT_LOADER" to layout.loader,
             "PROOT_TMP_DIR" to layout.tmp,
+            "ADB_SERVER_SOCKET" to ADB_SERVER_SOCKET,
         )
         return ProcessSpec(argv, workDir = null, environment = environment, stdin = spec.stdin)
     }
 
     companion object {
+        /** Жёсткая ссылка гостя — символьной на хосте (D-158): Android запрещает `link()` приложениям. */
+        const val LINK2SYMLINK: String = "--link2symlink"
+
         /** Узлы `/dev` хоста, которые видит гость (D-93): терминал, пустые и случайные устройства — и только. */
         val DEVICES: List<String> = listOf("/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom", "/dev/tty", "/dev/ptmx", "/dev/pts")
 
@@ -97,9 +115,17 @@ class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) 
 
         const val GUEST_HOME: String = "/root"
 
+        /**
+         * Где слушает сервер adb гостя (T23): unix-сокет в [GUEST_HOME] — каталог
+         * есть всегда (без каталога сервер не поднимается), путь на хосте короче
+         * предела `sun_path` в 108 байт.
+         */
+        const val ADB_SERVER_SOCKET: String = "localfilesystem:$GUEST_HOME/.dpmetaapp-adb.sock"
+
         val GUEST_ENVIRONMENT: Map<String, String> = mapOf(
             "HOME" to GUEST_HOME,
-            "PATH" to "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            // `~/tools/bin` — первым (D-143, DPmetaApp:D-111): поставленное IDE и ИИ видно терминалу.
+            "PATH" to "/root/tools/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "LANG" to "C.UTF-8",
             "TMPDIR" to "/tmp",
         )

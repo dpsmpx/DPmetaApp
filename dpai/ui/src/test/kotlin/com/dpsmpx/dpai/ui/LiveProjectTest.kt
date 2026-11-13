@@ -116,6 +116,11 @@ class LiveProjectTest {
         assertEquals(TaskState.DONE, record.state, s.problems.toString() + s.orchestrator.problems)
         assertEquals("PASSED", record.verification!!.verdict)
         val tree = s.orchestrator.worktrees.worktrees.values.single()
+        assertEquals(tree, s.orchestrator.taskWorktree(task), "экран получает настоящее дерево задачи из контура")
+        val workspace = ProjectWorkspaceView.of(project, listOf(target), true, s.orchestrator.tasks.tasks.values,
+            s.orchestrator.sessions, mapOf(task to s.orchestrator.taskWorktree(task)!!))
+        assertEquals(tree.path, workspace.location(task)!!.path)
+        assertTrue(workspace.allow(project, workspace.location(task)!!, true).isSuccess, "после завершения ход отпустил дерево")
         assertTrue(tree.path.startsWith(worktrees), "дерево задачи — в каталоге деревьев проекта")
         // Слияние в main — только по одобрению.
         assertTrue(!File(root, "feature.txt").exists())
@@ -311,6 +316,26 @@ class LiveProjectTest {
             clock.advance(10.seconds)
         }
         return true
+    }
+
+    @Test
+    fun manualPauseBlocksQueuedCommandsAndSchedulingUntilReleased() {
+        val (project, target) = repoProject()
+        var paused = true
+        LiveSystem(clock, NioVfs(dir.resolve("ctl")), listOf(target), { _, _ -> targetHost }, "/known_hosts", RandomSource.seeded(134), project = project, externalPause = { paused }).use { live ->
+            val o = live.orchestrator
+            assertTrue(o.manualProfileFree())
+            val queued = o.submit(com.dpsmpx.dpai.orchestrator.commands.Command.AddTask("после сборки", "работа"))
+            assertEquals(0, o.runCommands())
+            o.tick(); live.step()
+            assertTrue(!queued.isDone)
+            assertTrue(o.tasks.tasks.isEmpty())
+            assertTrue(!o.manualProfileFree(), "очередь тоже не свободный контур")
+            paused = false
+            assertEquals(1, o.runCommands())
+            assertTrue(queued.isDone)
+            assertEquals(1, o.tasks.tasks.size)
+        }
     }
 
     private fun live(project: ProjectEntry, target: TargetEntry, seed: Long) =

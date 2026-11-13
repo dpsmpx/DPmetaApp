@@ -2,6 +2,7 @@
 имени автора на сайте нет (Д37, Д40), «Экосистема» (Д43), «Путь» (Д44)."""
 from __future__ import annotations
 
+import html
 import json
 import re
 import shutil
@@ -113,6 +114,77 @@ class Accessibility(unittest.TestCase):
         self.assertIn('aria-current="page"', post)
         self.assertIn('<a class="skip" href="#main">К содержимому</a>', post)
 
+    def test_toc_list_and_anchors_from_headings(self):
+        """P-22 аудита страниц 8.11.2026: оглавление — нумерованный список в столбик; якорь — из текста
+        заголовка, а не «s1…s14»; повтор и занятый id — с номером."""
+        body = '<p id="как-считалось">x</p><h2>Как считалось</h2><h2>Итог <em>дня</em></h2><h2>Итог дня</h2>'
+        toc, out = SiteBuild.toc(body, "ru")
+        self.assertTrue(toc.startswith('<nav class="toc" aria-label="Разделы страницы"><ol><li><a href="#'), toc)
+        self.assertIn('<h2 id="как-считалось-2">Как считалось</h2>', out)
+        self.assertIn('<h2 id="итог-дня">Итог <em>дня</em></h2>', out)
+        self.assertIn('<h2 id="итог-дня-2">Итог дня</h2>', out)
+        self.assertIn('<li><a href="#итог-дня-2">Итог дня</a></li></ol></nav>', toc)
+        self.assertNotRegex(out, r'id="s\d+"')
+        self.assertEqual(SiteBuild.toc("<h2>Один</h2><h2>Два</h2>", "ru")[0], "", "меньше трёх разделов — без оглавления")
+
+    def test_post_dates_by_language_and_titles_as_headings(self):
+        """P-23 аудита страниц 8.11.2026: дата записи — по языку страницы (ISO — в `datetime`); заголовок
+        записи в списке — заголовком: h2 на странице списка, h3 под разделом h2."""
+        repo = make_repo(git=False)
+        out = repo.path("build", "s")
+        build(repo, "staging", out)
+        news = (out / "news/index.html").read_text(encoding="utf-8")
+        m = re.search(r'<time datetime="(\d{4})-(\d{2})-(\d{2})">([^<]+)</time>', news)
+        self.assertIsNotNone(m, "дата в списке записей")
+        self.assertRegex(m.group(4), rf"^{int(m.group(3))} [а-я]+ {m.group(1)}$")
+        self.assertIn('<h2 class="pt"><a href="/news/', news)
+        home = (out / "index.html").read_text(encoding="utf-8")
+        self.assertIn('<h3 class="pt"><a href="/news/', home, "на главной список — под разделом h2")
+        post = (out / "news/test-news/index.html").read_text(encoding="utf-8")
+        self.assertRegex(post, r'<p class="meta"><time datetime="\d{4}-\d{2}-\d{2}">\d{1,2} [а-я]+ \d{4}</time> · ')
+
+    def test_head_names_the_site(self):
+        """P-14 аудита страниц 8.11.2026: «Страница — dpsmpx» в `<title>`, og:site_name; без изображения —
+        карточка summary, а не summary_large_image; у страниц без своего JSON-LD — WebPage (кроме 404)."""
+        repo = make_repo(git=False)
+        with_media(repo, "Обложка")
+        out = repo.path("build", "s")
+        rep = build(repo, "staging", out)
+        self.assertEqual(rep.errors, [])
+        for page in out.rglob("*.html"):
+            text = page.read_text(encoding="utf-8")
+            title = html.unescape(re.search(r"<title>([^<]*)</title>", text).group(1))
+            self.assertTrue(title == "dpsmpx" or title.endswith(" — dpsmpx"), (page.name, title))
+            self.assertNotIn(" — dpsmpx — dpsmpx", title)
+            self.assertIn('<meta property="og:site_name" content="dpsmpx">', text)
+            card = re.search(r'name="twitter:card" content="([^"]+)"', text).group(1)
+            self.assertEqual(card, "summary_large_image" if 'property="og:image"' in text else "summary", page)
+            has_ld = "application/ld+json" in text
+            self.assertEqual(has_ld, page.name != "404.html", page.relative_to(out))
+        post = (out / "news/test-news/index.html").read_text(encoding="utf-8")
+        self.assertIn('content="summary_large_image"', post, "у записи с обложкой — большая карточка")
+
+    def test_long_description_is_a_warning(self):
+        """Описание длиннее 160 знаков — предупреждение сборки, текст правится только новой версией (P-14)."""
+        from tools.cs.site.build import DESCRIPTION_MAX
+        repo = make_repo(git=False)
+        v = find(repo, "CI-0101").variants()["website.ru"]
+        v.doc.meta["summary"] = "длинно " * (DESCRIPTION_MAX // 7 + 2)
+        textdoc.save(v.doc, v.path)
+        repo.reset()
+        rep = build(repo, "staging", repo.path("build", "s"))
+        self.assertEqual(rep.errors, [])
+        self.assertTrue(any("описание" in w and "длиннее 160" in w for w in rep.warnings), rep.warnings)
+        clean = build(make_repo(git=False), "staging", repo.path("build", "c"))
+        self.assertFalse(any("длиннее 160" in w for w in clean.warnings), clean.warnings)
+
+    def test_headings_wrap_long_words(self):
+        """P-13: длинное слово `h1` на 320 px переносится, а не уводит страницу вбок (WCAG 1.4.10)."""
+        css = (ROOT / "website/static/style.css").read_text(encoding="utf-8")
+        rule = re.search(r"^h1, h2, h3 \{([^}]*)\}", css, re.M)
+        self.assertIsNotNone(rule)
+        self.assertIn("overflow-wrap: break-word", rule.group(1))
+
     def test_media_without_alt_is_an_error(self):
         repo = make_repo(git=False)
         with_media(repo, None)
@@ -152,6 +224,40 @@ class Accessibility(unittest.TestCase):
         self.assertEqual(page_images('<img src="/x.png" alt="x" width="1280" height="720">'), [])
         self.assertEqual(len(page_images('<img src="/x.png" alt="x" width="1280">')), 1)
         self.assertEqual(page_csp('<script type="application/ld+json">{}</script>'), [])
+
+
+class SiteShotRules(unittest.TestCase):
+    """Правила `siteshots` по замерам Chromium (без браузера): текст в SVG — с масштабом viewBox (P-03),
+    подписи графиков за рамкой и наложенные (P-19 аудита страниц 8.11.2026)."""
+
+    @staticmethod
+    def measured(**over):
+        m = {"path": "/progress/", "width": 390, "theme": "dark", "status": 200, "viewport": 390, "scrollWidth": 390,
+             "overflow": [], "images": [], "csp": [], "console": [], "failed": [], "plex": True, "fontFamily": "IBM Plex Sans",
+             "h1": 1, "smallTargets": [], "navTargets": [], "smallText": [], "headerHeight": 60,
+             "smallSvgText": [], "svgOutside": [], "svgOverlap": []}
+        m.update(over)
+        return m
+
+    def errors(self, **over):
+        from tools.cs.site.shots import findings
+        return [f.msg for f in findings([self.measured(**over)]) if f.level == "error"]
+
+    def test_clean_measurement_has_no_errors(self):
+        self.assertEqual(self.errors(), [])
+
+    def test_small_text_in_svg_is_an_error(self):
+        errs = self.errors(smallSvgText=["svg#pf-act-n text.t-axis: 10.8px (12px × 0.90)"])
+        self.assertTrue(any("мельче 12 px" in e and "viewBox" in e for e in errs), errs)
+
+    def test_labels_outside_or_overlapping_are_errors(self):
+        self.assertTrue(any("за рамкой SVG" in e for e in self.errors(svgOutside=["svg#pf-loc-n text.t-axis (-14…35 из 348 px)"])))
+        self.assertTrue(any("наложены" in e for e in self.errors(svgOverlap=["svg#pf-cc text.t-axis и «15»"])))
+
+    def test_html_small_text_stays_a_warning(self):
+        from tools.cs.site.shots import findings
+        out = findings([self.measured(smallText=["p.x «a»: 11px"])])
+        self.assertEqual([f.level for f in out], ["warn"])
 
 
 class Themes(unittest.TestCase):
@@ -308,44 +414,41 @@ class Ecosystem(unittest.TestCase):
         man["files"][name] = hashlib.sha256((kit / name).read_bytes()).hexdigest()
         (kit / "MANIFEST.json").write_text(json.dumps(man), encoding="utf-8")
 
-    def test_page_nav_and_script_only_here(self):
+    def test_static_page_without_scripts(self):
+        """Д51: «Экосистема» — список по слоям; ни скрипта, ни стилей и данных схемы — на всём сайте."""
         self.assertEqual(self.rep.errors, [])
         page = (self.out / "ecosystem/index.html").read_text(encoding="utf-8")
-        self.assertIn('<script src="/ecosystem/dpvis.js" defer></script>', page)
-        self.assertIn('<link rel="stylesheet" href="/ecosystem/dpvis.css">', page)
-        self.assertIn('data-src="/ecosystem/dpvis-data.json"', page)
-        self.assertIn('data-theme="auto"', page, "схема — в теме системы, как сайт (Д49)")
-        self.assertIn("Система по слоям", page, "без JavaScript — та же система списком")
+        self.assertIn("Система по слоям", page)
+        self.assertIn("Срез на ", page)
+        for gone in ("dpvis", "<script src=", "data-src="):
+            self.assertNotIn(gone, page)
         for name in ("dpvis.js", "dpvis.css", "dpvis-data.json"):
-            self.assertTrue((self.out / "ecosystem" / name).is_file(), name)
+            self.assertFalse((self.out / "ecosystem" / name).exists(), f"{name} на сайт не выгружается")
         self.assertIn('href="/ecosystem/"', (self.out / "index.html").read_text(encoding="utf-8"))
         self.assertNotIn("/ecosystem/", (self.out / "en/index.html").read_text(encoding="utf-8"), "раздел только на русском")
-        others = [f for f in self.out.rglob("*.html") if "<script src=" in f.read_text(encoding="utf-8")]
-        self.assertEqual([f.relative_to(self.out).as_posix() for f in others], ["ecosystem/index.html"])
-        self.assertEqual(page_csp(page, ("/ecosystem/dpvis.js",)), [])
-        self.assertTrue(page_csp(page), "без разрешения каталога скрипт — нарушение")
+        scripted = [f.relative_to(self.out).as_posix() for f in self.out.rglob("*.html") if "<script src=" in f.read_text(encoding="utf-8")]
+        self.assertEqual(scripted, [], "скриптов на сайте нет")
+        self.assertEqual(page_csp(page), [])
         api = json.loads((self.out / "api/v1/index.json").read_text(encoding="utf-8"))
-        self.assertEqual(api["resources"]["ecosystem"], "/ecosystem/dpvis-data.json")
+        self.assertNotIn("ecosystem", api["resources"])
         # Д48: признак сборки — коммит (или null без git), правки, время UTC.
         self.assertEqual(set(api["build"]), {"commit", "dirty", "built"})
         self.assertRegex(api["build"]["built"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
         self.assertTrue(api["build"]["commit"] is None or re.fullmatch(r"[0-9a-f]{40}", api["build"]["commit"]))
 
-    def test_csp_by_path(self):
-        root = "script-src 'none'"
-        eco = self.sb.path_headers()["/ecosystem/"]["Content-Security-Policy"]
-        self.assertIn("script-src 'self'", eco)
-        self.assertNotIn("unsafe", eco)
+    def test_one_csp_everywhere(self):
+        """Д51: своих заголовков у каталога нет — CSP сайта везде `script-src 'none'`."""
+        self.assertEqual(self.sb.path_headers(), {})
         h = (self.out / "_headers").read_text(encoding="utf-8")
-        self.assertIn(root, h.split("/ecosystem/*", 1)[0])
-        self.assertIn("script-src 'self'", h.split("/ecosystem/*", 1)[1])
+        self.assertIn("script-src 'none'", h)
+        self.assertNotIn("script-src 'self'", h)
         sb, rep, out = self.build(self.repo("beget"), "production")
         self.assertEqual(rep.errors, [])
-        self.assertIn(root, (out / ".htaccess").read_text(encoding="utf-8"))
-        self.assertIn(f'Content-Security-Policy "{eco}"', (out / "ecosystem/.htaccess").read_text(encoding="utf-8"))
+        self.assertIn("script-src 'none'", (out / ".htaccess").read_text(encoding="utf-8"))
+        self.assertFalse((out / "ecosystem/.htaccess").exists())
 
     @mock.patch.object(_Handler, "log_request", lambda *a, **k: None)
-    def test_server_sends_path_csp(self):
+    def test_server_sends_one_csp(self):
         srv = server(self.out, 0, self.sb._headers(), quiet=True, path_headers=self.sb.path_headers())
         port = srv.server_address[1]
         threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -355,27 +458,21 @@ class Ecosystem(unittest.TestCase):
                     r.read()  # дочитать тело: иначе сервер пишет в закрытое соединение
                     return r.headers["Content-Security-Policy"]
             self.assertIn("script-src 'none'", get("/"))
-            self.assertIn("script-src 'self'", get("/ecosystem/"))
-            self.assertIn("script-src 'self'", get("/ecosystem/dpvis.js"))
+            self.assertIn("script-src 'none'", get("/ecosystem/"))
         finally:
             srv.shutdown()
             srv.server_close()
 
     def test_roles_and_stages_only_from_facts(self):
-        data = json.loads((self.out / "ecosystem/dpvis-data.json").read_text(encoding="utf-8"))
-        repos = {n["id"]: n for n in data["model"]["nodes"] if n["kind"] == "repo"}
-        self.assertEqual(repos["galdhold"]["role"], self.sb.fact("GH-GENRE", "ru"))
-        self.assertEqual(repos["galdhold"]["stage"], self.sb.fact("GH-STAGES", "ru"))
+        page = (self.out / "ecosystem/index.html").read_text(encoding="utf-8")
+        self.assertIn(html.escape(self.sb.fact("GH-GENRE", "ru")), page)
+        self.assertIn(html.escape(self.sb.fact("GH-STAGES", "ru")), page)
 
         def drop(cfg, repo):
             del cfg["ecosystem"]["roles"]["market"]
             del cfg["ecosystem"]["stages"]["market"]
         _, rep, out = self.build(self.repo(mutate=drop))
-        market = next(n for n in json.loads((out / "ecosystem/dpvis-data.json").read_text(encoding="utf-8"))["model"]["nodes"]
-                      if n["id"] == "market")
-        self.assertNotIn("role", market, "нет факта — нет утверждения о проекте")
-        self.assertNotIn("stage", market)
-        self.assertTrue(any("market" in w for w in rep.warnings), rep.warnings)
+        self.assertTrue(any("market" in w for w in rep.warnings), "нет факта — нет утверждения о проекте, предупреждение")
 
     def test_kit_must_match_manifest(self):
         repo = self.repo()
@@ -476,6 +573,24 @@ class JourneyPath(unittest.TestCase):
         self.assertIn("DPmetaApp", page)
         self.assertIn("«Сначала построить качественные самостоятельные системы.", page)
 
+    def test_goal_text_outside_svg(self):
+        """P-04 аудита страниц 8.11.2026: у рисунка цели `role="img"` — диктор не читает текст внутри SVG,
+        поэтому приложение, оба ядра и основание есть в списке под схемой теми же формулировками."""
+        import html as _html
+        import re as _re
+        facts = {f["id"]: f for f in yaml.safe_load((ROOT / "data/facts/facts.yaml").read_text(encoding="utf-8"))["facts"]}
+        goal = yaml.safe_load((ROOT / "data/website/path.yaml").read_text(encoding="utf-8"))["goal"]
+        for rel, lang, words in (("path/index.html", "ru", ("Два ядра", "Основание: DPvisualisation")),
+                                 ("en/path/index.html", "en", ("Two cores", "Base: DPvisualisation"))):
+            outside = _html.unescape(_re.sub(r"<svg\b.*?</svg>", "", self.page(rel), flags=_re.S))
+            for word in words:
+                self.assertIn(word, outside, (lang, word))
+            for c in goal["cores"]:
+                self.assertIn(c["title"][lang], outside, (lang, "ядро вне SVG"))
+            for src in (goal["base"]["text"], goal["cores"][0]["text"]):
+                wording = facts[src["fact"]]["allowed_wording"][lang][src.get("idx", 0)]
+                self.assertIn(wording[1:-1], outside, (lang, src))
+
     def test_texts_only_from_facts_and_milestones(self):
         import html as _html
         facts = {f["id"]: f for f in yaml.safe_load((ROOT / "data/facts/facts.yaml").read_text(encoding="utf-8"))["facts"]}
@@ -550,6 +665,34 @@ class JourneyPath(unittest.TestCase):
         self.assertIn("<strong>подсистема ИИ в DPmetaApp</strong>", page)
         app_box = _re.search(r'<rect[^>]*class="(g-box[^"]*)"/><text[^>]*class="t-lab g-appt"', page)
         self.assertEqual(app_box.group(1), "g-box", "приложение уже есть — сплошная рамка")
+
+    def test_route_labels_fit(self):
+        """P-16 аудита страниц 8.11.2026: подписи соседних станций не сходятся, подпись рамки цели — внутри
+        SVG, скобка года — ниже всех подписей; обводка «новых» квадратов объяснена в легенде.
+        Ширина — оценкой (`tw`); настоящую раскладку держит `siteshots` (подпись за рамкой, наложение)."""
+        import re as _re
+        from tools.cs.site.path import route_legend, route_svg, tw
+        data = yaml.safe_load((ROOT / "data/website/path.yaml").read_text(encoding="utf-8"))
+        for lang in ("ru", "en"):
+            svg = route_svg(data, lang, "DPmetaApp")
+            w = float(_re.search(r'viewBox="0 0 ([\d.]+) ', svg).group(1))
+            texts = [(float(x), float(y), cls, html.unescape(s)) for x, y, cls, s in
+                     _re.findall(r'<text x="([\d.-]+)" y="([\d.-]+)" class="([^"]+)"[^>]*>([^<]*)</text>', svg)]
+            self.assertTrue(all(y - 13 >= 0 for _, y, _, _ in texts), (lang, "текст выше верха SVG"))
+            by_row: dict[float, list] = {}
+            for x, y, cls, s in texts:
+                if "t-lab" in cls and "r-framet" not in cls:
+                    by_row.setdefault(y, []).append((x - tw(s, 13) / 2, x + tw(s, 13) / 2, s))
+            for y, row in by_row.items():
+                row.sort()
+                self.assertGreaterEqual(row[0][0], 0, (lang, row[0][2]))
+                self.assertLessEqual(row[-1][1], w, (lang, row[-1][2]))
+                for (a1, b1, s1), (a2, b2, s2) in zip(row, row[1:]):
+                    self.assertGreaterEqual(a2 - b1, 4, (lang, s1, s2))
+            lowest = max(y for _, y, cls, _ in texts if "t-lab" in cls)
+            for yb in _re.findall(r'<path d="M[\d.]+ [\d.]+ V([\d.]+) H', svg):
+                self.assertGreater(float(yb), lowest + 4, (lang, "скобка года на подписи"))
+        self.assertIn("sw-new", route_legend("ru", ["core"]))
 
     def test_phase_b_started(self):
         """Ответ автора 25.10.2026: фаза B — «идёт» с 11.10 (DPmetaApp D-29), а не «план»."""

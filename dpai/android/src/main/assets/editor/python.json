@@ -1,0 +1,320 @@
+{
+  "name": "Python",
+  "scopeName": "source.python",
+  "patterns": [
+    {
+      "include": "#code"
+    }
+  ],
+  "repository": {
+    "code": {
+      "patterns": [
+        {
+          "match": "#.*$",
+          "name": "comment.line.number-sign.python"
+        },
+        {
+          "begin": "\\b(?i:fr|rf)\"\"\"",
+          "end": "\"\"\"",
+          "name": "string.quoted.triple.double.python",
+          "patterns": [
+            {
+              "match": "\\\\."
+            },
+            {
+              "match": "\\{\\{|\\}\\}",
+              "name": "constant.character.escape.python"
+            },
+            {
+              "include": "#expression"
+            }
+          ]
+        },
+        {
+          "begin": "\\b(?i:fr|rf)\"",
+          "end": "\"|$",
+          "name": "string.quoted.double.python",
+          "patterns": [
+            {
+              "match": "\\\\."
+            },
+            {
+              "match": "\\{\\{|\\}\\}",
+              "name": "constant.character.escape.python"
+            },
+            {
+              "include": "#expression"
+            }
+          ]
+        },
+        {
+          "begin": "\\b(?i:fr|rf)'''",
+          "end": "'''",
+          "name": "string.quoted.triple.single.python",
+          "patterns": [
+            {
+              "match": "\\\\."
+            },
+            {
+              "match": "\\{\\{|\\}\\}",
+              "name": "constant.character.escape.python"
+            },
+            {
+              "include": "#expression"
+            }
+          ]
+        },
+        {
+          "begin": "\\b(?i:fr|rf)'",
+          "end": "'|$",
+          "name": "string.quoted.single.python",
+          "patterns": [
+            {
+              "match": "\\\\."
+            },
+            {
+              "match": "\\{\\{|\\}\\}",
+              "name": "constant.character.escape.python"
+            },
+            {
+              "include": "#expression"
+            }
+          ]
+        },
+        {
+          "begin": "\\b(?i:f)\"\"\"",
+          "end": "\"\"\"",
+          "name": "string.quoted.triple.double.python",
+          "patterns": [
+            {
+              "match": "\\\\.",
+              "name": "constant.character.escape.python"
+            },
+            {
+              "match": "\\{\\{|\\}\\}",
+              "name": "constant.character.escape.python"
+            },
+            {
+              "include": "#expression"
+            }
+          ]
+        },
+        {
+          "begin": "\\b(?i:f)\"",
+          "end": "\"|$",
+          "name": "string.quoted.double.python",
+          "patterns": [
+            {
+              "match": "\\\\.",
+              "name": "constant.character.escape.python"
+            },
+            {
+              "match": "\\{\\{|\\}\\}",
+              "name": "constant.character.escape.python"
+            },
+            {
+              "include": "#expression"
+            }
+          ]
+        },
+        {
+          "begin": "\\b(?i:f)'''",
+          "end": "'''",
+          "name": "string.quoted.triple.single.python",
+          "patterns": [
+            {
+              "match": "\\\\.",
+              "name": "constant.character.escape.python"
+            },
+            {
+              "match": "\\{\\{|\\}\\}",
+              "name": "constant.character.escape.python"
+            },
+            {
+              "include": "#expression"
+            }
+          ]
+        },
+        {
+          "begin": "\\b(?i:f)'",
+          "end": "'|$",
+          "name": "string.quoted.single.python",
+          "patterns": [
+            {
+              "match": "\\\\.",
+              "name": "constant.character.escape.python"
+            },
+            {
+              "match": "\\{\\{|\\}\\}",
+              "name": "constant.character.escape.python"
+            },
+            {
+              "include": "#expression"
+            }
+          ]
+        },
+        {
+          "begin": "\\b(?i:br|rb|r)\"\"\"",
+          "end": "\"\"\"",
+          "name": "string.quoted.triple.double.python",
+          "patterns": [
+            {
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "begin": "\\b(?i:br|rb|r)\"",
+          "end": "\"|$",
+          "name": "string.quoted.double.python",
+          "patterns": [
+            {
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "begin": "\\b(?i:br|rb|r)'''",
+          "end": "'''",
+          "name": "string.quoted.triple.single.python",
+          "patterns": [
+            {
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "begin": "\\b(?i:br|rb|r)'",
+          "end": "'|$",
+          "name": "string.quoted.single.python",
+          "patterns": [
+            {
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "begin": "(?:\\b(?i:u|b))?\"\"\"",
+          "end": "\"\"\"",
+          "name": "string.quoted.triple.double.python",
+          "patterns": [
+            {
+              "match": "\\\\.",
+              "name": "constant.character.escape.python"
+            }
+          ]
+        },
+        {
+          "begin": "(?:\\b(?i:u|b))?\"",
+          "end": "\"|$",
+          "name": "string.quoted.double.python",
+          "patterns": [
+            {
+              "match": "\\\\.",
+              "name": "constant.character.escape.python"
+            }
+          ]
+        },
+        {
+          "begin": "(?:\\b(?i:u|b))?'''",
+          "end": "'''",
+          "name": "string.quoted.triple.single.python",
+          "patterns": [
+            {
+              "match": "\\\\.",
+              "name": "constant.character.escape.python"
+            }
+          ]
+        },
+        {
+          "begin": "(?:\\b(?i:u|b))?'",
+          "end": "'|$",
+          "name": "string.quoted.single.python",
+          "patterns": [
+            {
+              "match": "\\\\.",
+              "name": "constant.character.escape.python"
+            }
+          ]
+        },
+        {
+          "match": "^\\s*@[\\p{L}\\p{Nl}_][\\p{L}\\p{Nl}\\p{Mn}\\p{Mc}\\p{Nd}\\p{Pc}]*(?:\\.[\\p{L}\\p{Nl}_][\\p{L}\\p{Nl}\\p{Mn}\\p{Mc}\\p{Nd}\\p{Pc}]*)*",
+          "name": "entity.name.function.decorator.python"
+        },
+        {
+          "match": "\\b(def)(\\s+)([\\p{L}\\p{Nl}_][\\p{L}\\p{Nl}\\p{Mn}\\p{Mc}\\p{Nd}\\p{Pc}]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.python"
+            },
+            "3": {
+              "name": "entity.name.function.python"
+            }
+          }
+        },
+        {
+          "match": "\\b(class)(\\s+)([\\p{L}\\p{Nl}_][\\p{L}\\p{Nl}\\p{Mn}\\p{Mc}\\p{Nd}\\p{Pc}]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.python"
+            },
+            "3": {
+              "name": "entity.name.type.python"
+            }
+          }
+        },
+        {
+          "match": "(?<![\\w.])(?:0[xX](?:_?[\\da-fA-F])+|0[bB](?:_?[01])+|0[oO](?:_?[0-7])+|(?:\\d(?:_?\\d)*(?:\\.(?:\\d(?:_?\\d)*)?)?|\\.\\d(?:_?\\d)*)(?:[eE][+-]?\\d(?:_?\\d)*)?[jJ]?)(?!\\w)",
+          "name": "constant.numeric.python"
+        },
+        {
+          "match": "\\b(?:True|False|None)\\b",
+          "name": "constant.language.python"
+        },
+        {
+          "match": "\\b(?:and|as|assert|async|await|break|continue|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|pass|raise|return|try|while|with|yield)\\b",
+          "name": "keyword.control.python"
+        },
+        {
+          "match": "^\\s*(?:match|case)\\b(?=\\s+[^=])",
+          "name": "keyword.control.python"
+        },
+        {
+          "match": "\\b(?:def|class)\\b",
+          "name": "keyword.control.python"
+        },
+        {
+          "match": "->|:=|\\*\\*|//|==|!=|<=|>=|[-+*/%=<>~^|&]",
+          "name": "keyword.operator.python"
+        },
+        {
+          "include": "#braces"
+        },
+        {
+          "match": "[()\\[\\]]",
+          "name": "punctuation.section.python"
+        }
+      ]
+    },
+    "braces": {
+      "begin": "\\{",
+      "end": "\\}",
+      "name": "punctuation.section.braces.python",
+      "patterns": [
+        {
+          "include": "#code"
+        }
+      ]
+    },
+    "expression": {
+      "begin": "\\{",
+      "end": "\\}",
+      "name": "meta.interpolation.python",
+      "patterns": [
+        {
+          "include": "#code"
+        }
+      ]
+    }
+  }
+}

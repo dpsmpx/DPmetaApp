@@ -3,6 +3,8 @@ package com.dpsmpx.dpai.android
 import android.content.Context
 import com.dpsmpx.dpai.accounts.ApiProfile
 import com.dpsmpx.dpai.accounts.ApiProfileBook
+import com.dpsmpx.dpai.accounts.Routine
+import com.dpsmpx.dpai.accounts.RoutineBook
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
@@ -26,6 +28,8 @@ import com.dpsmpx.dpai.providers.Conversation
 import com.dpsmpx.dpai.providers.EntryStatus
 import com.dpsmpx.dpai.providers.ModelInfo
 import com.dpsmpx.dpai.providers.Providers
+import com.dpsmpx.dpai.providers.RoutineClient
+import com.dpsmpx.dpai.providers.RoutineFired
 import com.dpsmpx.dpai.providers.StopKind
 import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpai.storage.vfs.NioVfs
@@ -39,7 +43,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Состояние вкладки «Модели» (D-98) на процесс: API-профили, переписка и
- * ответы, которые идут сейчас. Документы — в `app_models/` данных
+ * ответы, которые идут сейчас; и маршруты Claude Code (D-116) — тоже вид
+ * аккаунта с ключом в Keystore. Документы — в `app_models/` данных
  * приложения: вне диска приложения (D-96 отдаёт только `files/`) и вне
  * копий (`allowBackup="false"`). Ответ идёт в своей области корутин, а не
  * на экране: уход с экрана и поворот его не обрывают.
@@ -47,6 +52,7 @@ import kotlinx.coroutines.launch
 object ModelsStore {
     private const val PROFILES = "api-profiles"
     private const val CHATS = "api-chats"
+    private const val ROUTINES = "routines"
 
     /** Ответ, который идёт сейчас: текст до сих пор и отмена. */
     data class Running(val text: String, val cancel: Cancel)
@@ -58,12 +64,14 @@ object ModelsStore {
 
     private val profileFlow = MutableStateFlow<List<ApiProfile>>(emptyList())
     private val chatFlow = MutableStateFlow<List<Conversation>>(emptyList())
+    private val routineFlow = MutableStateFlow<List<Routine>>(emptyList())
     private val runningFlow = MutableStateFlow<Map<CorrelationId, Running>>(emptyMap())
     private val problemFlow = MutableStateFlow<String?>(null)
     private val readyFlow = MutableStateFlow(false)
 
     val profiles: StateFlow<List<ApiProfile>> = profileFlow
     val chats: StateFlow<List<Conversation>> = chatFlow
+    val routines: StateFlow<List<Routine>> = routineFlow
     val running: StateFlow<Map<CorrelationId, Running>> = runningFlow
     /** Документ не прочитан (D-87: не молча): что и почему; новая запись заменит его. */
     val problem: StateFlow<String?> = problemFlow
@@ -78,6 +86,7 @@ object ModelsStore {
         docs = d
         profileFlow.value = read(d, PROFILES, "профили") { ApiProfileBook.fromJson(it) }.orEmpty()
         chatFlow.value = read(d, CHATS, "переписка") { ChatBook.fromJson(it) }.orEmpty()
+        routineFlow.value = read(d, ROUTINES, "маршруты") { RoutineBook.fromJson(it) }.orEmpty()
         readyFlow.value = true
     }
 
@@ -95,6 +104,65 @@ object ModelsStore {
     fun newProfileId(): AccountId = ids.next(IdKinds.ACCOUNT)
 
     fun hasKey(id: AccountId): Boolean = ApiKeys.has(app, id)
+
+    /** Admin-ключ API-профиля Anthropic (`DPmetaApp:D-44`) — только отчёты; хранится рядом с ключом API, под своим именем. */
+    private fun adminName(id: AccountId) = "${id.value}:admin"
+
+    fun hasAdminKey(id: AccountId): Boolean = ApiKeys.hasNamed(app, adminName(id))
+
+    fun adminKey(id: AccountId): Secret? = ApiKeys.getNamed(app, adminName(id))
+
+    /** Отчёты Admin API для экрана (F-19): расход, стоимость и лимиты скорости. */
+    data class AdminView(
+        val usage: List<com.dpsmpx.dpai.providers.UsageRow>,
+        val cost: List<com.dpsmpx.dpai.providers.CostRow>,
+        val limits: List<com.dpsmpx.dpai.providers.RateLimitRow>,
+        val refreshedAt: String?,
+    )
+
+    /** F-18: Admin-ключ проверяется отчётом о расходе за последние сутки; итог — текст отказа или `null`. */
+    fun checkAdminKey(key: Secret): String? = when (val r = runCatching { com.dpsmpx.dpai.providers.AdminClient().check(key, Clock.SYSTEM.now()) }.getOrElse { fail(it) }) {
+        is Outcome.Success -> null
+        is Outcome.Failure -> r.errors.first().let { "${Words.reason(it.code.name)}: ${it.message}" }
+    }
+
+    /**
+     * Расход и стоимость за [days] полных суток по UTC (до вчера: корзины — сутки UTC,
+     * сегодняшние данные ещё неполны) и лимиты скорости. Блокирующий — с фонового потока.
+     */
+    fun adminReport(id: AccountId, days: Int): Outcome<AdminView> {
+        val key = adminKey(id)
+        val end = java.time.Instant.ofEpochMilli(Clock.SYSTEM.now().epochMillis).truncatedTo(java.time.temporal.ChronoUnit.DAYS)
+        val from = com.dpsmpx.dpai.core.clock.Timestamp(end.minus(days.toLong(), java.time.temporal.ChronoUnit.DAYS).toEpochMilli())
+        val to = com.dpsmpx.dpai.core.clock.Timestamp(end.toEpochMilli())
+        return runCatching {
+            val client = com.dpsmpx.dpai.providers.AdminClient()
+            val usage = when (val r = client.usage(key, from, to)) {
+                is Outcome.Failure -> return r
+                is Outcome.Success -> r.value
+            }
+            val cost = when (val r = client.cost(key, from, to)) {
+                is Outcome.Failure -> return r
+                is Outcome.Success -> r.value
+            }
+            when (val r = client.rateLimits(key)) {
+                is Outcome.Failure -> r
+                is Outcome.Success -> Outcome.success(AdminView(usage.rows, cost.rows, r.value, usage.refreshedAt ?: cost.refreshedAt))
+            }
+        }.getOrElse { fail(it) }
+    }
+
+    private fun fail(e: Throwable): Outcome.Failure = Outcome.failure(DiagCode.INTERNAL_ERROR, "сбой: ${e.javaClass.simpleName}", "admin")
+
+    /** Сохранить Admin-ключ ([key] — новый) или стереть его ([remove]). Итог — текст отказа или `null`. */
+    fun saveAdminKey(id: AccountId, key: Secret?, remove: Boolean): String? {
+        if (remove) {
+            ApiKeys.removeNamed(app, adminName(id))
+            return null
+        }
+        if (key == null || key.isEmpty) return null
+        return if (ApiKeys.putNamed(app, adminName(id), key)) null else "Admin-ключ не сохранён: Keystore отказал"
+    }
 
     /** Сохранить профиль; [key] — новый ключ (`null` — оставить прежний). Итог — текст отказа или `null`. */
     @Synchronized
@@ -115,8 +183,41 @@ object ModelsStore {
         val next = profileFlow.value.filter { it.id != id }
         if (d.write(PROFILES, ApiProfileBook.toJson(next)) is Outcome.Success) profileFlow.value = next
         ApiKeys.remove(app, id)
+        ApiKeys.removeNamed(app, adminName(id))
         chatFlow.value.filter { it.profile == id }.forEach { c -> runningFlow.value[c.id]?.cancel?.cancel() }
         writeChats(chatFlow.value.filter { it.profile != id })
+    }
+
+    /** Сохранить маршрут; [token] — новый токен (`null` — оставить прежний). Итог — текст отказа или `null`. */
+    @Synchronized
+    fun saveRoutine(r: Routine, token: Secret?): String? {
+        val d = docs ?: return "хранилище не готово"
+        if (token != null && !token.isEmpty && !ApiKeys.put(app, r.id, token)) return "токен не сохранён: Keystore отказал"
+        val next = routineFlow.value.filter { it.id != r.id } + r
+        return when (val w = d.write(ROUTINES, RoutineBook.toJson(next))) {
+            is Outcome.Failure -> "маршрут не сохранён: ${w.errors.first().message}"
+            is Outcome.Success -> null.also { routineFlow.value = next }
+        }
+    }
+
+    /** Маршрут и его токен. */
+    @Synchronized
+    fun deleteRoutine(id: AccountId) {
+        val d = docs ?: return
+        val next = routineFlow.value.filter { it.id != id }
+        if (d.write(ROUTINES, RoutineBook.toJson(next)) is Outcome.Success) routineFlow.value = next
+        ApiKeys.remove(app, id)
+    }
+
+    /**
+     * Запуск маршрута (D-116): блокирующий вызов — с фонового потока. Цену
+     * и журнал действия держит вызывающий (пульт — `:core:actions`, D-07).
+     */
+    fun fireRoutine(id: AccountId, text: String): Outcome<RoutineFired> {
+        val r = routineFlow.value.firstOrNull { it.id == id }
+            ?: return Outcome.failure(DiagCode.VALUE_INVALID, "маршрут не найден — удалён?", RoutineClient.SUBJECT)
+        return runCatching { RoutineClient().fire(r, ApiKeys.get(app, r.id), text) }
+            .getOrElse { e -> Outcome.failure(DiagCode.INTERNAL_ERROR, "сбой: ${e.javaClass.simpleName}", RoutineClient.SUBJECT) }
     }
 
     /** Провайдер профиля с его ключом. */

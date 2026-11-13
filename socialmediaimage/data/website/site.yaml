@@ -37,12 +37,12 @@ home:
 path_section:                            # Д44: путь автора по датам и конечная цель экосистемы (/path/, /en/path/)
   path: /path/                           # EN — /en/path/
   data: data/website/path.yaml           # тексты — только факты реестра и вехи прогресса
-ecosystem:                               # Д43: интерактивная модель экосистемы (комплект DPvisualisation, его D-15)
+ecosystem:                               # Д43, Д51: система по слоям статичным списком — из данных комплекта DPvisualisation
   path: /ecosystem/
-  kit: website/ecosystem                 # dpvis.js, dpvis.css, dpvis-data.json, MANIFEST.json — сверка по sha256
-  # роли и стадии репозиториев на странице — только из реестра фактов (Д6, Д43); без факта — не выводятся
+  kit: website/ecosystem                 # комплект — источник данных списка; сверка по sha256 (MANIFEST.json); на сайт не выгружается (Д51)
+  # роли и стадии репозиториев на странице — только из реестра фактов (Д6, Д43); без факта — не выводятся; «ID@N» — N-я формулировка
   roles: {galdhold: GH-GENRE, dplang: DP-WHAT, dpverify: VRF-WHAT, smi: SMI-WHAT, dpprofile: PRF-WHAT, dplearn: LRN-WHAT,
-          market: MKT-WHAT, dpmeta: META-WHAT, dpmetaapp: APP-NOW, dpmonetization: MON-WHAT, dpvisualisation: VIS-WHAT,
+          market: MKT-WHAT, dpmeta: META-WHAT, dpmetaapp: APP-NOW, dpmonetization: MON-WHAT, dpvisualisation: VIS-WHAT@1,
           aimtrainer: AIM-WHAT, dpclock: CLK-WHAT, andorslove: AL-WHAT, tjtm: TJTM-WHAT}
   stages: {galdhold: GH-STAGES, dplang: DP-STAGE, smi: SMI-SITE, dpverify: VRF-NOW, dpprofile: PRF-STAGE, dplearn: LRN-STAGE,
            market: MKT-NOW, dpmeta: META-STAGE, aimtrainer: AIM-STAGE, dpclock: CLK-STAGE, tjtm: TJTM-NOW}

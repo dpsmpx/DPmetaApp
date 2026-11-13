@@ -5,6 +5,18 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- Клонирование под службой переднего плана (D-78): процесс не выгружается на середине клона. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Тревоги пульта (F-38; D-85): Android 13+ спрашивает разрешение; без него — только лента. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Мост Termux (F-41; D-84): команды реестра и проба готовности; разрешение даёт человек. -->
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+
+    <!-- Android 11+: видеть Termux, чтобы проверить его и послать RUN_COMMAND (D-84). -->
+    <queries>
+        <package android:name="com.termux" />
+    </queries>
 
     <application>
         <!-- Поворот, тема, шрифт — без пересоздания, как у «AI» и экрана входа: место, итог синхронизации
@@ -17,6 +29,15 @@
         <activity
             android:name="com.dpsmpx.dpmeta.app.LockActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
+            android:exported="false" />
+        <!-- Служба клонирования (D-78): только изнутри; держит процесс и показывает ход с «Отменить». -->
+        <service
+            android:name="com.dpsmpx.dpmeta.app.CloneService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <!-- Итог Termux (D-84): только через PendingIntent, отданный Termux с вызовом; снаружи не виден. -->
+        <receiver
+            android:name="com.dpsmpx.dpmeta.app.data.TermuxResultReceiver"
             android:exported="false" />
         <!-- «Поделиться» экспортом (D-67): не экспортируется, права на файл — только
              получателю одной отправки; виден только каталог экспорта в кэше. -->

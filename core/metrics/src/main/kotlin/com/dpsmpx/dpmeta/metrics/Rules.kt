@@ -10,7 +10,7 @@ import kotlin.time.Duration.Companion.minutes
  * `docs/CHANGELOG.md`; прежние точки истории остаются со своей версией.
  */
 object Rules {
-    const val RULES_VERSION: Int = 4
+    const val RULES_VERSION: Int = 5
 
     /** «Кто работает» (F-16, `DPmeta:M-08`): коммит в `main` за это окно. */
     val MAIN_COMMIT_WINDOW: Duration = 6.hours
@@ -60,4 +60,25 @@ object Rules {
      * пяти PR P90 — самый долгий. Точка истории — `repo.pr.lead_time.p90`.
      */
     const val LEAD_TIME_PERCENTILE: Int = 90
+
+    /**
+     * История из клонов (D-66) — те же определения, что у наборов прогресса
+     * сайта (`SocialMediaImage:data/progress/scope.yaml`): день — по этому
+     * поясу; свои авторы — ИИ и человек, чужие (исходные проекты форков) —
+     * не в счёте. «Ваше Имя» — заглушка `git config` в первом коммите
+     * Galdhold (`DPprofile` F-0049), не имя человека.
+     */
+    val HISTORY_ZONE: java.time.ZoneOffset = java.time.ZoneOffset.ofHours(3)
+
+    /** Автор коммитов ИИ (ТЗ, §8, `repo.commits.ai_share`; D-66 — по автору, как у наборов прогресса). */
+    val AI_AUTHORS: Set<String> = setOf("Claude")
+
+    /** Авторы коммитов человека. */
+    val HUMAN_AUTHORS: Set<String> = setOf("dpsmpx", "Ваше Имя")
+
+    /** Доля ИИ (`repo.commits.ai_share`) — по коммитам за это число последних дней. */
+    const val AI_SHARE_DAYS: Int = 30
+
+    /** Новые решения (`repo.decisions.new`) — прирост записей журнала за это число последних дней. */
+    const val DECISIONS_NEW_DAYS: Int = 7
 }

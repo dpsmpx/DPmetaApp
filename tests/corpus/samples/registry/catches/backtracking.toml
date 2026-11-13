@@ -1,0 +1,7 @@
+schema = 1
+
+[[repo]]
+name = "A"
+slug = "x/a"
+place = "core"
+decisions = { path = "D.md", id = "(a+)+$" }

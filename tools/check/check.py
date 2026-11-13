@@ -6,7 +6,8 @@
 Пустая проверка — провал (`DP-Verify:V-07`): проверка, которой нечего проверять, только
 выглядит защитой.
 
-Уровни: static — структура, текст, секреты, ссылки, номера, процесс, единое ядро, wrapper (секунды);
+Уровни: static — структура, текст, секреты, ссылки, номера, процесс, единое ядро, wrapper,
+                 реестр команд (секунды);
         full   — static, самотесты проверок (tests/), проверки подсистем (D-28) и сборка
                  Gradle из корня (`build.gradle`, ТЗ, §14); пропуск (нет JDK, нет
                  Android SDK) назван, а с --strict — ошибка.
@@ -21,6 +22,7 @@
 """
 import os
 import re
+import xml.etree.ElementTree as ET
 import shutil
 import subprocess
 import sys
@@ -79,6 +81,8 @@ CORE_DECL = re.compile(r"^[ \t]*(?:(?:public|internal|private|sealed|data|value|
 # стал первым сегментом таких имён (D-43); срезы docs/audits/ задним числом не правятся.
 NOT_PATHS = {
     "dpmeta/docs-sync": "имя ветки DPmeta в срезе docs/audits/2026-10-10-ecosystem.md, не путь",
+    "app/src/main/kotlin/com/dpsmpx/dpmeta/app/ui/StatsUi.kt":
+        "экран графиков убран по D-112; срез docs/audits/2026-11-05-ui-ux.md задним числом не правится",
 }
 # Документы автора, которые он ведёт сам (через веб-интерфейс): форма текста не проверяется,
 # чтобы не править их ради проверки (D-25).
@@ -91,16 +95,11 @@ REQUIRED = [
 # Пути, которые документы называют заранее: появятся на своих этапах. Путь появился —
 # убрать отсюда (иначе находка): список не должен прятать опечатки.
 PLANNED = {
-    "gradle/verification-metadata.xml": "контрольные суммы зависимостей (ТЗ, N-14) — с первой зависимостью модулей DPmetaApp, этап 1",
-    "docs/RELEASE.md": "отпечаток ключа и порядок выпуска — этап 8",
     "tools/release/": "сборка неподписанного APK — этап 8",
     "tools/notify/": "набор хуков уведомлений Claude Code (F-56) — этап 7",
     # Каталог config/ появился с панелями проектов (D-57); остальные файлы ТЗ — со своими этапами.
     "config/site.toml": "адреса и пробы сайта (F-27…F-30) — этап 6",
-    "config/commands.toml": "реестр команд (ТЗ, приложение Б) — этап 6",
     "config/platforms.toml": "каталог возможностей площадок (F-67) — этап 6",
-    "config/events.toml": "каталог событий (F-51) — этап 7",
-    "config/alerts.toml": "правила тревог (F-37) — этап 7",
 }
 
 SECRETS = [
@@ -612,8 +611,10 @@ def check_modules(repo, r):
 FORBIDDEN_CODE = (
     (re.compile(r"\bbeget\b|\brsync\b", re.I), ("socialmediaimage/",),
      "выгрузка сайта — только подсистемой SocialMediaImage (D-40, A-07)"),
-    (re.compile(r"v1/organizations/(?!usage_report|cost_report)"), (),
-     "Admin API — только GET отчётов Usage и Cost; изменяющих вызовов нет (D-08, D-44)"),
+    # Пути чтения — список D-81: аналитика расхода и стоимости, лимиты скорости организации,
+    # прежние отчёты Usage и Cost. Остальное (участники, ключи, workspace и их лимиты) — нет.
+    (re.compile(r"v1/organizations/(?!analytics/(?:usage|cost)\b|rate_limits\b|usage_report\b|cost_report\b)"), (),
+     "Admin API — только GET отчётов расхода, стоимости и лимитов; изменяющих вызовов нет (D-08, D-44, D-81)"),
     (re.compile(r"\b(?:org\.jsoup|org\.openqa\.selenium|com\.microsoft\.playwright|org\.htmlunit|com\.gargoylesoftware\.htmlunit)\b"
                 r"|\.(?:evaluateJavascript|addJavascriptInterface)\s*\("), (),
      "без скрейпинга и автоматизации браузера — только официальные API (D-20)"),
@@ -667,6 +668,34 @@ def check_ui_words(repo, r):
             line = TRAILING_COMMENT.sub("", line)
             if any(DECISION_REF.search(m.group(0)) for m in STRING_LITERAL.finditer(line)):
                 r.add(f"{rel}:{i}", "номер решения в строке экрана — человеку слово, номер — в KDoc (UX-13, AI:A-10)")
+
+
+def check_verification(repo, r):
+    """N-14/B-01: контрольные суммы обязательны и в корне, и для отдельной сборки dpai."""
+    for rel in ("gradle/verification-metadata.xml", "dpai/gradle/verification-metadata.xml"):
+        r.scanned += 1
+        if not repo.exists(rel):
+            r.add(rel, "нет обязательных контрольных сумм зависимостей")
+            continue
+        try:
+            root = ET.fromstring(repo.text(rel))
+        except ET.ParseError:
+            r.add(rel, "повреждён XML контрольных сумм")
+            continue
+        for node in root.iter():
+            node.tag = node.tag.rsplit("}", 1)[-1]
+        if root.tag != "verification-metadata" or root.findtext("configuration/verify-metadata") != "true":
+            r.add(rel, "сверка метаданных должна быть включена")
+        if list(root.findall("configuration/trusted-artifacts/*")):
+            r.add(rel, "обход сверки через trusted-artifacts не допускается")
+        artifacts = root.findall("components/component/artifact")
+        if not artifacts:
+            r.add(rel, "нет артефактов с контрольными суммами")
+        for artifact in artifacts:
+            hashes = artifact.findall("sha256")
+            if not hashes or any(not re.fullmatch(r"[0-9a-f]{64}", item.get("value", "")) for item in hashes):
+                r.add(rel, "у артефакта нет корректного SHA-256")
+                break
 
 
 def check_wrapper(repo, r):
@@ -755,6 +784,14 @@ def check_gradle(root, java=None, sdk=None, run=gradle_run):
     rc, out = run([os.path.join(root, "gradlew"), "build", "--console=plain"], root)
     m = TASKS_DONE.search(out)
     r.scanned = int(m.group(1)) if m else 0
+    if rc == 0:
+        # Замеры после всей включающей сборки: mustRunAfter внутри dpai
+        # не упорядочивает задачи корня (DP_AI_Orcestrator:D-121).
+        dpai = os.path.join(root, "dpai")
+        rc, out = run([os.path.join(dpai, "gradlew"), ":tests:integration:performanceTest",
+                       "--no-parallel", "--max-workers=1", "--console=plain"], dpai)
+        if rc != 0:
+            out = "Замеры производительности dpai после сборки:\n" + out
     if rc != 0:
         tail = [l for l in out.strip().split("\n") if l.strip()][-SHOW * 2:]
         if TRANSIENT.search(out):
@@ -763,6 +800,116 @@ def check_gradle(root, java=None, sdk=None, run=gradle_run):
             r.findings.extend(tail or [f"gradlew: код {rc}"])
     r.seconds = time.monotonic() - t0
     return r
+
+
+COMMANDS = "config/commands.toml"
+REGISTRY = "dpmeta/tools/ecosystem.toml"
+COMMAND_KEYS = {"id", "title", "project", "workdir", "path", "args", "plan", "level", "packages", "expect", "timeout"}
+COMMAND_ID = re.compile(r"[a-z0-9][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)*")
+COMMAND_PART = re.compile(r"[A-Za-z0-9._+-]+")
+ALPINE_PACKAGE = re.compile(r"[a-z0-9][a-z0-9+._-]{0,63}")
+GUEST_BIN = ("/bin/", "/usr/bin/", "/usr/local/bin/")
+
+
+def _relative(p):
+    return bool(p) and not p.startswith("/") and all(x and x not in (".", "..") and COMMAND_PART.fullmatch(x) for x in p.split("/"))
+
+
+def _command_problems(c, names, homes, repo):
+    """Что не так с одной командой реестра: ключи, значения, проект, файл скрипта в своём репозитории."""
+    out = []
+    unknown = sorted(set(c) - COMMAND_KEYS)
+    if unknown:
+        out.append(f"неизвестный ключ «{unknown[0]}»")
+    for key in ("id", "title", "project", "path", "plan", "level"):
+        if key not in c:
+            out.append(f"нет ключа {key}")
+    if out:
+        return out
+    if not isinstance(c["id"], str) or not COMMAND_ID.fullmatch(c["id"]):
+        out.append("id — строчные латинские буквы, цифры, «_-», части через точку")
+    level = c["level"]
+    if not isinstance(level, int) or isinstance(level, bool) or level not in (0, 1):
+        out.append("уровень — 0 или 1: уровней 2 и 3 в реестре нет (D-82)")
+    if c["plan"] not in ("foreground", "background"):
+        out.append("план — foreground или background")
+    timeout = c.get("timeout", 10)
+    if not isinstance(timeout, int) or isinstance(timeout, bool) or not 1 <= timeout <= 30:
+        out.append("предел времени — 1…30 минут")
+    packages = c.get("packages", [])
+    if not isinstance(packages, list) or not all(isinstance(x, str) and ALPINE_PACKAGE.fullmatch(x) for x in packages):
+        out.append("packages — имена пакетов Alpine")
+    args = c.get("args", [])
+    if not isinstance(args, list) or not all(isinstance(x, str) for x in args):
+        out.append("args — строки")
+        args = []
+    workdir = c.get("workdir")
+    if workdir is not None and not (isinstance(workdir, str) and _relative(workdir)):
+        out.append("workdir — каталог внутри проекта, без «..»")
+        workdir = None
+    path = c["path"]
+    if not isinstance(path, str):
+        return out + ["path — строка"]
+    if path.startswith("/"):
+        if not path.startswith(GUEST_BIN) or not _relative(path[1:]):
+            out.append("программа гостя — из /bin, /usr/bin, /usr/local/bin, без «..»")
+    elif not _relative(path):
+        out.append("path — путь от workdir без «..» или абсолютный путь гостя")
+    project = c["project"]
+    if project != "*" and project not in names:
+        out.append(f"проекта «{project}» нет в реестре DPmeta (или он в архиве)")
+    # Скрипт подсистемы или самого DPmetaApp лежит здесь — его можно найти; чужой репозиторий — нет.
+    home = homes.get(project)
+    if home is not None and not out:
+        base = "/".join(x for x in (home, workdir) if x)
+        script = path if not path.startswith("/") else next((a for a in args[:1] if _relative(a) and ("/" in a or "." in a)), None)
+        if script and not repo.exists("/".join(x for x in (base, script) if x)):
+            out.append(f"нет файла `{'/'.join(x for x in (base, script) if x)}`")
+    return out
+
+
+def check_commands(repo, r):
+    """config.commands — реестр команд `config/commands.toml` разбирается (схема 1, ключи, уровни 0–1,
+    пути без «..»), id не повторяются, проекты — из реестра DPmeta, скрипт подсистемы — на месте (F-43, D-82)."""
+    import tomllib
+    if not repo.exists(COMMANDS):
+        r.add(COMMANDS, "нет реестра команд (ТЗ, F-40)")
+        return
+    try:
+        doc = tomllib.loads(repo.text(COMMANDS) or "")
+    except tomllib.TOMLDecodeError as e:
+        r.add(COMMANDS, f"не TOML: {e}")
+        return
+    try:
+        registry = tomllib.loads(repo.text(REGISTRY) or "") if repo.exists(REGISTRY) else {}
+    except tomllib.TOMLDecodeError as e:
+        r.add(REGISTRY, f"не TOML: {e}")
+        return
+    rows = [x for x in registry.get("repo", []) if isinstance(x, dict) and x.get("place") != "archive"]
+    names = {x.get("name") for x in rows}
+    homes = {x.get("name"): x.get("dir") for x in rows if x.get("dir")}
+    homes.update({x.get("name"): "" for x in rows if x.get("place") == "control"})
+    if set(doc) - {"schema", "command"}:
+        r.add(COMMANDS, f"неизвестный ключ «{sorted(set(doc) - {'schema', 'command'})[0]}»")
+    if doc.get("schema") != 1:
+        r.add(COMMANDS, "схема — 1")
+        return
+    commands = doc.get("command")
+    if not isinstance(commands, list) or not commands:
+        r.add(COMMANDS, "нет команд [[command]]")
+        return
+    seen = set()
+    for i, c in enumerate(commands):
+        r.scanned += 1
+        where = f"{COMMANDS}: command[{i}]"
+        if not isinstance(c, dict):
+            r.add(where, "команда — не таблица")
+            continue
+        for problem in _command_problems(c, names, homes, repo):
+            r.add(where, problem)
+        if c.get("id") in seen:
+            r.add(where, f"id «{c.get('id')}» — уже был")
+        seen.add(c.get("id"))
 
 
 def check_files(repo, r):
@@ -790,6 +937,8 @@ CHECKS = [
     ("code.forbidden", check_forbidden),
     ("ui.words", check_ui_words),
     ("build.wrapper", check_wrapper),
+    ("build.verification", check_verification),
+    ("config.commands", check_commands),
 ]
 
 

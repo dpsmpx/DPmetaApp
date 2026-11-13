@@ -1,0 +1,33 @@
+# Синтетические правила: все ключи, маска, порядок.
+schema = 1
+
+[[rule]]
+id = "alpha.quiet"
+title = "Альфа в проекте Gamma — молча"
+on = "alpha.*"
+action = "silent"
+project = "Gamma"
+
+[[rule]]
+id = "alpha.long"
+title = "Альфа долго"
+on = "alpha.opened"
+action = "notify"
+channel = "questions"
+importance = "high"
+contains = "срочно"
+regex = "^#[0-9]+"
+field = "hours"
+at_least = 2
+at_most = 48
+days = ["mon", "fri"]
+limit = 1
+window = 60
+quiet = false
+
+[[rule]]
+id = "beta.off"
+title = "Бета — выключено"
+on = "beta.signal"
+action = "digest"
+enabled = false

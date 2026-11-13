@@ -59,14 +59,33 @@ interface Supervision {
  * Супервизор — отдельный процесс `dpai agent supervise` ([Detacher]):
  * обрыв SSH не убивает ни его, ни Claude. Опознание — `ProcessHandle`
  * (JVM на target; в приложении не исполняется).
+ *
+ * Идёт служба агента ([service], D-109) — супервизор запускает она, своим
+ * потомком: ход живёт со службой, а не с сеансом SSH. Службы нет или она
+ * не ответила — супервизор запускается отсюда, как прежде.
  */
 class ProcessSupervision(
     private val home: String,
     private val selfCommand: List<String>,
     private val detacher: Detacher,
     private val clock: Clock,
+    private val service: AgentService? = null,
 ) : Supervision {
     override fun launch(id: SessionId, supervise: () -> Unit): Outcome<Unit> {
+        service?.let { s ->
+            when (val asked = s.ask(id, running = s.status(::serviceAlive).running)) {
+                is AgentService.Asked.Answered -> return asked.result
+                AgentService.Asked.Nobody -> Unit
+            }
+        }
+        return spawn(id)
+    }
+
+    /** Жив ли процесс службы — тот самый, а не чужой с тем же номером. */
+    fun serviceAlive(state: ServiceState): Boolean = ProcessTree.find(state.pid, state.startedAt) != null
+
+    /** Супервизор хода [id] отдельным процессом — отсюда или по просьбе службы. */
+    fun spawn(id: SessionId): Outcome<Unit> {
         val argv = selfCommand + listOf("agent", "supervise", "--home", home, "--run", id.value)
         val log = File(home, "runs/${id.value}/supervisor.log").path
         return when (val spawned = detacher.spawn(argv, home, log)) {

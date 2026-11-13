@@ -1,0 +1,8 @@
+schema = 1
+
+[[rule]]
+id = "alpha"
+title = "Альфа"
+on = "alpha.opened"
+action = "notify"
+field = "hours"

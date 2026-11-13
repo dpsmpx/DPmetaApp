@@ -128,6 +128,7 @@ import com.dpsmpx.dpai.orchestrator.commands.OperationRecord
 import com.dpsmpx.dpai.orchestrator.commands.OperationsProjection
 import com.dpsmpx.dpai.orchestrator.commands.OperationsState
 import com.dpsmpx.dpai.orchestrator.commands.operationEnvelopes
+import com.dpsmpx.dpai.orchestrator.commands.executorSwitchEnvelope
 import com.dpsmpx.dpai.orchestrator.commands.sessionLimitEnvelope
 import com.dpsmpx.dpai.orchestrator.commands.targetEnabledEnvelope
 import com.dpsmpx.dpai.orchestrator.requests.RequestPurpose
@@ -210,6 +211,7 @@ class Orchestrator(
     private val onEvents: (List<EventEnvelope>) -> Unit = {},
     /** Новая проблема контура — наружу (D-43: строка журнала приложения с причинами); сбой получателя контур не трогает. */
     private val onProblem: (Diagnostic) -> Unit = {},
+    private val externalPause: () -> Boolean = { false },
 ) {
     private val recorder = EventRecorder(ids, clock)
     private var lastSnapshotAt = 0L
@@ -647,7 +649,7 @@ class Orchestrator(
         // Журнал закрыт после отказа записи (кончилось место): ни ходов, ни слияний, ни отмен — внешнее
         // действие без записи итога разошлось бы с журналом (ТЗ, §80; аудит надёжности, A-4). Оживляет
         // контур оболочка — открыв журнал заново, когда место есть.
-        if (journal.isBroken) return
+        if (journal.isBroken || externalPause()) return
         runCommands()
         deliverIdleQueues()
         commitTasks(tasksLogic.promote(tasks, clock.now()))
@@ -735,6 +737,31 @@ class Orchestrator(
      * причины (ТЗ, §36). [code] — настоящая причина: недоступный target —
      * не «нет слота» (аудит 1 ноября 2026, A-3).
      */
+    /**
+     * Кому передать задачу у предела всех слотов её исполнителя, когда автоматический переход
+     * выключен (D-165): исполнители с готовым слотом. Нет предела, переход включён или передать
+     * некому — пусто.
+     */
+    fun handoverCandidates(task: TaskId): List<Executor> {
+        val t = tasks.tasks[task] ?: return emptyList()
+        if (control.autoExecutorSwitch || config.remote != null || t.terminal) return emptyList()
+        if (!accountsLogic.exhausted(accounts, t.policy.executor, clock.now())) return emptyList()
+        return accountsLogic.handoverCandidates(accounts, t.policy.executor, clock.now())
+    }
+
+    /**
+     * Другие исполнители с готовым слотом, если у [executor] предел всех слотов (D-165): что
+     * предложить человеку в «В ИИ» из редактора — для новой задачи и терминала ИИ тоже.
+     */
+    fun limitOffers(executor: Executor): List<Executor> =
+        if (accountsLogic.exhausted(accounts, executor, clock.now())) accountsLogic.handoverCandidates(accounts, executor, clock.now()) else emptyList()
+
+    private fun handoverOffer(task: TaskId): String? {
+        val t = tasks.tasks[task] ?: return null
+        val to = handoverCandidates(task).takeIf { it.isNotEmpty() } ?: return null
+        return "у всех слотов ${t.policy.executor.title} предел — задачу можно передать: ${to.joinToString { it.title }} (кнопка у задачи; автоматически — настройкой «Передавать задачи у предела»)"
+    }
+
     private fun waiting(task: TaskId, why: String, code: DiagCode = DiagCode.ACCOUNT_NONE_AVAILABLE) {
         if (lastWaiting.put(task, why) == why) return
         taskNotify(task, "waiting", NotificationCategory.INFO, "Задача ждёт", why)
@@ -787,8 +814,13 @@ class Orchestrator(
             waiting(task, "ход с деревом на другом target ведёт только Claude Code, а исполнитель задачи — ${t.policy.executor.title}")
             return
         }
-        // Исполнитель задачи, а у всех его слотов предел — следующий по кругу (D-100).
-        val executors = if (config.remote != null) listOf(Executor.CLAUDE) else generateSequence(t.policy.executor) { it.next }.take(Executor.entries.size).toList()
+        // Исполнитель задачи, а у всех его слотов предел — следующий по кругу (D-100), но только по
+        // настройке человека (D-165): без неё задача ждёт своего исполнителя, а человек решает, кому передать.
+        val executors = when {
+            config.remote != null -> listOf(Executor.CLAUDE)
+            control.autoExecutorSwitch -> generateSequence(t.policy.executor) { it.next }.take(Executor.entries.size).toList()
+            else -> listOf(t.policy.executor)
+        }
         executors@ for (x in executors) {
             for (candidate in order) {
                 lease = accountsLogic.lease(
@@ -806,7 +838,8 @@ class Orchestrator(
         if (lease is Outcome.Failure) {
             // Свободного слота нет: задача ждёт следующего такта — и человек видит почему (раньше — молча).
             val moved = t.excludedSlot?.let { "задача перенесена со слота $it — другого слота нет: " }.orEmpty()
-            waiting(task, moved + (first ?: lease).errors.first().message)
+            val offer = handoverOffer(task)?.let { "; $it" }.orEmpty()
+            waiting(task, moved + (first ?: lease).errors.first().message + offer)
             return
         }
         if (pin != null) setPin(task, null)
@@ -1179,7 +1212,7 @@ class Orchestrator(
         // задачу DONE без запроса, и слияния не было бы никогда.
         batch {
             commitTasks(ok(tasksLogic.complete(tasks, task, clock.now()), "завершение задачи").orEmpty())
-            if (tree != null && tasks.tasks[task]?.state == TaskState.DONE) recordMergeRequest(task, tree.branch)
+            if (tree != null && tasks.tasks[task]?.state == TaskState.DONE) recordMergeRequest(task, tree.branch, tree.path)
         }
         if (tasks.tasks[task]?.state != TaskState.DONE) return
         progress(task, NotificationCategory.SUCCESS, "Задача выполнена", why)
@@ -1555,14 +1588,28 @@ class Orchestrator(
         commitMerges(listOf(MergeEvent.Committed(task, TaskCommit(head, branch, clock.now()))))
     }
 
-    /** Слияние ждёт ответа — в журнал; сам запрос задаёт вызывающий после пачки (askMerges в такте — после перезапуска). */
-    private fun recordMergeRequest(task: TaskId, branch: String) {
+    /**
+     * Слияние ждёт ответа — в журнал; сам запрос задаёт вызывающий после пачки (askMerges в такте — после перезапуска).
+     * В предложении — ветка и коммит, прошедший проверку (аудит O-02): сливается он, а не то, что в ветке
+     * к моменту ответа. Прежнее предложение задачи с другим коммитом (задача снова была в работе) снимается.
+     */
+    private fun recordMergeRequest(task: TaskId, branch: String, path: String) {
         val repo = config.repository ?: return
         val target = config.integrationBranch ?: return
-        if (mergesState.pending.values.any { it.task == task }) return
-        val proposal = Proposal("git.merge", "${repo.root}#$target", listOf(branch))
+        val head = git?.run(GitOp.HEAD, path)?.valueOrNull()?.stdout?.firstOrNull()?.trim()?.lowercase()
+        if (head == null || !TaskCommit.HASH.matches(head)) {
+            problems += Diagnostic.warning(DiagCode.GIT_COMMAND_FAILED, "слияние не предложено: коммит проверенной работы не прочитан (${head ?: "git rev-parse не удался"})", "task $task")
+            return
+        }
+        val proposal = Proposal("git.merge", "${repo.root}#$target", listOf(branch, head))
+        val prior = mergesState.pending.values.filter { it.task == task }
+        if (prior.any { it.proposal == proposal }) return
+        commitMerges(prior.map { MergeEvent.Declined(task, it.approval, clock.now()) })
         commitMerges(listOf(MergeEvent.Requested(PendingMerge(task, ids.next(IdKinds.APPROVAL), proposal, clock.now() + requestTtl), clock.now())))
     }
+
+    /** Ветка и проверенный коммит предложения; у предложения до аудита O-02 коммита нет — `null`. */
+    private fun mergeParts(p: Proposal): Pair<String, String?> = p.arguments.first() to p.arguments.getOrNull(1)
 
     /**
      * Запрос «Слить?» (D-49) — обычный запрос человеку (D-44): уведомление,
@@ -1572,8 +1619,9 @@ class Orchestrator(
      */
     private fun askMerge(m: PendingMerge, failure: String? = null) {
         val target = m.proposal.subject.substringAfterLast('#')
-        val branch = m.proposal.arguments.joinToString(" ")
-        val body = (failure?.let { "Слияние не удалось: $it. " } ?: "Проверка прошла. ") + "Ветка задачи $branch → $target."
+        val (branch, commit) = mergeParts(m.proposal)
+        val what = commit?.let { "Ветка задачи $branch, проверенный коммит ${it.take(12)} → $target." } ?: "Ветка задачи $branch → $target."
+        val body = (failure?.let { "Слияние не удалось: $it. " } ?: "Проверка прошла. ") + what
         ask(
             RequestPurpose.TASK_MERGE, RequestKind.CONFIRMATION, "task:${m.task.value}:merge",
             "Слить в $target: ${taskTitle(m.task)}", body,
@@ -1585,6 +1633,8 @@ class Orchestrator(
     /** Ждущие слияния без ждущего запроса (истёк, перезапуск, прежний механизм одобрений) — спросить снова (A-51). */
     private fun askMerges() {
         for (m in mergesState.pending.values.sortedBy { it.approval.value }) {
+            // Задача снова в работе (аудит O-02) — не спрашивать: новая проверка заменит предложение.
+            if (tasks.tasks[m.task]?.state != TaskState.DONE) continue
             if (requests.pendingFor("task:${m.task.value}:merge") == null) askMerge(m)
         }
     }
@@ -1602,8 +1652,22 @@ class Orchestrator(
                 val repo = config.repository ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у проекта нет репозитория")
                 val g = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "нет Git")
                 val target = pending.proposal.subject.substringAfterLast('#')
+                // Аудит O-02: сливается проверенное — задача всё ещё `DONE`, ветка указывает на коммит из предложения.
+                if (tasks.tasks[task]?.state != TaskState.DONE) {
+                    return Outcome.failure(DiagCode.STATE_CONFLICT, "задача снова в работе — слияние будет предложено после новой проверки", "task $task")
+                }
+                val (branch, commit) = mergeParts(pending.proposal)
+                // Старое предложение после обновления читается, но не разрешает слияние непроверенной вершины ветки.
+                if (commit == null) {
+                    return Outcome.failure(DiagCode.STATE_CONFLICT, "предложение без проверенного коммита — повторите проверку задачи", "task $task")
+                }
+                val now = g.run(GitOp.REV_PARSE, repo.root, listOf(branch)).valueOrNull()?.stdout?.firstOrNull()?.trim()?.lowercase()
+                if (now != commit) {
+                    return Outcome.failure(DiagCode.STATE_CONFLICT, "ветка $branch изменилась после проверки (${now?.take(12) ?: "нет ветки"} вместо ${commit.take(12)}) — не сливаю", "task $task")
+                }
+                val what = listOf(commit)
                 mergeBlocker(g, repo.root, target)?.let { return it }
-                when (val m = g.run(GitOp.MERGE, repo.root, pending.proposal.arguments)) {
+                when (val m = g.run(GitOp.MERGE, repo.root, what)) {
                     is Outcome.Failure -> m.also {
                         // A-54: конфликт оставил бы рабочую копию автора посреди слияния, и повтор упал бы
                         // на нём же. До слияния копия была чистой (mergeBlocker), так что отмена ничего не теряет.
@@ -1855,7 +1919,9 @@ class Orchestrator(
      * Исполнить пришедшие команды — только поток такта и только в
      * безопасной точке: вне пачки, когда память совпадает с журналом.
      */
-    fun runCommands(): Int = if (pending != null) 0 else inbox.drain(::execute, ::settleAccepted)
+    fun manualProfileFree(): Boolean = pending == null && inbox.size == 0 && sessions.sessions.values.none { !it.terminal } && worktrees.worktrees.values.none { it.owner != null && !it.removed }
+
+    fun runCommands(): Int = if (pending != null || externalPause()) 0 else inbox.drain(::execute, ::settleAccepted)
 
     /**
      * Принять команду, когда такт занят вызовом target (D-94): сначала
@@ -1977,6 +2043,14 @@ class Orchestrator(
                     }
                 }
             }
+            is Command.SetExecutorSwitch -> record(command, provenance) {
+                if (control.autoExecutorSwitch != command.auto) {
+                    write(listOf(recorder.executorSwitchEnvelope(command.auto, clock.now())))
+                    control = control.copy(autoExecutorSwitch = command.auto)
+                }
+                Outcome.success(command.auto)
+            }
+            is Command.SetExecutor -> record(command, provenance) { setExecutor(command) }
             is Command.SetSessionLimit -> record(command, provenance) {
                 when {
                     command.limit != null && command.limit !in com.dpsmpx.dpai.orchestrator.commands.SESSION_LIMIT_RANGE ->
@@ -2029,6 +2103,30 @@ class Orchestrator(
             // Итог — состояние после правки: сначала журнал, потом ответ (в журнале ключей — то же).
             commitTasks(r.value)
             Outcome.success(tasks.tasks.getValue(task).state)
+        }
+    }
+
+    /**
+     * Передать задачу другому исполнителю по слову человека (D-165): модель и усилие политики —
+     * для прежнего исполнителя, они снимаются (как при переходе D-100); ревьюер, совпавший с новым
+     * исполнителем, — «тот же, что у задачи». Следующий ход — на слоте нового исполнителя с handoff.
+     */
+    private fun setExecutor(c: Command.SetExecutor): Outcome<TaskState> {
+        val t = tasks.tasks[c.task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task ${c.task}")
+        if (t.policy.executor == c.executor) return Outcome.success(t.state)
+        if (config.remote != null && c.executor != Executor.CLAUDE) {
+            return Outcome.failure(DiagCode.UNSUPPORTED, "ход с деревом на другом target ведёт только Claude Code", "task ${c.task}")
+        }
+        if (accounts.slots.values.none { it.executor == c.executor && !it.disabled }) {
+            return Outcome.failure(DiagCode.ACCOUNT_NONE_AVAILABLE, "у ${c.executor.title} нет включённого слота: подключите его в «Аккаунтах»", "task ${c.task}")
+        }
+        val policy = try {
+            t.policy.copy(executor = c.executor, model = null, effort = null, reviewExecutor = t.policy.reviewExecutor?.takeIf { it != c.executor })
+        } catch (e: IllegalArgumentException) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, e.message ?: "политика недопустима", "task ${c.task}")
+        }
+        return taskEdit(c.task) { tasksLogic.setPolicy(tasks, c.task, policy, clock.now()) }.also {
+            if (it is Outcome.Success) say(c.task, ChatRole.EVENT, "задача передана ${c.executor.title} человеком (была у ${t.policy.executor.title})")
         }
     }
 
@@ -2512,6 +2610,8 @@ class Orchestrator(
             when (RequestPurpose.of(r.purpose)) {
                 RequestPurpose.TASK_BLOCKED -> state != TaskState.BLOCKED
                 RequestPurpose.TASK_UNVERIFIED -> state != TaskState.COMPLETION_UNVERIFIED
+                // Слияние (аудит O-02): задача снова в работе — вопрос снят, новая проверка предложит слияние заново.
+                RequestPurpose.TASK_MERGE -> state != TaskState.DONE
                 // Ревью без итога (D-73): задача ушла из VERIFIED или ревью роли снова идёт — вопрос снят.
                 RequestPurpose.TASK_REVIEW -> state != TaskState.VERIFIED || r.task?.let { t -> tasks.tasks[t]?.let { nextReview(it) != null } } == true
                 else -> false
@@ -2697,29 +2797,10 @@ class Orchestrator(
      * Переписка задачи для свежей сессии (D-66): запросы человека и ответы
      * прошлых сессий — последние, кратко; рассуждений и событий нет.
      */
-    private fun transcriptSource(task: TaskId): ContextSource? {
-        val lines = chat(task).filter { it.role == ChatRole.USER || it.role == ChatRole.ASSISTANT }.takeLast(TRANSCRIPT_ENTRIES)
-        if (lines.isEmpty()) return null
-        val body = StringBuilder("Переписка задачи до этой сессии (человек и прошлые сессии модели, по порядку):\n")
-        for (e in lines) {
-            val who = if (e.role == ChatRole.USER) "Человек" else "Модель"
-            val text = e.text.let { if (it.length > TRANSCRIPT_ENTRY_CHARS) it.take(TRANSCRIPT_ENTRY_CHARS) + " …" else it }
-            body.append("\n").append(who).append(": ").append(text).append("\n")
-        }
-        val content = body.toString().let { if (it.length > TRANSCRIPT_CHARS) "…" + it.takeLast(TRANSCRIPT_CHARS) else it }
-        return ContextSource(TRANSCRIPT_SOURCE, SourceLevel.PROJECT, config.project, Sensitivity.INTERNAL, Origin.ORCHESTRATOR, content)
-    }
+    private fun transcriptSource(task: TaskId): ContextSource? = TaskHistoryContext.transcript(config.project, chat(task))
 
-    /** Фоновые процессы прошлых сессий (D-66): что могло пережить ход и смену слота. */
-    private fun backgroundSource(task: TaskId): ContextSource? {
-        val jobs = background(task).takeIf { it.isNotEmpty() } ?: return null
-        val text = buildString {
-            appendLine("Прошлые сессии этой задачи запускали фоновые процессы — они могут ещё работать (сессия сменилась, процессы не останавливались):")
-            for (j in jobs) appendLine("- ${j.at.toIsoString().substring(0, 16).replace('T', ' ')} UTC: `${j.command}`")
-            append("Проверь, живы ли они и что в их выводе (ps, логи), прежде чем запускать то же снова.")
-        }
-        return ContextSource(BACKGROUND_SOURCE, SourceLevel.PROJECT, config.project, Sensitivity.INTERNAL, Origin.ORCHESTRATOR, text)
-    }
+    /** Фоновые процессы прошлых сессий (D-66): данные, а не доверенные команды. */
+    private fun backgroundSource(task: TaskId): ContextSource? = TaskHistoryContext.background(config.project, background(task))
 
     /** Дописать в ленту чата задачи (D-59) и сохранить документ. */
     private fun say(task: TaskId, entries: List<ChatEntry>) {
@@ -2746,6 +2827,26 @@ class Orchestrator(
         }
         messagesOf[rec.task] = list
         saveTaskDocument("messages", rec.task, TurnMessages.toJson(list))
+    }
+
+    /** Дерево из привязки задачи (D-132). Читать под синхронизацией контроллера: treeOf изменяет такт. */
+    fun taskWorktree(task: TaskId): com.dpsmpx.dpai.git.Worktree? = treeOf[task]?.let { worktrees.worktrees[it] }?.takeIf { !it.removed }
+
+    /** Зафиксировать разрешённое чтение под замком, вызвать после освобождения (D-133). */
+    fun workspaceGitProbe(path: String): Outcome<() -> Outcome<com.dpsmpx.dpai.git.GitStatus>> {
+        val repo = config.repository ?: return Outcome.failure(DiagCode.UNSUPPORTED, "репозиторий не настроен")
+        val g = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "клиент Git не готов")
+        if (path != repo.root && worktrees.worktrees.values.none { !it.removed && it.repository == repo.id && it.path == path }) {
+            return Outcome.failure(DiagCode.STATE_CONFLICT, "путь больше не принадлежит рабочему проекту")
+        }
+        return Outcome.success({
+            when (val status = g.status(path, 256 * 1024)) {
+                is Outcome.Failure -> status
+                is Outcome.Success -> if (status.value.head?.matches(Regex("[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")) == false) {
+                    Outcome.failure(DiagCode.GIT_OUTPUT_INVALID, "Git вернул некорректный HEAD")
+                } else status
+            }
+        })
     }
 
     /**
@@ -2818,9 +2919,6 @@ class Orchestrator(
         /** Переписка задачи и фоновые процессы — в свежей сессии после прошлых (D-66). */
         const val TRANSCRIPT_SOURCE = "orchestrator:transcript"
         const val BACKGROUND_SOURCE = "orchestrator:background"
-        private const val TRANSCRIPT_ENTRIES = 12
-        private const val TRANSCRIPT_ENTRY_CHARS = 1500
-        private const val TRANSCRIPT_CHARS = 8000
 
         /** Ключ источника с выжимкой проваленной проверки (D-40). */
         const val VERIFICATION_SOURCE = "tool:verification"

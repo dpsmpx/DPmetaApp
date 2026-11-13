@@ -32,7 +32,7 @@
 ```sh
 tools/verify/run.sh static     # секунды: документы, модули, запрещённые API, секреты, контракты, формат
 tools/verify/run.sh affected   # static + сборка и тесты затронутых модулей
-tools/verify/run.sh full       # всё; пропуск недоступного шага — ошибка
+tools/verify/run.sh full       # сборка и тесты, затем отдельные замеры; пропуск недоступного шага — ошибка
 tools/verify/run.sh plan full  # что будет запущено и почему, без запуска
 tools/verify/run.sh report     # итог последнего прогона в markdown — в описание PR
 tools/verify/run.sh doctor     # окружение проверок: JDK, Python, git
@@ -55,6 +55,7 @@ tools/verify/run.sh doctor     # окружение проверок: JDK, Pytho
 | Шаг | Что ловит | Решения |
 |---|---|---|
 | формат — `tools/verify/check_format.py` | не UTF-8, CR/CRLF, нет перевода строки в конце, хвостовые пробелы, табуляции, невидимые и двунаправленные символы | D-18 |
+| порядок сборки и замеров — `tools/verify/verify_flow_test.py` | потеря замеров в full/affected, запуск после отказа сборки, скрытый отказ бюджета, устаревшее доказательство аудита | D-121 |
 | ссылки — `tools/verify/check_docs.py` | ссылки на несуществующие документы, разделы, решения, угрозы, этапы, разделы ТЗ и тесты | D-19, все |
 | модули — `tools/verify/check_modules.py` | модули и направления зависимостей не по таблице `docs/ARCHITECTURE.md`, §2; `android.*` вне `android`; `testkit` вне тестовых конфигураций; сторонняя библиотека во время выполнения; пакет исходника вне пакета модуля | D-02, D-17, D-21 |
 | запрещённые API — `tools/verify/check_forbidden_apis.py` | системное время и случайность мимо `Clock`/`RandomSource`, сон, `GlobalScope`, `runBlocking` и печать вне `cli`, `printStackTrace`, запуск процессов вне `execution`, `reveal()` вне разрешённых мест, приватные адреса провайдера | D-03, D-04, D-07, D-14 |
@@ -64,7 +65,18 @@ tools/verify/run.sh doctor     # окружение проверок: JDK, Pytho
 | зависимости — `tools/verify/check_dependencies.py` | координаты и версии мимо каталога, версия без строки `docs/PROVENANCE.md`, сумма Gradle не та, workflow GitHub Actions | D-15, D-17 |
 | README — `tools/verify/readme_progress.py --check` | раздел «Прогресс» отстал от плана, критериев, решений, `TODO.md`; этап «выполнен» при открытых критериях | — |
 | сборка и тесты — `./gradlew build` | ошибки и **предупреждения** компилятора, модульные и межмодульные тесты | D-05 … D-23 |
+| замеры — `:tests:integration:performanceTest --no-parallel --max-workers=1` | бюджеты хоста и нагрузка, отдельным вызовом Gradle после сборки; каждый раз заново | D-121 |
 | cli — в `run.sh` (`full`) | собранная команда `dpai` запускается, коды выхода и вывод | D-02 |
+
+`./gradlew build` выполняет обычные тесты, а бюджеты хоста — отдельная
+задача `performanceTest` (D-121). Полный набор запускает `run.sh full`;
+`affected` добавляет замеры, когда выбрал `:tests:integration:check`.
+Падение замеров — падение проверки, пороги остались прежними. Для
+ручного запуска после сборки:
+
+```sh
+./gradlew :tests:integration:performanceTest --no-parallel --max-workers=1
+```
 
 ### Правила
 

@@ -53,6 +53,21 @@
   --pulse: #33343a;
   color-scheme: light;
 }
+/* На сайте автора (D-28): «кто движет» — смысловые токены бренда
+   (SocialMediaImage:assets/brand/tokens.json; светлая — site_light). Различимость при
+   нарушениях цветового зрения — все пары ΔE ≥ 9 (тёмная ≥ 13,1, светлая ≥ 10,6), тест. */
+.dpvis[data-embed="site"] {
+  --human: #ff7a59;
+  --ai: #5cc8d7;
+  --check: #7fd68e;
+  --data: #a3a6ad;
+}
+.dpvis[data-embed="site"][data-theme="light"] {
+  --human: #b93a12;
+  --ai: #0b7285;
+  --check: #2f6f00;
+  --data: #55585f;
+}
 .dpvis *,
 .dpvis *::before,
 .dpvis *::after { box-sizing: border-box; }
@@ -173,7 +188,8 @@
 .dpvis .mk.drv-ai { fill: var(--ai); }
 .dpvis .mk.drv-check { fill: var(--check); }
 .dpvis .flow.st-quiet .flow-line { opacity: 0.75; }
-.dpvis .dpvis-svg[data-mode="bands"] .flow-line { opacity: 0.5; }
+/* полосы — линии не бледнее 0,85: цвет потока — смысл, контраст ≥ 3 к фону (аудит страниц сайта, P-05) */
+.dpvis .dpvis-svg[data-mode="bands"] .flow-line { opacity: 0.85; }
 .dpvis .flow.st-planned .flow-line { stroke-dasharray: 7 5; opacity: 0.75; }
 .dpvis .flow.st-blocked .flow-line, .dpvis .flow.st-off .flow-line { stroke-dasharray: 1.5 4.5; opacity: 0.7; }
 .dpvis .flow.st-unknown .flow-line, .dpvis .flow.st-unobserved .flow-line, .dpvis .flow.st-nodata .flow-line { opacity: 0.45; }

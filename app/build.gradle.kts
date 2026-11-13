@@ -42,11 +42,24 @@ android {
     }
 }
 
-// Панели проектов (F-10, D-57) — только config/projects/*.toml корня, в ресурсах APK —
-// assets/projects/<Проект>.toml; другие файлы config/ в APK не попадают.
+// Панели проектов (F-10, D-57), шаблоны поручений (F-23), реестр команд (F-40, D-82), каталог
+// событий и правила тревог (F-37, F-51; D-85) — только config/projects/*.toml, config/briefs/*.md,
+// config/commands.toml, config/events.toml и config/alerts.toml корня, в ресурсах APK —
+// assets/projects/<Проект>.toml, assets/briefs/<ключ>.md, assets/commands.toml, assets/events.toml
+// и assets/alerts.toml; другие файлы config/ в APK не попадают.
 val panelAssets = tasks.register<Sync>("panelAssets") {
-    from(rootProject.layout.projectDirectory.dir("config/projects")) { include("*.toml") }
-    into(layout.buildDirectory.dir("generated/panel-assets/projects"))
+    from(rootProject.layout.projectDirectory.dir("config/projects")) {
+        include("*.toml")
+        into("projects")
+    }
+    from(rootProject.layout.projectDirectory.dir("config/briefs")) {
+        include("*.md")
+        into("briefs")
+    }
+    from(rootProject.layout.projectDirectory.file("config/commands.toml"))
+    from(rootProject.layout.projectDirectory.file("config/events.toml"))
+    from(rootProject.layout.projectDirectory.file("config/alerts.toml"))
+    into(layout.buildDirectory.dir("generated/panel-assets"))
 }
 androidComponents {
     onVariants { v ->
@@ -67,6 +80,8 @@ kotlin {
 dependencies {
     implementation(project(":core:sync"))
     implementation(project(":core:metrics"))
+    implementation(project(":core:actions"))
+    implementation(project(":core:notify"))
     implementation("com.dpsmpx.dpai:ui")
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)

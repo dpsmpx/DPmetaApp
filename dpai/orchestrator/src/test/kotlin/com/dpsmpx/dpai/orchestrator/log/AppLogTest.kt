@@ -131,6 +131,24 @@ class AppLogTest {
         assertEquals(0, sink.dropped)
     }
 
+    /**
+     * `DPmetaApp:D-39`: в файл журнала отладки секрет не попадает, даже если строку
+     * написал пульт оболочки (`AppLogs.info`); образец собран из частей.
+     */
+    @Test
+    fun secretNeverReachesTheLogFile() {
+        val vfs = NioVfs(dir)
+        val sink = FileLogSink(vfs, maxBytes = 4_096, header = { emptyList() })
+        val log = AppLog(clock, sink)
+        val token = "gh" + "p_" + "Q7w8E9r0".repeat(5)
+        log.info("пульт", "синхронизация: токен $token")
+        log.warn("действия", "comment dpsmpx/DPmetaApp ур.1: Authorization: Bearer $token")
+        sink.close()
+        val all = sink.readAll()!!
+        assertTrue("синхронизация" in all && "действия" in all, all)
+        assertTrue(token !in all, "токен в файле журнала")
+    }
+
     @Test
     fun diskFailureDropsLinesInsteadOfCrashing() {
         val broken = object : Vfs by NioVfs(dir) {
@@ -219,5 +237,23 @@ class AppLogTest {
         val s = m.drain()
         assertEquals(TickStats(3, 20, 30, 300_030, 1), s)
         assertEquals(TickStats(0, 0, 0, 0, 0), m.drain())
+    }
+
+    /** Части такта (D-158): у медленного такта видно, что ждало; в сводке — часть самого долгого. */
+    @Test
+    fun tickMeterNamesTheSlowestPart() {
+        val m = TickMeter(clock)
+        m.begin()
+        val a = clock.monotonicNanos(); clock.advance(5.milliseconds); m.part("шаг контура", a)
+        val b = clock.monotonicNanos(); clock.advance(20_000.milliseconds); m.part("лимиты", b)
+        val c = clock.monotonicNanos(); clock.advance(1.milliseconds); m.part("шаг контура", c)
+        val slow = m.end()!!
+        assertEquals(20_006, slow.ms)
+        assertEquals(mapOf("шаг контура" to 6L, "лимиты" to 20_000L), slow.parts)
+        assertEquals("лимиты" to 20_000L, slow.slowest)
+        m.begin(); clock.advance(3.milliseconds); assertEquals(Tick(3, emptyMap()), m.end())
+        m.part("вне такта", clock.monotonicNanos())
+        assertEquals(TickStats(2, 10_004, 20_006, 20_006, 0, "лимиты" to 20_000L), m.drain())
+        assertEquals(null, m.end(), "такт не начат")
     }
 }

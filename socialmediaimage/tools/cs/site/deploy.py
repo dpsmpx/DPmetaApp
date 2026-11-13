@@ -13,6 +13,13 @@
 облачная — никогда. Выпуск открывает автор (Д34, с 05.10.2026 —
 `environments.production.live: true`); при `false` рабочая выгрузка отказывает.
 
+Вид `command` (Д55): команда выгрузки — у автора, а не в репозитории. В
+`site.yaml` — только `command_ref`, имя переменной окружения
+`CS_<ОКР>_SITE_DEPLOY_COMMAND` (окружение — как у выгрузки); значение —
+массив JSON аргументов, первый — абсолютный путь программы. Команда
+исполняется без оболочки, в выводе не печатается; список аргументов в самом
+`site.yaml` (`command`) не исполняется никогда.
+
 Водяной знак (Д41, `deploy.mark.required`): перед rsync сборка получает
 метку ключом автора (`tools/cs/mark/`); нет ключа — отказ. После выгрузки —
 манифест выпуска в `data/provenance/site-releases/` и метки времени на него;
@@ -28,11 +35,14 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..core.credentials import EnvCredentialStore
+from ..core.credentials import EnvCredentialStore, ref_environment
 from ..core.obs import is_ai_session, is_remote_session
 from ..core.repo import Repo
 
 TARGET = re.compile(r"^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:(?P<path>[^\s]+)$")
+COMMAND_REF = re.compile(r"^CS_(DEV|STAGING|PROD)_SITE_DEPLOY_COMMAND$")
+SHOWN_COMMAND = "<команда выгрузки автора>"
+MAX_COMMAND_ARGS = 64
 
 
 @dataclass
@@ -93,10 +103,38 @@ def guard(repo: Repo, env: str = "production", store: EnvCredentialStore | None 
         if not target:
             out.append(f"нет адреса выгрузки: переменная {cfg.get('target_ref')} (docs/operations/CREDENTIALS.md, «Сайт: Beget»)")
         else:
-            out += target_problems(str(target), cfg)
-    elif cfg.get("kind") != "command":
-        out.append(f"deploy.kind {cfg.get('kind')} — нужно rsync или command")
+            out += target_problems(target.reveal(), cfg)
+    elif cfg.get("kind") == "command":
+        out += author_command(cfg, env, store)[1]
+    else:
+        out.append("deploy.kind — rsync или command с командой автора (Д55)")
     return out
+
+
+def author_command(cfg: dict, env: str, store: EnvCredentialStore | None = None) -> tuple[list[str] | None, list[str]]:
+    """Команда выгрузки автора (Д55): аргументы и пусто — или None и почему нельзя.
+    Список в самом site.yaml не исполняется; значение переменной — массив JSON строк,
+    первая — абсолютный путь программы; окружение ссылки — то же, что у выгрузки."""
+    if "command" in cfg:
+        return None, ["deploy.command в site.yaml не исполняется (Д55): команда — у автора, в конфигурации — только command_ref"]
+    ref = cfg.get("command_ref")
+    if not isinstance(ref, str) or not COMMAND_REF.match(ref):
+        return None, ["deploy.command_ref — имя переменной CS_<ОКР>_SITE_DEPLOY_COMMAND (Д55)"]
+    if ref_environment(ref) != env:
+        return None, [f"deploy.command_ref {ref} — не для окружения {env}"]
+    value = (store or EnvCredentialStore()).get(ref)
+    if value is None:
+        return None, [f"нет команды выгрузки: переменная {ref} (docs/operations/CREDENTIALS.md, «Сайт: команда выгрузки»)"]
+    try:
+        argv = json.loads(value.reveal())
+    except ValueError:
+        return None, [f"переменная {ref} — не массив JSON"]
+    if (not isinstance(argv, list) or not argv or len(argv) > MAX_COMMAND_ARGS
+            or not all(isinstance(a, str) and a and "\x00" not in a for a in argv)):
+        return None, [f"переменная {ref} — массив JSON непустых строк, не длиннее {MAX_COMMAND_ARGS}"]
+    if not argv[0].startswith("/"):
+        return None, [f"переменная {ref}: программа — абсолютным путём, не из PATH"]
+    return argv, []
 
 
 def target_problems(target: str, cfg: dict) -> list[str]:
@@ -159,11 +197,29 @@ def run(repo: Repo, src: Path, env: str = "production", dry_run: bool = False,
                                                  "python3 -m tools.cs mark init"])
         files = mark_build(src, key, objects)  # повторяемо: пробный прогон видит те же байты, что и выгрузка
     if cfg.get("kind") == "command":
+        argv, why = author_command(cfg, env, store)
+        if argv is None:
+            return DeployResult(False, problems=why)
         if dry_run:
-            return DeployResult(True, list(cfg.get("command") or []), problems=["kind: command — показа изменений нет"])
-        argv = list(cfg.get("command") or [])
-    else:
-        argv = rsync_argv(src, str((store or EnvCredentialStore()).get(cfg["target_ref"])), cfg, dry_run)
+            return DeployResult(True, [SHOWN_COMMAND], problems=["kind: command — показа изменений нет"])
+        r = runner(argv, cwd=repo.root, capture_output=True, text=True)
+        if r.returncode != 0:
+            return DeployResult(False, [SHOWN_COMMAND], [], [f"выгрузка: код {r.returncode}"], (r.stderr or "")[-2000:])
+        res = DeployResult(True, [SHOWN_COMMAND], [], output=(r.stdout or "")[-4000:],
+                           marked=sum(1 for f in files or [] if f.get("method")))
+        if files is not None:
+            try:  # команда уже прошла: сбой записи манифеста выгрузку не роняет (Д41)
+                res.release, res.stamps = record_release(repo, env, files, key, mcfg, now, post, stamp_runner)
+            except Exception as e:
+                res.problems.append(f"манифест выпуска не записан ({type(e).__name__}: {e}) — сайт выгружен")
+        return res
+    target = (store or EnvCredentialStore()).get(cfg["target_ref"])
+    if target is None:
+        return DeployResult(False, problems=["адрес выгрузки больше недоступен"])
+    problems = target_problems(target.reveal(), cfg)
+    if problems:
+        return DeployResult(False, problems=problems)
+    argv = rsync_argv(src, target.reveal(), cfg, dry_run)
     r = runner(argv, cwd=repo.root, capture_output=True, text=True)
     shown = [a if not TARGET.match(a.rstrip("/")) else "<адрес выгрузки>" for a in argv]
     changes = [ln for ln in (r.stdout or "").splitlines() if ln[:1] in "<>ch*." and ln.strip()]

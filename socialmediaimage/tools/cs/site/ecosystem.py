@@ -25,11 +25,6 @@ PUBLIC_SCHEMA = "dpvis-public/1"
 E = html.escape
 
 
-def csp_with_scripts(csp: str) -> str:
-    """CSP сайта, где разрешены только свои скрипты (раздел «Экосистема»)."""
-    return csp.replace("script-src 'none'", "script-src 'self'")
-
-
 def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -133,21 +128,16 @@ def static_summary(data: dict) -> str:
 
 
 def page_main(data: dict, base_path: str, as_of_text: str, path_href: str | None = None) -> str:
-    """path_href — раздел «Путь» (Д44): откуда система выросла и к какой цели идёт."""
-    src = f"{base_path}dpvis-data.json"
+    """Статичный список системы по слоям (Д51): без скрипта, стилей и данных схемы.
+    path_href — раздел «Путь» (Д44): откуда система выросла и к какой цели идёт."""
     see_path = (f'<p>Откуда эта система выросла и к какой цели идёт — <a href="{E(path_href)}">Путь</a>.</p>'
                 if path_href else "")
     return (
         '<article class="page page-ecosystem">'
         "<h1>Экосистема</h1>"
-        '<p class="lead">Система, которую я строю: проекты по слоям и потоки работы между ними. '
-        "Числа — из истории git на дату среза; цвет потока — кто его движет: мои решения, "
-        "работа сессий ИИ, проверки, данные. Нажмите проект — появятся его роль, стадия и коммиты по дням.</p>"
-        f'<div class="dpvis-host" data-dpvis data-embed="site" data-theme="auto" data-src="{E(src)}">'
-        '<p class="muted">Схема загружается…</p></div>'
-        "<noscript><p>Схема интерактивная и работает на JavaScript. Ниже — та же система списком.</p></noscript>"
-        f'<section class="eco-static" aria-label="Система списком"><h2>Система по слоям</h2>{static_summary(data)}'
-        f'<p class="muted">Срез {E(as_of_text)}. Старые открытые проекты, личные устройства и подробности '
-        "рабочих веток в эту схему не входят.</p></section>"
+        '<p class="lead">Система, которую я строю: проекты по слоям — что каждый делает и на какой он стадии.</p>'
+        f'<section class="eco-static" aria-label="Система по слоям">{static_summary(data)}'
+        f'<p class="muted">Срез на {E(as_of_text)}. Старые открытые проекты, личные устройства и подробности '
+        "рабочих веток в этот список не входят.</p></section>"
         f"{see_path}</article>"
     )

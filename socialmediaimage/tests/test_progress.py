@@ -93,6 +93,30 @@ class Figures(unittest.TestCase):
         en, _ = render(self.p, "method", "en")
         self.assertIn("early open projects that predate the game repository — <code>Andors-Love</code>", en)
 
+    def test_codebase_per_repo_in_table(self):
+        # P-19: строки по репозиториям — в таблице значений, а не только в подсказке мыши (на сайте её нет, Д51)
+        for lang in ("ru", "en"):
+            html_, _ = render(self.p, "codebase", lang)
+            tables = re.findall(r'<details class="fdata">.*?</details>', html_, re.S)
+            self.assertEqual(len(tables), 2, lang)
+            per_repo = tables[1]
+            for k in self.p.listed(self.p.core()):
+                if self.p.lines(k, self.p.n - 1):
+                    self.assertIn(f'<th scope="row">{self.p.name(k, lang)}</th>', per_repo, (lang, k))
+
+    def test_method_without_codes_and_russian_marked_on_en(self):
+        # Д50: в методике нет номеров решений и контрактов; P-11 (WCAG 3.1.2): русская причина без перевода
+        # на английской странице — в элементе с lang="ru"
+        for lang in ("ru", "en"):
+            html_, _ = render(self.p, "method", lang)
+            self.assertIsNone(re.search(r"\b[ДР]\d+|\b(?:C|M|D)-\d+", re.sub(r"<[^>]+>", " ", html_)), lang)
+        en, _ = render(self.p, "method", "en")
+        outside = re.sub(r'<span lang="ru">[^<]*</span>', "", en)
+        self.assertIsNone(re.search(r"[А-Яа-яЁё]", re.sub(r"<[^>]+>", " ", outside)), "кириллица вне lang=ru")
+        self.assertIn('<span lang="ru">', en)
+        ru, _ = render(self.p, "method", "ru")
+        self.assertNotIn('lang="ru"', ru)
+
     def test_three_groups_and_no_archive(self):
         # Д38, слово автора 09.10.2026: только текущая система — ядро, управление и поддерживающий слой;
         # 10.10.2026: DPmeta — слой синхронизации
@@ -120,11 +144,39 @@ class Figures(unittest.TestCase):
         # подпись неполного последнего дня — без чужой даты (раньше было зашито «5 октября»)
         act, _ = render(self.p, "activity", "ru")
         self.assertNotIn("5 октября учтено", act)
-        self.assertIn("9 октября, пт — учтено до 19:00", act)
+        # Лёгкий сайт (Д51): одна раскладка, без подсказок наведения и целей под них; значения — в таблице.
+        self.assertEqual(act.count("<svg"), 1)
+        self.assertNotIn("<g><title>", act)
+        self.assertNotIn("c-hit", act)
+        self.assertIn("Таблица значений", act)
         archived = {x["slug"].split("/")[-1] for x in self.p.scope["excluded"] if x["kind"] == "archive"}
         for fid in ("repos", "ecosystem", "snapshot"):
             html_, _ = render(self.p, fid, "ru")
             self.assertFalse([n for n in archived if n in html_], fid)
+
+    def test_svg_not_shrunk_on_phone(self):
+        """P-03 аудита страниц 8.11.2026: viewBox фигур не шире колонки на телефоне 390 px (348 px), малых
+        графиков — не шире минимума колонки сетки (220 px): SVG не ужимается, текст не мельче 12 px."""
+        from tools.cs.progress import charts
+        css = (Path(__file__).resolve().parents[1] / "website/static/style.css").read_text(encoding="utf-8")
+        self.assertLessEqual(charts.NARROW["w"], 348)
+        mult_min = int(re.search(r"\.mults \{[^}]*minmax\((\d+)px", css).group(1))
+        self.assertLessEqual(charts.MULT["w"], mult_min)
+        seen = set()
+        for fid in FIGURES:
+            html_, _ = render(self.p, fid, "ru")
+            for vb in re.findall(r'class="chart"[^>]*viewBox="0 0 (\d+) ', html_):
+                self.assertIn(int(vb), (charts.NARROW["w"], charts.MULT["w"]), f"{fid}: viewBox {vb}")
+                seen.add(int(vb))
+        self.assertEqual(seen, {charts.NARROW["w"], charts.MULT["w"]}, "обе ширины встречаются — проверка не пустая")
+
+    def test_axis_labels_fit_left_margin(self):
+        """P-19: левое поле — под самую длинную подпись оси («600 тыс.»), а не постоянное."""
+        from tools.cs.progress.charts import AXIS_FONT, CH, fmt_tick, tick_room
+        big = [0, 200000, 400000, 600000]
+        need = max(len(fmt_tick(v, "ru")) for v in big) * CH * AXIS_FONT + 6
+        self.assertGreaterEqual(tick_room(big, "ru", 32), need, "«600 тыс.» помещается слева от оси")
+        self.assertEqual(tick_room([0, 5, 10], "ru", 32), 32, "короткие подписи — прежнее поле")
 
     def test_old_dataset_hides_archive(self):
         old = Progress(Repo(), OLD)
@@ -229,6 +281,22 @@ class SitePage(unittest.TestCase):
         self.assertFalse((pr / "api/v1/progress.json").exists())
         self.assertNotIn("/progress/", (pr / "index.html").read_text(encoding="utf-8"))
         self.assertEqual(rep.errors, [])
+
+
+
+
+class PublicText(unittest.TestCase):
+    """На «Прогрессе» внутренних кодов нет (Д50): номера контрактов и решений убираются, текст остаётся."""
+
+    def test_codes_are_removed(self):
+        from tools.cs.progress.figures import public_text
+        self.assertEqual(public_text("DPmeta C-01"), "DPmeta")
+        self.assertEqual(public_text("форк чужого проекта — вне иерархии проектов (Д5)"), "форк чужого проекта — вне иерархии проектов")
+        self.assertEqual(public_text("README профиля GitHub — не проект; правит только автор (DPmeta C-07)"),
+                         "README профиля GitHub — не проект; правит только автор")
+        # Скобки без кода и текст без кода — как были.
+        self.assertEqual(public_text("реестр (через DPmeta)"), "реестр (через DPmeta)")
+        self.assertEqual(public_text("одиночный скрипт вне карты проектов"), "одиночный скрипт вне карты проектов")
 
 
 if __name__ == "__main__":

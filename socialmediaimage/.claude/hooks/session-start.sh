@@ -7,10 +7,10 @@ cd "${CLAUDE_PROJECT_DIR:-$(dirname "$0")/../..}" || exit 0
 # Зависимости tools/cs — в облачной сессии ставятся, если их нет (идемпотентно).
 if ! python3 -c "import yaml, jsonschema" 2>/dev/null; then
   if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
-    pip install -q -r tools/requirements.txt >/dev/null 2>&1 \
-      || echo "! не удалось установить зависимости: pip install -r tools/requirements.txt"
+    python3 -m pip install -q --require-hashes -r tools/requirements.txt >/dev/null 2>&1 \
+      || echo "! не удалось установить зависимости: python3 -m pip install --require-hashes -r tools/requirements.txt"
   else
-    echo "! нужны PyYAML и jsonschema: pip install -r tools/requirements.txt"
+    echo "! нужны PyYAML и jsonschema: python3 -m pip install --require-hashes -r tools/requirements.txt"
   fi
 fi
 if ! command -v node >/dev/null 2>&1; then
@@ -32,7 +32,7 @@ while read -r br; do
   n=$(git rev-list --count "$base..$br" 2>/dev/null || echo 0)
   if [ "$n" -gt 0 ]; then
     found=1
-    echo "  $br — коммитов сверх $base: $n; последний: $(git log -1 --format='%cs %s' "$br")"
+    echo "  $br — коммитов сверх $base: $n; последний: $(git log -1 --format='%cs' "$br")"
   fi
 done < <(git for-each-ref --format='%(refname:short)' refs/remotes/origin refs/heads | grep -vE '^(origin/)?(main|HEAD)$|^origin$')
 [ $found -eq 0 ] && echo "  нет"

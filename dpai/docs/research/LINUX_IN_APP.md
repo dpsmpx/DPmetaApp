@@ -91,6 +91,21 @@ GPL-2.0-or-later.
 (`docs/research/CLAUDE_CODE_CLI.md`, §9, §10, 2.1.292 через
 `proot-distro` Termux).
 
+Проверено **9 ноября 2026** на машине сборки (x86_64, облачная сессия
+DPmetaApp): тот же proot-static 5.4.0 и Alpine 3.24.3, что в APK, но
+x86_64 (`tools/linux/host-env.sh`). `npm install -g
+@anthropic-ai/claude-code` — версия **2.1.319**: обёртка ставит пакет
+платформы (`claude-code-linux-x64-musl`), и её `postinstall` кладёт его
+бинарник в `bin/claude.exe` — сначала жёсткой ссылкой, при отказе ссылки
+(`EPERM`, `EXDEV` или повторный отказ после удаления заглушки) — копией.
+Бинарник — 326 МБ, зависимость одна — `libc.musl-x86_64.so.1`; на Android
+жёсткая ссылка запрещена (§9), так что на телефоне ждать копии — около
+0,7 ГБ вместе с пакетом. `claude --version` — 2.1.319; ход без входа в
+пустом `CLAUDE_CONFIG_DIR` — поток `stream-json` с
+`error: authentication_failed` и кодом выхода 1, запроса к модели нет
+(образец `tests/data/claude-stream/auth-failed-alpine.jsonl`). Пакеты
+`libgcc`, `libstdc++`, `ripgrep` для этой сборки не понадобились.
+
 ## 5. Процессы приложения в фоне
 
 По источникам, **18 октября 2026** (документы agnostic-apollo,
@@ -232,3 +247,131 @@ Android 15 (SDK 35), ядро `5.15.194-android13`, страница памят�
 - **Не проверено:** ход Claude Code под proot приложения против
   `proot-distro` Termux (§8, п. 3) — нужен вход в Claude, у пробника его
   нет; ядро со страницами 16 КБ (§8, п. 5).
+
+## 10. Фильтр seccomp Android: код 159 у Node, bash, python и Go
+
+9 ноября 2026, Xiaomi 23124RA7EO (Android 15, API 35), сборка 0.4.0-dev.13:
+«Поставить Claude Code» — «Установка завершилась с кодом 159» через ~15 с
+после `apk add` (журнал приложения, присланный автором). 159 = 128 + 31:
+процесс убит сигналом 31, SIGSYS.
+
+- **Фильтр приложений.** Android ставит процессу приложения фильтр seccomp;
+  вызов не из списка — `SECCOMP_RET_TRAP`, то есть SIGSYS. Список для
+  arm64 — по файлам bionic ветки `android15-release` (коммит `361ba867`,
+  `libc/SYSCALLS.TXT` и `SECCOMP_*.TXT`, прочитано 9 ноября 2026; правило
+  сборки — `libc/tools/genseccomp.py`: вызовы libc и белые списки минус
+  чёрные). Нет в нём, среди прочего: `io_uring_setup`, `io_uring_enter`,
+  `io_uring_register`, `faccessat2`, `openat2`, `rseq`, `set_robust_list`,
+  `futex_waitv`, `landlock_*`; запрещены `setuid`/`setgid`/`setgroups` и
+  родственные, `chroot`, `mount`, `sethostname` и др.
+- **Кто их зовёт** (`strace` в Alpine 3.24 x86_64 на машине сборки, 9 ноября
+  2026). `node` 24.22.1 и `npm` 11.12.1 — `io_uring_setup` при каждом
+  запуске: libuv 1.52.1, вшитый в Node, открывает кольцо io_uring для
+  пакетной `epoll_ctl` всегда; `UV_USE_IO_URING=0` выключает только кольцо
+  файловых операций, а пропуск io_uring целиком — только в сборке под
+  Android (`#if defined(__ANDROID_API__)`, `src/unix/linux.c` v1.52.1).
+  `bash` 5 в `test -x` и `python3` в `os.access(…, effective_ids=True)` —
+  `faccessat2` (musl 1.2.6 пробует его первым при флаге `AT_EACCESS`).
+  `gh` 2.97.0 (Go) — `faccessat2` в `exec.LookPath` перед запуском `git`.
+  `claude` 2.1.319 (`--version`, `doctor`) и `git` — ничего запрещённого.
+- **Воспроизведено на машине сборки.** Тот же фильтр (списки bionic выше,
+  arm64 → x86_64: старые вызовы x86_64 разрешены, если разрешён их
+  arm64-аналог) поверх proot 5.4.0 Alpine: `node`, `npm` — «Bad system
+  call», код 159; `bash -c 'test -x /bin/sh'` и `python3` с `os.access` —
+  159; `gh pr list` в репозитории — «SIGSYS: bad system call» (паника Go);
+  `sh`, `git`, `claude --version` — код 0.
+- **proot 5.4.0 и форк Termux.** proot 5.4.0 (`proot-me/proot`) SIGSYS
+  трассируемого не обрабатывает — сигнал доходит до процесса. Форк Termux
+  (`termux/proot`, коммит `52d65a4d`, тег `v5.1.107.102`, прочитано 9
+  ноября 2026) перехватывает SIGSYS от чужого фильтра
+  (`src/tracee/seccomp.c`, `handle_seccomp_event`): часть вызовов
+  заменяет разрешёнными (`open` → `openat` и др.) или изображает
+  (`setgroups`, `mount` и др.), остальным отвечает `-ENOSYS`. Собранный
+  статически под musl (D-115), под тем же фильтром: `node`, `npm`, `bash
+  test -x`, `python3`, `claude --version`, `gh` в репозитории (дошёл до
+  сети), `apk`, фоновый процесс с `--kill-on-exit` — код 0; установка
+  `npm install -g @anthropic-ai/claude-code` — 9 с, `claude -p` без входа —
+  обычный отказ входа, код 1.
+- **Прокладка `LD_PRELOAD` в госте** (проба, в продукт не вошла):
+  обработчик SIGSYS с ответом `-ENOSYS` чинит программы с musl (node, bash,
+  python), но не Go — среда Go ставит свой обработчик SIGSYS.
+- **Claude Code и оболочка.** Без bash или zsh Claude Code команды не
+  выполняет: строка «No suitable shell found» и проверка «valid bash/zsh
+  path» в `claude.exe` 2.1.319; в minirootfs Alpine — только `sh` busybox.
+  Поиск — встроенный ripgrep: `claude doctor` — «Search: OK (bundled)» в
+  Alpine x86_64.
+
+## 11. Жёсткие ссылки пакетов и «N errors» у `apk`
+
+13 ноября 2026, журнал приложения автора (Xiaomi 23124RA7EO, Android 15,
+сборка dev.35) и отчёт Claude Code в Linux приложения: «Библиотеки IDE» —
+`apk` код 3, «failed to extract usr/bin/ar: Permission denied» у binutils
+2.45.1-r1, то же у gcc 15.2.0-r5 и g++; дальше любая команда пакетов
+(«Обновить всё», установка Claude Code, Python и Git для DP-Verify)
+кончалась «3 errors; 777.0 MiB in 94 packages» и кодом 3.
+
+- **Причина — жёсткие ссылки внутри пакетов.** Все отказавшие файлы
+  binutils, gcc и g++ в Alpine — жёсткие ссылки (`usr/bin/ar` и
+  `usr/<триплет>/bin/ar` и т. п.); Android запрещает `link()` в данных
+  приложения (§9). Машина сборки, Alpine 3.24 x86_64 под proot форка
+  Termux (D-115, `tools/linux/host-env.sh`), 13 ноября 2026: `apk add
+  binutils` без `--link2symlink` оставляет на хосте 20 файлов с числом
+  ссылок больше 1 — на телефоне каждая из них — «Permission denied».
+- **`--link2symlink` форка Termux работает.** С ключом: `ln a b` в госте —
+  код 0, гость видит два имени с числом ссылок 2, на хосте оба имени —
+  символьные ссылки на скрытый `.l2s.a0001` рядом, жёстких ссылок нет;
+  `apk add binutils` — код 0, ни одной жёсткой ссылки на хосте, `ar
+  --version` и `ld --version` в госте работают. С `/proc` у гостя
+  (терминал) `apk add make` с ключом — тоже код 0. Git с ключом: три
+  коммита, `git gc`, `git fsck` — без ошибок (в `.git` — символьные ссылки
+  `.l2s.*`). Цели ссылок — абсолютные пути хоста: перенос каталога внутри
+  корневой системы их рвёт.
+- **Отметка повреждения и её починка.** Пакет, распакованный не до конца,
+  apk-tools 3 отмечает в `/lib/apk/db/installed` полем `f:` (`f` — файлы,
+  `s` — скрипт, `x` — атрибуты). Проверено той же средой: строка `f:f` у
+  binutils — следующая команда `apk add bash` (чужой пакет) печатает «1
+  error; …» и кончается кодом 1; `apk fix --no-progress` (без имён — все
+  отмеченные) с `--link2symlink` переустанавливает binutils, код 0,
+  отметка снята.
+- **Помощник входа Git из `GH_TOKEN`.** `/etc/gitconfig` с
+  `[credential "https://github.com"]` и помощником-функцией оболочки,
+  проверено `git credential fill` в госте: с `GH_TOKEN` — `username=
+  x-access-token` и `password=<токен>`; без переменной — помощник молчит,
+  Git спрашивает имя (без терминала — «terminal prompts disabled»); для
+  другого хоста помощник не вызывается.
+
+## 12. Отладчики по DAP: gdb и debugpy
+
+13 ноября 2026, машина сборки (x86-64, Ubuntu 24.04): gdb 15.1
+(`GNU gdb (Ubuntu 15.1-1ubuntu1~24.04.1)`), debugpy 1.8.22 в окружении
+Python; под proot приложения (форк Termux, D-115) на копии корневой
+системы Alpine — gdb 16 из пакета Alpine `gdb` и debugpy (журнал сессии
+того же дня). Программа на C — `cc -g -O0`, точка — в функции `sq`.
+
+- **gdb отвечает по DAP** — `gdb -i=dap -q`: `initialize`, точки, `launch`,
+  остановка с `stackTrace`, `scopes`, `variables`, шаг и выход с кодом
+  работают и на машине сборки, и под proot.
+- **`initialized` у gdb — сразу после ответа `initialize`**, у debugpy —
+  после `launch`.
+- **gdb 15.1 запускает программу уже по `launch`.** Порядок «`launch` →
+  точки → `configurationDone`» (спецификация DAP) — программа проходит
+  мимо точки и выходит до `setBreakpoints`; порядок «`initialized` →
+  `setBreakpoints` → `launch` → `configurationDone`» — остановка на точке.
+  gdb 16 из Alpine работает при обоих порядках и отвечает на `launch`
+  после `configurationDone`. Клиент для gdb ставит точки до `launch`
+  (`DebugLaunch.configureFirst`, D-159).
+- **Точка до загрузки программы — отложенная:** ответ `setBreakpoints` —
+  `verified: false` и в выводе «No source file named …», «Breakpoint 1 …
+  pending»; после `launch` — событие `breakpoint` (`changed`,
+  `verified: true`) с тем же `id`.
+- **`evaluate` с `context: repl` у gdb — команда gdb**, а не выражение:
+  `x*x` — команда `x` («Cannot access memory at address 0x7»). Выражение
+  языка — `context: watch`; debugpy вычисляет выражение в обоих.
+- **debugpy** — `python -m debugpy.adapter`, `launch` с `console:
+  internalConsole`: вывод программы — событиями `output`, ответ `launch` —
+  после `configurationDone`.
+- **Копия корневой системы ломает ссылки `.l2s`** (§11): после копирования
+  каталога гостя binutils пришлось переустановить, иначе компоновщик не
+  находился.
+
+Проверка — `DapLiveTest` (`-Ddpai.test.gdb`, `-Ddpai.test.debugpy`).

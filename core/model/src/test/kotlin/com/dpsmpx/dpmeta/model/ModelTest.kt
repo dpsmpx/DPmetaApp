@@ -13,6 +13,16 @@ import kotlin.test.assertNotEquals
 
 /** Типы предметной области (ТЗ, §6.3): строгие ссылки, наблюдение и его отпечаток (вход вычисления, D-34). */
 class ModelTest {
+    @Test
+    fun registryCannotSupplyBacktrackingExpressions() {
+        for (pattern in listOf("D-\\d+", "Р\\d+", "(?:TR|[FNIALRQ])-\\d+")) {
+            assertIs<Outcome.Success<*>>(IdSource("doc.md", pattern).regex(), pattern)
+        }
+        for (pattern in listOf("(a+)+$", "(?:a+)+\\d+", "(?:a|(?:aa))*\\d+", "a{999999}\\d+", "a.*\\d+")) {
+            assertIs<Outcome.Failure>(IdSource("doc.md", pattern).regex(), pattern)
+        }
+    }
+
     private val payload = JsonObject(linkedMapOf("open" to JsonNumber.of(3), "title" to JsonString("этап 2")))
 
     private fun observation(asOf: Long = 1_000, raw: String = "ответ") =
@@ -40,8 +50,10 @@ class ModelTest {
         assertIs<Outcome.Failure>(Observation.of(ObservationSource.SITE, "dpsmpx.com\n", "probe", Timestamp(0), "site.probe.v1", payload, h))
     }
 
+    /** Уровни 0–3 по порядку (D-07; уровень 3 — D-37: доступен с предупреждением и вводом имени). */
     @Test
-    fun noLevelThreeExists() {
-        assertEquals(listOf(0, 1, 2), ActionLevel.entries.map { it.code }, "уровень 3 в коде отсутствует (D-07)")
+    fun levelsZeroToThree() {
+        assertEquals(listOf(0, 1, 2, 3), ActionLevel.entries.map { it.code })
+        assertEquals(ActionLevel.DANGEROUS, ActionLevel.entries.last())
     }
 }

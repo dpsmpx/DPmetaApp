@@ -103,40 +103,51 @@ object Screens {
         syncHealth = s.syncHealth.orNull()?.let { "$it % источников" } ?: UNKNOWN,
     )
 
-    // --- Панель пульта (D-73) ---
+    // --- Левая панель приложения (D-112; прежде — нижняя панель D-73) ---
 
-    /** Пункты панели пульта со своими экранами; «AI» — не пункт, а вход в подсистему (D-53). */
-    enum class Section(val title: String) { SUMMARY("Сводка"), DEV("Разработка"), STATS("Статистика"), MORE("Ещё") }
+    /** Разделы пульта со своими экранами; графиков нет (D-112): «Статистика» убрана, сводка — числами. */
+    enum class Section(val title: String) { SUMMARY("Сводка"), DEV("Проекты"), MORE("Настройки"), HELP("Справка") }
 
-    /** Вкладки сверху «Разработки» (D-73): проекты и вопросы автору; позже — PR (F-11). */
-    enum class DevTab(val title: String) { PROJECTS("Проекты"), QUESTIONS("Вопросы") }
+    /** Вкладки раздела «Проекты» — в верхней панели (D-113): проекты, PR (F-11), вопросы автору. */
+    enum class DevTab(val title: String) { PROJECTS("Проекты"), PULLS("PR"), QUESTIONS("Вопросы") }
 
     /**
-     * Пункты панели по порядку (D-73) — по нему рисует экран: `null` — вход
-     * «AI» перед «Ещё», если подсистема есть. С «Соцсетями» — шесть.
+     * Пункт левой панели: раздел пульта или вход в окно «AI» ([section] `null`):
+     * IDE — «AI» на вкладке «Файлы», AI — окно «AI» (D-53, D-112).
      */
-    fun panelItems(ai: Boolean): List<Section?> = Section.entries.flatMap { if (it == Section.MORE && ai) listOf(null, it) else listOf(it) }
+    enum class Entry(val title: String, val section: Section?) {
+        SUMMARY("Сводка", Section.SUMMARY),
+        PROJECTS("Проекты", Section.DEV),
+        IDE("IDE", null),
+        AI(AI_TITLE, null),
+        SETTINGS("Настройки", Section.MORE),
+        HELP("Справка", Section.HELP),
+    }
 
-    /** Подписи панели — для снимка (D-73). */
-    fun panel(ai: Boolean): List<String> = panelItems(ai).map { it?.title ?: AI_TITLE }
+    /** Пункты левой панели по порядку; без подсистемы «AI» — без IDE и AI. */
+    fun panelItems(ai: Boolean): List<Entry> = Entry.entries.filter { ai || it.section != null }
+
+    /** Подписи панели — для снимка. */
+    fun panel(ai: Boolean): List<String> = panelItems(ai).map { it.title }
 
     /** Подпись входа в подсистему «AI» на панели (D-53). */
     const val AI_TITLE = "AI"
 
     /** Куда ведёт касание плитки сводки (UX-6; ТЗ, F-04: «каждая плитка ведёт на свой экран»). */
-    enum class Goes(val title: String) { PROJECTS("Проекты"), QUESTIONS("Вопросы"), SYNC("Ещё") }
+    enum class Goes(val title: String) { PROJECTS("Проекты"), PULLS("PR"), QUESTIONS("Вопросы"), SYNC("Настройки") }
 
     /** Плитка сводки: [metric] — ряд истории для изменения и спарклайна (F-34), нет — без них. */
     data class Tile(val title: String, val value: String, val goes: Goes, val metric: String? = null)
 
     /**
      * Сводка — одной сеткой плиток (UX-6): «Работают N из M» вместо двух строк,
-     * у каждой — свой экран. PR — к проектам, пока нет экрана PR (F-11).
+     * у каждой — свой экран. «PR ждут» — к списку PR (F-11) на фильтре «Все»: плитка
+     * считает все открытые PR (`repo.pr.open`), с черновиками.
      */
     fun tiles(s: Summary): List<Tile> = listOf(
         Tile("Работают", if (s.active == UNKNOWN) UNKNOWN else "${s.active} из ${s.projects}", Goes.PROJECTS, "eco.active_projects"),
         Tile("Вопросов автору", s.questions, Goes.QUESTIONS, "eco.questions_open"),
-        Tile("PR ждут", s.pullsWaiting, Goes.PROJECTS),
+        Tile("PR ждут", s.pullsWaiting, Goes.PULLS),
         Tile("Ошибок источников", s.sourceErrors.toString(), Goes.PROJECTS),
         Tile("Шлюз готов", s.gatesReady, Goes.PROJECTS),
         Tile("Синхронизация", s.syncHealth, Goes.SYNC, "app.sync.health"),
@@ -149,15 +160,20 @@ object Screens {
      * контура — пульт об «AI» не знает (D-53). [configured] — `false`: демо
      * или не настроено.
      */
-    data class AiCounts(val configured: Boolean, val waiting: Measure<Long>, val running: Measure<Long>, val nearLimit: Measure<Long>)
+    data class AiCounts(val configured: Boolean, val waiting: Measure<Long>, val running: Measure<Long>, val nearLimit: Measure<Long>, val problems: Int = 0)
 
-    /** Строка «AI» сводки; неизвестное — словом, не нулём. */
-    fun aiLine(c: AiCounts): String =
-        if (!c.configured) {
+    /**
+     * Строка «AI» сводки; неизвестное — словом, не нулём. Проблемы проверки приложения
+     * (D-123) — числом в конце, пока они есть: и когда «AI» ещё не настроен.
+     */
+    fun aiLine(c: AiCounts): String {
+        val line = if (!c.configured) {
             "AI: не настроено"
         } else {
             "AI: ждут ответа ${show(c.waiting)} · в работе ${show(c.running)} · подписки у предела ${show(c.nearLimit)}"
         }
+        return if (c.problems > 0) "$line · проблем: ${c.problems}" else line
+    }
 
     /** Касание строки «AI» — на «Запросы», если ответа ждут (D-76). */
     fun aiToRequests(c: AiCounts): Boolean = c.configured && (c.waiting.orNull() ?: 0L) > 0L
@@ -247,7 +263,8 @@ object Screens {
     fun checkedLine(c: Checked?): String =
         c?.let { "#${it.number} — ${it.verdict}, ${it.age}" + (it.line?.let { l -> "; «$l»" } ?: "") } ?: UNKNOWN
 
-    data class Pull(val number: Long, val title: String, val draft: Boolean, val head: String, val updated: String)
+    /** PR в карточке; [checks] — вердикт раздела «Проверки» описания (`green`, `red`, `null`, F-15) — для «Влить» (F-13). */
+    data class Pull(val number: Long, val title: String, val draft: Boolean, val head: String, val updated: String, val checks: String? = null)
 
     data class BranchRow(val name: String, val updated: String, val recent: Boolean)
 
@@ -334,7 +351,7 @@ object Screens {
             )
         }
         val pulls = objects(payload(p, "pulls"), "pulls").map { o ->
-            Pull(long(o, "number") ?: 0, str(o, "title").orEmpty(), (o["draft"] as? JsonBool)?.value ?: false, str(o, "head").orEmpty(), long(o, "updatedAt")?.let { time(Timestamp(it)) }.orEmpty())
+            Pull(long(o, "number") ?: 0, str(o, "title").orEmpty(), (o["draft"] as? JsonBool)?.value ?: false, str(o, "head").orEmpty(), long(o, "updatedAt")?.let { time(Timestamp(it)) }.orEmpty(), str(o, "checks"))
         }
         val recentFrom = (s.asOf - Rules.BRANCH_OR_PR_WINDOW).epochMillis
         val branches = objects(payload(p, "branches"), "branches").map { o ->
@@ -391,6 +408,72 @@ object Screens {
         }
     }
 
+    // --- PR всех проектов (F-11) ---
+
+    /**
+     * Строка списка PR (F-11). [waitingMillis] — сколько ждёт с последнего обновления (как
+     * `repo.pr.waiting_author`); [stale] — ждёт автора дольше [Rules.PR_WAITING_LIMIT].
+     */
+    data class PullRow(
+        val project: String,
+        val number: Long,
+        val title: String,
+        val draft: Boolean,
+        val head: String,
+        val author: String,
+        val checks: String?,
+        val waitingMillis: Long?,
+        val stale: Boolean,
+        /** Когда PR открыт (мс UTC); `null` — GitHub не сообщил. */
+        val createdAt: Long? = null,
+    )
+
+    /** Фильтры списка (F-11): «ждут автора» — открыт и не черновик; «давние» — ждут дольше срока шлюза. */
+    enum class PullFilter(val title: String) { ALL("Все"), WAITING("Ждут автора"), DRAFTS("Черновики"), STALE("Давние") }
+
+    fun pulls(s: EcosystemState): List<PullRow> = s.projects.flatMap { p ->
+        objects(payload(p, "pulls"), "pulls").map { o ->
+            val draft = (o["draft"] as? JsonBool)?.value == true
+            val since = long(o, "updatedAt") ?: long(o, "createdAt")
+            val waiting = since?.let { s.asOf.epochMillis - it }
+            PullRow(
+                p.name, long(o, "number") ?: 0, str(o, "title").orEmpty(), draft, str(o, "head").orEmpty(), str(o, "author").orEmpty(),
+                str(o, "checks"), waiting, !draft && waiting != null && waiting > Rules.PR_WAITING_LIMIT.inWholeMilliseconds,
+                long(o, "createdAt"),
+            )
+        }
+    }
+
+    /**
+     * Отбор и порядок (F-11): ждущие и давние — дольше ждущие сверху; остальные — свежие
+     * сверху. [project] — только этот проект, `null` — все.
+     */
+    fun filterPulls(rows: List<PullRow>, filter: PullFilter, project: String?): List<PullRow> {
+        val picked = rows.filter { project == null || it.project == project }.filter {
+            when (filter) {
+                PullFilter.ALL -> true
+                PullFilter.WAITING -> !it.draft
+                PullFilter.DRAFTS -> it.draft
+                PullFilter.STALE -> it.stale
+            }
+        }
+        return when (filter) {
+            PullFilter.WAITING, PullFilter.STALE -> picked.sortedByDescending { it.waitingMillis ?: -1 }
+            else -> picked.sortedBy { it.waitingMillis ?: Long.MAX_VALUE }
+        }
+    }
+
+    /** Вторая строка PR в списке: проект, ветка, автор, сколько ждёт, проверки. */
+    fun pullLine(r: PullRow, now: Timestamp): String = listOfNotNull(
+        r.project,
+        r.head.takeIf { it.isNotEmpty() },
+        r.author.takeIf { it.isNotEmpty() },
+        if (r.draft) "черновик" else null,
+        r.waitingMillis?.let { "обновлён " + age(now, Timestamp(now.epochMillis - it)) },
+        "проверки: " + verdictTitle(r.checks),
+        if (r.stale) "ждёт автора дольше ${Rules.PR_WAITING_LIMIT.inWholeHours} ч" else null,
+    ).joinToString(" · ")
+
     // --- Лента (F-05) ---
 
     data class FeedRow(val time: String, val project: String, val kind: String, val text: String)
@@ -417,6 +500,10 @@ object Screens {
             }
         }
     }
+
+    /** Где записан вопрос — для поручения «записать ответ» (F-25): `Проект:путь`, раздел. */
+    fun questionSource(q: Question): String =
+        "${q.project}:${q.path ?: "TODO.md"}" + (q.section?.let { ", раздел «$it»" } ?: "")
 
     /** Вопросы по проектам (UX-17): группа — проект, порядок — как в `TODO.md`. */
     fun questionGroups(q: List<Question>): List<Pair<String, List<Question>>> = q.groupBy { it.project }.toList()

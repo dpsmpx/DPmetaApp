@@ -7,6 +7,7 @@ import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.ui.TargetEntry
+import com.dpsmpx.dpai.ui.TermuxState
 import java.net.InetSocketAddress
 import java.net.Socket
 
@@ -36,8 +37,6 @@ object TermuxLauncher {
     @Volatile
     private var lastStartAt = -RETRY_MS
 
-    @Volatile
-    private var lastNoteAt = -RETRY_MS
 
     /** Страница приложения в настройках: там «Другие разрешения» — если HyperOS не показал окно запроса. */
     fun appSettings(context: Context): Intent =
@@ -87,6 +86,7 @@ object TermuxLauncher {
         return try {
             context.startForegroundService(intent)
             lastStartAt = nowMs()
+            requested = true
             Outcome.success(Unit)
         } catch (e: Exception) {
             Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.OPERATION_NOT_ALLOWED, "Termux не принял команду", e)))
@@ -94,31 +94,72 @@ object TermuxLauncher {
     }
 
     /**
+     * Состояние Termux-target на этом телефоне для проверки приложения (D-158); локальных
+     * targets нет — `null`. «Запрос ушёл, порт закрыт» — [TermuxState.STARTING] первые
+     * [STARTUP_MS], дальше — [TermuxState.REQUESTED_NOT_UP].
+     */
+    fun state(context: Context, targets: List<TargetEntry>): Pair<TermuxState, Int>? {
+        val local = targets.filter(::local).ifEmpty { return null }
+        val port = local.first().port
+        if (local.all { listening(it.port) }) return TermuxState.LISTENING to port
+        val s = when {
+            !installed(context) -> TermuxState.NOT_INSTALLED
+            !supportsRunCommand(context) -> TermuxState.NO_RUN_COMMAND
+            !permitted(context) -> TermuxState.NO_PERMISSION
+            // Запроса ещё не было (служба только встала) или он только что ушёл — ждём, это не проблема.
+            !requested || nowMs() - lastStartAt < STARTUP_MS -> TermuxState.STARTING
+            else -> TermuxState.REQUESTED_NOT_UP
+        }
+        return s to port
+    }
+
+    /**
      * Для службы контроллера: у локальных targets закрыт порт — запустить
      * `sshd`, не чаще раза в [RETRY_MS]. Итог — строка для журнала или `null`.
+     * «Запущен» — только когда порт ответил (D-158): прежде строка «sshd запущен»
+     * писалась сразу после запроса, даже если Termux его не выполнил. Одно и то
+     * же состояние — одной строкой, а не каждые 5 минут.
      */
     fun ensureSshd(context: Context, targets: List<TargetEntry>): String? {
         val local = targets.filter(::local)
-        if (local.isEmpty() || local.all { listening(it.port) }) return null
-        if (!supportsRunCommand(context)) {
-            val now = nowMs()
-            if (now - lastNoteAt < RETRY_MS) return null
-            lastNoteAt = now
-            return "порт ${local.first().port} закрыт; этот Termux не принимает команды от приложений — sshd: автозапуск ~/.termux/boot или виджет"
+        if (local.isEmpty()) return null
+        val port = local.first().port
+        if (local.all { listening(it.port) }) {
+            val was = lastNote
+            lastNote = null
+            requested = false
+            return if (was != null) "порт $port открыт — sshd Termux слушает" else null
         }
-        // Нет разрешения — не попытка: сказать (раз в паузу) и не задерживать первый настоящий запуск после выдачи.
-        if (!permitted(context)) {
-            val now = nowMs()
-            if (now - lastNoteAt < RETRY_MS) return null
-            lastNoteAt = now
-            return "порт ${local.first().port} закрыт, sshd не запущен: нет разрешения «Запуск команд в среде Termux»"
-        }
+        if (!supportsRunCommand(context)) return once("порт $port закрыт; этот Termux не принимает команды от приложений — sshd: автозапуск ~/.termux/boot или виджет")
+        // Нет разрешения — не попытка: сказать (раз) и не задерживать первый настоящий запуск после выдачи.
+        if (!permitted(context)) return once("порт $port закрыт, sshd не запущен: нет разрешения «Запуск команд в среде Termux»")
         if (nowMs() - lastStartAt < RETRY_MS) return null
+        // Запрос уже был, а порт закрыт — Termux его не выполнил (обычно нет allow-external-apps = true).
+        val failedBefore = requested
         return when (val r = startSshd(context)) {
-            is Outcome.Success -> "порт ${local.first().port} закрыт — sshd запущен в Termux"
-            is Outcome.Failure -> "порт ${local.first().port} закрыт, sshd не запущен: ${r.diagnostics.first().message}"
+            is Outcome.Success ->
+                if (failedBefore) once("порт $port закрыт: sshd не поднялся после прошлого запроса — проверьте allow-external-apps = true в ~/.termux/termux.properties; запрос повторён")
+                else "порт $port закрыт — попросил Termux запустить sshd"
+            is Outcome.Failure -> once("порт $port закрыт, sshd не запущен: ${r.diagnostics.first().message}")
         }
     }
+
+    /** Запрос `sshd` уже уходил в этом процессе. */
+    @Volatile
+    private var requested = false
+
+    /** Последняя строка о закрытом порте: та же — молчим. */
+    @Volatile
+    private var lastNote: String? = null
+
+    private fun once(line: String): String? {
+        if (line == lastNote) return null
+        lastNote = line
+        return line
+    }
+
+    /** Сколько ждать порт после запроса, прежде чем считать, что sshd не поднялся. */
+    private const val STARTUP_MS = 60_000L
 
     /** Время для паузы между попытками — монотонное, как в контуре (D-07). */
     private fun nowMs(): Long = com.dpsmpx.dpai.core.clock.Clock.SYSTEM.monotonicNanos() / 1_000_000

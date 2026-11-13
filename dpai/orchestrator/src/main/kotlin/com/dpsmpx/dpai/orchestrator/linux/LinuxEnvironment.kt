@@ -35,6 +35,8 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
     /** Черновик `resolv.conf` — вне корня гостя: гость его не видит и ссылкой не подменит. */
     private val dnsDraft = Vfs.join(dir, "resolv.conf.draft")
     private val keyDraft = Vfs.join(dir, "llama-key.draft")
+    private val profileDraft = Vfs.join(dir, "profile.draft")
+    private val gitDraft = Vfs.join(dir, "gitconfig.draft")
 
     /** Версия установленной корневой системы; `null` — не установлена или установка оборвалась. */
     fun installed(): String? = vfs.read(ready)?.toString(Charsets.UTF_8)?.trim()?.ifEmpty { null }
@@ -74,6 +76,59 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
      * дотянуться, и встаёт на место переименованием — оно заменяет запись
      * каталога, ссылку тоже, а не цель ссылки; `/etc`-ссылка — отказ.
      */
+    /**
+     * `~/tools/bin` в `PATH` и оболочки входа (D-143): `/etc/profile` Alpine задаёт свой
+     * `PATH`, поэтому строка — в `/etc/profile.d`. Как у [writeDns]: черновик вне корня
+     * гостя и переименование; `/etc` или `/etc/profile.d` — ссылка — отказ.
+     */
+    fun writeProfile(): Outcome<Unit> {
+        val etc = Vfs.join(rootfs, "etc")
+        val dir = Vfs.join(etc, "profile.d")
+        val path = Vfs.join(dir, "dpmetaapp-tools.sh")
+        if (vfs.isSymlink(etc) || vfs.isSymlink(dir)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "/etc гостя — символьная ссылка: PATH для оболочки входа не записан", dir)
+        return try {
+            vfs.mkdirs(dir)
+            vfs.write(profileDraft, GuestStorage.PROFILE_SCRIPT.toByteArray())
+            vfs.rename(profileDraft, path)
+            Outcome.success(Unit)
+        } catch (e: IOException) {
+            Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "/etc/profile.d гостя не записан", e, path)))
+        }
+    }
+
+    /**
+     * `/etc/gitconfig` гостя (D-158): помощник входа для `github.com` берёт токен из
+     * `GH_TOKEN` процесса — он есть, только если автор включил «давать ИИ» токену
+     * GitHub (D-114); значение на диск не пишется. Файл без отметки приложения — чужой
+     * (настроил человек): не трогается, итог — `false`. Как у [writeDns]: черновик вне
+     * корня гостя и переименование; `/etc` — ссылка — отказ.
+     */
+    fun writeGitConfig(): Outcome<Boolean> {
+        val etc = Vfs.join(rootfs, "etc")
+        val path = Vfs.join(etc, "gitconfig")
+        if (vfs.isSymlink(etc)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "/etc гостя — символьная ссылка: /etc/gitconfig не записан", etc)
+        return try {
+            val current = if (vfs.isSymlink(path)) null else vfs.read(path)?.toString(Charsets.UTF_8)
+            if (current != null && !current.startsWith(GIT_MARK)) return Outcome.success(false)
+            if (current == GIT_CONFIG) return Outcome.success(true)
+            vfs.mkdirs(etc)
+            vfs.write(gitDraft, GIT_CONFIG.toByteArray())
+            vfs.rename(gitDraft, path)
+            Outcome.success(true)
+        } catch (e: IOException) {
+            Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "/etc/gitconfig гостя не записан", e, path)))
+        }
+    }
+
+    /** Помощник входа Git уже в `/etc/gitconfig` гостя (файл — приложения). */
+    fun gitConfigured(): Boolean = vfs.read(Vfs.join(rootfs, "etc/gitconfig"))?.toString(Charsets.UTF_8) == GIT_CONFIG
+
+    /** Повреждённые пакеты Alpine гостя ([ApkDatabase]); базы нет — пусто. */
+    fun brokenPackages(): Outcome<List<ApkDatabase.Broken>> = when (val r = ApkDatabase.read(vfs, rootfs)) {
+        is Outcome.Failure -> r
+        is Outcome.Success -> Outcome.success(r.value?.let(ApkDatabase::broken).orEmpty())
+    }
+
     fun writeDns(servers: List<String>): Outcome<Int> {
         val good = servers.map { it.trim().substringBefore('%') }.filter(::isIpLiteral).distinct().take(MAX_DNS)
         if (good.isEmpty()) return Outcome.failure(DiagCode.VALUE_INVALID, "нет адреса DNS сети телефона: /etc/resolv.conf гостя не изменён", rootfs)
@@ -120,6 +175,15 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
         /** Поставить: индекс обновляется тем же вызовом (`-U`). */
         ADD(listOf("add", "-U", "--no-progress"), true),
 
+        /** Переустановить выбранные пакеты и зависимости после частичной ошибки; данные проектов не трогаются (D-140). */
+        FIX(listOf("fix", "-U", "--no-progress", "--depends"), true),
+
+        /**
+         * Починить пакеты, которые база отметила повреждёнными (D-158): те же версии заново,
+         * без зависимостей — приложение делает это само перед командой пакетов.
+         */
+        REPAIR(listOf("fix", "-U", "--no-progress"), true),
+
         /** Убрать. */
         DEL(listOf("del", "--no-progress"), true),
 
@@ -133,6 +197,22 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
 
         /** Признак готовности рядом с корневой системой: версия minirootfs. */
         const val READY = "rootfs.ready"
+
+        /** Отметка файла Git приложения: без неё `/etc/gitconfig` — человека и не перезаписывается. */
+        const val GIT_MARK: String = "# DPmetaApp:"
+
+        /**
+         * `/etc/gitconfig` гостя (D-158): помощник входа `github.com` из `GH_TOKEN` —
+         * без токена молчит, и Git спрашивает имя, как без помощника; свои настройки —
+         * в `~/.gitconfig` (оно сильнее системного).
+         */
+        val GIT_CONFIG: String = """
+            |$GIT_MARK файл пишет приложение (D-158): помощник входа GitHub берёт токен из GH_TOKEN.
+            |# Свои настройки — в ~/.gitconfig: правка здесь не сохранится.
+            |[credential "https://github.com"]
+            |${'\t'}helper = "!f() { test \"${'$'}1\" = get || exit 0; test -n \"${'$'}GH_TOKEN\" || exit 0; echo username=x-access-token; echo \"password=${'$'}GH_TOKEN\"; }; f"
+            |
+        """.trimMargin()
 
         /** Больше трёх серверов `resolv.conf` musl не читает. */
         const val MAX_DNS = 3
@@ -164,32 +244,53 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
          * `GEMINI_CLI_HOME` — D-29, D-100): вход — в нём, по разу на слот.
          */
         fun slotDir(n: Int, executor: com.dpsmpx.dpai.core.ids.Executor = com.dpsmpx.dpai.core.ids.Executor.CLAUDE): String {
-            require(n in 1..99) { "номер слота — 1…99" }
-            return "/root/.${executor.key}-slot-$n"
+            // Слоты — в разделе `~/ai` (D-143, DPmetaApp:D-113); прежние `~/.<исполнитель>-slot-N` — ссылками.
+            return GuestStorage.slotDir(executor.key, n)
         }
 
         /** Пакеты npm исполнителей Codex и Gemini (D-100): ставятся в госте глобально. */
-        val EXECUTOR_PACKAGES: List<String> = listOf("@openai/codex", "@google/gemini-cli")
+        val EXECUTOR_PACKAGES: List<String> = listOf("@openai/codex@0.167.1", "@google/gemini-cli@0.68.0")
+
+        /**
+         * Пакет npm Claude Code: ставит готовый бинарник платформы (`linux-arm64-musl` на
+         * телефоне) — Node.js нужен только установщику. Бинарник ~330 МБ; жёсткую ссылку
+         * Android запрещает, и установщик пакета его копирует — на диске около 0,7 ГБ.
+         */
+        const val CLAUDE_PACKAGE: String = "@anthropic-ai/claude-code@2.1.322"
+
+        /** Шаг `apk add` с именами из кода (они заведомо проходят [PACKAGE]). */
+        private fun apkAdd(vararg names: String): ProcessSpec =
+            (apk(Apk.ADD, names.toList()) as Outcome.Success).value
+
+        /**
+         * Установка Claude Code в госте (D-75, шаг 5): Git, Node.js, npm и bash из Alpine —
+         * отдельным шагом `apk` без `/proc` (D-82), затем пакет npm оболочкой гостя; в конце —
+         * версия. bash — оболочка команд Claude Code: без bash или zsh он их не выполняет
+         * («No suitable shell found»), а в minirootfs Alpine есть только `sh` busybox.
+         * Вход — по разу на слот, в терминале (D-27, D-29).
+         */
+        fun claudeInstall(): List<ProcessSpec> = listOf(
+            apkAdd("git", "nodejs", "npm", "bash"),
+            ProcessSpec(listOf("/bin/sh", "-lc", "npm install -g $CLAUDE_PACKAGE && claude --version")),
+        )
 
         /**
          * Установка Codex CLI и Gemini CLI в госте (D-100): Node.js и npm из
-         * Alpine, затем пакеты npm; в конце — их версии.
+         * Alpine — шагом `apk` без `/proc` (D-82), затем пакеты npm; в конце — их версии.
          */
-        fun executorsInstall(): ProcessSpec = ProcessSpec(
-            listOf(
-                "/bin/sh", "-lc",
-                "apk add nodejs npm && npm install -g ${EXECUTOR_PACKAGES.joinToString(" ")} && codex --version && gemini --version",
-            ),
+        fun executorsInstall(): List<ProcessSpec> = listOf(
+            apkAdd("nodejs", "npm"),
+            ProcessSpec(listOf("/bin/sh", "-lc", "npm install -g ${EXECUTOR_PACKAGES.joinToString(" ")} && codex --version && gemini --version")),
         )
 
         /**
          * Установка llama.cpp (D-105): сервер модели из пакетов Alpine
-         * (`community`, aarch64); в конце — его версия.
+         * (`community`, aarch64) — шагом `apk` без `/proc` (D-82); в конце — его версия.
          */
-        fun llamaInstall(): ProcessSpec = ProcessSpec(listOf("/bin/sh", "-lc", "apk add llama-server && llama-server --version"))
+        fun llamaInstall(): List<ProcessSpec> = listOf(apkAdd("llama-server"), ProcessSpec(listOf("llama-server", "--version")))
 
         /** Каталоги гостя, откуда берётся модель (D-105): свои модели, копии папок (D-99) и всё хранилище. */
-        val MODEL_DIRS: List<String> = listOf("/root/models/", "/root/files/", "/root/storage/shared/")
+        val MODEL_DIRS: List<String> = listOf("/root/tools/models/", "/root/models/", "/root/files/", "/root/storage/shared/")
 
         /** Путь модели: буквы любого алфавита (имена папок автора бывают русскими), цифры, пробел и `._()+@-` — аргумент идёт без оболочки. */
         private val MODEL_PATH = Regex("/[\\p{L}\\p{N}._/ ()+@-]+\\.gguf")

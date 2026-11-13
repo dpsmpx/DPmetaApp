@@ -14,15 +14,17 @@ import kotlinx.coroutines.launch
  * уход с вкладки и поворот не теряют ход, вывод и итог; пока операция идёт,
  * повтор того же ключа не запускается (вторая установка параллельно первой
  * была возможна). Итог — строкой у экрана, в журнал приложения ([onDone]) и
- * снэкбаром, если экран открыт. Отмены нет: эти операции — один процесс
+ * снэкбаром, если экран открыт; неудача — ещё и хвостом вывода в журнале:
+ * по одной строке итога причину не найти, когда экрана уже нет (код 159
+ * установки Claude Code, D-115). Отмены нет: эти операции — один процесс
  * гостя без точек остановки.
  */
-class LongJobs(private val scope: CoroutineScope, private val onDone: (String, String) -> Unit = { _, _ -> }) {
+class LongJobs(private val scope: CoroutineScope, private val onDone: (String, Done) -> Unit = { _, _ -> }) {
     /** Операция: [running] — идёт; [note] — итог; [output] — хвост вывода. */
     data class Job(val label: String, val running: Boolean, val note: String? = null, val output: List<String> = emptyList())
 
-    /** Итог работы: строка и вывод. */
-    data class Done(val note: String, val output: List<String> = emptyList())
+    /** Итог работы: строка и вывод; [failed] — неудача, вывод идёт и в журнал. */
+    data class Done(val note: String, val output: List<String> = emptyList(), val failed: Boolean = false)
 
     private val flow = MutableStateFlow<Map<String, Job>>(emptyMap())
     val state: StateFlow<Map<String, Job>> = flow
@@ -46,10 +48,10 @@ class LongJobs(private val scope: CoroutineScope, private val onDone: (String, S
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Done("$label: ${com.dpsmpx.dpai.core.text.Words.failure(e)}")
+                Done("$label: ${com.dpsmpx.dpai.core.text.Words.failure(e)}", failed = true)
             }
             synchronized(this@LongJobs) { flow.value = flow.value + (key to Job(label, running = false, note = done.note, output = done.output)) }
-            onDone(label, done.note)
+            onDone(label, done)
         }
         return true
     }
@@ -72,8 +74,16 @@ class LongJobs(private val scope: CoroutineScope, private val onDone: (String, S
         /** Облачная копия (D-107): отправка, замена, отмена восстановления. */
         const val CLOUD = "cloud"
 
+        /** Получение, проверка и синхронизация общей папки. */
+        const val SHARED_VERIFY = "shared-verify"
+
         /** Всё, что запускает процессы гостя: идут по одному. */
-        val GUEST = setOf(LINUX_INSTALL, LINUX_APK, LLAMA)
+        const val WORKSPACE_PROFILE = "workspace-profile"
+
+        val GUEST = setOf(LINUX_INSTALL, LINUX_APK, LLAMA, SHARED_VERIFY, WORKSPACE_PROFILE)
+
+        /** Сколько последних строк вывода неудачи идёт в журнал. */
+        private const val MAX_LOGGED = 20
 
         @Volatile
         private var instance: LongJobs? = null
@@ -82,7 +92,11 @@ class LongJobs(private val scope: CoroutineScope, private val onDone: (String, S
         fun get(context: android.content.Context): LongJobs = instance ?: synchronized(this) {
             instance ?: run {
                 val log = AppLogs.get(context.applicationContext)
-                LongJobs(CoroutineScope(SupervisorJob() + Dispatchers.IO)) { label, note -> log.info("ai", "$label — $note") }.also { instance = it }
+                LongJobs(CoroutineScope(SupervisorJob() + Dispatchers.IO)) { label, done ->
+                    log.info("ai", "$label — ${done.note}")
+                    // Хвост вывода неудачи — строками журнала (через Redactor журнала, D-14).
+                    if (done.failed) done.output.takeLast(MAX_LOGGED).forEach { log.warn("ai", "$label | $it") }
+                }.also { instance = it }
             }
         }
     }

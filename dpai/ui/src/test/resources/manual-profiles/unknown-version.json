@@ -1,0 +1,1 @@
+{"format":"dpai.manual-profile","version":99,"kind":"CHECK","command":["python3","-m","unittest"],"timeout":1800}

@@ -15,11 +15,9 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
-import com.dpsmpx.dpai.notifications.OptionRole
 import com.dpsmpx.dpai.notifications.RequestAction
 import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.commands.Command
-import com.dpsmpx.dpai.orchestrator.requests.RequestPurpose
 import com.dpsmpx.dpai.storage.vfs.Vfs
 import java.security.MessageDigest
 import kotlin.time.Duration
@@ -37,38 +35,59 @@ data class ControlResponse(val status: Int, val body: JsonObject, val signature:
 
 /**
  * Сопряжение `dpai` с приложением (D-47): код из шести цифр на
- * [codeTtl] — его показывает экран, не больше [MAX_ATTEMPTS] попыток на
- * код; верный код — постоянный токен (32 случайных байта, hex), он лежит в
+ * [codeTtl] — его показывает экран, после [MAX_ATTEMPTS] неверных попыток
+ * действует общая пауза 30 секунд без уничтожения кода; верный код — постоянный токен (32 случайных байта, hex), он лежит в
  * файле приложения [TOKEN] через `Vfs` (D-24). Токен — секрет: в журнал и
  * ответы, кроме ответа на сопряжение, не попадает; запросы `dpai` и ответы
  * приложения подписываются им, сам он в сеть больше не уходит (D-92).
  */
-class Pairing(private val vfs: Vfs, private val random: RandomSource, private val clock: Clock, private val codeTtl: Duration = 2.minutes) {
-    private data class Code(val value: String, val until: Timestamp, var attempts: Int)
+class Pairing(
+    private val vfs: Vfs,
+    private val random: RandomSource,
+    private val clock: Clock,
+    private val codeTtl: Duration = 2.minutes,
+    private val onRefusal: () -> Unit = {},
+) {
+    private data class Code(val value: String, val until: Timestamp)
 
     private var code: Code? = null
+    private var attempts = 0
+    private var blockedUntil: Timestamp? = null
+    private var refusals = 0
+
+    data class Status(val refusals: Int, val retryAfterMillis: Long)
+
+    @Synchronized
+    fun status(): Status = Status(refusals, ((blockedUntil?.epochMillis ?: 0) - clock.now().epochMillis).coerceAtLeast(0))
 
     @Synchronized
     fun newCode(): Pair<String, Timestamp> {
         val n = random.nextInt(1_000_000)
-        val c = Code("%06d".format(n), clock.now() + codeTtl, 0)
+        val c = Code("%06d".format(n), clock.now() + codeTtl)
         code = c
         return c.value to c.until
     }
 
     @Synchronized
     fun pair(entered: String): Outcome<String> {
+        val blocked = blockedUntil
+        if (blocked != null && clock.now() < blocked) {
+            return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "слишком много попыток сопряжения: подождите 30 секунд; код не уничтожен")
+        }
+        if (blocked != null) { blockedUntil = null; attempts = 0 }
         val c = code ?: return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "кода нет: покажите код на экране приложения")
         if (clock.now() >= c.until) {
             code = null
             return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "срок кода истёк: покажите новый")
         }
-        if (++c.attempts > MAX_ATTEMPTS) {
-            code = null
-            return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "слишком много попыток: покажите новый код")
+        if (!same(entered.trim(), c.value)) {
+            refusals++
+            onRefusal()
+            if (++attempts >= MAX_ATTEMPTS) blockedUntil = Timestamp(clock.now().epochMillis + 30_000)
+            return Outcome.failure(DiagCode.VALUE_INVALID, "код не подходит")
         }
-        if (!same(entered.trim(), c.value)) return Outcome.failure(DiagCode.VALUE_INVALID, "код не подходит")
         code = null
+        attempts = 0
         return Outcome.success(token())
     }
 
@@ -260,9 +279,19 @@ class ControlApi(
      */
     private fun decisive(o: Orchestrator, c: Command): Boolean = when (c) {
         is Command.Waive -> true
+        // Аудит A-02: токен канала не доказывает, что команду дал человек.
+        // Автопрогон по доверенному манифесту использует внутренний канал и сюда не попадает.
+        // Передача задачи другому ИИ и автоматический переход у предела (D-165) — тоже только человек.
+        is Command.AddTask, is Command.MoveTask, is Command.SetSessionLimit, is Command.SetExecutorSwitch, is Command.SetExecutor -> true
+        is Command.SetPolicy -> o.tasks.tasks[c.task]?.policy?.let { previous ->
+            (c.reviews != null && !c.reviews.containsAll(previous.reviews)) ||
+                c.taskClass.ordinal < previous.taskClass.ordinal ||
+                c.model != previous.model || c.effort != previous.effort ||
+                c.maxBudgetUsdCents != previous.maxBudgetUsdCents
+        } == true
+        // Список решающих — у запроса (D-128): тот же, что у кнопок уведомления и окна.
         is Command.AnswerRequest -> RequestAction.parse(c.uri).valueOrNull()?.let { a ->
-            val r = o.requests.requests[a.request] ?: return@let false
-            RequestPurpose.of(r.purpose) in PHONE_ONLY && r.options.firstOrNull { it.id == a.option }?.role in DECISIVE_ROLES
+            o.requests.requests[a.request]?.decisive(a.option)
         } == true
         else -> false
     }
@@ -306,11 +335,6 @@ class ControlApi(
         }
 
         private val LOOPBACK = setOf("127.0.0.1", "localhost", "[::1]")
-
-        /** Запросы, «да» на которые из канала не применяется (D-91). */
-        private val PHONE_ONLY = setOf(RequestPurpose.TASK_MERGE, RequestPurpose.TASK_UNVERIFIED, RequestPurpose.TASK_REVIEW, RequestPurpose.RECOVERY)
-
-        private val DECISIVE_ROLES = setOf(OptionRole.ACCEPT, OptionRole.DESTRUCTIVE)
     }
 }
 

@@ -15,6 +15,51 @@ import kotlin.test.assertTrue
 
 /** GitHub REST и device flow на синтетических ответах (ТЗ, I-09; D-17). */
 class GitHubTest {
+    @Test
+    fun branchesIncludeLaterPagesAndKeepLinkAcrossNotModified() {
+        val seen = mutableListOf<HttpRequest>()
+        var later = "second"
+        val transport = object : Transport {
+            override fun send(request: HttpRequest): Outcome<HttpResponse> {
+                seen += request
+                val second = request.url.rawQuery.contains("page=2")
+                val etag = if (second) later else "first"
+                if (request.headers["If-None-Match"] == etag) return Outcome.success(HttpResponse(304, emptyMap(), ByteArray(0)))
+                // Даже чужой URL в Link не получает запрос и токен: меняется только наш номер страницы.
+                val headers = mapOf("etag" to listOf(etag)) + if (second) emptyMap() else mapOf("link" to listOf("<https://example.org/untrusted?page=2>; rel=\"next\""))
+                val body = """[{"name":"${if (second) later else "main"}","commit":{"sha":"${"a".repeat(40)}"}}]"""
+                return Outcome.success(HttpResponse(200, headers, body.toByteArray()))
+            }
+        }
+        val github = GitHub(Net(transport), null)
+        val first = github.branches(repo).valueOrNull()!!
+        assertEquals(listOf("main", "second"), first.value.map { it.name })
+        val cached = github.branches(repo).valueOrNull()!!
+        assertTrue(cached.fetched.notModified)
+        assertEquals(first.fetched.rawSha256, cached.fetched.rawSha256)
+        later = "changed"
+        val changed = github.branches(repo).valueOrNull()!!
+        assertEquals(listOf("main", "changed"), changed.value.map { it.name })
+        assertTrue(first.fetched.rawSha256 != changed.fetched.rawSha256)
+        assertTrue(seen.all { it.url.host == "api.github.com" })
+        assertEquals(6, seen.size)
+    }
+
+    @Test
+    fun pullsReadAllPagesAndBudgetFailureNeverReturnsPartialList() {
+        val transport = object : Transport {
+            override fun send(request: HttpRequest): Outcome<HttpResponse> {
+                val second = request.url.rawQuery.contains("page=2")
+                val number = if (second) 2 else 1
+                val body = """[{"number":$number,"title":"PR","head":{"ref":"work-$number"},"updated_at":"2026-11-01T10:00:00Z"}]"""
+                val headers = if (second) emptyMap() else mapOf("link" to listOf("<https://api.github.com/repos/example/Alpha/pulls?page=2>; rel=\"next\""))
+                return Outcome.success(HttpResponse(200, headers, body.toByteArray()))
+            }
+        }
+        assertEquals(listOf(1, 2), GitHub(Net(transport), null).pulls(repo).valueOrNull()!!.value.map { it.number })
+        val limited = GitHub(Net(transport, budget = 1), null).pulls(repo)
+        assertEquals(DiagCode.RUN_BUDGET_EXHAUSTED, assertIs<Outcome.Failure>(limited).diagnostics.first().code)
+    }
     private class Fake(val routes: Map<String, Pair<Int, String>>, val headers: Map<String, List<String>> = emptyMap()) : Transport {
         val seen = mutableListOf<HttpRequest>()
 
@@ -65,6 +110,15 @@ class GitHubTest {
         assertEquals("dpsmpx/DPmetaApp", repos.first().slug.toString(), "по алфавиту без регистра")
         assertTrue(repos.single { it.slug.toString() == "dpsmpx/Old" }.archived)
         assertEquals(2, fake.seen.size, "неполная страница — последняя")
+    }
+
+    @Test
+    fun repoSizeIsBytesAndUnknownIsNull() {
+        val repo = RepoRef.parse("dpsmpx/DPmetaApp").valueOrNull()!!
+        val known = GitHub(Net(Fake(mapOf("/repos/dpsmpx/DPmetaApp" to (200 to "{\"full_name\":\"dpsmpx/DPmetaApp\",\"size\":2048}")))), Secret("t"))
+        assertEquals(2048L * 1024, (known.repoSize(repo) as Outcome.Success).value)
+        val unknown = GitHub(Net(Fake(mapOf("/repos/dpsmpx/DPmetaApp" to (200 to "{\"full_name\":\"dpsmpx/DPmetaApp\"}")))), Secret("t"))
+        assertEquals(null, (unknown.repoSize(repo) as Outcome.Success).value, "неизвестное — не ноль")
     }
 
     @Test

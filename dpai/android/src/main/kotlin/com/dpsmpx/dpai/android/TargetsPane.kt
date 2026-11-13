@@ -682,12 +682,14 @@ internal fun TermuxCard(port: Int, framed: Boolean = true) {
 internal fun ControlCard(model: DemoModel) {
     val scope = rememberCoroutineScope()
     var limit by remember { mutableStateOf(model.control()?.maxSessions) }
+    var auto by remember { mutableStateOf(model.control()?.autoExecutorSwitch == true) }
     var live by remember { mutableStateOf(model.control() != null) }
     var note by remember { mutableStateOf<String?>(null) }
     Poll(periodMs = 3000) {
         val c = withContext(Dispatchers.IO) { model.control() }
         live = c != null
         limit = c?.maxSessions
+        auto = c?.autoExecutorSwitch == true
     }
     if (!live) return
     Card(Modifier.fillMaxWidth()) {
@@ -706,6 +708,19 @@ internal fun ControlCard(model: DemoModel) {
                     }, label = { Text(v?.toString() ?: "∞") })
                 }
             }
+            // Переход у предела (D-165, изменяет D-100): по умолчанию — предложение у задачи, сама задача не уходит.
+            androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                androidx.compose.material3.Switch(auto, { on ->
+                    scope.launch {
+                        note = when (val r = withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetExecutorSwitch(on)) }) {
+                            is com.dpsmpx.dpai.core.result.Outcome.Success -> null.also { auto = on }
+                            is com.dpsmpx.dpai.core.result.Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
+                        }
+                    }
+                })
+                Text("Передавать задачи у предела другому ИИ автоматически", Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodySmall)
+            }
+            Text(if (auto) "У предела всех слотов задача сама уходит к Codex или Gemini (по кругу), с контекстом." else "У предела задача ждёт; передать её другому подключённому ИИ можно кнопкой у задачи.", style = MaterialTheme.typography.labelSmall)
             note?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
         }
     }
@@ -774,9 +789,11 @@ internal fun CliCard() {
             Text("Командная строка dpai", style = MaterialTheme.typography.titleMedium)
             var running by remember { mutableStateOf(ControlServer.running) }
             var problem by remember { mutableStateOf(ControlServer.problem) }
+            var pairingStatus by remember { mutableStateOf(ControlServer.pairing(context).status()) }
             Poll(periodMs = 2000) {
                 running = ControlServer.running
                 problem = ControlServer.problem
+                pairingStatus = ControlServer.pairing(context).status()
             }
             Text(
                 when {
@@ -799,6 +816,12 @@ internal fun CliCard() {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(c, style = MaterialTheme.typography.headlineMedium)
                             Text("В Termux: dpai control pair $c — код действует 2 минуты", style = MaterialTheme.typography.bodySmall)
+                            if (pairingStatus.refusals > 0) {
+                                Text("Отклонено попыток: ${pairingStatus.refusals}", style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (pairingStatus.retryAfterMillis > 0) {
+                                Text("Повторите через ${(pairingStatus.retryAfterMillis + 999) / 1000} с; код сохраняется", style = MaterialTheme.typography.bodySmall)
+                            }
                         }
                     },
                     confirmButton = { TextButton(onClick = { code = null }) { Text("Готово") } },

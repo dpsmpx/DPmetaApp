@@ -49,6 +49,19 @@ open class PultActivity : ComponentActivity() {
     private lateinit var secrets: SecretStore
     private val view = mutableStateOf(PultView(null, "", hasToken = false, busy = false))
 
+    /** Раздел, на который просят перейти с левой панели окна «AI» (D-112); экран сбрасывает его, перейдя. */
+    private val goTo = mutableStateOf<com.dpsmpx.dpai.ui.AppSection?>(null)
+
+    private fun takeSection(intent: Intent?) {
+        val name = intent?.getStringExtra(EXTRA_SECTION) ?: return
+        goTo.value = com.dpsmpx.dpai.ui.AppSection.entries.firstOrNull { it.name == name }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        takeSection(intent)
+    }
+
     /**
      * Что экспортируется (F-36), пока системный выбор ищет место: формат и срок
      * переживают пересоздание окна (поворот), текст собирается заново из истории.
@@ -68,6 +81,13 @@ open class PultActivity : ComponentActivity() {
     private var coldStart = true
     private val saveCsv = registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { writeExport(it) }
     private val saveJson = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { writeExport(it) }
+
+    /** Ответ на просьбу разрешения Termux (D-84): экран проверяет готовность снова. */
+    private var termuxAsked: (() -> Unit)? = null
+    private val askTermux = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        termuxAsked?.invoke()
+        termuxAsked = null
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -142,6 +162,12 @@ open class PultActivity : ComponentActivity() {
     /** Вход в «AI» со строки сводки (D-76): [requests] — сразу на «Запросы». */
     protected open fun aiIntent(requests: Boolean): Intent? = aiIntent()
 
+    /** Документ настроек приложения (D-112) — от оболочки; `null` — настройки пульта своим экраном. */
+    protected open val settingsDocument: (@androidx.compose.runtime.Composable (query: String, projects: @androidx.compose.runtime.Composable () -> Unit) -> Unit)? = null
+
+    /** Пункт «IDE» левой панели (D-112): окно «AI» на «Файлах»; нет подсистемы — пункта нет. */
+    protected open fun ideIntent(): Intent? = null
+
     /**
      * Числа строки «AI» на сводке (D-76) — их даёт оболочка `:shell`;
      * `null` — строки нет. Вызывается не на главном потоке.
@@ -150,6 +176,82 @@ open class PultActivity : ComponentActivity() {
 
     /** Версия подсистемы «AI» для «О программе» (UX-23, D-54); `null` — подсистемы нет. */
     protected open fun aiVersion(): String? = null
+
+    /**
+     * Строка журнала отладки приложения (D-39, F-71): итоги синхронизации и действий пульта —
+     * вид, цель, итог или код, без содержимого. Журнал ведёт оболочка (`:shell` — журнал
+     * подсистемы «AI», один на приложение); у пульта без оболочки — никуда.
+     */
+    protected open fun debugLog(tag: String, line: String) {}
+
+    /**
+     * Маршруты Claude Code (F-22): их ведёт подсистема «AI» (`DP_AI_Orcestrator:D-116`), пульт
+     * видит имя, проект и шаблон. Даёт оболочка `:shell`; без неё маршрутов нет.
+     * Вызывается не на главном потоке.
+     */
+    protected open fun routes(): List<com.dpsmpx.dpmeta.app.screens.RouteActions.Route> = emptyList()
+
+    /**
+     * «Спросить Claude» (F-21): API-профили Anthropic ведёт подсистема «AI»; пульт видит
+     * имя и модель и шлёт вопрос с инструментами чтения среза. Даёт оболочка `:shell`;
+     * без неё профилей нет. Вызываются не на главном потоке.
+     */
+    protected open fun askProfiles(): List<com.dpsmpx.dpmeta.app.screens.AskActions.Profile> = emptyList()
+
+    protected open fun askModels(profile: String): Outcome<List<com.dpsmpx.dpmeta.app.screens.AskActions.Model>> =
+        Outcome.failure(DiagCode.UNSUPPORTED, "моделей нет: профили ведёт подсистема «AI»", "ask")
+
+    protected open fun ask(
+        request: com.dpsmpx.dpmeta.app.screens.AskActions.Request,
+        onCancel: (() -> Unit) -> Unit,
+        onText: (String) -> Unit,
+        tool: (String, com.dpsmpx.dpai.core.serialization.JsonObject) -> Pair<String, Boolean>,
+    ): Outcome<com.dpsmpx.dpmeta.app.screens.AskActions.Answer> =
+        Outcome.failure(DiagCode.UNSUPPORTED, "спросить некого: профили ведёт подсистема «AI»", "ask")
+
+    /** Запуск маршрута [id] с поручением [text] — через оболочку; не на главном потоке. */
+    protected open fun fireRoute(id: String, text: String): Outcome<com.dpsmpx.dpmeta.app.screens.RouteActions.Fired> =
+        Outcome.failure(DiagCode.UNSUPPORTED, "маршрутов нет: их ведёт подсистема «AI»", "route")
+
+    /**
+     * Команды реестра (F-40; D-82) идут в Linux-среде подсистемы «AI» — её даёт оболочка
+     * `:shell`; без неё Linux-среды нет. Вызываются не на главном потоке.
+     */
+    protected open fun commandLinux(): com.dpsmpx.dpmeta.app.screens.CommandActions.Linux = com.dpsmpx.dpmeta.app.screens.CommandActions.Linux.UNSUPPORTED
+
+    /** Каких пакетов Alpine нет в Linux-среде. */
+    protected open fun commandMissing(packages: List<String>): List<String> = packages
+
+    /** Поставить пакеты Alpine: итог — последние строки вывода `apk`. */
+    protected open fun commandInstall(packages: List<String>): Outcome<List<String>> =
+        Outcome.failure(DiagCode.UNSUPPORTED, "Linux-среды нет: её даёт подсистема «AI»", "linux")
+
+    /** Запустить [argv] в каталоге гостя [dir] не дольше [minutes]; строки — в [onLine], остановка — в [onStop]. */
+    protected open fun commandRun(
+        dir: String,
+        argv: List<String>,
+        minutes: Int,
+        onLine: (String) -> Unit,
+        onStop: (() -> Unit) -> Unit,
+    ): Outcome<com.dpsmpx.dpmeta.app.screens.CommandActions.Exit> =
+        Outcome.failure(DiagCode.UNSUPPORTED, "Linux-среды нет: её даёт подсистема «AI»", "linux")
+
+    /**
+     * Команда реестра в Termux (F-41; D-84): вызов уходит в Termux, итог приходит
+     * целиком, когда команда кончится; остановить её отсюда нельзя — Termux этого не
+     * умеет. Не на главном потоке.
+     */
+    private fun termuxRun(call: com.dpsmpx.dpmeta.app.screens.TermuxActions.Call, minutes: Int, onLine: (String) -> Unit): Outcome<com.dpsmpx.dpmeta.app.screens.CommandActions.Exit> {
+        onLine("Отправлено в Termux, каталог ${call.workdir}. Вывод придёт целиком, когда команда кончится.")
+        return when (val r = com.dpsmpx.dpmeta.app.data.TermuxBridge.run(this, call, minutes * 60_000L)) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> {
+                val res = r.value ?: return com.dpsmpx.dpmeta.app.screens.TermuxActions.noResult(minutes)
+                com.dpsmpx.dpmeta.app.screens.TermuxActions.lines(res).forEach(onLine)
+                com.dpsmpx.dpmeta.app.screens.TermuxActions.exit(res)
+            }
+        }
+    }
 
     /** «О программе» (UX-23, D-54): версия DPmetaApp из пакета и версия «AI» от оболочки. */
     private fun about(): String {
@@ -326,11 +428,13 @@ open class PultActivity : ComponentActivity() {
         enableEdgeToEdge()
         // Пункт и строка «AI» — только с оболочкой подсистемы (D-53, D-76).
         val ai: ((Boolean) -> Unit)? = if (aiIntent() != null) { requests -> aiIntent(requests)?.let(::startActivity) } else null
+        takeSection(intent)
         setContent {
             PultTheme {
                 PultApp(
                     view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken,
-                    onAi = ai, onExport = ::export,
+                    onAi = ai, onIde = ideIntent()?.let { i -> { startActivity(i) } }, onExport = ::export,
+                    goTo = goTo.value, onGoTo = { goTo.value = null }, settingsDocument = settingsDocument,
                     onClones = { withToken { token -> if (token != null) askClones(token, first = false) } }, onClonesChosen = ::clonesChosen,
                     onCancelSync = {
                         repo.cancelClones()
@@ -496,6 +600,267 @@ open class PultActivity : ComponentActivity() {
             val text = runCatching { assets.open(name).use { String(it.readBytes(), Charsets.UTF_8) } }.getOrNull() ?: return null
             return PanelFormat.parse(text, name)
         }
+
+        override fun pull(project: String, number: Int, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, com.dpsmpx.dpmeta.github.PullDetail>>) -> Unit) =
+            run({ repo.pull(it, project, number) }, done)
+
+        override fun pullCard(project: String, number: Int, done: (Outcome<com.dpsmpx.dpmeta.app.screens.PullActions.Card>) -> Unit) =
+            run({ repo.pullCard(it, project, number) }, done)
+
+        /**
+         * Действие с PR (F-12; D-07): подтверждение создаётся здесь и только после ответа
+         * человека — окно экрана (уровень 1) или ещё PIN или отпечаток (уровень 2). Отмена
+         * PIN — «не подтверждено», исполнитель не вызывается.
+         */
+        override fun act(request: com.dpsmpx.dpmeta.app.screens.PullActions.Request, done: (Outcome<com.dpsmpx.dpmeta.actions.ActionResult>) -> Unit) {
+            val c = request.command
+            // Итог — и в журнал отладки (D-39): вид, цель, уровень, итог или код; без текста команды.
+            val logged: (Outcome<com.dpsmpx.dpmeta.actions.ActionResult>) -> Unit = { r ->
+                debugLog("действия", "${c.kind.code} ${c.target.display} ур.${c.level.code}: " + when (r) {
+                    is Outcome.Success -> "готово"
+                    is Outcome.Failure -> "${r.errors.first().code}"
+                })
+                done(r)
+            }
+            fun go(confirm: (com.dpsmpx.dpmeta.actions.Actions) -> com.dpsmpx.dpmeta.actions.Confirmation) =
+                if (c.kind == com.dpsmpx.dpmeta.actions.ActionKind.ROUTE_RUN) {
+                    // Маршрут (F-22): токен GitHub не нужен — запуск идёт мостом к «AI».
+                    background({ repo.fire(c, confirm, request.text.orEmpty()) { id, t -> fireRoute(id, t) } }, logged)
+                } else {
+                    run({ repo.act(it, c, confirm, request.text) }, logged)
+                }
+            when (request.way) {
+                com.dpsmpx.dpmeta.app.screens.PullActions.Way.SHOWN -> go { it.shown(c) }
+                com.dpsmpx.dpmeta.app.screens.PullActions.Way.TYPED -> go { it.typedName(c, request.typed) }
+                com.dpsmpx.dpmeta.app.screens.PullActions.Way.DEVICE -> Lock.ask(
+                    this@PultActivity, "Подтвердите: ${c.kind.what}", pinOnly = false,
+                    onOpen = { go { it.deviceConfirmed(c) } },
+                    onDenied = { _, why -> logged(Outcome.failure(DiagCode.DEVICE_AUTH_REQUIRED, "не подтверждено: $why", c.target.display)) },
+                )
+            }
+        }
+
+        override fun repo(project: String, done: (Outcome<com.dpsmpx.dpmeta.model.RepoRef>) -> Unit) = run({ repo.repoFor(it, project) }, done)
+
+        override fun editable(project: String, path: String, done: (Outcome<com.dpsmpx.dpmeta.app.screens.EditActions.Edit>) -> Unit) =
+            run({ repo.editable(it, project, path) }, done)
+
+        override fun branch(project: String, name: String, done: (Outcome<com.dpsmpx.dpmeta.app.screens.BranchActions.View>) -> Unit) =
+            run({ repo.branch(it, project, name) }, done)
+
+        override fun journal(done: (Outcome<List<com.dpsmpx.dpmeta.actions.ActionEntry>>) -> Unit) = background({ repo.journal() }, done)
+
+        override fun routes(done: (List<com.dpsmpx.dpmeta.app.screens.RouteActions.Route>) -> Unit) =
+            background({ runCatching { this@PultActivity.routes() }.getOrDefault(emptyList()) }, done)
+
+        /** Шаблоны (F-23) — файлы `config/briefs/<ключ>.md`, собранные в APK; один не разобран — отказ с местом. */
+        override fun briefs(done: (Outcome<List<com.dpsmpx.dpmeta.formats.Brief>>) -> Unit) = background({
+            val names = runCatching { assets.list("briefs")?.filter { it.endsWith(".md") }?.sorted() }.getOrNull().orEmpty()
+            val out = mutableListOf<com.dpsmpx.dpmeta.formats.Brief>()
+            var bad: Outcome.Failure? = null
+            for (n in names) {
+                val text = runCatching { assets.open("briefs/$n").use { String(it.readBytes(), Charsets.UTF_8) } }.getOrNull() ?: continue
+                when (val b = com.dpsmpx.dpmeta.formats.BriefFormat.parse(text, n.removeSuffix(".md"), "briefs/$n")) {
+                    is Outcome.Success -> out += b.value
+                    is Outcome.Failure -> if (bad == null) bad = b
+                }
+            }
+            bad ?: Outcome.success(out.toList())
+        }, done)
+
+        override fun base(project: String, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, String>>) -> Unit) =
+            run({ repo.base(it, project) }, done)
+
+        override fun askProfiles(done: (List<com.dpsmpx.dpmeta.app.screens.AskActions.Profile>) -> Unit) =
+            background({ runCatching { this@PultActivity.askProfiles() }.getOrDefault(emptyList()) }, done)
+
+        override fun askModels(profile: String, done: (Outcome<List<com.dpsmpx.dpmeta.app.screens.AskActions.Model>>) -> Unit) =
+            background({ this@PultActivity.askModels(profile) }, done)
+
+        /** История — зашифрованным файлом рядом с данными пульта; читается один раз на процесс. */
+        override fun askOpen() =
+            com.dpsmpx.dpmeta.app.data.AskSession.load(com.dpsmpx.dpmeta.app.data.AskStore(NioVfs(noBackupFilesDir.toPath().resolve("dpmeta"))))
+
+        override fun askSend(profile: com.dpsmpx.dpmeta.app.screens.AskActions.Profile, model: String, effort: String?, question: String, file: String?, fileText: String?) {
+            val v = view.value
+            val snap = com.dpsmpx.dpmeta.app.screens.AskActions.Snapshot(v.state, v.feed, v.history, com.dpsmpx.dpai.core.clock.Clock.SYSTEM.now())
+            debugLog("спросить", "вопрос: профиль ${profile.name}, модель $model, знаков ${question.length}" + if (file != null) ", с файлом" else "")
+            com.dpsmpx.dpmeta.app.data.AskSession.send({ r, c, t, tool -> this@PultActivity.ask(r, c, t, tool) }, profile, model, effort, snap, question, file, fileText)
+        }
+
+        /** Работа без токена GitHub — в пуле, итог — на главном потоке. */
+        private fun <T> background(work: () -> T, done: (T) -> Unit) {
+            if (pool.isShutdown) return
+            pool.execute {
+                val r = work()
+                runOnUiThread { done(r) }
+            }
+        }
+
+        /** Реестр команд (F-40, F-43; D-82) — `config/commands.toml` в APK, реестр проектов — из среза или клона. */
+        override fun commands(done: (Outcome<com.dpsmpx.dpmeta.app.screens.CommandActions.Catalog>) -> Unit) = background({
+            val text = runCatching { assets.open(COMMANDS_ASSET).use { String(it.readBytes(), Charsets.UTF_8) } }.getOrNull()
+            val parsed = if (text == null) {
+                Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "реестра команд нет в сборке", COMMANDS_ASSET)
+            } else {
+                com.dpsmpx.dpmeta.formats.CommandFormat.parse(text, COMMANDS_ASSET)
+            }
+            when (parsed) {
+                is Outcome.Failure -> parsed
+                is Outcome.Success -> when (val reg = repo.commandRegistry(clonesSelected())) {
+                    is Outcome.Failure -> reg
+                    is Outcome.Success -> Outcome.success(
+                        com.dpsmpx.dpmeta.app.screens.CommandActions.Catalog(
+                            parsed.value.commands,
+                            reg.value,
+                            com.dpsmpx.dpmeta.app.screens.CommandActions.anyProjects(reg.value) { java.io.File(repo.cloneDir(it), ".git").isDirectory },
+                        ),
+                    )
+                }
+            }
+        }, done)
+
+        /** Готовность команды на месте (D-82): Linux, пакеты, клон, каталог, скрипт — и рабочее дерево. */
+        override fun commandCheck(
+            spec: com.dpsmpx.dpmeta.formats.CommandSpec,
+            registry: com.dpsmpx.dpmeta.model.Registry,
+            project: String?,
+            done: (Outcome<com.dpsmpx.dpmeta.app.screens.CommandActions.Checked>) -> Unit,
+        ) = background({
+            when (val sp = com.dpsmpx.dpmeta.app.screens.CommandActions.spot(spec, registry, project)) {
+                is Outcome.Failure -> sp
+                is Outcome.Success -> {
+                    val spot = sp.value
+                    val clone = repo.cloneDir(spot.repo)
+                    val hasClone = java.io.File(clone, ".git").isDirectory
+                    val workdir = spot.inClone.isEmpty() || java.io.File(clone, spot.inClone).isDirectory
+                    val script = com.dpsmpx.dpmeta.app.screens.CommandActions.scriptInClone(spec, spot)?.let { java.io.File(clone, it).isFile }
+                    val linux = runCatching { commandLinux() }.getOrDefault(com.dpsmpx.dpmeta.app.screens.CommandActions.Linux.UNSUPPORTED)
+                    val missing = if (linux == com.dpsmpx.dpmeta.app.screens.CommandActions.Linux.READY) runCatching { commandMissing(spec.packages) }.getOrDefault(spec.packages) else spec.packages
+                    val facts = com.dpsmpx.dpmeta.app.screens.CommandActions.Facts(linux, missing, hasClone, hasClone && workdir, script?.let { hasClone && it })
+                    Outcome.success(
+                        com.dpsmpx.dpmeta.app.screens.CommandActions.Checked(
+                            spot,
+                            if (hasClone) repo.worktree(spot.repo) else null,
+                            com.dpsmpx.dpmeta.app.screens.CommandActions.readiness(spec, spot, facts),
+                            if (linux == com.dpsmpx.dpmeta.app.screens.CommandActions.Linux.READY) missing else emptyList(),
+                        ),
+                    )
+                }
+            }
+        }, done)
+
+        override fun commandInstall(packages: List<String>, done: (Outcome<List<String>>) -> Unit) =
+            background({ runCatching { this@PultActivity.commandInstall(packages) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "сбой: ${it.javaClass.simpleName}", "apk") } }, done)
+
+        /**
+         * Запуск команды (D-82): уровень 0 — сразу; уровень 1 — после окна «что изменится»
+         * экрана, через политику и журнал `:core:actions` (D-07). Итог — и в журнал отладки
+         * (D-39): id, проект, итог; без вывода.
+         */
+        override fun commandStart(spec: com.dpsmpx.dpmeta.formats.CommandSpec, checked: com.dpsmpx.dpmeta.app.screens.CommandActions.Checked) {
+            val termux = checked.where == com.dpsmpx.dpmeta.app.screens.CommandActions.Where.TERMUX
+            val call = checked.termux
+            if (termux && call == null) return
+            val key = com.dpsmpx.dpmeta.app.data.CommandSession.key(spec.id, checked.spot.project, termux)
+            val argv = com.dpsmpx.dpmeta.app.screens.CommandActions.argv(spec)
+            val job = com.dpsmpx.dpmeta.app.data.CommandSession.Job { onLine, onStop ->
+                val started = com.dpsmpx.dpai.core.clock.Clock.SYSTEM.now().epochMillis
+                fun seconds() = (com.dpsmpx.dpai.core.clock.Clock.SYSTEM.now().epochMillis - started) / 1000
+                fun run(): Outcome<com.dpsmpx.dpmeta.app.screens.CommandActions.Exit> =
+                    if (call != null) termuxRun(call, spec.timeoutMinutes, onLine) else commandRun(checked.spot.guestDir, argv, spec.timeoutMinutes, onLine, onStop)
+                if (spec.level == 1) {
+                    val c = com.dpsmpx.dpmeta.app.screens.CommandActions.command(spec, checked.spot, checked.tree, checked.where, checked.dir)
+                    when (val r = repo.runCommand(c, { it.shown(c) }, ::run)) {
+                        is Outcome.Failure -> r
+                        is Outcome.Success -> Outcome.success("Готово: ${r.value.detail} (${seconds()} с).")
+                    }
+                } else {
+                    when (val r = run()) {
+                        is Outcome.Failure -> r
+                        is Outcome.Success -> if (r.value.code == 0) {
+                            Outcome.success(com.dpsmpx.dpmeta.app.screens.CommandActions.exitLine(r.value, seconds()))
+                        } else {
+                            Outcome.failure(DiagCode.PROCESS_EXIT_NONZERO, com.dpsmpx.dpmeta.app.screens.CommandActions.exitLine(r.value, seconds()).removeSuffix("."), key)
+                        }
+                    }
+                }
+            }
+            com.dpsmpx.dpmeta.app.data.CommandSession.start(key, job) { r ->
+                debugLog("команды", "${spec.id} ${checked.spot.project} ур.${spec.level}" + (if (termux) " в Termux" else "") + ": " + when (r) {
+                    is Outcome.Success -> "готово"
+                    is Outcome.Failure -> "${r.errors.first().code}"
+                })
+            }
+        }
+
+        override fun termuxFolder(): String = termuxFolder(this@PultActivity)
+
+        override fun setTermuxFolder(input: String): Outcome<String> {
+            val folder = com.dpsmpx.dpmeta.app.screens.TermuxActions.normalizeFolder(input)
+            com.dpsmpx.dpmeta.app.screens.TermuxActions.folderProblem(folder)?.let { return Outcome.failure(DiagCode.VALUE_INVALID, it, "termux") }
+            getSharedPreferences(SETTINGS_PREFS, MODE_PRIVATE).edit { putString(TERMUX_FOLDER, folder) }
+            return Outcome.success(folder)
+        }
+
+        /**
+         * Готовность в Termux (F-42; D-84): что знает пакетный менеджер, затем — проба
+         * `ls` папки, клона, программы и скрипта (только чтение), если Termux можно спросить.
+         */
+        override fun termuxCheck(
+            spec: com.dpsmpx.dpmeta.formats.CommandSpec,
+            registry: com.dpsmpx.dpmeta.model.Registry,
+            project: String?,
+            done: (Outcome<com.dpsmpx.dpmeta.app.screens.CommandActions.Checked>) -> Unit,
+        ) = background({
+            val t = com.dpsmpx.dpmeta.app.screens.TermuxActions
+            when (val sp = com.dpsmpx.dpmeta.app.screens.CommandActions.spot(spec, registry, project)) {
+                is Outcome.Failure -> sp
+                is Outcome.Success -> {
+                    val spot = sp.value
+                    val folder = termuxFolder(this@PultActivity)
+                    var facts = com.dpsmpx.dpmeta.app.data.TermuxBridge.facts(this@PultActivity)
+                    if (t.folderProblem(folder) == null && facts.installed && facts.runCommand && t.versionOk(facts.versionName) && facts.permitted) {
+                        val probe = t.probe(t.probePaths(spec, spot, folder))
+                        facts = when (val r = com.dpsmpx.dpmeta.app.data.TermuxBridge.run(this@PultActivity, probe, t.PROBE_SECONDS * 1000L)) {
+                            is Outcome.Failure -> facts.copy(probe = com.dpsmpx.dpmeta.app.screens.TermuxActions.Result("", "", null, 1, r.errors.first().message), probeSent = true)
+                            is Outcome.Success -> facts.copy(probe = r.value, probeSent = true)
+                        }
+                    }
+                    val ready = t.readiness(spec, spot, folder, facts)
+                    val dir = ready.clone?.let { t.dir(folder, it, spot) } ?: t.dir(folder, spot.repo.name, spot)
+                    Outcome.success(
+                        com.dpsmpx.dpmeta.app.screens.CommandActions.Checked(
+                            spot,
+                            null,
+                            ready.steps,
+                            where = com.dpsmpx.dpmeta.app.screens.CommandActions.Where.TERMUX,
+                            dir = dir,
+                            termux = ready.call?.takeIf { ready.ready },
+                        ),
+                    )
+                }
+            }
+        }, done)
+
+        override fun termuxPermit(done: () -> Unit) {
+            termuxAsked = done
+            askTermux.launch(com.dpsmpx.dpmeta.app.data.TermuxBridge.PERMISSION)
+        }
+
+        override fun appSettings() {
+            startActivity(
+                android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", packageName, null)),
+            )
+        }
+
+        /** Экспорт журнала (F-44): текстом через системное «Поделиться». */
+        override fun share(subject: String, text: String) {
+            val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+                .putExtra(android.content.Intent.EXTRA_SUBJECT, subject)
+                .putExtra(android.content.Intent.EXTRA_TEXT, text)
+            startActivity(android.content.Intent.createChooser(send, subject))
+        }
     }
 
     private fun saveToken(text: String) {
@@ -556,11 +921,28 @@ open class PultActivity : ComponentActivity() {
         view.value = view.value.copy(busy = true, statusDetails = "", status = "")
         val note = syncNote
         syncNote = null
+        val app = applicationContext
+        val selected = clonesSelected()
         pool.execute {
+            // Новый клон — под службой переднего плана (D-78): прошивка не выгрузит процесс на середине клона.
+            // Окно уже в фоне или система отказала — клонирование идёт в пуле, как прежде.
+            val service = selected.isNotEmpty() && runCatching { repo.missingClones(selected) }.getOrDefault(false) && CloneService.start(app)
             // Сбой внутри синхронизации — отказ на экране, а не падение процесса со службами «AI» (D-59).
-            // Ход (UX-10) — в заголовок, из потока синхронизации на главный.
-            val progress: (String) -> Unit = { p -> runOnUiThread { if (view.value.busy) view.value = view.value.copy(progress = p) } }
-            val r = runCatching { repo.sync(token, clonesSelected(), progress) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "синхронизация прервана: ${it.javaClass.simpleName}") }
+            // Ход (UX-10) — в заголовок, из потока синхронизации на главный; при службе — и в её уведомление.
+            val progress: (String) -> Unit = { p ->
+                if (service) CloneService.progress(app, p)
+                runOnUiThread { if (view.value.busy) view.value = view.value.copy(progress = p) }
+            }
+            val r = try {
+                runCatching { repo.sync(token, selected, progress) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "синхронизация прервана: ${it.javaClass.simpleName}") }
+            } finally {
+                if (service) CloneService.stop(app)
+            }
+            // Тревоги (D-85): новые события — через правила в уведомления; сбой показа синхронизацию не роняет.
+            if (r is Outcome.Success && r.value.events.isNotEmpty()) {
+                val line = runCatching { com.dpsmpx.dpmeta.app.data.PultAlerts.post(app, r.value.events, Clock.SYSTEM.now()) }.getOrElse { "сбой: ${it.javaClass.simpleName}" }
+                debugLog("тревоги", line)
+            }
             val state = (repo.state() as? Outcome.Success)?.value
             val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
             runOnUiThread {
@@ -568,7 +950,7 @@ open class PultActivity : ComponentActivity() {
                     is Outcome.Success -> view.value.copy(
                         state = state,
                         busy = false,
-                        status = "Готово: ${r.value.line}." + (note?.let { " $it" } ?: ""),
+                        status = "Готово: ${r.value.line}.".also { debugLog("пульт", "синхронизация: ${r.value.line}") } + (note?.let { " $it" } ?: ""),
                         statusDetails = "",
                         syncEnded = view.value.syncEnded + 1,
                         syncEnd = SyncEnd.DONE,
@@ -578,6 +960,7 @@ open class PultActivity : ComponentActivity() {
                         names = repo.names(),
                     ).also { loadHistory() }
                     is Outcome.Failure -> Screens.failure(r.diagnostics.first()).let { f ->
+                        debugLog("пульт", "синхронизация не вышла: ${r.diagnostics.first().code}")
                         view.value.copy(busy = false, status = "Не вышло: ${f.text}." + (note?.let { " $it" } ?: ""), statusDetails = f.details, syncEnded = view.value.syncEnded + 1, syncEnd = SyncEnd.FAILED, progress = null, cancelling = false)
                     }
                 }
@@ -586,6 +969,9 @@ open class PultActivity : ComponentActivity() {
     }
 
     companion object {
+        /** Раздел пульта по имени `AppSection` — для перехода с левой панели окна «AI» (D-112). */
+        const val EXTRA_SECTION = "com.dpsmpx.dpmeta.SECTION"
+
         /** Как часто строка «AI» сводки перечитывает числа, пока пульт на экране (D-76). */
         private const val AI_REFRESH_MS = 5_000L
 
@@ -595,13 +981,29 @@ open class PultActivity : ComponentActivity() {
         private const val PENDING_PERIOD = "export.period"
         private const val PENDING_AS_OF = "export.asOf"
 
-        /** Каталог клонов репозиториев экосистемы (D-65) в `filesDir`. */
-        const val CLONES_DIR = "clones"
+        /** Каталог клонов репозиториев экосистемы (D-65) в `filesDir` — раздел проектов гостя `~/projects` (D-111, D-113). */
+        const val CLONES_DIR = "linux/rootfs/root/projects"
+
+        /** Есть ли токен GitHub в хранилище пульта — для карты хранилища (D-111): только признак, без значения. */
+        fun hasGithubToken(context: android.content.Context): Boolean =
+            com.dpsmpx.dpmeta.app.data.SecretStore(NioVfs(context.noBackupFilesDir.toPath().resolve("dpmeta"))).exists()
+
+        /** Прежнее место клонов (до D-111, D-113): переезжает в `~/projects`, на старом месте — ссылка. */
+        const val LEGACY_CLONES_DIR = "clones"
+
+        /** Реестр команд в APK (F-40): `config/commands.toml` корня. */
+        const val COMMANDS_ASSET = "commands.toml"
 
         /** Выбор клонов автора (D-70): спрошен ли, какие отмечены (`владелец/имя`). */
         private const val CLONES_PREFS = "dpmeta.clones"
         private const val SETTINGS_PREFS = "dpmeta.settings"
         private const val ZONE_MINUTES = "zone_minutes"
+        private const val TERMUX_FOLDER = "termux_folder"
+
+        /** Папка проектов Termux (D-83): выбранная в «Командах» или по умолчанию. */
+        fun termuxFolder(context: android.content.Context): String =
+            context.getSharedPreferences(SETTINGS_PREFS, MODE_PRIVATE).getString(TERMUX_FOLDER, null)
+                ?: com.dpsmpx.dpmeta.app.screens.TermuxActions.DEFAULT_FOLDER
 
         /** Пояс показа, минуты от UTC (ТЗ, §6.3; UX-22): по умолчанию +03:00. */
         fun zoneMinutes(context: android.content.Context): Int =

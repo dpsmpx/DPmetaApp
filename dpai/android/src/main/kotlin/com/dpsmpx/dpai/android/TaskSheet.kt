@@ -79,7 +79,12 @@ fun TaskSheet(
     var confirm by remember { mutableStateOf<TaskAction?>(null) }
     var editor by remember { mutableStateOf<TaskAction?>(null) }
     val keys = remember { IdGenerator(Clock.SYSTEM, RandomSource.secure()) }
-    Poll(task, periodMs = 1500) { detail = withContext(Dispatchers.IO) { model.taskDetail(task) } }
+    // Кому передать задачу у предела её исполнителя (D-165): без автоматического перехода решает человек.
+    var offers by remember { mutableStateOf<List<com.dpsmpx.dpai.core.ids.Executor>>(emptyList()) }
+    Poll(task, periodMs = 1500) {
+        detail = withContext(Dispatchers.IO) { model.taskDetail(task) }
+        offers = withContext(Dispatchers.IO) { runCatching { model.liveOrchestrator()?.handoverCandidates(task) }.getOrNull().orEmpty() }
+    }
     // Несколько команд — по очереди, до первого отказа (область, затем зависимости).
     fun sendAll(vararg cs: (String) -> Command) {
         busy = true
@@ -142,6 +147,12 @@ fun TaskSheet(
                 }
                 // Вывод модели — только в чате сессии (D-62): переход туда — первым.
                 d.lastSession?.takeIf { it.value != shownSession }?.let { s -> androidx.compose.material3.Button(onClick = { onSession(s.value) }, Modifier.fillMaxWidth()) { Text("Открыть чат") } }
+                if (offers.isNotEmpty()) {
+                    Text("У всех слотов исполнителя задачи предел. Передать другому подключённому ИИ:", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    androidx.compose.foundation.layout.Row {
+                        for (x in offers) androidx.compose.material3.OutlinedButton(enabled = !busy, onClick = { send { k -> Command.SetExecutor(task, x, k) } }) { Text("Передать ${x.title}") }
+                    }
+                }
                 // Слово, а не идентификатор (D-88, U-3): человек читает экран, а не журнал событий.
                 Text("${Words.task(d.state)}${if (d.held) " · приостановлена" else ""} · приоритет ${Words.priority(d.priority)}", fontWeight = FontWeight.Bold)
                 // Цель длиннее четырёх строк — с многоточием и раскрытием нажатием (A-20).
@@ -183,6 +194,7 @@ fun TaskSheet(
                 Text(if (moving) "Слот следующего хода ▾" else "Слот следующего хода ▸", Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { moving = !moving }.padding(vertical = 12.dp), fontWeight = FontWeight.SemiBold)
                 if (moving) MoveSection(model, task, d.executor) { c -> send(c) }
                 ChangesSection(model, task)
+                GitHubSendSection(model, task, title)
             }
     }
     if (embedded) SidePanel(onDone, title, modifier, menu = menu, content = body) else FullScreenDialog(onDone, title, menu = menu, content = body)
@@ -319,7 +331,7 @@ private fun ReplyEditor(busy: Boolean, onSend: (String) -> Unit) {
  * строки — прокруткой вбок, без переноса.
  */
 @Composable
-private fun ChangesSection(model: DemoModel, task: TaskId) {
+internal fun ChangesSection(model: DemoModel, task: TaskId) {
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
     var view by remember(task) { mutableStateOf<com.dpsmpx.dpai.ui.ChangesView?>(null) }

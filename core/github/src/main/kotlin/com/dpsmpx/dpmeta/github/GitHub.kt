@@ -67,13 +67,14 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
         Outcome.success(RateLimit(remaining, limit, Timestamp(reset * 1000)))
     }
 
-    fun pulls(repo: RepoRef): Outcome<Page<List<PullRequest>>> = pullsOf("repos/$repo/pulls?state=open&per_page=100", "$repo:pulls")
+    fun pulls(repo: RepoRef): Outcome<Page<List<PullRequest>>> = pullsOf("repos/$repo/pulls?state=open&per_page=100", "$repo:pulls", complete = true)
 
     /** Последние закрытые PR (влитые — с `merged_at`): итог проверок последнего влитого (F-15), «влит / закрыт» ленты (F-05). */
     fun closedPulls(repo: RepoRef): Outcome<Page<List<PullRequest>>> =
         pullsOf("repos/$repo/pulls?state=closed&sort=updated&direction=desc&per_page=10", "$repo:closed")
 
-    private fun pullsOf(path: String, subject: String): Outcome<Page<List<PullRequest>>> = get(path, subject).then { p ->
+    private fun pullsOf(path: String, subject: String, complete: Boolean = false): Outcome<Page<List<PullRequest>>> =
+        (if (complete) allPages(path, subject) else get(path, subject)).then { p ->
         val repo = subject.substringBefore(':')
         val items = (p.value as? JsonArray)?.items ?: return@then missing("[]", "$repo:pulls")
         val out = items.map { v ->
@@ -95,7 +96,7 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
         Outcome.success(Page(out, p.fetched))
     }
 
-    fun branches(repo: RepoRef): Outcome<Page<List<Branch>>> = get("repos/$repo/branches?per_page=100", "$repo:branches").then { p ->
+    fun branches(repo: RepoRef): Outcome<Page<List<Branch>>> = allPages("repos/$repo/branches?per_page=100", "$repo:branches").then { p ->
         val items = (p.value as? JsonArray)?.items ?: return@then missing("[]", "$repo:branches")
         val out = items.map { v ->
             val o = v as? JsonObject ?: return@then missing("branch", "$repo:branches")
@@ -125,6 +126,16 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
             if (items.size < 100) break
         }
         return Outcome.success(out.distinctBy { it.slug.toString() }.sortedBy { it.slug.toString().lowercase() })
+    }
+
+    /**
+     * Размер репозитория на GitHub в байтах — для защиты места перед клоном (D-113).
+     * GitHub считает его в килобайтах и обновляет не сразу; поля нет — `null`:
+     * неизвестное — не ноль.
+     */
+    fun repoSize(repo: RepoRef): Outcome<Long?> = get("repos/$repo", "$repo").then { p ->
+        val o = p.value as? JsonObject ?: return@then missing("repo", "$repo")
+        Outcome.success((o["size"] as? JsonNumber)?.toLongExact()?.takeIf { it >= 0 }?.let { it * 1024 })
     }
 
     /** Коммит по SHA — неизменяемый: вызывающий хранит уже известные и не спрашивает снова. */
@@ -175,6 +186,34 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
         }
     }
 
+    /** K-03: каждая страница учитывается бюджетом; неполный список не выдаётся за полный. */
+    private fun allPages(path: String, subject: String): Outcome<Page<JsonValue>> {
+        val values = mutableListOf<JsonValue>()
+        var allCached = true
+        for (page in 1..maxOf(1, net.remaining)) {
+            // Значение Link не исполняется как URL: сохраняются наш origin, путь и фильтры.
+            val request = if (page == 1) path else "$path&page=$page"
+            val current = when (val response = get(request, subject)) {
+                is Outcome.Failure -> return response
+                is Outcome.Success -> response.value
+            }
+            val items = (current.value as? JsonArray)?.items ?: return missing("[]", subject)
+            values += items
+            allCached = allCached && current.fetched.notModified
+            val links = current.fetched.headers["link"]
+            val more = links?.any { NEXT_PAGE.containsMatchIn(it) }
+                // Совместимость со старым кешем без Link: полную страницу нужно проверить дальше.
+                ?: (current.fetched.notModified && items.size == 100)
+            if (!more) {
+                if (page == 1) return Outcome.success(current)
+                val combined = JsonArray(values)
+                val body = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(combined).toByteArray(Charsets.UTF_8)
+                return Outcome.success(Page(combined, Fetched(200, body, allCached, emptyMap())))
+            }
+        }
+        return Outcome.failure(DiagCode.RUN_BUDGET_EXHAUSTED, "бюджета не хватило на полный список GitHub", subject)
+    }
+
     private fun fetch(path: String, subject: String, accept: String, store: Boolean = true): Outcome<Fetched> {
         val headers = mapOf("Accept" to accept, "X-GitHub-Api-Version" to API_VERSION, "User-Agent" to USER_AGENT)
         val f = when (val r = net.get(api.resolve(path), headers, token, store)) {
@@ -185,6 +224,7 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
     }
 
     companion object {
+        private val NEXT_PAGE = Regex("""\brel\s*=\s*"?next\b""", RegexOption.IGNORE_CASE)
         const val API_VERSION = "2022-11-28"
         const val USER_AGENT = "DPmetaApp"
         private const val JSON = "application/vnd.github+json"

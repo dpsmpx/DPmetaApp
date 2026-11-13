@@ -1,0 +1,1 @@
+summary: alpha.check=Alpha/tools/sub:L0:foreground:30m:bash+python3+py3-yaml:/bin/bash check.sh --quick «два слова»,repo.ff=*:L1:background:1m:git:/usr/bin/git merge --ff-only @{upstream},beta.run=DP AIM Trainer:L0:background:10m:-:tools/run.sh

@@ -1,0 +1,29 @@
+Поле редактора DPmetaApp / dpai
+
+Sora Editor 0.24.7 — Rosemoe и авторы проекта.
+https://github.com/Rosemoe/sora-editor
+Лицензия LGPL-2.1-or-later: SORA-LICENSE.txt.
+Подключены неизменённые Maven-артефакты editor и language-textmate.
+Исходники той же версии доступны в Maven Central (classifier sources):
+https://repo.maven.apache.org/maven2/io/github/rosemoe/editor/0.24.7/
+https://repo.maven.apache.org/maven2/io/github/rosemoe/language-textmate/0.24.7/
+Sora — отдельная библиотека, не изменённая копия исходников приложения.
+
+TextMate for Eclipse (tm4e) внутри language-textmate — Eclipse Foundation
+и участники проекта; EPL-2.0, текст EPL-2.0.txt.
+https://github.com/eclipse-tm4e/tm4e
+https://github.com/Rosemoe/sora-editor/tree/main/language-textmate
+
+Другие зависимости language-textmate:
+- Joni 2.2.7 и JCodings 1.0.64 — JRuby contributors, MIT.
+  https://github.com/jruby/joni / https://github.com/jruby/jcodings
+- Gson 2.14.0 — Google, Apache-2.0.
+  https://github.com/google/gson
+- SnakeYAML Engine 3.2 — SnakeYAML authors, Apache-2.0.
+  https://bitbucket.org/snakeyaml/snakeyaml-engine
+- Eclipse JDT annotations 2.4.100 — Eclipse Foundation, EPL-2.0.
+  https://github.com/eclipse-jdt/eclipse.jdt.core
+
+Грамматики C/C++, Kotlin, Java, Python, JSON, конфигурации и темы в этой
+папке написаны для DPmetaApp. Сторонние грамматики не копировались.
+Языковые службы и облачные запросы этим полем не запускаются.

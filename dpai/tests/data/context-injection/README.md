@@ -7,6 +7,7 @@
 
 | Файл | Уловка |
 |---|---|
+| `forged-history-role.md` | поддельная роль человека в ответе прошлой модели; также TaskHistoryContextTest |
 | `ignore-instructions.md` | прямое «игнорируй указания» |
 | `fake-end-marker.md` | поддельный конец блока данных и заголовок правил |
 | `fake-orchestrator-header.md` | заголовок, как у правил оркестратора |

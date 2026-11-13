@@ -133,4 +133,12 @@ enum class EventType {
     // --- принятая команда контура (D-94): переживает смерть процесса ---
     COMMAND_ACCEPTED,
     COMMAND_SETTLED,
+
+    // --- журнал действий DPmetaApp (DPmetaApp:D-07, F-44): до исполнения, итог, отказ политики ---
+    ACTION_REQUESTED,
+    ACTION_SETTLED,
+    ACTION_REFUSED,
+
+    // --- переход у предела к другому исполнителю — только по настройке человека (DPmetaApp:D-130, D-165) ---
+    CONTROL_EXECUTOR_SWITCH_SET,
 }

@@ -30,6 +30,7 @@ class AgentCommand(
 ) {
     fun run(args: List<String>): Int {
         val command = args.firstOrNull() ?: return usage("нет команды агента")
+        if (command == "service") return service(args.getOrNull(1), args.drop(2))
         val opts = AgentArgs.parse(args.drop(1)) ?: return usage("неверные параметры")
         if (command == "mcp") return mcp(opts)
         // Абсолютный (ревью A-18): супервизор запускается с рабочим каталогом home, и относительный
@@ -45,11 +46,60 @@ class AgentCommand(
             }
             return if (ok) Cli.OK else FAILED
         }
+        if (command == "serve") {
+            // Служба (D-109): живёт, пока её не остановит systemd или планировщик; ответ — при выходе.
+            val reply = runtime.serve()
+            out(CanonicalJson.write(reply.toJson()))
+            return if (reply.ok) Cli.OK else FAILED
+        }
         if (command !in AgentCommands.SINGLE_REPLY) return usage("неизвестная команда агента: $command")
-        if (command != "doctor" && opts.single("run")?.let { IdKinds.SESSION.parse(it).valueOrNull() } == null) return usage("--run <SessionId> обязателен")
+        if (command !in setOf("doctor", "profiles") && opts.single("run")?.let { IdKinds.SESSION.parse(it).valueOrNull() } == null) return usage("--run <SessionId> обязателен")
         val reply = AgentCommands.reply(runtime, command, opts, stdin) ?: return usage("неверные параметры команды $command")
         out(CanonicalJson.write(reply.toJson()))
         return if (reply.ok) Cli.OK else FAILED
+    }
+
+    /**
+     * Служба агента на ПК (D-109): `install` — поставить и запустить, `remove` —
+     * снять, `status` — состояние. Ответ — строка `dpai.agent-reply` (`service`);
+     * человеку — ещё строки в stderr.
+     */
+    private fun service(sub: String?, rest: List<String>): Int {
+        val opts = AgentArgs.parse(rest) ?: return usage("неверные параметры")
+        val home = File(opts.single("home") ?: defaultHome()).absolutePath
+        val runtime = AgentRuntime(home, clock, version, selfCommand)
+        val reply = when (sub) {
+            "status" -> runtime.serviceStatus()
+            "install", "remove" -> {
+                val setup = com.dpsmpx.dpai.orchestrator.agent.AgentServiceSetup(home, selfCommand, com.dpsmpx.dpai.execution.process.LocalProcessHost(clock))
+                when (val r = if (sub == "install") setup.install() else setup.remove()) {
+                    is com.dpsmpx.dpai.core.result.Outcome.Failure -> com.dpsmpx.dpai.execution.agent.AgentReply.failure("service", r.diagnostics)
+                    is com.dpsmpx.dpai.core.result.Outcome.Success -> {
+                        r.value.steps.forEach { err("✓ $it") }
+                        r.value.warnings.forEach { err("! ${it.message}") }
+                        // После установки — дождаться признака жизни службы: ответ говорит, идёт ли она.
+                        val status = if (sub == "install") awaitService(runtime) else runtime.serviceStatus()
+                        status.copy(diagnostics = r.value.warnings)
+                    }
+                }
+            }
+            else -> return usage("dpai agent service install|remove|status")
+        }
+        reply.diagnostics.filter { it.isError }.forEach { err("✗ ${it.message}") }
+        reply.service?.let { err("служба: ${it.state}" + (it.pid?.let { p -> ", процесс $p" } ?: "") + (it.version?.let { v -> ", версия $v" } ?: "")) }
+        out(CanonicalJson.write(reply.toJson()))
+        return if (reply.ok) Cli.OK else FAILED
+    }
+
+    /** Признак жизни службы — до 15 с после запуска (JVM службы стартует не сразу). */
+    private fun awaitService(runtime: AgentRuntime): com.dpsmpx.dpai.execution.agent.AgentReply {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        repeat(30) {
+            val r = runtime.serviceStatus()
+            if (r.service?.running == true) return r
+            latch.await(500, java.util.concurrent.TimeUnit.MILLISECONDS)
+        }
+        return runtime.serviceStatus()
     }
 
     /**
@@ -81,6 +131,8 @@ class AgentCommand(
             |dpai agent — агент оркестратора на target (D-26)
             |
             |  dpai agent doctor   [--home DIR]
+            |  dpai agent profiles [--home DIR]
+            |  dpai agent fence-stop --run ID [--home DIR]
             |  dpai agent start    --run ID [--home DIR] [--dir DIR] [--timeout-seconds N]
             |                      [--env NAME=VALUE]... [--unset NAME]... -- КОМАНДА…
             |  dpai agent start    --run ID [--home DIR] --spec-stdin   (dpai.run-spec на входе)
@@ -91,6 +143,9 @@ class AgentCommand(
             |  dpai agent stop     --run ID [--home DIR] [--grace-seconds N]
             |  dpai agent mcp      --root DIR [--shell bash|sh|powershell|cmd]
             |                      (MCP-сервер рабочего дерева по stdio, D-50)
+            |  dpai agent service  install|remove|status [--home DIR]
+            |                      (служба агента на ПК: systemd пользователя, задача Windows; D-109)
+            |  dpai agent serve    [--home DIR]   (сама служба; ставится командой service)
             |
             |Ответ — одна строка JSON dpai.agent-reply (follow — строка на каждую новость).
             |Коды выхода: 0 — успех, 1 — отказ, 2 — неверный вызов.

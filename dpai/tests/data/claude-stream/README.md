@@ -13,6 +13,7 @@
 |---|---|---|
 | `success-structured.jsonl` | записан: `--json-schema`, `--tools ""`, модель Haiku 4.5 | `system/init`, `system/thinking_tokens`, ответ через `StructuredOutput`, `rate_limit_event` с окнами пяти часов и недели, `result` с `structured_output` и стоимостью |
 | `auth-failed.jsonl` | записан: пустой `CLAUDE_CONFIG_DIR` | `assistant` с `error: authentication_failed`, `result` с `is_error: true` при `subtype: success`; код выхода 1 |
+| `auth-failed-alpine.jsonl` | записан 9 ноября 2026, Claude Code **2.1.319** (npm, бинарник `linux-x64-musl`), Alpine 3.24.3 x86_64 под proot-static 5.4.0 — как Linux-среда приложения (D-75), пустой `CLAUDE_CONFIG_DIR`; списки `init` сокращены, id заменены | тот же отказ входа, что `auth-failed.jsonl`, в новой версии: у `result` — `terminal_reason: api_error`, `subagent_stats`, `safety_stops`; код выхода 1 |
 | `truncated-result.jsonl` | построен из записанного | последняя строка оборвана посередине |
 | `garbage-line.jsonl` | построен | строка не JSON посреди потока |
 | `duplicate-event.jsonl` | построен | то же событие (тот же `uuid`) дважды |

@@ -1,0 +1,95 @@
+{
+  "brackets": [
+    [
+      "{",
+      "}"
+    ],
+    [
+      "[",
+      "]"
+    ],
+    [
+      "(",
+      ")"
+    ]
+  ],
+  "autoClosingPairs": [
+    {
+      "open": "{",
+      "close": "}",
+      "notIn": [
+        "string",
+        "comment"
+      ]
+    },
+    {
+      "open": "[",
+      "close": "]",
+      "notIn": [
+        "string",
+        "comment"
+      ]
+    },
+    {
+      "open": "(",
+      "close": ")",
+      "notIn": [
+        "string",
+        "comment"
+      ]
+    },
+    {
+      "open": "\"",
+      "close": "\"",
+      "notIn": [
+        "string",
+        "comment"
+      ]
+    },
+    {
+      "open": "'",
+      "close": "'",
+      "notIn": [
+        "string",
+        "comment"
+      ]
+    }
+  ],
+  "surroundingPairs": [
+    [
+      "{",
+      "}"
+    ],
+    [
+      "[",
+      "]"
+    ],
+    [
+      "(",
+      ")"
+    ],
+    [
+      "\"",
+      "\""
+    ],
+    [
+      "'",
+      "'"
+    ]
+  ],
+  "indentationRules": {
+    "increaseIndentPattern": "(?:^\\s*(?:(?:async\\s+)?(?:class|def|if|elif|else|for|while|try|except|finally|with|match|case)\\b|[)\\]])(?:[^#\"'\\\\:]++|\\\\.|(?:\"(?:[^\"\\\\]++|\\\\.)*+\"|'(?:[^'\\\\]++|\\\\.)*+')|:(?!\\s*(?:#.*)?$))*+:\\s*(?:#.*)?$|^(?:[^#\"'\\\\\\{\\[\\(]++|\\\\.|(?:\"(?:[^\"\\\\]++|\\\\.)*+\"|'(?:[^'\\\\]++|\\\\.)*+')|[\\{\\[\\(](?!\\s*(?:#.*)?$))*+[\\{\\[\\(]\\s*(?:#.*)?$)",
+    "decreaseIndentPattern": "^\\s*[\\}\\]\\)].*$"
+  },
+  "comments": {
+    "lineComment": "#"
+  },
+  "onEnterRules": [
+    {
+      "beforeText": "^\\s*(?:(?:async\\s+)?(?:class|def|if|elif|else|for|while|try|except|finally|with|match|case)\\b|[)\\]])(?:[^#\"'\\\\:]++|\\\\.|(?:\"(?:[^\"\\\\]++|\\\\.)*+\"|'(?:[^'\\\\]++|\\\\.)*+')|:(?!\\s*(?:#.*)?$))*+:\\s*(?:#.*)?$",
+      "action": {
+        "indent": "indent"
+      }
+    }
+  ]
+}

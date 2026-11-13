@@ -57,12 +57,21 @@ class ScreenSnapshotTest {
     @Test
     fun summary() = snapshot("summary", ScreenText.summary(Screens.summary(state())))
 
-    /** Панель пульта (D-73): пять пунктов с «AI», четыре — без подсистемы; «Разработка» — две вкладки. */
+    /** PR всех проектов (F-11) по корпусу: один черновик Alpha — в «Черновиках», не в «Ждут автора». */
+    @Test
+    fun pullsOfAllProjects() {
+        val rows = Screens.pulls(state())
+        assertEquals(listOf("Alpha" to 3L), rows.map { it.project to it.number })
+        assertEquals(1, Screens.filterPulls(rows, Screens.PullFilter.DRAFTS, null).size)
+        assertEquals(0, Screens.filterPulls(rows, Screens.PullFilter.WAITING, null).size)
+    }
+
+    /** Левая панель (D-112): шесть пунктов с «AI», четыре — без подсистемы; графиков нет; «Проекты» — три вкладки. */
     @Test
     fun panel() {
-        assertEquals(listOf("Сводка", "Разработка", "Статистика", "AI", "Ещё"), Screens.panel(ai = true))
-        assertEquals(listOf("Сводка", "Разработка", "Статистика", "Ещё"), Screens.panel(ai = false))
-        assertEquals(listOf("Проекты", "Вопросы"), Screens.DevTab.entries.map { it.title })
+        assertEquals(listOf("Сводка", "Проекты", "IDE", "AI", "Настройки", "Справка"), Screens.panel(ai = true))
+        assertEquals(listOf("Сводка", "Проекты", "Настройки", "Справка"), Screens.panel(ai = false))
+        assertEquals(listOf("Проекты", "PR", "Вопросы"), Screens.DevTab.entries.map { it.title })
     }
 
     /** Строка «AI» (D-76): с контуром — числа и переход к запросам; без контура — «не настроено». */
@@ -74,6 +83,18 @@ class ScreenSnapshotTest {
             Screens.AiCounts(true, Measure.observed(2L), Measure.observed(1L), Measure.unknown("нет снимка")),
         ) + ScreenText.summary(Screens.summary(state()), Screens.AiCounts(false, Measure.unknown("нет"), Measure.unknown("нет"), Measure.unknown("нет"))),
     )
+
+    /** Проблемы проверки приложения (D-123) — числом в конце строки «AI», и без настроенного контура. */
+    @Test
+    fun aiLineCountsHealthProblems() {
+        val none = Measure.unknown("нет")
+        assertEquals("AI: не настроено · проблем: 3", Screens.aiLine(Screens.AiCounts(false, none, none, none, problems = 3)))
+        assertEquals(
+            "AI: ждут ответа 0 · в работе 1 · подписки у предела 0 · проблем: 1",
+            Screens.aiLine(Screens.AiCounts(true, Measure.observed(0L), Measure.observed(1L), Measure.observed(0L), problems = 1)),
+        )
+        assertEquals("AI: не настроено", Screens.aiLine(Screens.AiCounts(false, none, none, none)))
+    }
 
     @Test
     fun projects() = snapshot("projects", ScreenText.projects(Screens.projects(state())))

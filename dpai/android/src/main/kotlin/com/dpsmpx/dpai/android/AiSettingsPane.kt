@@ -31,12 +31,18 @@ import androidx.compose.ui.unit.dp
  * «Настройки AI» (`DP_AI_Orcestrator:D-112`; AI:A-3): редкое, что раньше
  * стояло над списком targets, — инструкция, Linux в приложении, ключ
  * приложения, контур, копии и восстановление одной карточкой, командная
- * строка `dpai`, диск приложения, окно поверх приложений — и журнал.
+ * строка `dpai`, диск приложения, окно поверх приложений, маршруты
+ * Claude Code (D-116) — и журнал.
  * Инструкция и Linux — своими экранами; «Назад» — к настройкам.
  */
 @Composable
-fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub: (String?) -> Unit) {
+fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onTargets: () -> Unit = {}, onSub: (String?) -> Unit) {
     when (sub) {
+        CHECK -> {
+            BackHandler { onSub(null) }
+            HealthPane(model, HealthNav(targets = onTargets, log = { onSub(LOG) }, guide = { onSub(GUIDE) }, settings = { onSub(null) }), onBack = { onSub(null) })
+            return
+        }
         GUIDE -> {
             BackHandler { onSub(null) }
             SetupPane(controller, model) { onSub(null) }
@@ -45,6 +51,16 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub
         LINUX -> {
             BackHandler { onSub(null) }
             LinuxScreen(onBack = { onSub(null) })
+            return
+        }
+        GITHUB -> {
+            BackHandler { onSub(null) }
+            GitHubPane(model, onBack = { onSub(null) })
+            return
+        }
+        ROUTINES -> {
+            BackHandler { onSub(null) }
+            RoutinesPane(model, onBack = { onSub(null) })
             return
         }
         LOG -> {
@@ -58,7 +74,13 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub
         }
     }
     var restoring by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val app = context.applicationContext as? DpaiApplication
+    // В DPmetaApp «Оформление» и «Хранилище и секреты» — в документе настроек приложения (DPmetaApp:D-112), здесь — ссылка.
+    val appSettings = app?.sectionIntent(com.dpsmpx.dpai.ui.AppSection.SETTINGS)
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Проверка — первой (DPmetaApp:D-123): что не так и как исправить.
+        item(key = "check") { Entry("Проверка", "что не так и что делать; мастер настройки; что исправлено само") { onSub(CHECK) } }
         item(key = "guide") {
             Card(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -67,35 +89,46 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub
                 }
             }
         }
+        if (appSettings != null) {
+            item(key = "app") { Entry("Все настройки приложения", "оформление, хранилище, секреты, управление, копии — одним документом с поиском") { context.startActivity(appSettings) } }
+        } else {
+            item(key = "look") { LookCard() }
+        }
         item(key = "linux") { Entry("Linux в приложении", "Alpine, пакеты, слоты") { onSub(LINUX) } }
+        item(key = "github") { Entry("PR на GitHub", "открытые PR проекта, проверки, отзывы — через gh") { onSub(GITHUB) } }
+        item(key = "routines") { Entry("Маршруты Claude Code", "облачные сессии по токену маршрута — для поручений из пульта") { onSub(ROUTINES) } }
         item(key = "log") { Entry("Журнал", "строки журнала, выгрузка, отладка") { onSub(LOG) } }
-        item(key = "key") { AppKeyCard(controller) }
-        item(key = "control") { ControlCard(model) }
-        // Три копии — одной карточкой (AI:A-3, §4, п. 6): копия настроек, восстановление доступа, облако.
-        item(key = "copies") {
-            Card(Modifier.fillMaxWidth()) {
-                Column {
-                    Text("Копии и восстановление", Modifier.padding(start = 12.dp, top = 12.dp), style = MaterialTheme.typography.titleMedium)
-                    BackupCard(controller, framed = false, onRestoreAccess = { restoring = true }) {}
-                    if (restoring) {
+        // В DPmetaApp карточки ниже — в документе настроек приложения (D-151); здесь — отдельная сборка «AI».
+        if (appSettings == null) {
+            item(key = "key") { AppKeyCard(controller) }
+            item(key = "control") { ControlCard(model) }
+            // Три копии — одной карточкой (AI:A-3, §4, п. 6): копия настроек, восстановление доступа, облако.
+            item(key = "copies") {
+                Card(Modifier.fillMaxWidth()) {
+                    Column {
+                        Text("Копии и восстановление", Modifier.padding(start = 12.dp, top = 12.dp), style = MaterialTheme.typography.titleMedium)
+                        BackupCard(controller, framed = false, onRestoreAccess = { restoring = true }) {}
+                        if (restoring) {
+                            HorizontalDivider()
+                            RestoreCard(controller, framed = false, onHide = { restoring = false }) {}
+                        }
                         HorizontalDivider()
-                        RestoreCard(controller, framed = false, onHide = { restoring = false }) {}
+                        CloudCard(model, framed = false)
                     }
-                    HorizontalDivider()
-                    CloudCard(model, framed = false)
                 }
             }
+            item(key = "cli") { CliCard() }
+            item(key = "storage") { StorageSecretsCard() }
+            item(key = "disk") { AppDiskCard() }
+            item(key = "overlay") { OverlayCard() }
         }
-        item(key = "cli") { CliCard() }
-        item(key = "disk") { AppDiskCard() }
-        item(key = "overlay") { OverlayCard() }
         item(key = "end") { androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp)) }
     }
 }
 
 /** Строка-вход в свой экран настроек: название, что внутри, «▸». */
 @Composable
-private fun Entry(title: String, detail: String, onOpen: () -> Unit) {
+internal fun Entry(title: String, detail: String, onOpen: () -> Unit) {
     Card(Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -107,8 +140,18 @@ private fun Entry(title: String, detail: String, onOpen: () -> Unit) {
     }
 }
 
-private const val GUIDE = "guide"
-private const val LINUX = "linux"
+/** Подэкраны «Настроек AI»: на них ведут ссылки документа настроек приложения (D-151). */
+internal const val SETTINGS_GUIDE = "guide"
+internal const val SETTINGS_LINUX = "linux"
+internal const val SETTINGS_GITHUB = "github"
+internal const val SETTINGS_ROUTINES = "routines"
+internal const val SETTINGS_CHECK = "check"
+internal val SETTINGS_SUBS: Set<String> = setOf(SETTINGS_CHECK, SETTINGS_GUIDE, SETTINGS_LINUX, SETTINGS_GITHUB, SETTINGS_ROUTINES, "log")
+private const val CHECK = SETTINGS_CHECK
+private const val GUIDE = SETTINGS_GUIDE
+private const val LINUX = SETTINGS_LINUX
+private const val GITHUB = SETTINGS_GITHUB
+private const val ROUTINES = SETTINGS_ROUTINES
 
 /** Под-экран журнала — его открывает и «Журнал» у сбоя контроллера (AI:A-17). */
 internal const val SETTINGS_LOG = "log"

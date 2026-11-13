@@ -47,7 +47,7 @@ import com.dpsmpx.dppass.network.NetworkType
 import com.dpsmpx.dppass.network.RestrictionClass
 import com.dpsmpx.dppass.routing.SplitSites
 import com.dpsmpx.dppass.tunnel.Ipv6Mode
-import com.dpsmpx.dppass.tunnel.TunnelHandle
+import com.dpsmpx.dppass.tunnel.TunnelOwner
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -132,7 +132,7 @@ class DPpassVpnService : VpnService() {
 
     private var connecting: Job? = null
     private var session: EngineSession? = null
-    private var tunnel: TunnelHandle? = null
+    private val tunnel = TunnelOwner()
     private var ticker: Job? = null
     private var supervisor: Job? = null
     private var shareWatch: Job? = null
@@ -228,7 +228,7 @@ class DPpassVpnService : VpnService() {
     /** Остановить прежнее и подключиться заново — если за этим запросом не ждёт ещё один. */
     private suspend fun restart() {
         lifecycle.withLock {
-            shutdown()
+            shutdown(keepTunnel = true)
             if (restarts.decrementAndGet() == 0) start() else DeviceLog.log.info("service_reconnect_superseded")
         }
     }
@@ -326,6 +326,7 @@ class DPpassVpnService : VpnService() {
                 is Outcome.Success -> t.value
             }
         }
+        tunnel.replace(handle)
         if (tunSpec != null) {
             core.log.info("tunnel_up", "routes" to tunSpec.routes.size, "apps" to Safe(tunSpec.apps::class.simpleName ?: "?"))
         } else {
@@ -370,7 +371,6 @@ class DPpassVpnService : VpnService() {
             // Остановка во время подключения: сеанс, запущенный посреди проверки
             // здоровья, оркестратор уже остановил (ConnectionOrchestrator.tryOne);
             // остаётся TUN.
-            handle?.close()
             throw e
         }
         // План и исходы попыток — для «Почему этот сервер» (D-15), и при отказе тоже.
@@ -384,7 +384,6 @@ class DPpassVpnService : VpnService() {
                         false
                     } else {
                         session = report.session
-                        tunnel = handle
                         true
                     }
                 }
@@ -422,15 +421,12 @@ class DPpassVpnService : VpnService() {
                     }
                 } else {
                     report.session.stop()
-                    handle?.close()
                 }
             }
             is ConnectionReport.Failed -> {
-                handle?.close()
                 fail(report.reason)
             }
             null -> {
-                handle?.close()
                 fail(Diagnostic.error(DiagCode.PROFILES_EMPTY, "нет активной конфигурации — подключаться не к чему"))
             }
         }
@@ -460,6 +456,7 @@ class DPpassVpnService : VpnService() {
             }
             is Outcome.Success -> t.value
         }
+        tunnel.replace(handle)
         core.log.info("tunnel_up", "routes" to tunSpec.routes.size, "apps" to Safe(tunSpec.apps::class.simpleName ?: "?"))
         progress(TunnelStatus.Connecting(name))
         val probeTimeout = (core.policy.healthTimeoutMillis - PROBE_MARGIN_MILLIS).toInt()
@@ -469,12 +466,10 @@ class DPpassVpnService : VpnService() {
                 withContext(Dispatchers.IO) { graph.engine.probeServerless(dns, probeTimeout) }
             }
         } catch (e: CancellationException) {
-            handle.close()
             throw e
         }
         when (result) {
             is Outcome.Failure -> {
-                handle.close()
                 fail(result.errors.first())
             }
             is Outcome.Success -> withContext(NonCancellable) {
@@ -484,7 +479,6 @@ class DPpassVpnService : VpnService() {
                         false
                     } else {
                         this@DPpassVpnService.session = session
-                        tunnel = handle
                         true
                     }
                 }
@@ -495,7 +489,6 @@ class DPpassVpnService : VpnService() {
                     startTicker(session)
                 } else {
                     session.stop()
-                    handle.close()
                 }
             }
         }
@@ -829,9 +822,10 @@ class DPpassVpnService : VpnService() {
     /** Отказ запуска: причина — в журнал и на экран, сервис уходит. */
     private fun fail(reason: Diagnostic) {
         AppGraph.core(this).log.diagnostic(reason)
-        TunnelState.set(TunnelStatus.Failed(reason))
+        val blocked = tunnel.present
+        TunnelState.set(TunnelStatus.Failed(reason, trafficBlocked = blocked))
         announce()
-        stopSelf()
+        if (blocked) startInForeground(TunnelState.status.value) else stopSelf()
     }
 
     /** Новое состояние подключения — и в уведомление: его видно и без экрана. */
@@ -847,26 +841,33 @@ class DPpassVpnService : VpnService() {
      * (до срока пробы), и запущенный им сеанс останавливается, только когда
      * она вернётся. Вызывается под [lifecycle].
      */
-    private suspend fun shutdown() {
+    private fun stopObservers() {
         supervisor?.cancel()
         supervisor = null
         shareWatch?.cancel()
         shareWatch = null
+        ticker?.cancel()
+        ticker = null
+        unwatchNetwork()
         TunnelState.share(emptyList())
+    }
+
+    private suspend fun shutdown(keepTunnel: Boolean = false) {
+        stopObservers()
         state.withLock {
-            ticker?.cancel()
-            ticker = null
-            unwatchNetwork()
             sessionRegime = null
             val pending = connecting
             connecting = null
             pending?.cancel()
             session?.stop()
             session = null
-            tunnel?.close()
-            tunnel = null
             pending
         }?.join()
+        // NonCancellable acceptance мог зарегистрировать наблюдателей после первой отмены.
+        stopObservers()
+        // establish мог завершиться после отмены: fd уже принадлежит владельцу.
+        // Явная остановка закрывает его после завершения подключения; restart сохраняет блокировку.
+        if (!keepTunnel) tunnel.close()
         // Опыт адаптивной модели — на диск, чтобы пережил остановку (D-44); счёт трафика — тоже (D-92).
         withContext(NonCancellable) {
             val core = AppGraph.graph(this@DPpassVpnService).core
@@ -889,7 +890,14 @@ class DPpassVpnService : VpnService() {
 
     override fun onDestroy() {
         // Сервис уходит: уборка — в области процесса, она переживёт этот объект.
-        AppGraph.scope.launch { lifecycle.withLock { shutdown() } }
+        val failed = TunnelState.status.value as? TunnelStatus.Failed
+        AppGraph.scope.launch {
+            lifecycle.withLock { shutdown() }
+            if (failed?.trafficBlocked == true && TunnelState.status.value === failed) {
+                TunnelState.set(failed.copy(trafficBlocked = false))
+                announce()
+            }
+        }
         // Без туннеля вопрос о сбое сервера (D-58) ни к чему.
         ServerSwitch.clear(this)
         // Отказ остаётся на экране; всё остальное без сервиса — «не подключено».
@@ -950,6 +958,7 @@ class DPpassVpnService : VpnService() {
             } else {
                 getString(R.string.notification_connected, status.profileName)
             }
+            is TunnelStatus.Failed -> getString(if (status.trafficBlocked) R.string.vpn_blocked_note else R.string.status_failed)
             is TunnelStatus.Connecting -> status.profileName?.let { getString(R.string.notification_checking, it) }
                 ?: getString(R.string.notification_connecting)
             else -> getString(R.string.notification_connecting)
@@ -970,7 +979,15 @@ class DPpassVpnService : VpnService() {
         // имя часто называет страну и поставщика.
         val public = Notification.Builder(this, CHANNEL)
             .setContentTitle(getString(R.string.app_name))
-            .setContentText(getString(if (status is TunnelStatus.Connected) R.string.notification_public_connected else R.string.notification_connecting))
+            .setContentText(
+                getString(
+                    when {
+                        status is TunnelStatus.Connected -> R.string.notification_public_connected
+                        status is TunnelStatus.Failed && status.trafficBlocked -> R.string.status_blocked
+                        else -> R.string.notification_connecting
+                    },
+                ),
+            )
             .setSmallIcon(R.drawable.ic_stat_tunnel)
             .build()
         val b = Notification.Builder(this, CHANNEL)

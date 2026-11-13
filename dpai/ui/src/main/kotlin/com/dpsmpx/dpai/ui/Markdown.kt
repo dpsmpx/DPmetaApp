@@ -20,14 +20,55 @@ data class Rendered(val text: String, val marks: List<Mark>)
  * Чистая функция без платформы — проверяется тестами (D-22).
  */
 object Markdown {
-    private val HEADING = Regex("""^(#{1,6})\s+(.*?)\s*#*\s*$""")
     private val BULLET = Regex("""^(\s*)[-*+]\s+(.*)$""")
     private val ORDERED = Regex("""^(\s*)(\d{1,3})[.)]\s+(.*)$""")
     private val QUOTE = Regex("""^\s*>\s?(.*)$""")
-    private val RULE = Regex("""^\s*([-*_])(\s*\1){2,}\s*$""")
     private val FENCE = Regex("""^\s*(```|~~~)""")
     private val TABLE_SEPARATOR = Regex("""^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$""")
     private val TASK = Regex("""^\[( |x|X)]\s+(.*)$""")
+
+    /**
+     * Строка длиннее — без разметки внутри строки (аудит N-14): разбор
+     * участков в худшем случае квадратичен по длине строки, а текст —
+     * недоверенный (вывод модели, документ репозитория). Сообщения Claude
+     * таких строк не пишут.
+     */
+    const val MAX_INLINE = 4_000
+
+    /** Пробел в смысле `\s` регулярных выражений Java — как было у прежних шаблонов. */
+    private fun ws(c: Char) = c == ' ' || c == '\t' || c == '\n' || c == '\u000B' || c == '\u000C' || c == '\r'
+
+    /**
+     * Заголовок: 1…6 `#`, пробел, текст; хвост из `#` и пробелов
+     * отбрасывается. Проходом по строке, без регулярного выражения: у
+     * прежнего шаблона перебор был кубическим (аудит N-14).
+     */
+    private fun heading(line: String): Pair<Int, String>? {
+        var n = 0
+        while (n < line.length && line[n] == '#') n++
+        if (n !in 1..6 || n >= line.length || !ws(line[n])) return null
+        var end = line.length
+        while (end > n && ws(line[end - 1])) end--
+        while (end > n && line[end - 1] == '#') end--
+        while (end > n && ws(line[end - 1])) end--
+        var start = n
+        while (start < end && ws(line[start])) start++
+        return n to line.substring(start, end)
+    }
+
+    /** Разделитель: три и больше одинаковых `-`, `*` или `_`, между ними — только пробелы. */
+    private fun rule(line: String): Boolean {
+        val c = line.firstOrNull { !ws(it) } ?: return false
+        if (c != '-' && c != '*' && c != '_') return false
+        var count = 0
+        for (ch in line) {
+            when {
+                ch == c -> count++
+                !ws(ch) -> return false
+            }
+        }
+        return count >= 3
+    }
 
     fun render(md: String): Rendered {
         val out = StringBuilder()
@@ -53,18 +94,18 @@ object Markdown {
             }
             newline()
             when {
-                HEADING.matches(line) -> {
-                    val m = HEADING.matchEntire(line)!!
+                heading(line) != null -> {
+                    val (level, text) = heading(line)!!
                     val start = out.length
-                    inline(m.groupValues[2], out, marks)
-                    val style = when (m.groupValues[1].length) {
+                    inline(text, out, marks)
+                    val style = when (level) {
                         1 -> MarkStyle.HEADING_1
                         2 -> MarkStyle.HEADING_2
                         else -> MarkStyle.HEADING_3
                     }
                     marks += Mark(start, out.length, style)
                 }
-                RULE.matches(line) -> out.append("────────")
+                rule(line) -> out.append("────────")
                 QUOTE.matches(line) -> {
                     val start = out.length
                     inline(QUOTE.matchEntire(line)!!.groupValues[1], out, marks)
@@ -91,7 +132,7 @@ object Markdown {
                     // Таблица — все её строки разом: столбцы выровнены моноширинным шрифтом (и при копировании).
                     val rows = mutableListOf<String>()
                     while (i < lines.size && lines[i].trimStart().startsWith("|")) {
-                        if (!TABLE_SEPARATOR.matches(lines[i])) rows += lines[i]
+                        if (lines[i].length > MAX_INLINE || !TABLE_SEPARATOR.matches(lines[i])) rows += lines[i]
                         i++
                     }
                     table(rows, out, marks)
@@ -141,6 +182,10 @@ object Markdown {
 
     /** Разметка внутри строки: код, ссылка, жирный, зачёркнутый, курсив; экранирование `\*`. */
     private fun inline(s: String, out: StringBuilder, marks: MutableList<Mark>) {
+        if (s.length > MAX_INLINE) {
+            out.append(s)
+            return
+        }
         var i = 0
         while (i < s.length) {
             val c = s[i]

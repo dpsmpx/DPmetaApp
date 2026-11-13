@@ -97,7 +97,24 @@ class Controller(private val root: File, val version: String?) {
      * копия настроек (D-51) — после переустановки политика выключена.
      */
     val ecosystemAuto = com.dpsmpx.dpai.orchestrator.ecosystem.AutoEcosystem(docs, Clock.SYSTEM)
+    val manualProfiles = com.dpsmpx.dpai.ui.ManualProfiles(
+        DocumentStore(NioVfs(File(root.parentFile, "manual-profiles").toPath()), "docs"), IdGenerator(Clock.SYSTEM, RandomSource.secure()), Clock.SYSTEM)
+
+    /** Клиент закреплённого target: смена настроек не перенаправит остановку старой команды. */
+    fun profileAgent(target: TargetEntry, inApp: com.dpsmpx.dpai.execution.process.ProcessHost?): com.dpsmpx.dpai.execution.agent.AgentClient? {
+        val host = if (target.inApp) inApp ?: return null else JschProcessHost(checkNotNull(target.toTarget(knownHostsFile).ssh), target.platform, identities = listOf(KeystoreKey.identity()))
+        val t = target.toTarget(knownHostsFile)
+        return com.dpsmpx.dpai.execution.agent.AgentClient(host, t.agentCommand, t.agentHome, target.label)
+    }
+
     val knownHostsFile: String = File(root, KNOWN_HOSTS).path
+
+    /** Файлы дерева [root] на ПК-target по SFTP — только чтение, тем же входом, что команды (D-162). */
+    fun pcFiles(target: TargetEntry, root: String): Outcome<com.dpsmpx.dpai.jsch.SftpTree> {
+        if (target.inApp) return Outcome.failure(DiagCode.VALUE_INVALID, "это Linux приложения, не ПК", target.label)
+        val ssh = target.toTarget(knownHostsFile).ssh ?: return Outcome.failure(DiagCode.VALUE_INVALID, "у target нет адреса SSH", target.label)
+        return com.dpsmpx.dpai.jsch.SftpTree.open(ssh, target.platform, root, listOf(KeystoreKey.identity()))
+    }
     private val ids = IdGenerator(Clock.SYSTEM, RandomSource.secure())
 
     init {
@@ -110,7 +127,7 @@ class Controller(private val root: File, val version: String?) {
      * (свойства инициализируются по порядку: это — после [vfs] и до всего,
      * что читает данные). Итог: `true` — применена; отказ — с причиной.
      */
-    val cloudRestored: com.dpsmpx.dpai.core.result.Outcome<Boolean> = com.dpsmpx.dpai.sync.CloudRestore(vfs, Clock.SYSTEM).applyPending()
+    val cloudRestored: com.dpsmpx.dpai.core.result.Outcome<Boolean> = if (manualProfiles.blocked) Outcome.success(false) else com.dpsmpx.dpai.sync.CloudRestore(vfs, Clock.SYSTEM).applyPending()
 
     /** Каталог данных контура — для облачной копии (D-107). */
     val dataRoot: File get() = root
@@ -177,8 +194,9 @@ class Controller(private val root: File, val version: String?) {
     }
 
     /** Записать список targets; кэш — записанное, а при отказе — сброс до чтения с диска. */
-    private fun writeTargets(list: List<TargetEntry>) =
+    private fun writeTargets(list: List<TargetEntry>) = manualProfiles.edit {
         docs.write(BOOK, TargetBook.toJson(list)).also { targetsCache = if (it is Outcome.Success) list else null }
+    }
 
     fun form(label: String, host: String, port: String, user: String, windows: Boolean, agent: String, configDir: String): Outcome<TargetEntry> =
         TargetForm.validate(ids.next(IdKinds.TARGET), label, host, port, user, windows, agent, configDir)
@@ -208,11 +226,11 @@ class Controller(private val root: File, val version: String?) {
     ): Outcome<ProjectEntry> = ProjectForm.validate(ids, target, root, worktreeRoot, branch, check, claudeOn, identityFile, knownHostsFile)
 
     @Synchronized
-    fun setProject(p: ProjectEntry?): Outcome<Unit> {
+    fun setProject(p: ProjectEntry?): Outcome<Unit> = manualProfiles.edit {
         val r = if (p == null) docs.delete(PROJECT) else docs.write(PROJECT, ProjectBook.toJson(p)).let { w -> if (w is Outcome.Failure) w else Outcome.success(Unit) }
         projectCache = p
         projectKnown = r is Outcome.Success
-        return r
+        r
     }
 
     /** Настоящий контроллер над [targets]: SSH — JSch с ключом Keystore, журнал — в каталоге контроллера. */
@@ -244,6 +262,7 @@ class Controller(private val root: File, val version: String?) {
             quarantineConfirmed = confirmed,
             inAppHost = inAppHost,
             inAppGuest = inAppGuest,
+            externalPause = { manualProfiles.blocked },
         ).also { if (confirmed) runCatching { dir.delete(QUARANTINE_CONFIRMED) } }
     }
 
@@ -341,7 +360,9 @@ class Controller(private val root: File, val version: String?) {
      * заменяются целиком. known_hosts — атомарно (A-85).
      */
     @Synchronized
-    fun restore(s: SettingsSnapshot): Outcome<Unit> {
+    fun restore(s: SettingsSnapshot): Outcome<Unit> = manualProfiles.edit { restoreSettings(s) }
+
+    private fun restoreSettings(s: SettingsSnapshot): Outcome<Unit> {
         try {
             val tmp = "$KNOWN_HOSTS.tmp"
             vfs.write(tmp, s.knownHosts.toByteArray(Charsets.UTF_8))

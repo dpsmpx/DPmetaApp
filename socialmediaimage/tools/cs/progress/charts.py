@@ -18,7 +18,12 @@ import math
 E = html.escape
 
 WIDE = {"w": 960, "font": 12}
-NARROW = {"w": 360, "font": 11}
+# Узкая раскладка — единственная на сайте (Д51). Ширина viewBox — ширина колонки фигуры на телефоне 390 px
+# (348 px) с запасом: SVG не ужимается, текст 12 px стиля — не мельче 12 px на экране (P-03 аудита страниц
+# 8.11.2026; проверка `siteshots` меряет кегль с масштабом viewBox). Шире — только растягивается (до 480 px).
+NARROW = {"w": 340, "font": 11}
+# Малые графики сеткой `.mults` (minmax(220px, 1fr)): viewBox — минимум колонки, ужаться ей некуда.
+MULT = {"w": 220, "font": 11}
 
 
 def nice_ticks(vmax: float, count: int) -> tuple[float, list[float]]:
@@ -37,6 +42,17 @@ def nice_ticks(vmax: float, count: int) -> tuple[float, list[float]]:
     return top, ticks
 
 
+AXIS_FONT = 12   # кегль .t-axis в website/static/style.css
+CH = 0.6         # средняя ширина знака IBM Plex Sans, доля кегля — с запасом на цифры и «тыс.»
+
+
+def tick_room(ticks: list[float], lang: str, base: int) -> int:
+    """Левое поле под подписи оси: самая длинная подпись, 6 px до оси и 2 px запаса, не меньше base.
+    Иначе «200 тыс.» на узкой раскладке выходит за левый край SVG (P-19 аудита страниц 8.11.2026)."""
+    longest = max((len(fmt_tick(v, lang)) for v in ticks), default=0)
+    return max(base, math.ceil(longest * CH * AXIS_FONT) + 8)
+
+
 def fmt_tick(v: float, lang: str) -> str:
     if v >= 1000 and v % 1000 == 0:
         k = int(v // 1000)
@@ -46,9 +62,11 @@ def fmt_tick(v: float, lang: str) -> str:
 
 
 class Svg:
+    # Имя графика — его <title>, описание — <desc> через aria-describedby: в имени длинное описание
+    # (до 677 знаков) диктор читал целиком при каждом заходе на график (P-19 аудита страниц 8.11.2026).
     def __init__(self, w: int, h: int, uid: str, title: str, desc: str):
         self.w, self.h, self.uid = w, h, uid
-        self.parts = [f'<svg class="chart" viewBox="0 0 {w} {h}" role="img" aria-labelledby="{uid}-t {uid}-d" '
+        self.parts = [f'<svg class="chart" viewBox="0 0 {w} {h}" role="img" aria-labelledby="{uid}-t" aria-describedby="{uid}-d" '
                       f'xmlns="http://www.w3.org/2000/svg">',
                       f'<title id="{uid}-t">{E(title)}</title><desc id="{uid}-d">{E(desc)}</desc>']
 
@@ -98,13 +116,13 @@ def columns(uid: str, lay: dict, title: str, desc: str, labels: list[str], month
     """Столбцы по дням, сложенные снизу вверх в порядке series: (класс, значения, имя)."""
     w = lay["w"]
     narrow = w < 500
-    m = {"l": 40 if not narrow else 32, "r": 6, "t": 20, "b": 34 + (14 if markers else 0)}
     n = len(labels)
+    totals = [sum(se[1][i] for se in series) for i in range(n)]
+    top, tks = nice_ticks(max(totals + [1]), 3 if narrow else ticks)
+    m = {"l": tick_room(tks, lang, 40 if not narrow else 32), "r": 6, "t": 20, "b": 34 + (14 if markers else 0)}
     iw, ih = w - m["l"] - m["r"], height - m["t"] - m["b"]
     band = iw / n
     bw = min(22.0, band * 0.68)
-    totals = [sum(se[1][i] for se in series) for i in range(n)]
-    top, tks = nice_ticks(max(totals + [1]), 3 if narrow else ticks)
     y = lambda v: m["t"] + ih - v / top * ih
     s = Svg(w, height, uid, title, desc)
     if weekend:
@@ -150,15 +168,15 @@ def stacked_area(uid: str, lay: dict, title: str, desc: str, labels: list[str], 
     """Площади друг на друге (снизу вверх): точки — измерения на конец каждого дня, без сглаживания."""
     w = lay["w"]
     narrow = w < 500
-    m = {"l": 52 if not narrow else 40, "r": 8 if narrow or not end_labels else 150, "t": 14, "b": 34}
     n = len(labels)
-    iw, ih = w - m["l"] - m["r"], height - m["t"] - m["b"]
     cum, acc = [], [0] * n
     for cls, vals, name in layers:
         lo = acc[:]
         acc = [a + v for a, v in zip(acc, vals)]
         cum.append((cls, lo, acc[:], name))
     top, tks = nice_ticks(max(acc + [1]), 3 if narrow else 4)
+    m = {"l": tick_room(tks, lang, 52 if not narrow else 40), "r": 8 if narrow or not end_labels else 150, "t": 14, "b": 34}
+    iw, ih = w - m["l"] - m["r"], height - m["t"] - m["b"]
     x = lambda i: m["l"] + iw * i / max(n - 1, 1)
     y = lambda v: m["t"] + ih - v / top * ih
     s = Svg(w, height, uid, title, desc)
@@ -198,10 +216,10 @@ def points(uid: str, lay: dict, title: str, desc: str, days: list[str], labels: 
     """Отдельные измерения (индекс дня, значение, подсказка), соединённые отрезками: между точками данных нет."""
     w = lay["w"]
     narrow = w < 500
-    m = {"l": 48 if not narrow else 40, "r": 14, "t": 22, "b": 34}
     n = len(days)
-    iw, ih = w - m["l"] - m["r"], height - m["t"] - m["b"]
     top, tks = nice_ticks(max([v for _, v, _ in pts] + [1]), 3)
+    m = {"l": tick_room(tks, lang, 48 if not narrow else 40), "r": 14, "t": 22, "b": 34}
+    iw, ih = w - m["l"] - m["r"], height - m["t"] - m["b"]
     x = lambda i: m["l"] + iw * i / max(n - 1, 1)
     y = lambda v: m["t"] + ih - v / top * ih
     s = Svg(w, height, uid, title, desc)

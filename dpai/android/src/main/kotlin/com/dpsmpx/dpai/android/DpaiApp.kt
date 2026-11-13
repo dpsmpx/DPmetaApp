@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.role
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -51,6 +53,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -101,6 +104,9 @@ private const val SESSION_SCREEN = -1
 /** Номер экрана «Настроек AI» в переходах (D-112): не вкладка. */
 private const val SETTINGS_SCREEN = -2
 
+/** Как часто окно «AI» пересчитывает проверку приложения (DPmetaApp:D-123). */
+private const val HEALTH_EVERY_MS = 60_000L
+
 /** Период шага контроллера: каждый шаг — вызовы агентов по SSH. */
 private const val LIVE_STEP_MS = 3000L
 
@@ -127,6 +133,9 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         selectedId = null
         settings = false
     }
+    // Последняя вкладка раздела AI — пункт «AI» левой панели возвращает к ней из IDE (DPmetaApp:D-112).
+    var lastAi by rememberSaveable { mutableIntStateOf(AiTab.SUMMARY.ordinal) }
+    if (tab != AiTab.FILES.ordinal && lastAi != tab) lastAi = tab
     var snapshot by remember { mutableStateOf<Snapshot?>(null) }
     // Контроллер остановлен кнопкой «Остановить»: экран его не поднимает сам (D-39).
     var stopped by remember { mutableStateOf(false) }
@@ -148,6 +157,29 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     // Только пока окно видно: свёрнутое приложение не шагает демо и не копит снимки (ревью 8 октября 2026, A-31);
     // контроллер в это время шагает в службе.
     val visible = rememberVisible()
+    // Проверка приложения (DPmetaApp:D-123): безопасное — само, число проблем — для полосы; раз в минуту, пока окно видно.
+    // Мастер настройки — сам при первом открытии, пока настройка не закончена и не нажато «Позже».
+    var healthCount by remember { mutableIntStateOf(0) }
+    var wizard by remember { mutableStateOf<com.dpsmpx.dpai.ui.HealthFacts?>(null) }
+    var wizardChecked by remember { mutableStateOf(false) }
+    LaunchedEffect(model, visible) {
+        while (visible) {
+            val facts = withContext(Dispatchers.IO) {
+                runCatching {
+                    HealthAuto.tick(context)
+                    HealthProbe.collect(context, model)
+                }.getOrNull()
+            }
+            if (facts != null) {
+                healthCount = com.dpsmpx.dpai.ui.Health.items(facts).size
+                if (!wizardChecked) {
+                    wizardChecked = true
+                    if (!com.dpsmpx.dpai.ui.Health.setupDone(facts) && !SetupWizardPrefs.later(context)) wizard = facts
+                }
+            }
+            kotlinx.coroutines.delay(HEALTH_EVERY_MS)
+        }
+    }
     LaunchedEffect(model, selectedId, visible) {
         while (visible) {
             val s = selected
@@ -209,12 +241,39 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
             }
         }
         incoming.confirm?.let { confirmUri = it }
+        // Пункт левой панели приложения (DPmetaApp:D-112): вкладка — сверху, без открытой сессии и настроек.
+        incoming.tab?.let { name -> AiTab.entries.firstOrNull { it.name == name }?.let { t -> selectedId = null; settings = false; openTab(t) } }
+        if (incoming.settings) { selectedId = null; settings = true; settingsSub = incoming.settingsSub }
         if (incoming != Incoming()) onIncoming()
     }
     confirmUri?.let { uri -> ConfirmDialog(model, snapshot?.requests.orEmpty(), uri) { confirmUri = null } }
     // «Остановить» из уведомления службы (A-18): подтверждение — здесь, с тем, что встанет.
     var confirmStop by remember { mutableStateOf(false) }
     LaunchedEffect(incoming) { if (incoming.stop) confirmStop = true }
+    wizard?.let { f ->
+        val jobs = remember { LongJobs.get(context) }
+        val jobState by jobs.state.collectAsState()
+        val busy = LongJobs.GUEST.any { jobState[it]?.running == true }
+        // Шаги мастера обновляются по мере работы: после установки — новый сбор фактов.
+        LaunchedEffect(busy) {
+            if (!busy) withContext(Dispatchers.IO) { runCatching { HealthProbe.collect(context, model) }.getOrNull() }?.let { wizard = it }
+        }
+        val nav = HealthNav(
+            targets = { wizard = null; openTab(AiTab.TARGETS) },
+            log = { wizard = null; selectedId = null; settings = true; settingsSub = SETTINGS_LOG },
+            guide = { wizard = null; selectedId = null; settings = true; settingsSub = SETTINGS_GUIDE },
+            settings = { wizard = null; selectedId = null; settings = true; settingsSub = null },
+        )
+        SetupWizardDialog(f, enabled = !busy, onAction = { a ->
+            if (a == com.dpsmpx.dpai.ui.HealthAction.GIT_IDENTITY) {
+                // Ввод имени и почты — на экране «Проверка».
+                wizard = null; selectedId = null; settings = true; settingsSub = SETTINGS_CHECK
+            } else runHealthAction(context, a, nav) {}
+        }, onClose = {
+            if (!com.dpsmpx.dpai.ui.Health.setupDone(f)) SetupWizardPrefs.setLater(context)
+            wizard = null
+        })
+    }
     if (confirmStop) {
         AlertDialog(
             onDismissRequest = { confirmStop = false },
@@ -276,8 +335,50 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     val pultBelow = remember { (context.applicationContext as? DpaiApplication)?.parentIntent() != null }
     val snack = remember { androidx.compose.material3.SnackbarHostState() }
     val undo = remember(scope) { Undo(snack, scope) }
-    androidx.compose.runtime.CompositionLocalProvider(LocalUndo provides undo) {
+    val ideChrome = remember { IdeChrome() }
+    val ideSettings by IdeState.state.collectAsState()
+    val ideFullscreen = ideChrome.active && ideSettings.options.zen
+    IdeWindow(ideFullscreen)
+    val drawer = androidx.compose.material3.rememberDrawerState(androidx.compose.material3.DrawerValue.Closed)
+    BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
+    val app = context.applicationContext as? DpaiApplication
+    androidx.compose.runtime.CompositionLocalProvider(LocalUndo provides undo, LocalIdeChrome provides ideChrome) {
+      // Левая панель — та же, что у пульта (DPmetaApp:D-112): Сводка, Проекты, IDE, AI, Настройки.
+      androidx.compose.material3.ModalNavigationDrawer(
+        drawerState = drawer,
+        gesturesEnabled = !ideFullscreen,
+        drawerContent = {
+            androidx.compose.material3.ModalDrawerSheet(Modifier.widthIn(max = 320.dp)) {
+                Text("DPmetaApp", Modifier.padding(horizontal = 28.dp, vertical = 16.dp), style = MaterialTheme.typography.titleMedium)
+                val activity = androidx.activity.compose.LocalActivity.current
+                fun section(sec: com.dpsmpx.dpai.ui.AppSection) {
+                    // Разделы пульта: окно пульта под «AI» выходит вперёд на нужном разделе, «AI» закрывается.
+                    app?.sectionIntent(sec)?.let { i -> context.startActivity(i); activity?.finish() }
+                }
+                val ide = tab == AiTab.FILES.ordinal && !settings
+                @Composable
+                fun item(title: String, icon: Int, selected: Boolean, onClick: () -> Unit) = androidx.compose.material3.NavigationDrawerItem(
+                    label = { Text(title) },
+                    icon = { androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(icon), contentDescription = null) },
+                    selected = selected,
+                    onClick = { scope.launch { drawer.close() }; onClick() },
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+                if (pultBelow) item(com.dpsmpx.dpai.ui.AppSection.SUMMARY.title, R.drawable.ic_ai_summary, false) { section(com.dpsmpx.dpai.ui.AppSection.SUMMARY) }
+                if (pultBelow) item(com.dpsmpx.dpai.ui.AppSection.PROJECTS.title, R.drawable.ic_ai_tasks, false) { section(com.dpsmpx.dpai.ui.AppSection.PROJECTS) }
+                item("IDE", R.drawable.ic_ai_files, ide) { openTab(AiTab.FILES) }
+                item("AI", R.drawable.ic_ai_requests, !ide && !settings) { openTab(AiTab.of(lastAi)) }
+                if (pultBelow) {
+                    item(com.dpsmpx.dpai.ui.AppSection.SETTINGS.title, R.drawable.ic_ai_settings, false) { section(com.dpsmpx.dpai.ui.AppSection.SETTINGS) }
+                    item(com.dpsmpx.dpai.ui.AppSection.HELP.title, R.drawable.ic_ai_help, false) { section(com.dpsmpx.dpai.ui.AppSection.HELP) }
+                } else {
+                    item(AI_SETTINGS_TITLE, R.drawable.ic_ai_settings, settings) { settings = true; settingsSub = null; selectedId = null }
+                }
+            }
+        },
+      ) {
         Scaffold(
+            contentWindowInsets = if (ideFullscreen) WindowInsets(0, 0, 0, 0) else androidx.compose.material3.ScaffoldDefaults.contentWindowInsets,
             snackbarHost = { androidx.compose.material3.SnackbarHost(snack) },
             // «Новая задача» — плавающей кнопкой на «Сводке» и «Задачах» (AI:A-6); в демо задач не ставят.
             floatingActionButton = {
@@ -286,7 +387,8 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                     androidx.compose.material3.ExtendedFloatingActionButton(onClick = { creating = true }, text = { Text("Новая задача") }, icon = { Text("+", style = MaterialTheme.typography.titleLarge) })
                 }
             },
-            topBar = {
+            topBar = top@ {
+                if (ideFullscreen) return@top
                 // Узкая строка (D-61): больше места чату; в окне сессии — кружок состояния и имя (нажатие — переименовать).
                 androidx.compose.material3.Surface(tonalElevation = 3.dp) {
                     Row(
@@ -313,20 +415,16 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                             TextButton(onClick = { settings = false }, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
                             Text(AI_SETTINGS_TITLE, Modifier.weight(1f).padding(start = 8.dp), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         } else {
-                            // Путь к пульту виден (DPmetaApp:D-73, UX-1): «AI» стоит над ним, «←» — просто закрыть окно «AI».
-                            val activity = androidx.activity.compose.LocalActivity.current
-                            if (pultBelow) {
-                                TextButton(
-                                    onClick = { activity?.finish() },
-                                    modifier = Modifier.semantics { contentDescription = "Пульт" },
-                                ) { Text("← Пульт") }
+                            // Левая панель приложения (DPmetaApp:D-112) — вместо «← Пульт» и нижней панели вкладок.
+                            androidx.compose.material3.IconButton(onClick = { scope.launch { drawer.open() } }) {
+                                androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_ai_menu), contentDescription = "Разделы")
                             }
-                            Text(
-                                // Одно имя подсистемы — «AI», как у вкладки пульта; в заголовке — открытая вкладка (AI:A-1, AI:A-11).
-                                "AI · " + AiTab.of(tab).title + (if (snapshot?.mode == "демо") " · демо" else ""),
-                                Modifier.weight(1f).padding(start = if (pultBelow) 0.dp else 12.dp), style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            )
+                            if (tab == AiTab.FILES.ordinal) {
+                                Text("IDE", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                            } else {
+                                // Вкладки раздела AI — в верхней панели (DPmetaApp:D-113): подписи, у «Запросов» — число.
+                                AiSectionTabs(AiTab.of(tab), snapshot?.requests?.size ?: 0, snapshot?.mode == "демо", Modifier.weight(1f)) { openTab(it) }
+                            }
                             // Глобальный поиск (ТЗ, §75) — с любой вкладки.
                             TextButton(onClick = { searching = true }) { Text("Найти") }
                             // «Настройки AI» (D-112): журнал, позже — настройка из Targets (AI:A-3).
@@ -342,48 +440,6 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                     }
                 }
             },
-            bottomBar = {
-                // Панель — всегда: её исчезновение на экране сессии сдвигало всё содержимое. Значки без подписей (D-61);
-                // подпись — долгим нажатием, для TalkBack — роль вкладки, «выбрано» и название; строка — 48 dp (D-112).
-                androidx.compose.material3.Surface(tonalElevation = 3.dp) {
-                    Row(
-                        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).height(48.dp).selectableGroup(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        val waiting = snapshot?.requests?.size ?: 0
-                        for (t in AiTab.entries) {
-                            val selected = tab == t.ordinal && selectedId == null && !settings
-                            // Вес — на обёртку: TooltipBox отдаёт свой модификатор внутреннему узлу, и weight до Row не доходил —
-                            // первая вкладка забирала всю строку (проверка PR #172).
-                            Box(Modifier.weight(1f).fillMaxHeight()) {
-                                Labeled(t.title, Modifier.fillMaxSize()) {
-                                    Box(
-                                        Modifier.fillMaxSize()
-                                            .selectable(selected = selected, role = Role.Tab, onClick = { openTab(t) })
-                                            .semantics { contentDescription = t.spoken(waiting) },
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                        val icon = @Composable {
-                                            androidx.compose.material3.Icon(
-                                                androidx.compose.ui.res.painterResource(tabIcon(t)),
-                                                contentDescription = null,
-                                                tint = color,
-                                            )
-                                        }
-                                        // Число — значком поверх: ширина пункта не меняется с числом запросов; читается в описании пункта.
-                                        if (t == AiTab.REQUESTS && waiting > 0) {
-                                            BadgedBox(badge = { Badge(Modifier.clearAndSetSemantics { }) { Text("$waiting") } }) { icon() }
-                                        } else {
-                                            icon()
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
         ) { padding ->
             val s = snapshot
             // Клавиатура (D-64): содержимое — над ней; отступ панели вкладок уже учтён (consumeWindowInsets), не вдвое.
@@ -391,8 +447,9 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
             Column(
                 Modifier.padding(padding).consumeWindowInsets(padding).imePadding()
                     .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-                    .fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = if (twoPane) TWO_PANE_MAX else CONTENT_MAX).fillMaxWidth(),
+                    .fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = if (ideFullscreen) androidx.compose.ui.unit.Dp.Infinity else if (twoPane) TWO_PANE_MAX else CONTENT_MAX).fillMaxWidth(),
             ) {
+                if (!ideFullscreen) {
                 corrupted?.let { what ->
                     // D-24: карантин хвоста — только явным решением; необратимое — окном (AI:A-4).
                     var asking by remember { mutableStateOf(false) }
@@ -441,11 +498,21 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                         }
                     }
                 }
+                // Полоса проверки (DPmetaApp:D-123): пока есть проблемы — над вкладками, с переходом к «Проверке».
+                if (healthCount > 0 && !(settings && settingsSub == SETTINGS_CHECK)) {
+                    androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Проверка: проблем — $healthCount. Что не так и как исправить — на экране «Проверка».", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                            TextButton(onClick = { selectedId = null; settings = true; settingsSub = SETTINGS_CHECK }) { Text("Открыть") }
+                        }
+                    }
+                }
                 if (stopped) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Контроллер остановлен: такты не идут, уведомлений нет.", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                         Button(onClick = { scope.launch(Dispatchers.IO) { ControllerService.resume(context) }; stopped = false }) { Text("Запустить") }
                     }
+                }
                 }
                 // Смена вкладки или экрана — плавно, без скачка содержимого; кадр перехода рисует свой экран.
                 // Состояние вкладки (место в «Файлах», открытый разговор, прокрутка) — своё у каждой и переживает
@@ -459,11 +526,11 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                     tabStates.SaveableStateProvider(screen) {
                         Box(Modifier.fillMaxSize()) {
                             when {
-                                screen == SETTINGS_SCREEN -> AiSettingsPane(controller, model, settingsSub) { settingsSub = it }
+                                screen == SETTINGS_SCREEN -> AiSettingsPane(controller, model, settingsSub, onTargets = { openTab(AiTab.TARGETS) }) { settingsSub = it }
                                 screen == AiTab.TARGETS.ordinal -> TargetsPane(controller, model)
                                 screen == AiTab.REQUESTS.ordinal -> RequestsPane(model, s)
                                 screen == AiTab.MODELS.ordinal -> ModelsPane()
-                                screen == AiTab.FILES.ordinal -> FilesPane(onLinux = { openTab(AiTab.TARGETS) })
+                                screen == AiTab.FILES.ordinal -> FilesPane(onLinux = { openTab(AiTab.TARGETS) }, model = model, onSession = { selectedId = it })
                                 s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                                 screen == SESSION_SCREEN -> {
                                     val t = s.session?.task
@@ -491,8 +558,35 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 }
             }
         }
+      }
     }
 }
+
+/**
+ * Вкладки раздела AI в верхней панели (`DPmetaApp:D-113`): подписи-«пилюли» вместо
+ * значков нижней панели; ряд листается, если не помещается. У «Запросов» — число
+ * ждущих, для TalkBack — в описании вкладки.
+ */
+@Composable
+private fun AiSectionTabs(current: AiTab, waiting: Int, demo: Boolean, modifier: Modifier = Modifier, onPick: (AiTab) -> Unit) {
+    Row(
+        modifier.then(Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState())).selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        for (t in com.dpsmpx.dpai.ui.AI_SECTION_TABS) {
+            val selected = t == current
+            androidx.compose.material3.FilterChip(
+                selected = selected,
+                onClick = { onPick(t) },
+                label = { Text(t.title + if (demo && selected) " · демо" else "", maxLines = 1) },
+                trailingIcon = if (t == AiTab.REQUESTS && waiting > 0) ({ Badge(Modifier.clearAndSetSemantics { }) { Text("$waiting") } }) else null,
+                modifier = Modifier.semantics { contentDescription = t.spoken(waiting); this.role = Role.Tab },
+            )
+        }
+    }
+}
+
 
 /**
  * Цвет состояния — один на все экраны «AI» и пульт (DPmetaApp:D-74, AI:A-12):
@@ -1326,16 +1420,6 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
 
 /** Место под плавающей кнопкой «Новая задача» внизу списков (AI:A-6). */
 private val FAB_ROOM = 88.dp
-
-/** Значок вкладки (D-112): свои векторные рисунки, без новой зависимости. */
-private fun tabIcon(t: AiTab): Int = when (t) {
-    AiTab.SUMMARY -> R.drawable.ic_ai_summary
-    AiTab.TASKS -> R.drawable.ic_ai_tasks
-    AiTab.TARGETS -> R.drawable.ic_ai_targets
-    AiTab.REQUESTS -> R.drawable.ic_ai_requests
-    AiTab.MODELS -> R.drawable.ic_ai_models
-    AiTab.FILES -> R.drawable.ic_ai_files
-}
 
 /**
  * Подпись значка — долгим нажатием (D-112): подсказка Material 3 над значком;

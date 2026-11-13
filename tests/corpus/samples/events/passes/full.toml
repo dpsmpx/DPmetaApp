@@ -1,0 +1,16 @@
+# Синтетический каталог: два типа, все ключи.
+schema = 1
+
+[[event]]
+type = "alpha.opened"
+title = "Альфа открыта"
+source = ["sync", "app"]
+channel = "dev"
+fields = ["branch", "title"]
+numbers = ["hours"]
+
+[[event]]
+type = "beta.signal.done"
+title = "Бета: сигнал"
+source = ["push"]
+channel = "claude"

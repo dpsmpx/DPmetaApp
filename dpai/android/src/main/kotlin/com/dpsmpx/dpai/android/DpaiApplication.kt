@@ -15,10 +15,23 @@ import com.dpsmpx.dpai.core.diagnostics.Redactor
 open class DpaiApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        Drafts.install(this)
+        IdeState.install(this)
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityStopped(activity: android.app.Activity) { Drafts.flushNow(); IdeState.flush() }
+            override fun onActivityCreated(activity: android.app.Activity, state: android.os.Bundle?) = Unit
+            override fun onActivityStarted(activity: android.app.Activity) = Unit
+            override fun onActivityResumed(activity: android.app.Activity) = Unit
+            override fun onActivityPaused(activity: android.app.Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, state: android.os.Bundle) = Unit
+            override fun onActivityDestroyed(activity: android.app.Activity) = Unit
+        })
         CrashRecord.install(filesDir)
         CrashRecord.onFatal = { text -> AppLogs.get(this).fatal("падение", Redactor.STANDARD.redact(text)) }
         // Диск открыт и после перезапуска процесса (D-96): уведомление «открыт» — снова в шторке.
         runCatching { AppDiskNotice.sync(this) }
+        // DNS гостя — и при смене сети (D-158): без этого гость спрашивал прежние серверы.
+        runCatching { com.dpsmpx.dpai.android.linux.LinuxSetup.watchDns(this) }
     }
 
     /**
@@ -46,4 +59,24 @@ open class DpaiApplication : Application() {
 
     /** Есть ли [ecosystemManifest] у этой сборки — без вызова (он читает клоны). */
     open val ecosystemRegistry: Boolean get() = false
+
+    /** Аккаунт предоставляет оболочка; подсистема не знает ни хранилища, ни токена пульта (D-125). */
+    open val sharedToolsAccountAvailable: Boolean get() = false
+
+    /** Право для общей папки выдаёт оболочка после явного входа (DPmetaApp:D-95). */
+    open fun sharedToolsAccount(): com.dpsmpx.dpai.core.result.Outcome<com.dpsmpx.dpai.core.diagnostics.Secret?> =
+        com.dpsmpx.dpai.core.result.Outcome.success(null)
+
+    /** Явный запрос экрана; отмена при уходе/повороте принадлежит экрану. Из фона не вызывается. */
+    open fun authorizeSharedTools(activity: android.app.Activity, signal: android.os.CancellationSignal, done: (com.dpsmpx.dpai.core.result.Outcome<Unit>) -> Unit) =
+        done(com.dpsmpx.dpai.core.result.Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "Источник GitHub-аккаунта недоступен"))
+
+    /** Служба остановлена: отозвать право, в том числе у незавершённого окна входа. */
+    open fun sharedToolsSessionClosed() = Unit
+
+    /** Служба контроллера остановлена: оболочка отзывает права, выданные «до остановки службы» (`DPmetaApp:D-114`). */
+    open fun controllerStopped() = Unit
+
+    /** Раздел приложения вне окна «AI» (`DPmetaApp:D-112`): окно пульта на нём; `null` — пульта нет (отдельная сборка). */
+    open fun sectionIntent(section: com.dpsmpx.dpai.ui.AppSection): android.content.Intent? = null
 }
