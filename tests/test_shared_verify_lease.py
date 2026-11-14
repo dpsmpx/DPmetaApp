@@ -1,13 +1,16 @@
 """Межпроцессный контракт lease; тот же файл запускается Windows Python."""
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
+import shlex
 import sys
 import tempfile
 from threading import Event
 import time
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location('lease_runtime', ROOT / 'tools/shared_verify/runtime.py')
@@ -118,6 +121,34 @@ class SharedVerifyLeaseTest(unittest.TestCase):
                     wrapper.wait(timeout=30)
                 wrapper.communicate(timeout=30)
         wait_for(lambda: self.probe('exclusive') == 0)
+
+    def test_python_launcher_receives_arguments_without_shell_expansion(self):
+        script = self.folder / 'dpv'
+        script.write_text('#!' + sys.executable + '\n' +
+                          'import json,sys\nfrom pathlib import Path\n' +
+                          'Path(__file__).with_name("argv.json").write_text(json.dumps(sys.argv[1:]))\n')
+        script.chmod(0o700)
+        args = ['run', 'full', 'quote" & pipe| percent% bang! dollar$ tick`', 'путь с пробелом']
+        with runtime.file_lease(self.lock) as descriptor:
+            code = runtime.guarded_process(runtime.native_tool_command([str(script), *args]),
+                                           runtime.clean_environment(), descriptor, self.lock)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads((self.folder / 'argv.json').read_text()), args)
+
+    @unittest.skipUnless(os.name == 'nt', 'launcher Git Bash на Windows')
+    def test_mingw_git_location_finds_git_bash_and_quotes_every_argument(self):
+        git = self.folder / 'Git' / 'mingw64' / 'bin' / 'git.exe'
+        git.parent.mkdir(parents=True)
+        git.touch()
+        bash = self.folder / 'Git' / 'bin' / 'bash.exe'
+        bash.parent.mkdir(parents=True)
+        bash.touch()
+        args = ['claude', '--print', 'quote\' & | % ! $ `\nкод']
+        with patch.object(runtime.shutil, 'which', return_value=str(git)):
+            command = runtime.session_command(args)
+        self.assertEqual(Path(command[0]), bash)
+        self.assertEqual(command[1:4], ['--noprofile', '--norc', '-c'])
+        self.assertEqual(shlex.split(command[4]), ['exec', *args])
 
     @unittest.skipUnless(os.name == 'nt', 'маркеры жизни Windows')
     def test_corrupt_liveness_marker_refuses_update_and_is_preserved(self):

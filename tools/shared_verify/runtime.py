@@ -423,7 +423,7 @@ def session_command(command):
     git_program = shutil.which('git')
     if git_program:
         root = Path(git_program).resolve().parent
-        for bash in (root / 'bash.exe', root.parent / 'bin' / 'bash.exe'):
+        for bash in (root / 'bash.exe', root.parent / 'bin' / 'bash.exe', root.parent.parent / 'bin' / 'bash.exe'):
             if bash.is_file():
                 return [str(bash), '--noprofile', '--norc', '-c',
                         'exec ' + ' '.join(shlex.quote(part) for part in command)]
