@@ -97,7 +97,7 @@ object PultAlerts {
     /** Повреждённая личная настройка даёт отказ; включённые правила из APK не подставляются молча. */
     fun config(context: Context): Outcome<Config> = defaults(context).then { base ->
         user(context).read().then { text ->
-            if (text == null) Outcome.success(base) else AlertFormat.parse(text, base.catalog, "локальные правила").then { Outcome.success(Config(base.catalog, it)) }
+            if (text == null) Outcome.success(base) else UserAlertRules.validate(text, base.catalog).then { Outcome.success(Config(base.catalog, it)) }
         }
     }
 

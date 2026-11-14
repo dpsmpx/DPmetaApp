@@ -18,6 +18,7 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 <!-- provenance: begin -->
 | Компонент | Версия | Лицензия | Куда попадает | Источник | Проверено |
 |---|---|---|---|---|---|
+| `re2j` (RE2/J) | 1.8 | BSD-3-Clause (Go License) | только модель правил пульта DPmetaApp (`:core:model`); ядро dpai не зависит от библиотеки (`DPmetaApp:D-141`) | Maven Central, `com.google.re2j:re2j`; лицензия поставляется пультом | 14 ноября 2026 |
 | `kotlin` (Kotlin Gradle Plugin, плагин компилятора Compose, stdlib, kotlin-test) | 2.4.20 | Apache-2.0 | stdlib — во время выполнения; остальное — сборка и тесты | Maven Central, `org.jetbrains.kotlin` | 6 октября 2026 |
 | `junit` (JUnit BOM, Jupiter, Platform Launcher) | 6.1.3 | EPL-2.0 | только тесты | Maven Central, `org.junit` | 6 октября 2026 |
 | `agp` (Android Gradle Plugin) | 9.4.1 | Apache-2.0 | только сборка: classpath `build-logic` (D-102), модули Android | Google Maven, `com.android.tools.build` | 7 октября 2026 |

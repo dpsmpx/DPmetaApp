@@ -188,7 +188,10 @@ private fun AlertRulesDialog(feed: List<FeedEvent>, onClose: () -> Unit) {
             (parsed as? Outcome.Failure)?.let { Text(it.diagnostics.first().message, color = MaterialTheme.colorScheme.error) }
             if (current?.rules?.any { it.action == AlertAction.DIGEST } == true) Text("Дайджест по расписанию ещё в плане; выберите «уведомить» для немедленной доставки.", style = MaterialTheme.typography.bodySmall)
             TextButton(enabled = !busy, onClick = { advanced = !advanced }) { Text(if (advanced) "Переключатели правил" else "Условия, порядок и новые правила (TOML)") }
-            if (advanced) catalog?.types?.forEach { Text("${it.type} — ${it.title}" + if (it.numbers.isEmpty()) "" else "; числа: ${it.numbers.joinToString()}", style = MaterialTheme.typography.bodySmall) }
+            if (advanced) {
+                Text("Regex: синтаксис RE2, без обратных ссылок и lookaround. Пороги — целые числа.", style = MaterialTheme.typography.bodySmall)
+                catalog?.types?.forEach { Text("${it.type} — ${it.title}" + if (it.numbers.isEmpty()) "" else "; числа: ${it.numbers.joinToString()}", style = MaterialTheme.typography.bodySmall) }
+            }
             TextButton(enabled = !busy && current != null, onClick = {
                 val rules = current ?: return@TextButton
                 val known = catalog ?: return@TextButton

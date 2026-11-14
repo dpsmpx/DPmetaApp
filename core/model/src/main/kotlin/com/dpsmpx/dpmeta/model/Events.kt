@@ -117,7 +117,7 @@ data class AlertRule(
     val enabled: Boolean,
     val project: String?,
     val contains: String?,
-    val regex: Regex?,
+    val regex: AlertPattern?,
     val number: NumberCondition?,
     val days: Set<java.time.DayOfWeek>,
     val debounce: Debounce?,

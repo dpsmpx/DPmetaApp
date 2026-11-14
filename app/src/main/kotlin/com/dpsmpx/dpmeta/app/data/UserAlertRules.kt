@@ -12,6 +12,8 @@ import com.dpsmpx.dpai.core.diagnostics.DiagnosticCollector
 import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpmeta.formats.AlertFormat
 import com.dpsmpx.dpmeta.model.EventCatalog
+import com.dpsmpx.dpmeta.model.AlertRules
+import com.dpsmpx.dpmeta.model.AlertAction
 
 /** Локальное наложение правил D-140: проверка до записи, атомарность и last-good — DocumentStore. */
 class UserAlertRules(private val documents: DocumentStore) {
@@ -27,8 +29,7 @@ class UserAlertRules(private val documents: DocumentStore) {
     }
 
     fun save(text: String, catalog: EventCatalog): Outcome<Unit> {
-        if (text.length > MAX_TEXT) return Outcome.failure(DiagCode.VALUE_INVALID, "правила — не больше $MAX_TEXT знаков")
-        return AlertFormat.parse(text, catalog, "локальные правила").then {
+        return validate(text, catalog).then {
             documents.write(KEY, JsonObject.of(*FormatHeader.write(FORMAT, VERSION), "text" to JsonString(text))).map { }
         }
     }
@@ -40,6 +41,15 @@ class UserAlertRules(private val documents: DocumentStore) {
         const val VERSION = 1
         const val MAX_TEXT = 65536
         private const val KEY = "alert-rules"
+
+        fun validate(text: String, catalog: EventCatalog): Outcome<AlertRules> {
+            if (text.length > MAX_TEXT) return Outcome.failure(DiagCode.VALUE_INVALID, "правила — не больше $MAX_TEXT знаков")
+            return AlertFormat.parse(text, catalog, "локальные правила").then { rules ->
+                if (rules.rules.any { it.enabled && it.action == AlertAction.DIGEST }) {
+                    Outcome.failure(DiagCode.UNSUPPORTED, "дайджест по расписанию ещё не поддерживается; выберите уведомление, ленту или тишину")
+                } else Outcome.success(rules)
+            }
+        }
 
         /** Импорт ограничен до разбора, размер файла не определяет расход памяти. */
         fun importText(reader: java.io.Reader): Outcome<String> {

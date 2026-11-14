@@ -13,6 +13,7 @@ import com.dpsmpx.dpmeta.model.AlertAction
 import com.dpsmpx.dpmeta.model.AlertChannel
 import com.dpsmpx.dpmeta.model.AlertImportance
 import com.dpsmpx.dpmeta.model.AlertRule
+import com.dpsmpx.dpmeta.model.AlertPattern
 import com.dpsmpx.dpmeta.model.AlertRules
 import com.dpsmpx.dpmeta.model.Debounce
 import com.dpsmpx.dpmeta.model.EventCatalog
@@ -20,7 +21,6 @@ import com.dpsmpx.dpmeta.model.EventSource
 import com.dpsmpx.dpmeta.model.EventType
 import com.dpsmpx.dpmeta.model.NumberCondition
 import java.time.DayOfWeek
-import java.util.regex.PatternSyntaxException
 
 /**
  * Строгий разбор `config/events.toml` — каталога событий (ТЗ, §8.1, F-51; D-85):
@@ -86,7 +86,7 @@ object EventCatalogFormat {
 object AlertFormat {
     const val SCHEMA = 1
     const val MAX_RULES = 200
-    const val MAX_REGEX = 200
+    const val MAX_REGEX = AlertPattern.MAX_LENGTH
 
     private val TOP = setOf("schema", "rule")
     private val RULE = setOf(
@@ -176,10 +176,9 @@ object AlertFormat {
         val contains = f.text("contains", 200).let { if (it is Outcome.Failure) return it else it.valueOrNull() }
         val regexText = f.text("regex", MAX_REGEX).let { if (it is Outcome.Failure) return it else it.valueOrNull() }
         val regex = regexText?.let {
-            try {
-                Regex(it, RegexOption.IGNORE_CASE)
-            } catch (_: PatternSyntaxException) {
-                return Outcome.failure(DiagCode.RULE_INVALID, "regex не разбирается", "$at.regex")
+            when (val compiled = AlertPattern.compile(it, "$at.regex")) {
+                is Outcome.Failure -> return compiled
+                is Outcome.Success -> compiled.value
             }
         }
         val field = f.text("field", 32).let { if (it is Outcome.Failure) return it else it.valueOrNull() }

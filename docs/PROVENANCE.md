@@ -20,7 +20,7 @@ DP-Verify и других репозиториев автора — источн
 
 ## Зависимости
 
-Модули `:core:*` (кроме `:core:git` — JGit, ниже), `:cli` и `:tests:corpus` сторонних зависимостей не имеют —
+Модули `:core:*` (кроме `:core:git` — JGit и `:core:model` — RE2/J, ниже), `:cli` и `:tests:corpus` сторонних зависимостей не имеют —
 только ядро `dpai/` (`core`, `storage`) и JDK (`java.net.http` — транспорт
 `dpmeta-cli`; TLS — системными корнями).
 Каждая новая зависимость — строка ниже и запись в каталоге версий;
@@ -31,6 +31,7 @@ Compose, JSch; wrapper Gradle со сверкой SHA-256) — `dpai/docs/PROVEN
 
 | Компонент | Версия | Лицензия | Зачем | Модуль | Решение |
 |---|---|---|---|---|---|
+| RE2/J (`com.google.re2j:re2j`, каталог `re2j`) | 1.8 | BSD-3-Clause (Go License) | линейный поиск по пользовательским выражениям правил, без backtracking; без дополнительных runtime-зависимостей | `:core:model` | D-141 |
 | Eclipse JGit (`org.eclipse.jgit:org.eclipse.jgit`, каталог `jgit`; с ним JavaEWAH 1.1.13 — Apache-2.0, SLF4J API 1.7.30 — MIT) | 5.13.5.202508271544-r | EDL-1.0 (BSD-3-Clause) | клоны репозиториев: клонирование, обновление, ветки и файлы (ветка 5.13 — последняя для Java 8, на Android без недостающих API JDK 11+; CVE-2023-4759 закрыта) | `:core:git` | D-65 |
 | AndroidX Core (`androidx.core:core`, каталог `androidx-core`) | 1.18.0 | Apache-2.0 | `FileProvider` — «Поделиться» экспортом истории (F-36) | `:app` | D-67 |
 | Robolectric (`org.robolectric:robolectric`, каталог `robolectric`; с ним JUnit 4 `junit:junit` 4.13.2 — EPL-1.0 и `junit-vintage-engine` из JUnit BOM — EPL-2.0) | 4.17 | MIT (транзитивные — как у DPpass, `dppass/docs/PROVENANCE.md`) | снимки экранов на JVM (`docs/SCREENSHOTS.md`): только тестам `:shell` и только по свойству `dpmeta.screenshots`; в APK и обычную сборку не попадает | `:shell` (тест) | те же версии, что у тестов экранов DPpass (`DPpass:D-86`) |
@@ -41,6 +42,15 @@ Compose, JSch; wrapper Gradle со сверкой SHA-256) — `dpai/docs/PROVEN
 ресурсе init-скрипта (`dpai/docs/PROVENANCE.md`); скачивает их Gradle ПК, суммы
 сверяет только `verification-metadata.xml` проекта, в APK DPmetaApp они не
 попадают.
+
+RE2/J проверен 14 ноября 2026: [официальный README](https://github.com/google/re2j/blob/re2j-1.8/README.md),
+[лицензия](https://github.com/google/re2j/blob/re2j-1.8/LICENSE), Maven Central.
+JAR SHA-256 `7b52c72156dd7f98b3237a5b35c1d34fba381b21048c89208913ad80a45dfbd7`,
+POM SHA-256 `df62699335cd46fc465f4c03b8c581d3d507792212d27b65adb923b4c27de4e7`.
+Обе суммы закреплены в Gradle; полный текст лицензии поставляется в
+`app/src/main/assets/licenses/re2j-1.8.txt`. Сопоставление выполняется
+без учёта регистра. RE2 не поддерживает весь синтаксис Java Regex:
+неподдержанное отклоняется явно, без запасного небезопасного движка.
 
 ## Данные
 

@@ -70,6 +70,7 @@ class UserAlertRulesTest {
         assertIs<Outcome.Success<*>>(store.save(text, catalog))
         assertEquals(text, (store.read() as Outcome.Success).value)
         assertIs<Outcome.Failure>(store.save(text.replace("checks.*", "nonexistent.*"), catalog))
+        assertIs<Outcome.Failure>(store.save(text.replace("enabled = false", "enabled = true").replace("action = \"notify\"", "action = \"digest\""), catalog))
         assertEquals(text, (store.read() as Outcome.Success).value)
         assertIs<Outcome.Success<*>>(store.reset())
         assertNull((store.read() as Outcome.Success).value)
