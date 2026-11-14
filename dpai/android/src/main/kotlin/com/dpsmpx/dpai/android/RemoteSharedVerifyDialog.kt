@@ -49,6 +49,7 @@ internal fun RemoteSharedVerifyDialog(controller: Controller, target: TargetEntr
     var message by remember { mutableStateOf<String?>(null) }
     var signal by remember { mutableStateOf<CancellationSignal?>(null) }
     var automatic by remember { mutableStateOf(RemoteSharedVerify.automatic(context, target)) }
+    val needsAuthorization by RemoteSharedVerify.needsAuthorization.collectAsState()
     val busy = loading || signal != null || job?.running == true
 
     suspend fun refresh() {
@@ -108,6 +109,7 @@ internal fun RemoteSharedVerifyDialog(controller: Controller, target: TargetEntr
                         Text("Синхронизировать в фоне раз в минуту", style = MaterialTheme.typography.bodySmall)
                     }
                     Text("Фон использует доступ только в памяти службы. После её перезапуска нужен новый вход. Смена адреса, ключа SSH или папки требует подключения заново.", style = MaterialTheme.typography.bodySmall)
+                    if (automatic && needsAuthorization) Text("Фон ждёт входа. Для PIN/биометрии нажмите кнопку подключения или синхронизации выше.", style = MaterialTheme.typography.bodySmall)
                     if (current.configured != null) TextButton(enabled = !busy, onClick = {
                         if (!RemoteSharedVerify.disconnect(context, target)) message = "Операция уже выполняется"
                         root = ""; python = ""

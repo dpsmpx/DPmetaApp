@@ -17,11 +17,16 @@ import com.dpsmpx.dpai.jsch.SshKeys
 import com.dpsmpx.dpai.ui.TargetEntry
 import com.jcraft.jsch.JSch
 import java.security.MessageDigest
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /** ПК/Termux по закреплённому SSH: токен только после пробы обновлённого агента (D-175). */
 internal object RemoteSharedVerify {
+    private val awaitingAccount = MutableStateFlow(false)
+    /** Только состояние ожидания; сам аккаунт остаётся у оболочки и текущего задания. */
+    val needsAuthorization: StateFlow<Boolean> = awaitingAccount
     private fun prefs(context: Context) = context.getSharedPreferences("dpai.remote-shared-verify", Context.MODE_PRIVATE)
     fun key(target: TargetEntry) = "remote-shared-verify:${target.id.value}"
     fun automatic(context: Context, target: TargetEntry) = prefs(context).getBoolean("${target.id.value}.automatic", false)
@@ -92,7 +97,11 @@ internal object RemoteSharedVerify {
             }
             val account = (app as? DpaiApplication)?.sharedToolsAccount()
             val token = (account as? Outcome.Success)?.value
-                ?: return@start LongJobs.Done("Нужен вход по PIN/биометрии кнопкой синхронизации", failed = true)
+            if (token == null) {
+                awaitingAccount.value = true
+                return@start LongJobs.Done("Нужен вход по PIN/биометрии кнопкой синхронизации", failed = true)
+            }
+            awaitingAccount.value = false
             val host = when (val r = controller.pcHost(target)) {
                 is Outcome.Failure -> return@start LongJobs.Done(r.diagnostics.first().message, failed = true)
                 is Outcome.Success -> r.value
@@ -152,9 +161,13 @@ internal object RemoteSharedVerify {
         if (lastAttempt != Long.MIN_VALUE && now - lastAttempt < 60_000_000_000L) return
         lastAttempt = now
         val app = context.applicationContext as? DpaiApplication ?: return
-        if ((app.sharedToolsAccount() as? Outcome.Success)?.value == null) return
+        val targets = Controller.get(context.filesDir).targets().filter { !it.inApp && automatic(context, it) }
+        if (targets.isEmpty()) { awaitingAccount.value = false; return }
+        val available = (app.sharedToolsAccount() as? Outcome.Success)?.value != null
+        awaitingAccount.value = !available
+        if (!available) return
         val config = prefs(context)
-        for (target in Controller.get(context.filesDir).targets().filter { !it.inApp && automatic(context, it) }) {
+        for (target in targets) {
             val root = config.getString("${target.id.value}.root", null) ?: continue
             val python = config.getString("${target.id.value}.python", null) ?: continue
             start(context, target, root, python, background = true)
