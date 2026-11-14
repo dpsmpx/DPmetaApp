@@ -183,3 +183,7 @@ https://registry.npmjs.org/@anthropic-ai/claude-code/2.1.322 .
 |---|---|
 | editor-0.24.7.aar | cdfdacdb3ac8605b190768d93f504935400c9aa37b773dc6f6c840311faf2b4c |
 | language-textmate-0.24.7.aar | eca50e81595cd4cf1f677cca12c5fa2203d6051eaf87dabc7e7489413dd098f1 |
+
+Каталог `robolectric-android30` — проверенный образ Android 11 для тестов
+виджета оболочки DPmetaApp (DPmetaApp:D-144), в подсистеме не используется.
+Происхождение и SHA-256 — DPmetaApp:docs/PROVENANCE.md.

@@ -37,6 +37,12 @@ Compose, JSch; wrapper Gradle со сверкой SHA-256) — `dpai/docs/PROVEN
 | Robolectric (`org.robolectric:robolectric`, каталог `robolectric`; с ним JUnit 4 `junit:junit` 4.13.2 — EPL-1.0 и `junit-vintage-engine` из JUnit BOM — EPL-2.0) | 4.17 | MIT (транзитивные — как у DPpass, `dppass/docs/PROVENANCE.md`) | снимки экранов на JVM (`docs/SCREENSHOTS.md`): только тестам `:shell` и только по свойству `dpmeta.screenshots`; в APK и обычную сборку не попадает | `:shell` (тест) | те же версии, что у тестов экранов DPpass (`DPpass:D-86`) |
 | Образ «Android целиком» (`org.robolectric:android-all-instrumented`, каталог `robolectric-android-all`) | 16-robolectric-13921718-i7 | Apache-2.0 | образ SDK 36 для Robolectric 4.17; берётся Gradle со сверкой суммы, тест ничего не скачивает | `:shell` (тест) | `DPpass:D-86`; SHA-256 — `gradle/verification-metadata.xml` |
 
+Образ Robolectric API 30 (`org.robolectric:android-all-instrumented`
+11-robolectric-6757853-i7, каталог `robolectric-android30`, Apache-2.0) —
+только тестам `:shell` при `dpmeta.test.sdk=30`. Версия сверена с
+DefaultSdkProvider Robolectric 4.17; JAR/POM SHA-256 получены из Maven Central
+и закреплены в `gradle/verification-metadata.xml`. В APK не включается.
+
 Предпросмотр на ПК (`DP_AI_Orcestrator:D-169`) на один запуск добавляет тестам
 модуля проекта на ПК Robolectric 4.17 и JUnit 4.13.2 — версии закреплены в
 ресурсе init-скрипта (`dpai/docs/PROVENANCE.md`); скачивает их Gradle ПК, суммы
