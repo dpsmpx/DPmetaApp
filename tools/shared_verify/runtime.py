@@ -479,7 +479,7 @@ def session(repo, command):
         argv = [sys.executable, str(Path(__file__).resolve()), '--repo', str(repo), 'run', '--', str(repo / 'dpv')]
         content = '#!/bin/sh\nexec ' + ' '.join(shlex.quote(part) for part in argv) + ' "$@"\n'
         # Отдельная папка: управляемая обёртка не меняет Git-дерево DP-Verify.
-        with tempfile.NamedTemporaryFile(mode='w', dir=bindir, delete=False) as temporary:
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', newline='\n', dir=bindir, delete=False) as temporary:
             temporary.write(content)
             private_file(temporary, 0o700)
             temporary_path = Path(temporary.name)

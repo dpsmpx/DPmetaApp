@@ -107,9 +107,12 @@ class SharedToolsHost(
             ?: return Outcome.failure(DiagCode.VALUE_INVALID, "неизвестный исполнитель общих инструментов", SharedTools.EXECUTOR_ENV)
         return when (val configured = load()) {
             is Outcome.Failure -> configured
-            is Outcome.Success -> if (configured.value != null && posix == configured.value.windows) {
-                Outcome.failure(DiagCode.UNSUPPORTED, "пути общих инструментов не соответствуют платформе target", SharedTools.FORMAT)
-            } else delegate.start(configured.value?.prepare(spec, executor) ?: spec, onOutput)
+            is Outcome.Success -> {
+                val tools = configured.value
+                if (tools != null && posix == tools.windows) {
+                    Outcome.failure(DiagCode.UNSUPPORTED, "пути общих инструментов не соответствуют платформе target", SharedTools.FORMAT)
+                } else delegate.start(tools?.prepare(spec, executor) ?: spec, onOutput)
+            }
         }
     }
 }
