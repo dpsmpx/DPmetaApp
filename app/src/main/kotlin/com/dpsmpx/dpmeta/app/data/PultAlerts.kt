@@ -14,6 +14,8 @@ import com.dpsmpx.dpai.core.clock.DisplayZone
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.result.then
+import com.dpsmpx.dpai.core.result.map
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.FormatHeader
 import com.dpsmpx.dpai.core.serialization.JsonArray
@@ -23,6 +25,7 @@ import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpai.storage.vfs.NioVfs
+import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpmeta.app.R
 import com.dpsmpx.dpmeta.app.screens.AlertActions
 import com.dpsmpx.dpmeta.formats.AlertFormat
@@ -54,17 +57,19 @@ object PultAlerts {
     private const val PREFS = "dpmeta.settings"
     private const val QUIET_FROM = "quiet_from"
     private const val QUIET_TO = "quiet_to"
+    private const val QUIET_DAYS = "quiet_days"
     private const val PRIVACY = "alerts_privacy"
+    private val presentationLock = Any()
 
     /** Каталог и правила из APK. */
     data class Config(val catalog: EventCatalog, val rules: AlertRules)
 
     @Volatile
-    private var config: Outcome<Config>? = null
+    private var cachedDefaults: Outcome<Config>? = null
 
     /** Каталог и правила (`config/events.toml`, `config/alerts.toml` в APK) — разбор один раз на процесс. */
-    fun config(context: Context): Outcome<Config> {
-        config?.let { return it }
+    private fun defaults(context: Context): Outcome<Config> {
+        cachedDefaults?.let { return it }
         val assets = context.applicationContext.assets
         fun read(name: String): String? = try {
             assets.open(name).use { String(it.readBytes(), Charsets.UTF_8) }
@@ -77,12 +82,35 @@ object PultAlerts {
             is Outcome.Failure -> c
             is Outcome.Success -> when (val a = AlertFormat.parse(alerts, c.value, ALERTS_ASSET)) {
                 is Outcome.Failure -> a
-                is Outcome.Success -> Outcome.success(Config(c.value, a.value))
+                is Outcome.Success -> {
+                    val catalog = AlertActions.studioCatalog(c.value)
+                    Outcome.success(Config(catalog, a.value.copy(rules = a.value.rules.filter { catalog.matching(it.on).isNotEmpty() })))
+                }
             }
         }
-        config = r
+        cachedDefaults = r
         return r
     }
+
+    private fun user(context: Context) = UserAlertRules(DocumentStore(vfs(context), "settings"))
+
+    /** Повреждённая личная настройка даёт отказ; включённые правила из APK не подставляются молча. */
+    fun config(context: Context): Outcome<Config> = defaults(context).then { base ->
+        user(context).read().then { text ->
+            if (text == null) Outcome.success(base) else AlertFormat.parse(text, base.catalog, "локальные правила").then { Outcome.success(Config(base.catalog, it)) }
+        }
+    }
+
+    fun catalog(context: Context): Outcome<EventCatalog> = defaults(context).map { it.catalog }
+
+    fun rulesText(context: Context): Outcome<String> = user(context).read().then { text ->
+        if (text != null) Outcome.success(text) else defaultsText(context)
+    }
+
+    fun defaultsText(context: Context): Outcome<String> = defaults(context).map { AlertFormat.write(it.rules) }
+
+    fun saveRules(context: Context, text: String): Outcome<Unit> = defaults(context).then { user(context).save(text, it.catalog) }
+    fun resetRules(context: Context): Outcome<Unit> = user(context).reset()
 
     /** Настройки уведомлений: тихие часы (`null` — выкл) и приватность экрана блокировки. */
     data class Settings(val quiet: QuietHours?, val privacy: Boolean)
@@ -91,7 +119,8 @@ object PultAlerts {
         val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val from = p.getInt(QUIET_FROM, AlertActions.DEFAULT_QUIET.fromMinute)
         val to = p.getInt(QUIET_TO, AlertActions.DEFAULT_QUIET.toMinute)
-        val quiet = if (from in 0 until QuietHours.MINUTES_IN_DAY && to in 0 until QuietHours.MINUTES_IN_DAY && from != to) QuietHours(from, to) else null
+        val days = p.getStringSet(QUIET_DAYS, emptySet()).orEmpty().mapNotNull { runCatching { java.time.DayOfWeek.valueOf(it) }.getOrNull() }.toSet()
+        val quiet = if (from in 0 until QuietHours.MINUTES_IN_DAY && to in 0 until QuietHours.MINUTES_IN_DAY && from != to) QuietHours(from, to, days) else null
         return Settings(quiet, p.getBoolean(PRIVACY, true))
     }
 
@@ -99,11 +128,18 @@ object PultAlerts {
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit {
             putInt(QUIET_FROM, quiet?.fromMinute ?: -1)
             putInt(QUIET_TO, quiet?.toMinute ?: -1)
+            putStringSet(QUIET_DAYS, quiet?.days.orEmpty().map { it.name }.toSet())
         }
     }
 
-    fun setPrivacy(context: Context, on: Boolean) {
+    fun setPrivacy(context: Context, on: Boolean) = synchronized(presentationLock) {
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putBoolean(PRIVACY, on) }
+        if (on) {
+            // Убрать прежние публичные карточки. Чужие уведомления и foreground-службы не затрагиваются.
+            val manager = context.getSystemService(NotificationManager::class.java)
+            manager?.activeNotifications?.filter { it.notification.channelId.startsWith("dpmeta.alert.") }?.forEach { manager.cancel(it.tag, it.id) }
+        }
+        Unit
     }
 
     private fun vfs(context: Context): NioVfs = NioVfs(context.applicationContext.filesDir.toPath().resolve("dpmeta")).also { it.mkdirs("") }
@@ -168,7 +204,7 @@ object PultAlerts {
             app.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         var posted = 0
         if (allowed) {
-            for (d in notify) if (show(app, d, cfg.catalog, s.privacy)) posted++
+            for (d in notify) if (show(app, d, cfg.catalog)) posted++
         }
         val dropped = decided.decisions.count { it is Decision.Dropped }
         return "событий ${events.size}, к показу ${notify.size}, показано $posted" +
@@ -199,8 +235,10 @@ object PultAlerts {
         return id
     }
 
-    private fun show(context: Context, d: Decision.Notify, catalog: EventCatalog, privacy: Boolean): Boolean {
-        val manager = context.getSystemService(NotificationManager::class.java) ?: return false
+    private fun show(context: Context, d: Decision.Notify, catalog: EventCatalog): Boolean = synchronized(presentationLock) {
+        // Последнее значение читается под тем же guard, что и смена приватности.
+        val privacy = settings(context).privacy
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return@synchronized false
         val id = channel(manager, d.channel, d.importance)
         val typeTitle = catalog.type(d.event.type)?.title ?: d.event.type
         val title = listOfNotNull(d.event.project, typeTitle).joinToString(": ")
@@ -227,7 +265,7 @@ object PultAlerts {
             .setPublicVersion(public)
             .apply { pending?.let(::setContentIntent) }
             .build()
-        return try {
+        try {
             manager.notify(d.tag, d.tag.hashCode(), n)
             true
         } catch (_: SecurityException) {

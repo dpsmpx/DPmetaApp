@@ -1373,6 +1373,7 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
     Text("Команды проектов", style = MaterialTheme.typography.titleMedium)
     Text("Проверки и отчёты проектов — в Linux-среде приложения или в Termux, в клонах. Только команды из списка; своих здесь не набрать.", style = MaterialTheme.typography.bodySmall)
     TextButton(onClick = onCommands) { Text("Команды ▸") }
+    NotificationSettings(view.feed)
     Text("Синхронизация", style = MaterialTheme.typography.titleMedium)
     // Постоянная строка последней синхронизации (UX-10); временные итоги — снэкбаром.
     view.state?.let { st -> Text("Последняя: ${Screens.time(st.asOf)} · ${Screens.summary(st).syncHealth}", style = MaterialTheme.typography.bodySmall) }
