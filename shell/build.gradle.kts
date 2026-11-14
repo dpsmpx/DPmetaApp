@@ -122,6 +122,7 @@ dependencies {
         testImplementation(project(":core:sync"))
         testImplementation(project(":core:formats"))
         testImplementation(project(":core:metrics"))
+        testImplementation(project(":core:notify"))
         robolectricImage(libs.robolectric.android.all)
     }
 }

@@ -53,7 +53,7 @@ class NotificationPolicyTest {
 
     @Before
     fun setup() {
-        val base = RuntimeEnvironment.getApplication<Application>()
+        val base = RuntimeEnvironment.getApplication()
         shadowOf(base).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         app = PolicyApp(base)
         manager = app.getSystemService(NotificationManager::class.java)
@@ -141,7 +141,7 @@ class NotificationPolicyTest {
             changing?.join(5000)
         }
         assertFalse(posting.isAlive)
-        assertFalse(changing?.isAlive == true)
+        assertFalse(changing.isAlive)
         assertNull(failure.get())
         assertTrue(PultAlerts.settings(app).privacy)
         assertTrue(manager.activeNotifications.none { it.notification.visibility == AndroidNotification.VISIBILITY_PUBLIC })
