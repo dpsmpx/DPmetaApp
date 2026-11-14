@@ -118,6 +118,7 @@ import com.dpsmpx.dpmeta.github.PullDetail
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.collectAsState
 import com.dpsmpx.dpmeta.app.screens.Links
 import com.dpsmpx.dpmeta.app.screens.Panels
 import com.dpsmpx.dpmeta.app.screens.Screens
@@ -516,6 +517,10 @@ fun PultApp(
     onClonesChosen: (Set<String>?) -> Unit = {},
 ) {
     // Пункт и стеки — rememberSaveable: поворот, тема и шрифт больше не сбрасывают место (UX-3).
+    val context = LocalContext.current.applicationContext
+    val aiNotices by com.dpsmpx.dpmeta.app.data.PultAlerts.aiEvents.collectAsState()
+    LaunchedEffect(Unit) { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.dpsmpx.dpmeta.app.data.PultAlerts.refreshAi(context) } }
+    val shownFeed = remember(view.feed, aiNotices) { (view.feed + com.dpsmpx.dpmeta.app.screens.AiNotices.feed(aiNotices)).sortedByDescending { it.at.epochMillis } }
     var tab by rememberSaveable { mutableStateOf(if (view.hasToken) Section.SUMMARY else Section.MORE) }
     var devTab by rememberSaveable { mutableStateOf(DevTab.PROJECTS) }
     var pullFilter by rememberSaveable { mutableStateOf(Screens.PullFilter.WAITING) }
@@ -625,7 +630,7 @@ fun PultApp(
                 top is Nav.Card && s != null -> remember(s, top.project, view.zone) { Screens.card(s, top.project) }?.let { CardScreen(it, loader, back, open) }
                 top is Nav.Dir -> DirScreen(top, loader, back, open)
                 top is Nav.Doc -> DocScreen(top, view.names, loader, back, open)
-                top is Nav.Feed && s != null -> FeedScreen(view.feed, s.projects.map { it.name }, back) { open(Nav.Card(it)) }
+                top is Nav.Feed -> FeedScreen(shownFeed, s?.projects?.map { it.name }.orEmpty(), back, onAi = onAi?.let { action -> { action(false) } }) { open(Nav.Card(it)) }
                 top is Nav.Pull -> {
                     val checks = remember(s, top) { s?.let { Screens.card(it, top.project) }?.pulls?.firstOrNull { it.number == top.number.toLong() }?.checks }
                     PullScreen(top.project, top.number, checks, loader, back)
@@ -643,9 +648,9 @@ fun PultApp(
                     val doc = settingsDocument
                     if (doc != null) {
                         // Один документ на приложение (D-112): блок пульта — без своей прокрутки, внутри документа.
-                        doc(settingsQuery) { Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, scroll = false) }
+                        doc(settingsQuery) { Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, scroll = false, onFeed = { open(Nav.Feed) }) }
                     } else {
-                        Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport)
+                        Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, onFeed = { open(Nav.Feed) })
                     }
                 }
                 // Справка — и без токена и среза (D-112): с неё начинают.
@@ -670,7 +675,7 @@ fun PultApp(
                     }
                 }
                 tab == Section.SUMMARY -> Summary(
-                    remember(s, view.zone) { Screens.summary(s) }, view, onSync, onAi,
+                    remember(s, view.zone) { Screens.summary(s) }, view.copy(feed = shownFeed), onSync, onAi,
                     onTile = { g ->
                         when (g) {
                             Screens.Goes.PROJECTS -> { tab = Section.DEV; devTab = DevTab.PROJECTS }
@@ -773,8 +778,8 @@ private fun Summary(
         Text("Последние события", style = MaterialTheme.typography.titleSmall)
         if (recent.isEmpty()) Text("Событий нет: они появляются со второй синхронизации.", style = MaterialTheme.typography.bodySmall)
         for (r in recent) {
-            Column(Modifier.fillMaxWidth().clickable(onClickLabel = "карточка проекта") { onProject(r.project) }.padding(vertical = 4.dp)) {
-                Text("${r.time} · ${r.project} · ${r.kind}", style = MaterialTheme.typography.bodySmall)
+            Column(Modifier.fillMaxWidth().clickable(enabled = r.project.isNotEmpty() || onAi != null, onClickLabel = if (r.project.isEmpty()) "открыть ИИ" else "карточка проекта") { if (r.project.isEmpty()) onAi?.invoke(false) else onProject(r.project) }.padding(vertical = 4.dp)) {
+                Text(r.time + " · " + (if (r.project.isEmpty()) "" else "${r.project} · ") + r.kind, style = MaterialTheme.typography.bodySmall)
                 Text(r.text, maxLines = 2)
             }
         }
@@ -976,7 +981,7 @@ private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, on
  * события — карточка проекта.
  */
 @Composable
-private fun FeedScreen(events: List<FeedEvent>, projects: List<String>, onBack: () -> Unit, onProject: (String) -> Unit) {
+private fun FeedScreen(events: List<FeedEvent>, projects: List<String>, onBack: () -> Unit, onAi: (() -> Unit)? = null, onProject: (String) -> Unit) {
     var project by rememberSaveable { mutableStateOf<String?>(null) }
     var kind by rememberSaveable { mutableStateOf<String?>(null) }
     val rows = Screens.feed(events, project, kind)
@@ -1001,9 +1006,9 @@ private fun FeedScreen(events: List<FeedEvent>, projects: List<String>, onBack: 
             val keys = contentKeys(rows) { "${it.time}|${it.project}|${it.kind}|${it.text.hashCode()}" }
             items(rows.size, key = { "feed:${keys[it]}" }) { i ->
                 val r = rows[i]
-                Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "карточка проекта") { onProject(r.project) }.padding(vertical = 4.dp)) {
+                Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = r.project.isNotEmpty() || onAi != null, onClickLabel = if (r.project.isEmpty()) "открыть ИИ" else "карточка проекта") { if (r.project.isEmpty()) onAi?.invoke() else onProject(r.project) }.padding(vertical = 4.dp)) {
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("${r.time} · ${r.project}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                        Text(r.time + if (r.project.isEmpty()) "" else " · ${r.project}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                         Text(r.kind, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     }
                     Text(r.text)
@@ -1322,7 +1327,7 @@ private fun QuestionsList(q: List<Screens.Question>, open: (Nav) -> Unit, below:
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 // Листается (UX-15): при шрифте 200 % и в альбомной ориентации «Клоны…» не уходят за край.
-private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}, onJournal: () -> Unit = {}, onAsk: () -> Unit = {}, onCommands: () -> Unit = {}, onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null, scroll: Boolean = true) = Column(if (scroll) Modifier.verticalScroll(rememberScrollState()) else Modifier, verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}, onJournal: () -> Unit = {}, onAsk: () -> Unit = {}, onCommands: () -> Unit = {}, onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null, scroll: Boolean = true, onFeed: () -> Unit = {}) = Column(if (scroll) Modifier.verticalScroll(rememberScrollState()) else Modifier, verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     var token by remember { mutableStateOf("") }
     // Пока токен сохранён — одна строка, поле — по «Заменить» (UX-12): пустое поле при сохранённом токене путало.
     var replacing by rememberSaveable { mutableStateOf(false) }
@@ -1373,7 +1378,7 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
     Text("Команды проектов", style = MaterialTheme.typography.titleMedium)
     Text("Проверки и отчёты проектов — в Linux-среде приложения или в Termux, в клонах. Только команды из списка; своих здесь не набрать.", style = MaterialTheme.typography.bodySmall)
     TextButton(onClick = onCommands) { Text("Команды ▸") }
-    NotificationSettings(view.feed)
+    NotificationSettings(view.feed, onFeed)
     Text("Синхронизация", style = MaterialTheme.typography.titleMedium)
     // Постоянная строка последней синхронизации (UX-10); временные итоги — снэкбаром.
     view.state?.let { st -> Text("Последняя: ${Screens.time(st.asOf)} · ${Screens.summary(st).syncHealth}", style = MaterialTheme.typography.bodySmall) }

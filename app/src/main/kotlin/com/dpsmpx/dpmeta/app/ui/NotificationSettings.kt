@@ -18,6 +18,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,22 +48,31 @@ import kotlinx.coroutines.withContext
 /** Управление движком уведомлений; проба правил не отправляет настоящих уведомлений (D-140). */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun NotificationSettings(feed: List<FeedEvent>) {
+internal fun NotificationSettings(feed: List<FeedEvent>, onFeed: () -> Unit) {
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     val initial = remember { PultAlerts.settings(context) }
     var privacy by remember { mutableStateOf(initial.privacy) }
+    var privacySaving by remember { mutableStateOf(false) }
     var quiet by remember { mutableStateOf(initial.quiet != null) }
     var from by remember { mutableStateOf(AlertActions.quietName(initial.quiet ?: AlertActions.DEFAULT_QUIET).substringBefore('–')) }
     var to by remember { mutableStateOf(AlertActions.quietName(initial.quiet ?: AlertActions.DEFAULT_QUIET).substringAfter('–')) }
     var days by remember { mutableStateOf(initial.quiet?.days.orEmpty()) }
     var note by remember { mutableStateOf<String?>(null) }
     var rules by remember { mutableStateOf(false) }
+    val issue by PultAlerts.issue.collectAsState()
     Text("Уведомления разработки", style = MaterialTheme.typography.titleMedium)
+    if (issue.isNotEmpty()) Text("Последняя проблема: $issue", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
     Row {
-        Checkbox(privacy, onCheckedChange = { value ->
-            privacy = value
-            scope.launch { withContext(Dispatchers.IO) { PultAlerts.setPrivacy(context, value) } }
+        Checkbox(privacy, enabled = !privacySaving, onCheckedChange = { value ->
+            if (!privacySaving) {
+                privacySaving = true
+                privacy = value
+                scope.launch {
+                    try { withContext(Dispatchers.IO) { PultAlerts.setPrivacy(context, value) } }
+                    finally { privacySaving = false }
+                }
+            }
         })
         Text("Скрывать проекты и тексты на экране блокировки")
     }
@@ -90,6 +100,8 @@ internal fun NotificationSettings(feed: List<FeedEvent>) {
     }) { Text("Сохранить тихие часы") }
     note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     TextButton(onClick = { rules = true }) { Text("Правила и проба по ленте…") }
+    TextButton(onClick = onFeed) { Text("Лента уведомлений ИИ и проектов…") }
+    Text("Правила действуют на обычные сообщения ИИ. Запросы на подтверждение и безопасность сохраняют обязательный показ. История ИИ — последние 200 кратких сообщений до 7 дней.", style = MaterialTheme.typography.bodySmall)
     TextButton(onClick = {
         context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }) { Text("Разрешение и каналы Android…") }
@@ -176,7 +188,8 @@ private fun AlertRulesDialog(feed: List<FeedEvent>, onClose: () -> Unit) {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Решает первое подходящее включённое правило. Проба использует только загруженную ленту последних 7 дней и ничего не отправляет.", style = MaterialTheme.typography.bodySmall)
             note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            if (advanced) OutlinedTextField(text, { if (it.length <= UserAlertRules.MAX_TEXT) change(it) }, enabled = !busy, label = { Text("Правила TOML") }, minLines = 8, maxLines = 15, textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)) else {
+            if (text.length > UserAlertRules.MAX_TEXT) Text("Дополнение правил превысило предел текста; сократите комментарии или правила. Исходная настройка сохранена.", color = MaterialTheme.colorScheme.error)
+            if (advanced) OutlinedTextField(text, { if (it.length <= UserAlertRules.MAX_TEXT || it.length < text.length) change(it) }, enabled = !busy, label = { Text("Правила TOML") }, minLines = 8, maxLines = 15, textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)) else {
                 current?.rules?.forEach { rule ->
                     Row { Checkbox(rule.enabled, enabled = !busy, onCheckedChange = { value -> update(rule.id) { it.copy(enabled = value) } }); Text(rule.title, style = MaterialTheme.typography.bodySmall) }
                     TextButton(enabled = !busy, onClick = {
@@ -197,8 +210,15 @@ private fun AlertRulesDialog(feed: List<FeedEvent>, onClose: () -> Unit) {
                 val known = catalog ?: return@TextButton
                 busy = true
                 scope.launch {
-                    preview = withContext(Dispatchers.Default) { AlertActions.rows(rules, known, feed, Clock.SYSTEM.now(), DisplayZone.current, PultAlerts.settings(context).quiet).associate { it.id to it.tried } }
-                    note = "Проба готова по загруженной ленте; разрешения Android и фактическая доставка здесь не проверяются"
+                    val history = withContext(Dispatchers.IO) { PultAlerts.refreshAi(context) }
+                    if (history is Outcome.Failure) {
+                        note = history.diagnostics.first().message
+                        busy = false
+                        return@launch
+                    }
+                    val notices = (history as Outcome.Success).value
+                    preview = withContext(Dispatchers.Default) { AlertActions.rows(rules, known, feed, Clock.SYSTEM.now(), DisplayZone.current, PultAlerts.settings(context).quiet, notices.map { it.event }).associate { it.id to it.tried } }
+                    note = "Проба готова по загруженной ленте; разрешения Android и доставка здесь не проверяются" + if (notices.any { it.truncated }) "; длинные сообщения ИИ представлены выдержками" else ""
                     busy = false
                     advanced = false
                 }

@@ -40,6 +40,9 @@ class DpmetaApplication : DpaiApplication() {
 
     override val ecosystemRegistry: Boolean get() = true
 
+    override fun presentNotice(notice: com.dpsmpx.dpai.notifications.Notification, render: (com.dpsmpx.dpai.ui.NoticePresentation) -> Boolean) =
+        com.dpsmpx.dpmeta.app.data.PultAlerts.presentAi(this, notice, render)
+
     override val sharedToolsAccountAvailable: Boolean get() = true
 
     override fun sharedToolsAccount(): com.dpsmpx.dpai.core.result.Outcome<com.dpsmpx.dpai.core.diagnostics.Secret?> =

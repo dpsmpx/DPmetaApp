@@ -81,7 +81,7 @@ class UserAlertRulesTest {
         val documents = DocumentStore(NioVfs(dir), "settings")
         val store = UserAlertRules(documents)
         assertIs<Outcome.Success<*>>(store.save(text, catalog))
-        assertIs<Outcome.Success<*>>(documents.write("alert-rules", JsonObject.of(*FormatHeader.write(UserAlertRules.FORMAT, 2), "text" to JsonString(text))))
+        assertIs<Outcome.Success<*>>(documents.write("alert-rules", JsonObject.of(*FormatHeader.write(UserAlertRules.FORMAT, UserAlertRules.VERSION + 1), "text" to JsonString(text))))
         assertIs<Outcome.Failure>(store.read())
     }
 

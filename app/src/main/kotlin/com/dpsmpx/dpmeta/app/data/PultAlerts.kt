@@ -11,6 +11,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.content.edit
 import com.dpsmpx.dpai.core.clock.DisplayZone
+import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
@@ -28,6 +29,7 @@ import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpmeta.app.R
 import com.dpsmpx.dpmeta.app.screens.AlertActions
+import com.dpsmpx.dpmeta.app.screens.AiNotices
 import com.dpsmpx.dpmeta.formats.AlertFormat
 import com.dpsmpx.dpmeta.formats.EventCatalogFormat
 import com.dpsmpx.dpmeta.metrics.Feed
@@ -41,6 +43,8 @@ import com.dpsmpx.dpmeta.notify.Decision
 import com.dpsmpx.dpmeta.notify.QuietHours
 import com.dpsmpx.dpmeta.notify.Shown
 import java.io.IOException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Тревоги пульта (ТЗ, §6.7, F-37, F-38; D-85): события синхронизации — через движок
@@ -60,6 +64,10 @@ object PultAlerts {
     private const val QUIET_DAYS = "quiet_days"
     private const val PRIVACY = "alerts_privacy"
     private val presentationLock = Any()
+    private val aiHistory = MutableStateFlow<List<RecordedNotice>>(emptyList())
+    val aiEvents: StateFlow<List<RecordedNotice>> = aiHistory
+    private val policyIssue = MutableStateFlow("")
+    val issue: StateFlow<String> = policyIssue
 
     /** Каталог и правила из APK. */
     data class Config(val catalog: EventCatalog, val rules: AlertRules)
@@ -96,16 +104,12 @@ object PultAlerts {
 
     /** Повреждённая личная настройка даёт отказ; включённые правила из APK не подставляются молча. */
     fun config(context: Context): Outcome<Config> = defaults(context).then { base ->
-        user(context).read().then { text ->
-            if (text == null) Outcome.success(base) else UserAlertRules.validate(text, base.catalog).then { Outcome.success(Config(base.catalog, it)) }
-        }
+        user(context).effective(base.rules, base.catalog).map { Config(base.catalog, it) }
     }
 
     fun catalog(context: Context): Outcome<EventCatalog> = defaults(context).map { it.catalog }
 
-    fun rulesText(context: Context): Outcome<String> = user(context).read().then { text ->
-        if (text != null) Outcome.success(text) else defaultsText(context)
-    }
+    fun rulesText(context: Context): Outcome<String> = defaults(context).then { user(context).editorText(it.rules) }
 
     fun defaultsText(context: Context): Outcome<String> = defaults(context).then { AlertFormat.write(it.rules) }
 
@@ -143,6 +147,40 @@ object PultAlerts {
     }
 
     private fun vfs(context: Context): NioVfs = NioVfs(context.applicationContext.filesDir.toPath().resolve("dpmeta")).also { it.mkdirs("") }
+
+    private fun history(context: Context) = AiNoticeHistory(DocumentStore(vfs(context), "settings"))
+
+    @Synchronized
+    fun refreshAi(context: Context): Outcome<List<RecordedNotice>> = history(context).read(Clock.SYSTEM.now()).also { result ->
+        when (result) {
+            is Outcome.Success -> aiHistory.value = result.value
+            is Outcome.Failure -> policyIssue.value = "История уведомлений не прочитана: ${result.diagnostics.first().code}"
+        }
+    }
+
+    /** Обязательные решения остаются нативными; обычные сообщения — общим правилам (D-142). */
+    @Synchronized
+    fun presentAi(context: Context, notice: com.dpsmpx.dpai.notifications.Notification, render: (com.dpsmpx.dpai.ui.NoticePresentation) -> Boolean) {
+        val event = AiNotices.event(notice) ?: run { render(com.dpsmpx.dpai.ui.NoticePresentation()); return }
+        val config = when (val r = config(context)) {
+            is Outcome.Failure -> { policyIssue.value = "Обычные уведомления ИИ остановлены: ${r.diagnostics.first().message}"; return }
+            is Outcome.Success -> r.value
+        }
+        val now = Clock.SYSTEM.now()
+        val result = Alerts.decide(listOf(event), config.catalog, config.rules, now, DisplayZone.current, settings(context).quiet, readShown(context))
+        val decision = result.decisions.single()
+        when (val saved = history(context).add(RecordedNotice(event, decision is Decision.Notify || decision is Decision.Feed), now)) {
+            is Outcome.Success -> { aiHistory.value = saved.value; policyIssue.value = "" }
+            is Outcome.Failure -> policyIssue.value = "История уведомлений не сохранена: ${saved.diagnostics.first().code}"
+        }
+        if (decision is Decision.Dropped) { policyIssue.value = decision.diagnostic.message; return }
+        if (decision !is Decision.Notify) return
+        synchronized(presentationLock) {
+            val manager = context.getSystemService(NotificationManager::class.java) ?: return
+            val style = com.dpsmpx.dpai.ui.NoticePresentation(channel(manager, decision.channel, decision.importance), decision.silent, settings(context).privacy)
+            if (render(style)) writeShown(context, result.shown)
+        }
+    }
 
     /** История показа: сломанный или чужой файл — пустая (антидребезг начнётся заново, не падение). */
     private fun readShown(context: Context): List<Shown> {

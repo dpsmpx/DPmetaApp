@@ -7,6 +7,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Icon
+import androidx.core.app.NotificationCompat
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.notifications.Notification
 import com.dpsmpx.dpai.notifications.NotificationCategory
@@ -37,24 +38,37 @@ class Notifier(private val context: Context) {
     fun show(n: Notification) {
         // Запрос человеку показывает RequestPresenter — по ждущим запросам, а не по потоку (D-44).
         if (n.request != null) return
-        val builder = AndroidNotification.Builder(context, channel(n.category))
-            .setSmallIcon(R.drawable.ic_notify_ai)
-            .setContentTitle(n.title + if (n.count > 1) " (×${n.count})" else "")
-            .setContentText(n.body)
-            .setStyle(AndroidNotification.BigTextStyle().bigText(n.body))
-            .setOnlyAlertOnce(true)
-            .setAutoCancel(true)
-            // Названия задач и текст — не для экрана блокировки (аудит безопасности, A-12).
-            .setVisibility(AndroidNotification.VISIBILITY_PRIVATE)
-            .setPublicVersion(lockScreen(context, channel(n.category), title(n.category)))
-            // Срок жизни (аудит стабильности, A-4): у приложения не больше 50 уведомлений, лишние система
-            // молча отбрасывает — и с ними запросы человеку. Сведения устаревают сами; решения — запросы.
-            .apply { timeout(n.category)?.let { setTimeoutAfter(it) } }
-            // Нажатие открывает приложение — то же окно, а не второе поверх (ревью 8 октября 2026);
-            // ссылка уведомления — к задаче или сессии (ТЗ, §76).
-            .setContentIntent(n.link?.let { openLink(context, it.toUri()) } ?: openApp(context))
-        // Кнопок у сведений нет: решения человека — запросы (D-44, D-49), их показывает RequestPresenter.
-        manager.notify(n.key.hashCode(), builder.build())
+        fun render(style: com.dpsmpx.dpai.ui.NoticePresentation): Boolean {
+            val selectedChannel = style.channel ?: channel(n.category)
+            val builder = NotificationCompat.Builder(context, selectedChannel)
+                .setSmallIcon(R.drawable.ic_notify_ai)
+                .setContentTitle(n.title + if (n.count > 1) " (×${n.count})" else "")
+                .setContentText(n.body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(n.body))
+                .setOnlyAlertOnce(true)
+                .setAutoCancel(true)
+                // Названия задач и текст — не для экрана блокировки (аудит безопасности, A-12).
+                .setVisibility(if (style.privacy) AndroidNotification.VISIBILITY_PRIVATE else AndroidNotification.VISIBILITY_PUBLIC)
+                .setPublicVersion(lockScreen(context, selectedChannel, title(n.category)))
+                .setSilent(style.silent)
+                // Срок жизни (аудит стабильности, A-4): у приложения не больше 50 уведомлений, лишние система
+                // молча отбрасывает — и с ними запросы человеку. Сведения устаревают сами; решения — запросы.
+                .apply { timeout(n.category)?.let { setTimeoutAfter(it) } }
+                // Нажатие открывает приложение — то же окно, а не второе поверх (ревью 8 октября 2026);
+                // ссылка уведомления — к задаче или сессии (ТЗ, §76).
+                .setContentIntent(n.link?.let { openLink(context, it.toUri()) } ?: openApp(context))
+            // Кнопок у сведений нет: решения человека — запросы (D-44, D-49), их показывает RequestPresenter.
+            manager.notify(n.key.hashCode(), builder.build())
+            return manager.activeNotifications.any { it.tag == null && it.id == n.key.hashCode() }
+        }
+        val app = context.applicationContext as? DpaiApplication
+        if (app == null || n.category == NotificationCategory.SECURITY || n.category == NotificationCategory.APPROVAL) {
+            render(com.dpsmpx.dpai.ui.NoticePresentation())
+        } else {
+            var attempted = false
+            app.presentNotice(n) { style -> attempted = true; render(style) }
+            if (!attempted) cancel(n.key)
+        }
     }
 
     fun cancel(key: String) = manager.cancel(key.hashCode())

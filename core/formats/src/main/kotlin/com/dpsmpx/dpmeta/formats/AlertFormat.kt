@@ -85,7 +85,7 @@ object EventCatalogFormat {
  */
 object AlertFormat {
     const val SCHEMA = 1
-    const val MAX_RULES = 200
+    const val MAX_RULES = 256
     const val MAX_REGEX = AlertPattern.MAX_LENGTH
 
     private val TOP = setOf("schema", "rule")

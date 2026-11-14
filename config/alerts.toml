@@ -132,3 +132,38 @@ id = "social.milestone"
 title = "Подписчики перешли веху"
 on = "social.followers.milestone"
 action = "notify"
+
+# Обычные уведомления ИИ; обязательные решения/безопасность сюда не передаются.
+[[rule]]
+id = "ai.blocked"
+title = "ИИ остановился и нужен разбор"
+on = "ai.blocked"
+action = "notify"
+importance = "high"
+
+[[rule]]
+id = "ai.failure"
+title = "Сбой ИИ"
+on = "ai.failure"
+action = "notify"
+importance = "high"
+
+[[rule]]
+id = "ai.info"
+title = "Сведения ИИ без громкого канала"
+on = "ai.info"
+action = "notify"
+importance = "low"
+
+[[rule]]
+id = "ai.progress"
+title = "Ход работы ИИ без громкого канала"
+on = "ai.progress"
+action = "notify"
+importance = "low"
+
+[[rule]]
+id = "ai.other"
+title = "Остальные сообщения ИИ"
+on = "ai.*"
+action = "notify"

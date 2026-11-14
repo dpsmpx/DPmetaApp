@@ -64,8 +64,8 @@ object AlertActions {
      * Правила с «что сработало бы» (F-53) по событиям ленты [feed] за 7 дней до [now]:
      * сколько раз правило уведомило бы (или отправило в сводку).
      */
-    fun rows(rules: AlertRules, catalog: EventCatalog, feed: List<FeedEvent>, now: Timestamp, zone: ZoneId, quiet: QuietHours?): List<Row> {
-        val events = feed.mapNotNull(Feed::event)
+    fun rows(rules: AlertRules, catalog: EventCatalog, feed: List<FeedEvent>, now: Timestamp, zone: ZoneId, quiet: QuietHours?, extra: List<com.dpsmpx.dpmeta.model.Event> = emptyList()): List<Row> {
+        val events = feed.mapNotNull(Feed::event) + extra
         return rules.rules.map { r ->
             val tried = Alerts.tryRule(r, events, catalog, now, zone, quiet).count { it is Decision.Notify || it is Decision.Digest }
             val conditions = listOfNotNull(

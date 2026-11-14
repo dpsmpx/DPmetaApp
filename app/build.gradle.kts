@@ -83,6 +83,7 @@ dependencies {
     implementation(project(":core:actions"))
     implementation(project(":core:notify"))
     implementation("com.dpsmpx.dpai:ui")
+    implementation("com.dpsmpx.dpai:notifications")
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.activity.compose)
