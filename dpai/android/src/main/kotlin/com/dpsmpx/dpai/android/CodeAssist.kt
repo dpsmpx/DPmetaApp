@@ -84,6 +84,8 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
     var renaming by remember { mutableStateOf<String?>(null) }
     var fixes by remember { mutableStateOf<Pair<Assist.Fixes, String>?>(null) }
     var confirm by remember { mutableStateOf<CodeService.Install?>(null) }
+    var indexDialog by remember { mutableStateOf(false) }
+    var indexEnabled by remember { mutableStateOf(false) }
     var license by remember { mutableStateOf<CodeServerSetup.AndroidPlatform?>(null) }
     val state = session.state
     val diagnostics = session.diagnostics[session.uri].orEmpty()
@@ -221,6 +223,10 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
 
     if (!compact) Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            if (session.cppProject != null) TextButton(enabled = !busy && state !is CodeService.State.Starting, onClick = {
+                indexEnabled = CodeService.cppIndex(context, session.cppProject!!.root)
+                indexDialog = true
+            }) { Text("Индекс C++…") }
             when (state) {
                 CodeService.State.Off -> {
                     Text("$title: семантика выключена", Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
@@ -366,6 +372,30 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
             } },
             confirmButton = { TextButton(onClick = { references = null }) { Text("Закрыть") } })
     }
+    if (indexDialog) AlertDialog(
+        onDismissRequest = { indexDialog = false },
+        title = { Text("Индекс проекта C++") },
+        text = { Text(if (indexEnabled) {
+            "Индекс включён для ${session.cppProject?.root}. Отключение остановит службу всех открытых файлов этого проекта. Кэш на диске сохранится."
+        } else {
+            "Включить для ${session.cppProject?.root}? Нужен compile_commands.json. Разбор идёт в двух потоках с низким приоритетом; расход памяти, батареи и размер кэша ещё не измерены на телефоне. Кэш .cache/clangd исключается из Git локально. Проверка свободного места использует предварительную оценку 1 ГБ, это не предел размера индекса. Служба проекта будет перезапущена."
+        }) },
+        confirmButton = { TextButton(onClick = {
+            indexDialog = false
+            val restart = state is CodeService.State.Ready || !indexEnabled
+            launch("Меняю режим индекса…") {
+                when (val result = withContext(Dispatchers.IO) { CodeService.setCppIndex(context, session, !indexEnabled) }) {
+                    is Outcome.Failure -> note = result.diagnostics.first().message
+                    is Outcome.Success -> {
+                        note = null
+                        if (restart) withContext(Dispatchers.IO) { CodeService.start(context, session, guestRoot) }
+                    }
+                }
+            }
+        }) { Text(if (indexEnabled) "Отключить" else "Включить") } },
+        dismissButton = { TextButton(onClick = { indexDialog = false }) { Text("Отмена") } },
+    )
+
     confirm?.let { what ->
         AlertDialog(onDismissRequest = { confirm = null }, title = { Text(what.title) },
             text = { Text(what.note, style = MaterialTheme.typography.bodySmall) },

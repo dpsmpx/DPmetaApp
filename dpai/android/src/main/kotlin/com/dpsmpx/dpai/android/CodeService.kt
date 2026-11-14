@@ -85,6 +85,13 @@ internal object CodeService {
         @Volatile
         internal var key: String? = null
 
+        @Volatile
+        internal var closed: Boolean = false
+
+        /** Найденный проект — также для ручного включения индекса после отказа службы. */
+        var cppProject by mutableStateOf<Clangd.Project?>(null)
+            internal set
+
         /** compileSdk Android-проекта файла — для установки платформы. */
         @Volatile
         var compileSdk: Int? = null
@@ -103,21 +110,19 @@ internal object CodeService {
     private val main = Handler(Looper.getMainLooper())
     private val lock = Any()
 
-    private class Service(val session: LanguageSession, val processes: List<StreamProcess>, val ready: State.Ready, var files: Int, val board: DiagnosticsBoard)
+    private class Service(val session: LanguageSession, val processes: List<StreamProcess>, val ready: State.Ready, val files: MutableSet<Session>, val board: DiagnosticsBoard, val generation: Any)
 
     /** Работающие службы по ключу «язык|корень». */
     private val running = HashMap<String, Service>()
 
-    /** Сеансы по ключу — только в потоке интерфейса: им приходят диагностика и остановка. */
-    private val owners = HashMap<String, MutableList<Session>>()
-
-    fun session(guestPath: String): Session = Session(guestPath).also { s -> main.post { shownSessions[guestPath] = s } }
+    fun session(guestPath: String): Session = Session(guestPath).also { s -> main.post { if (!s.closed) shownSessions[guestPath] = s } }
 
     /** Сеанс службы, показанный сейчас для файла [guestPath] (поток интерфейса): «В ИИ» берёт у него замечания и символы (D-165). */
     fun sessionOf(guestPath: String): Session? = shownSessions[guestPath]
 
     /** Сеанс больше не показан (поток интерфейса). */
     fun forget(session: Session) {
+        session.closed = true
         if (shownSessions[session.file] === session) shownSessions.remove(session.file)
     }
 
@@ -125,6 +130,35 @@ internal object CodeService {
 
     private const val PREFS = "dpai-code-service"
     private const val PYTHON_KIND = "python.kind"
+    private const val CPP_INDEX = "cpp.index.roots"
+
+    fun cppIndex(context: Context, root: String): Boolean = root in
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getStringSet(CPP_INDEX, emptySet()).orEmpty()
+
+    /** Меняет только явно выбранный проект; перезапуск нужен всем открытым файлам этого проекта. */
+    @Synchronized
+    fun setCppIndex(context: Context, session: Session, enabled: Boolean): Outcome<Unit> {
+        val project = session.cppProject ?: return Outcome.failure(DiagCode.VALUE_INVALID, "сначала запустите службу для определения проекта")
+        if (enabled) {
+            val space = StorageSpace.check(context, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.BUILD, null, "индекс C++")
+            if (space is Outcome.Failure) return space
+            val command = when (val r = Clangd.prepareIndex(project)) {
+                is Outcome.Failure -> return r
+                is Outcome.Success -> r.value
+            }
+            val host = LinuxSetup.guestHost(context) ?: return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сначала установите Linux")
+            val result = done(host.run(ProcessSpec(command), 20.seconds), "DPAI_CPP_INDEX_READY")
+            if (result is Outcome.Failure) return result
+        }
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val roots = prefs.getStringSet(CPP_INDEX, emptySet()).orEmpty().toMutableSet()
+        if (enabled) roots += project.root else roots -= project.root
+        if (!prefs.edit().putStringSet(CPP_INDEX, roots).commit()) {
+            return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "не удалось сохранить настройку индекса")
+        }
+        stop("cpp|${project.root}", "Режим индекса изменён; запустите службу снова")
+        return Outcome.success(Unit)
+    }
 
     fun pythonKind(context: Context): PythonServers.Kind =
         if (context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(PYTHON_KIND, null) == PythonServers.Kind.HEAVY.name) PythonServers.Kind.HEAVY else PythonServers.Kind.LIGHT
@@ -140,15 +174,17 @@ internal object CodeService {
      * проект до [stopDir], проверить, что служба поставлена, запустить и
      * поздороваться. Проект уже обслуживается — файл подключается к ней.
      */
+    @Synchronized
     fun start(context: Context, session: Session, stopDir: String) {
+        if (session.closed) return
         fun state(s: State) {
-            main.post { session.state = s }
+            main.post { if (!session.closed) session.state = s }
         }
         val language = session.language ?: return state(State.Failed("для этого файла семантической службы нет"))
         state(State.Starting("ищу проект"))
         val host = LinuxSetup.guestHost(context) ?: return state(State.Failed("Linux в приложении не установлен: «AI» → «Настройки AI» → «Linux в приложении»"))
         val plan = when (language) {
-            CodeLanguage.CPP -> cpp(host, session, stopDir)
+            CodeLanguage.CPP -> cpp(context, host, session, stopDir)
             CodeLanguage.PYTHON -> python(context, host, session, stopDir)
             CodeLanguage.KOTLIN -> kotlin(host, session, stopDir, ::state)
         }
@@ -156,15 +192,20 @@ internal object CodeService {
             is Plan.Stop -> return state(plan.state)
             is Plan.Go -> Triple(plan.key, plan.launches, plan.ready)
         }
+        if (session.closed) return
+        if (session.service != null && session.key != key) release(session)
+        val previous = synchronized(lock) { running[key] }
+        if (previous != null && !previous.session.isRunning) stop(key, "Служба остановилась", previous.generation)
         synchronized(lock) {
             running[key]?.let { service ->
                 if (service.session.isRunning) {
-                    service.files++
+                    service.files += session
                     session.service = service.session
                     session.key = key
                     main.post {
-                        owners.getOrPut(key) { mutableListOf() } += session
-                        session.state = service.ready
+                        if (!session.closed && session.service === service.session) {
+                            session.state = service.ready
+                        }
                     }
                     return
                 }
@@ -178,6 +219,7 @@ internal object CodeService {
         val board = DiagnosticsBoard()
         val processes = mutableListOf<StreamProcess>()
         val clients = mutableListOf<LspClient>()
+        val generation = Any()
         fun abandon(message: String) {
             clients.forEach { it.stop() }
             processes.forEach { it.stop(2.seconds) }
@@ -196,10 +238,15 @@ internal object CodeService {
                 object : LspClient.Listener {
                     override fun diagnostics(uri: String, version: Int?, items: List<LspDiagnostic>) {
                         val merged = board.put(index, uri, items)
-                        main.post { owners[key].orEmpty().forEach { it.diagnostics[uri] = merged } }
+                        main.post {
+                            if (synchronized(lock) { running[key]?.generation === generation }) {
+                                val files = synchronized(lock) { running[key]?.files?.toList().orEmpty() }
+                                files.filter { !it.closed && it.service != null }.forEach { it.diagnostics[uri] = merged }
+                            }
+                        }
                     }
 
-                    override fun stopped(reason: Diagnostic) = stop(key, "${launch.name} остановилась: ${reason.message}")
+                    override fun stopped(reason: Diagnostic) = stop(key, "${launch.name} остановилась: ${reason.message}", generation)
                 },
                 settings = launch.settings,
             )
@@ -213,12 +260,16 @@ internal object CodeService {
         val languageSession = LanguageSession(clients.first(), clients.getOrNull(1), pulls)
         val info = clients.first().info
         val shown = ready.copy(server = listOfNotNull(info?.name, info?.version).joinToString(" ").ifEmpty { ready.server }.take(60))
-        session.service = languageSession
-        session.key = key
-        synchronized(lock) { running[key] = Service(languageSession, processes, shown, 1, board) }
+        if (session.closed || !languageSession.isRunning) return abandon("Служба остановилась при запуске")
+        synchronized(lock) {
+            session.service = languageSession
+            session.key = key
+            running[key] = Service(languageSession, processes, shown, mutableSetOf(session), board, generation)
+        }
         main.post {
-            owners.getOrPut(key) { mutableListOf() } += session
-            session.state = shown
+            if (!session.closed && session.service === languageSession) {
+                session.state = shown
+            }
         }
     }
 
@@ -233,22 +284,24 @@ internal object CodeService {
             is Outcome.Success -> Outcome.success(r.value.ok)
         }
 
-    private fun cpp(host: ProcessHost, session: Session, stopDir: String): Plan {
+    private fun cpp(context: Context, host: ProcessHost, session: Session, stopDir: String): Plan {
         val dir = session.file.substringBeforeLast('/').ifEmpty { "/" }
         val project = when (val r = host.run(ProcessSpec(Clangd.locateCommand(dir, stopDir)), 20.seconds)) {
             is Outcome.Failure -> return Plan.Stop(State.Failed(r.diagnostics.first().message))
             is Outcome.Success -> Clangd.parseProject(r.value.stdout) ?: Clangd.Project(dir, null)
         }
+        main.post { if (!session.closed) session.cppProject = project }
         when (val r = installed(host, "command -v ${Clangd.PROGRAM}")) {
             is Outcome.Failure -> return Plan.Stop(State.Failed(r.diagnostics.first().message))
             is Outcome.Success -> if (!r.value) return Plan.Stop(State.Missing("clangd не установлен в Linux приложения", listOf(Install.CLANGD)))
         }
+        val indexed = cppIndex(context, project.root) && project.compileCommandsDir != null
         val note = if (project.compileCommandsDir == null) {
             "Нет compile_commands.json: служба не знает флагов сборки и заголовков проекта — подсказки неполны (CMake: -DCMAKE_EXPORT_COMPILE_COMMANDS=ON)"
         } else {
-            null
+            if (indexed) "Индекс проекта включён: первые ответы могут быть неполными, пока идёт разбор; растут расход памяти и кэш на диске" else null
         }
-        return Plan.Go("cpp|${project.root}", listOf(ServerLaunch(Clangd.PROGRAM, Clangd.command(project.compileCommandsDir))), State.Ready(Clangd.PROGRAM, note))
+        return Plan.Go("cpp|${project.root}", listOf(ServerLaunch(Clangd.PROGRAM, Clangd.command(project.compileCommandsDir, backgroundIndex = indexed))), State.Ready(Clangd.PROGRAM, note))
     }
 
     private fun locate(host: ProcessHost, session: Session, stopDir: String): Outcome<CodeServerSetup.Located> {
@@ -332,42 +385,55 @@ internal object CodeService {
         val key = session.key ?: return
         if (session.pulledText == text) return
         session.pulledText = text
-        val board = synchronized(lock) { running[key]?.board } ?: return
+        val owner = synchronized(lock) { running[key]?.takeIf { it.session === service } } ?: return
         for ((index, result) in service.pullDiagnostics(session.uri)) {
             val items = (result as? Outcome.Success)?.value ?: continue
-            val merged = board.put(index, session.uri, items)
-            main.post { owners[key].orEmpty().forEach { it.diagnostics[session.uri] = merged } }
+            val merged = owner.board.put(index, session.uri, items)
+            main.post {
+                val files = synchronized(lock) { running[key]?.takeIf { it === owner }?.files?.toList().orEmpty() }
+                files.filter { !it.closed && it.service === service }.forEach { it.diagnostics[session.uri] = merged }
+            }
         }
     }
 
-    private fun stop(key: String, message: String) {
-        val service = synchronized(lock) { running.remove(key) }
-        service?.processes?.forEach { it.stop(2.seconds) }
-        service?.session?.stop()
+    private fun stop(key: String, message: String, expected: Any? = null) {
+        val service = synchronized(lock) {
+            val found = running[key] ?: return
+            if (expected != null && found.generation !== expected) return
+            running.remove(key)
+            found.files.forEach { if (it.service === found.session) { it.service = null; it.key = null; it.pulledText = null } }
+            found
+        }
+        service.processes.forEach { it.stop(2.seconds) }
+        service.session.stop()
         main.post {
-            owners.remove(key).orEmpty().forEach { s ->
+            service.files.filter { !it.closed && it.service == null }.forEach { s ->
                 if (s.state !is State.Off) s.state = State.Failed(message)
-                s.service = null
+                s.diagnostics.clear()
             }
         }
     }
 
     /** Файл закрыт или служба выключена человеком (вне потока интерфейса); последний файл проекта останавливает службы. */
+    @Synchronized
     fun release(session: Session) {
         val key = session.key
         val service = session.service
         session.service = null
+        session.key = null
         session.pulledText = null
         main.post {
-            session.state = State.Off
-            session.diagnostics.clear()
-            if (key != null) owners[key]?.remove(session)
+            if (session.service == null) {
+                session.state = State.Off
+                session.diagnostics.clear()
+            }
         }
         if (key == null || service == null) return
         service.close(session.uri)
         val last = synchronized(lock) {
             val svc = running[key]?.takeIf { it.session === service } ?: return
-            if (--svc.files > 0) return
+            svc.files -= session
+            if (svc.files.isNotEmpty()) return
             running.remove(key)
             svc
         }
