@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.android
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -136,6 +137,7 @@ internal object CodeService {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getStringSet(CPP_INDEX, emptySet()).orEmpty()
 
     /** Меняет только явно выбранный проект; перезапуск нужен всем открытым файлам этого проекта. */
+    @SuppressLint("UseKtx") // Нужен Boolean commit(): KTX его отбрасывает, а ошибка записи должна отменить переключение.
     @Synchronized
     fun setCppIndex(context: Context, session: Session, enabled: Boolean): Outcome<Unit> {
         val project = session.cppProject ?: return Outcome.failure(DiagCode.VALUE_INVALID, "сначала запустите службу для определения проекта")
@@ -151,9 +153,12 @@ internal object CodeService {
             if (result is Outcome.Failure) return result
         }
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val roots = prefs.getStringSet(CPP_INDEX, emptySet()).orEmpty().toMutableSet()
+        val previous = prefs.getStringSet(CPP_INDEX, emptySet()).orEmpty().toSet()
+        val roots = previous.toMutableSet()
         if (enabled) roots += project.root else roots -= project.root
         if (!prefs.edit().putStringSet(CPP_INDEX, roots).commit()) {
+            // SharedPreferences меняет RAM даже при отказе диска; восстановить и её прежнее значение.
+            prefs.edit { putStringSet(CPP_INDEX, previous) }
             return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "не удалось сохранить настройку индекса")
         }
         stop("cpp|${project.root}", "Режим индекса изменён; запустите службу снова")

@@ -70,6 +70,20 @@ class ToolsCommandTest {
     }
 
     @Test
+    fun physicalAliasCannotPutAgentStateInsideTools() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.io.File.separatorChar == '/')
+        val repo = java.nio.file.Files.createDirectory(home.resolve("tools"))
+        val alias = home.resolve("alias")
+        java.nio.file.Files.createSymbolicLink(alias, repo)
+        val data = repo.resolve("agent")
+        val host = Host("{}")
+        val command = ToolsCommand({}, {}, host = host)
+        assertEquals(1, command.run(listOf("init", "--home", data.toString(), "--repo", alias.toString())))
+        assertFalse(java.nio.file.Files.exists(data))
+        assertTrue(host.received.isEmpty())
+    }
+
+    @Test
     fun refusalDoesNotConnectAndUntrustedOutputIsNotEchoed() {
         val output = mutableListOf<String>()
         val host = Host("private diagnostic", 1)

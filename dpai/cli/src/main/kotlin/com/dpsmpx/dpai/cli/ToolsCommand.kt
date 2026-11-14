@@ -54,6 +54,12 @@ class ToolsCommand(
         if (action == "status") return status(store, values.containsKey("--json"))
         // Межпроцессный guard: поздняя синхронизация не отменит disable/configure.
         return try {
+            if (action in setOf("init", "sync")) values["--repo"]?.let { repo ->
+                if (home.toFile().canonicalFile.toPath().startsWith(File(repo).canonicalFile.toPath())) {
+                    err("Конфигурация агента должна находиться вне папки инструментов")
+                    return 1
+                }
+            }
             val files = NioVfs(home)
             files.mkdirs("")
             val lease = files.tryLease("shared-tools-operation.lock") ?: run { err("Настройка или синхронизация DP-Verify уже выполняется"); return 75 }
@@ -118,9 +124,10 @@ class ToolsCommand(
         val tools = runCatching { SharedTools(repository, controller.toString(), python) }.getOrElse {
             err("Папка и контроллер должны иметь абсолютные пути одной платформы"); return Cli.USAGE_ERROR
         }
-        val repo = File(repository).toPath().toAbsolutePath().normalize()
+        val repo = File(repository).canonicalFile.toPath()
         val state = managed.resolve("state-${hash(repository.toByteArray(Charsets.UTF_8))}")
-        if (tools.windows != windows || managed.toAbsolutePath().normalize().startsWith(repo) || repo.startsWith(managed.toAbsolutePath().normalize())) {
+        val realManaged = managed.toFile().canonicalFile.toPath()
+        if (tools.windows != windows || realManaged.startsWith(repo) || repo.startsWith(realManaged)) {
             err("Контроллер и состояние должны находиться вне папки инструментов и соответствовать платформе")
             return 1
         }
@@ -134,7 +141,9 @@ class ToolsCommand(
             err("Каталог контроллера не должен быть символьной ссылкой"); return 1
         }
         if (Files.exists(controller)) {
-            if (!Files.readAllBytes(controller).contentEquals(source)) { err("Контроллер изменён; файл сохранён без перезаписи"); return 1 }
+            if (Files.size(controller) != source.size.toLong() || files.readRange(controller.fileName.toString(), 0, source.size + 1)?.contentEquals(source) != true) {
+                err("Контроллер изменён; файл сохранён без перезаписи"); return 1
+            }
         } else {
             val name = controller.fileName.toString()
             files.writeFresh("$name.tmp", source)
