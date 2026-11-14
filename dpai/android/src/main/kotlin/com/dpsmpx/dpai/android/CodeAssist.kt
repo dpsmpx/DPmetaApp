@@ -68,12 +68,12 @@ import kotlinx.coroutines.withContext
  */
 @Composable
 internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: String, revision: Int, enabled: Boolean, tabSize: Int, tabs: Boolean, onChange: () -> Unit, onMarks: (List<Assist.Mark>) -> Unit, compact: Boolean = false,
-    onOpen: ((String, Int) -> Unit)? = null) {
+    onOpen: ((String, Int) -> Unit)? = null, editorRootKey: String? = null, relativePath: String? = null) {
     val language = LanguageServers.languageId(guestPath) ?: return
     val title = LanguageServers.language(guestPath)?.title ?: return
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
-    val session = remember(guestPath) { CodeService.session(guestPath) }
+    val session = remember(guestPath, editorRootKey, guestRoot) { CodeService.session(guestPath, editorRootKey, guestRoot, relativePath) }
     var note by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var suggestions by remember { mutableStateOf<List<CompletionItem>>(emptyList()) }
@@ -92,11 +92,14 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
 
     DisposableEffect(session) {
         onDispose {
-            CodeService.forget(session)
             onMarks(emptyList())
-            kotlin.concurrent.thread(name = "dpai-code-service-release") { CodeService.release(session) }
+            if (editorRootKey == null) {
+                CodeService.forget(session)
+                kotlin.concurrent.thread(name = "dpai-code-service-release") { CodeService.release(session) }
+            }
         }
     }
+    LaunchedEffect(session) { withContext(Dispatchers.IO) { CodeService.resume(context, session, guestRoot) } }
     LaunchedEffect(diagnostics) { onMarks(withContext(Dispatchers.Default) { Assist.marks(buffer.text, diagnostics) }) }
 
     /** Текст буфера — службе; затем [ask] с позицией курсора. Вне потока интерфейса. */
@@ -188,7 +191,7 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
     fun switchPython(kind: PythonServers.Kind) {
         launch("…") {
             withContext(Dispatchers.IO) {
-                CodeService.release(session)
+                CodeService.disable(session)
                 CodeService.setPythonKind(context, kind)
                 CodeService.start(context, session, guestRoot)
             }
@@ -213,7 +216,7 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                 is Outcome.Success -> {
                     note = null
                     withContext(Dispatchers.IO) {
-                        CodeService.release(session)
+                        CodeService.disable(session)
                         CodeService.start(context, session, guestRoot)
                     }
                 }
@@ -290,7 +293,7 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                             }
                         }
                     }) { Text("Формат") }
-                    TextButton(onClick = { kotlin.concurrent.thread(name = "dpai-code-service-release") { CodeService.release(session) } }) { Text("Выкл") }
+                    TextButton(onClick = { kotlin.concurrent.thread(name = "dpai-code-service-release") { CodeService.disable(session) } }) { Text("Выкл") }
                     for (action in state.actions) TextButton(enabled = !busy, onClick = { confirm = action }) { Text(action.title) }
                     state.switchTo?.let { other -> TextButton(enabled = !busy, onClick = { switchPython(other) }) { Text("Взять: ${other.title}") } }
                 }
@@ -416,7 +419,7 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                         is Outcome.Success -> {
                             note = null
                             withContext(Dispatchers.IO) {
-                                CodeService.release(session)
+                                CodeService.disable(session)
                                 CodeService.start(context, session, guestRoot)
                             }
                         }

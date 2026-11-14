@@ -22,6 +22,7 @@ import com.dpsmpx.dpai.lsp.Clangd
 import com.dpsmpx.dpai.lsp.CodeLanguage
 import com.dpsmpx.dpai.lsp.DiagnosticsBoard
 import com.dpsmpx.dpai.lsp.DocumentUri
+import com.dpsmpx.dpai.lsp.EditorSessions
 import com.dpsmpx.dpai.lsp.KotlinLsp
 import com.dpsmpx.dpai.lsp.LanguageServers
 import com.dpsmpx.dpai.lsp.LanguageSession
@@ -71,7 +72,7 @@ internal object CodeService {
         data class Failed(val message: String, val actions: List<Install> = emptyList()) : State
     }
 
-    class Session internal constructor(val file: String) {
+    class Session internal constructor(val file: String, internal val ownerKey: String? = null) {
         var state by mutableStateOf<State>(State.Off)
             internal set
 
@@ -111,12 +112,91 @@ internal object CodeService {
     private val main = Handler(Looper.getMainLooper())
     private val lock = Any()
 
-    private class Service(val session: LanguageSession, val processes: List<StreamProcess>, val ready: State.Ready, val files: MutableSet<Session>, val board: DiagnosticsBoard, val generation: Any)
+    private class Service(val session: LanguageSession, val processes: List<StreamProcess>, val ready: State.Ready, val files: MutableSet<Session>, val board: DiagnosticsBoard, val generation: Any, val language: CodeLanguage, val owners: MutableSet<String>)
 
     /** Работающие службы по ключу «язык|корень». */
     private val running = HashMap<String, Service>()
 
-    fun session(guestPath: String): Session = Session(guestPath).also { s -> main.post { if (!s.closed) shownSessions[guestPath] = s } }
+    private val editors = EditorSessions<Session>()
+
+    /** Поток UI; регистрация не ждёт монитор start(), который выполняет медленный ввод-вывод. */
+    fun session(guestPath: String, ownerKey: String? = null, root: String? = null, path: String? = null): Session {
+        val session = if (ownerKey != null && root != null && path != null) {
+            editors.acquire(ownerKey, root, path) { Session(guestPath, ownerKey) }.let {
+                if (it.retired.isNotEmpty()) retire(it.retired)
+                it.session
+            }
+        } else Session(guestPath)
+        if (!session.closed) shownSessions[guestPath] = session
+        return session
+    }
+
+    fun enterEditor(key: String, owner: Any) = editors.enter(key, owner)
+
+    fun retainEditor(key: String, owner: Any, paths: Set<String>) {
+        retire(editors.retain(key, owner, paths))
+    }
+
+    fun leaveEditor(key: String, owner: Any) {
+        // Новый экземпляр Activity успевает перенять вкладки; старый токен его не закроет.
+        main.postDelayed({ retire(editors.close(key, owner)) }, 5_000)
+    }
+
+    private fun retire(sessions: List<Session>) {
+        sessions.forEach(::forget)
+        kotlin.concurrent.thread(name = "dpai-code-tabs-release") {
+            sessions.forEach(::release)
+            prune()
+        }
+    }
+
+    @Synchronized
+    private fun prune() {
+        val unused = synchronized(lock) {
+            running.filter { (key, service) -> service.files.isEmpty() && !held(key, service) }
+                .map { (key, service) -> key to service.generation }
+        }
+        unused.forEach { (key, generation) -> stop(key, "Проект закрыт", generation) }
+    }
+
+    private fun held(key: String, service: Service): Boolean =
+        service.owners.any { editors.keeps(it, key.substringAfter('|'), service.language) }
+
+    private fun attach(key: String, service: Service, session: Session) {
+        service.files += session
+        session.ownerKey?.let { service.owners += it }
+        session.service = service.session
+        session.key = key
+        main.post {
+            if (!session.closed && session.service === service.session) {
+                session.state = service.ready
+                session.diagnostics[session.uri] = service.board.merged(session.uri)
+            }
+        }
+    }
+
+    /** Только подключение к уже запущенной службе. Не импортирует проект и не запускает процессы. */
+    @Synchronized
+    fun resume(context: Context, session: Session, stopDir: String) {
+        if (session.closed || session.ready() != null || synchronized(lock) { running.isEmpty() }) return
+        val language = session.language ?: return
+        val host = LinuxSetup.guestHost(context) ?: return
+        val key = if (language == CodeLanguage.CPP) {
+            val dir = session.file.substringBeforeLast('/').ifEmpty { "/" }
+            val result = host.run(ProcessSpec(Clangd.locateCommand(dir, stopDir)), 20.seconds) as? Outcome.Success ?: return
+            val project = Clangd.parseProject(result.value.stdout) ?: Clangd.Project(dir, null)
+            main.post { if (!session.closed) session.cppProject = project }
+            "cpp|${project.root}"
+        } else {
+            val found = (locate(host, session, stopDir) as? Outcome.Success)?.value ?: return
+            session.compileSdk = found.compileSdk
+            if (language == CodeLanguage.PYTHON) "python-${pythonKind(context).name}|${found.root}" else "kotlin|${found.root}"
+        }
+        if (session.closed) return
+        synchronized(lock) {
+            running[key]?.takeIf { it.session.isRunning }?.let { attach(key, it, session) }
+        }
+    }
 
     /** Сеанс службы, показанный сейчас для файла [guestPath] (поток интерфейса): «В ИИ» берёт у него замечания и символы (D-165). */
     fun sessionOf(guestPath: String): Session? = shownSessions[guestPath]
@@ -197,21 +277,15 @@ internal object CodeService {
             is Plan.Stop -> return state(plan.state)
             is Plan.Go -> Triple(plan.key, plan.launches, plan.ready)
         }
-        if (session.closed) return
+        if (session.closed && session.ownerKey?.let { editors.keeps(it, key.substringAfter('|'), language) } != true) return
         if (session.service != null && session.key != key) release(session)
         val previous = synchronized(lock) { running[key] }
         if (previous != null && !previous.session.isRunning) stop(key, "Служба остановилась", previous.generation)
         synchronized(lock) {
             running[key]?.let { service ->
                 if (service.session.isRunning) {
-                    service.files += session
-                    session.service = service.session
-                    session.key = key
-                    main.post {
-                        if (!session.closed && session.service === service.session) {
-                            session.state = service.ready
-                        }
-                    }
+                    if (!session.closed) attach(key, service, session)
+                    else session.ownerKey?.let { service.owners += it }
                     return
                 }
                 running.remove(key)
@@ -265,16 +339,13 @@ internal object CodeService {
         val languageSession = LanguageSession(clients.first(), clients.getOrNull(1), pulls)
         val info = clients.first().info
         val shown = ready.copy(server = listOfNotNull(info?.name, info?.version).joinToString(" ").ifEmpty { ready.server }.take(60))
-        if (session.closed || !languageSession.isRunning) return abandon("Служба остановилась при запуске")
+        val keep = session.ownerKey?.let { editors.keeps(it, root, language) } == true
+        if ((session.closed && !keep) || !languageSession.isRunning) return abandon("Служба остановилась при запуске")
         synchronized(lock) {
-            session.service = languageSession
-            session.key = key
-            running[key] = Service(languageSession, processes, shown, mutableSetOf(session), board, generation)
-        }
-        main.post {
-            if (!session.closed && session.service === languageSession) {
-                session.state = shown
-            }
+            val service = Service(languageSession, processes, shown, mutableSetOf(), board, generation, language, mutableSetOf())
+            session.ownerKey?.let { service.owners += it }
+            running[key] = service
+            if (!session.closed) attach(key, service, session)
         }
     }
 
@@ -401,7 +472,7 @@ internal object CodeService {
         }
     }
 
-    private fun stop(key: String, message: String, expected: Any? = null) {
+    private fun stop(key: String, message: String, expected: Any? = null, off: Boolean = false) {
         val service = synchronized(lock) {
             val found = running[key] ?: return
             if (expected != null && found.generation !== expected) return
@@ -413,13 +484,20 @@ internal object CodeService {
         service.session.stop()
         main.post {
             service.files.filter { !it.closed && it.service == null }.forEach { s ->
-                if (s.state !is State.Off) s.state = State.Failed(message)
+                if (off) s.state = State.Off else if (s.state !is State.Off) s.state = State.Failed(message)
                 s.diagnostics.clear()
             }
         }
     }
 
-    /** Файл закрыт или служба выключена человеком (вне потока интерфейса); последний файл проекта останавливает службы. */
+    /** Явное выключение/перенастройка относится к общей службе проекта, включая фоновые вкладки. */
+    @Synchronized
+    fun disable(session: Session) {
+        val key = session.key
+        if (key != null) stop(key, "Служба выключена", off = true) else release(session)
+    }
+
+    /** Вкладка закрыта (вне потока интерфейса); последняя вкладка проекта останавливает службы. */
     @Synchronized
     fun release(session: Session) {
         val key = session.key
@@ -434,16 +512,17 @@ internal object CodeService {
             }
         }
         if (key == null || service == null) return
-        service.close(session.uri)
-        val last = synchronized(lock) {
+        val (closeDocument, last) = synchronized(lock) {
             val svc = running[key]?.takeIf { it.session === service } ?: return
             svc.files -= session
-            if (svc.files.isNotEmpty()) return
-            running.remove(key)
-            svc
+            val closeDocument = svc.files.none { it.uri == session.uri }
+            val last = if (svc.files.isEmpty() && !held(key, svc)) running.remove(key) else null
+            closeDocument to last
         }
-        last.session.stop()
-        last.processes.forEach { it.stop(2.seconds) }
+        // Два вида того же файла могут кратко сосуществовать при смене корня UI.
+        if (closeDocument) service.close(session.uri)
+        last?.session?.stop()
+        last?.processes?.forEach { it.stop(2.seconds) }
     }
 
     private fun done(result: Outcome<Completed>, marker: String?): Outcome<Unit> = when (result) {

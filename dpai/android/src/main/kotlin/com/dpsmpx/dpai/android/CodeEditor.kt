@@ -43,7 +43,7 @@ import kotlinx.coroutines.withContext
 /** Инструменты IDE над нативным полем; снимки, история и восстановление остаются общими (D-136). */
 @Composable
 internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, onChange: () -> Unit, modifier: Modifier = Modifier,
-    enabled: Boolean = true, callbacks: EditorCallbacks = EditorCallbacks(), guestPath: String? = null, guestRoot: String? = null, presentation: Boolean = false, editing: Boolean = enabled, onActivate: (() -> Unit)? = null) {
+    enabled: Boolean = true, callbacks: EditorCallbacks = EditorCallbacks(), guestPath: String? = null, guestRoot: String? = null, presentation: Boolean = false, editing: Boolean = enabled, onActivate: (() -> Unit)? = null, editorRootKey: String? = null) {
     val settings by IdeState.state.collectAsState()
     val zen = presentation && settings.options.zen
     val syntax = if (editing) settings.options.editorSyntax else settings.options.previewSyntax
@@ -172,7 +172,7 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
         if (!zen) Text("${CodeSyntax.language(path)} · ${position.first}:${position.second} · ${if (EditorActions.separator(buffer.text) == "\r\n") "CRLF" else "LF"}", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall)
         if (!zen) note?.let { Text(it, Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall) }
         if (!zen) aiCompletion?.let { AiCompletionBar(it, buffer, enabled) { changed() } }
-        if (guestPath != null && guestRoot != null) CodeAssist(buffer, guestPath, guestRoot, revision, enabled, width, tabs, onChange = { changed() }, onMarks = { marks = it }, compact = zen, onOpen = callbacks.open)
+        if (guestPath != null && guestRoot != null) CodeAssist(buffer, guestPath, guestRoot, revision, enabled, width, tabs, onChange = { changed() }, onMarks = { marks = it }, compact = zen, onOpen = callbacks.open, editorRootKey = editorRootKey, relativePath = path)
         // Отладка (D-159): точки — касанием номера строки у файлов C, C++, Python в Linux; строка остановки — фоном.
         val debuggable = guestPath != null && com.dpsmpx.dpai.ui.DebugTargets.engineOf(guestPath) != null
         val breakpoints by Debugger.breakpoints.collectAsState()
