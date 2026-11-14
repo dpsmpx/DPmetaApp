@@ -77,6 +77,31 @@ class UserAlertRulesTest {
     }
 
     @Test
+    fun v1GetsAiDefaultsWithoutOverwritingTextAndV2CanExplicitlyOmitThem() {
+        val documents = DocumentStore(NioVfs(dir), "settings")
+        val store = UserAlertRules(documents)
+        val ai = catalog.types.first().copy(type = "ai.info", title = "ИИ")
+        val combined = catalog.copy(types = catalog.types + ai)
+        val defaults = (AlertFormat.parse("""
+            schema = 1
+            [[rule]]
+            id = "checks.red"
+            title = "ИИ"
+            on = "ai.*"
+            action = "notify"
+        """.trimIndent(), combined) as Outcome.Success).value
+        assertIs<Outcome.Success<*>>(documents.write("alert-rules", JsonObject.of(*FormatHeader.write(UserAlertRules.FORMAT, 1), "text" to JsonString(text))))
+        val effective = (store.effective(defaults, combined) as Outcome.Success).value
+        assertEquals(3, effective.rules.size)
+        assertEquals(3, effective.rules.map { it.id }.toSet().size, "совпавший id не затирает личное правило")
+        val editor = (store.editorText(defaults) as Outcome.Success).value
+        assertEquals(effective.rules.map { it.id }, (AlertFormat.parse(editor, combined) as Outcome.Success).value.rules.map { it.id })
+        assertEquals(text, (store.read() as Outcome.Success).value, "фоновая миграция не пишет текст")
+        assertIs<Outcome.Success<*>>(store.save(text, combined))
+        assertEquals(2, (store.effective(defaults, combined) as Outcome.Success).value.rules.size, "v2 сохраняет явный выбор без ai.*")
+    }
+
+    @Test
     fun futureVersionDoesNotSilentlyEnableDefaultsOrLastGood() {
         val documents = DocumentStore(NioVfs(dir), "settings")
         val store = UserAlertRules(documents)

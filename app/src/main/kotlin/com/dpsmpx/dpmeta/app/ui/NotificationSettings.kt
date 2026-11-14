@@ -67,15 +67,18 @@ internal fun NotificationSettings(feed: List<FeedEvent>, onFeed: () -> Unit) {
         Checkbox(privacy, enabled = !privacySaving, onCheckedChange = { value ->
             if (!privacySaving) {
                 privacySaving = true
-                privacy = value
                 scope.launch {
-                    try { withContext(Dispatchers.IO) { PultAlerts.setPrivacy(context, value) } }
+                    try {
+                        withContext(Dispatchers.IO) { PultAlerts.setPrivacy(context, value) }
+                        privacy = value
+                    }
                     finally { privacySaving = false }
                 }
             }
         })
         Text("Скрывать проекты и тексты на экране блокировки")
     }
+    if (privacySaving) Text("Применяю защиту уведомлений…", style = MaterialTheme.typography.bodySmall)
     Text("Включение защиты убирает прежние уведомления пульта. Следующие показывают на блокировке только вид события.", style = MaterialTheme.typography.bodySmall)
     Row { Checkbox(quiet, onCheckedChange = { quiet = it }); Text("Тихие часы") }
     if (quiet) {
