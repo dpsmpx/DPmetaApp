@@ -20,6 +20,21 @@ import java.nio.file.attribute.PosixFilePermission
  * в `docs/RECOVERY.md` как риск потери последней неподтверждённой записи.
  */
 class NioVfs(private val root: Path) : Vfs {
+    /** Межпроцессный неблокирующий guard для настройки target; закрытие освобождает lease. */
+    fun tryLease(path: String): java.io.Closeable? {
+        val channel = FileChannel.open(p(path), StandardOpenOption.CREATE, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)
+        val lease = try {
+            channel.tryLock()
+        } catch (_: java.nio.channels.OverlappingFileLockException) {
+            null
+        } catch (e: Exception) {
+            channel.close()
+            throw e
+        }
+        if (lease == null) { channel.close(); return null }
+        return java.io.Closeable { try { lease.release() } finally { channel.close() } }
+    }
+
     private fun p(path: String): Path {
         require(path.isEmpty() || Vfs.isSafeRelative(path)) { "небезопасный путь" }
         return if (path.isEmpty()) root else root.resolve(path)

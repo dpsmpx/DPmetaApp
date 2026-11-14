@@ -26,5 +26,10 @@ class SharedToolsSyncTest {
             val decoded = assertIs<Outcome.Success<*>>(JsonParser().parse(spec.stdin!!)).value
             assertEquals(value, (assertIs<JsonObject>(decoded)["token"] as JsonString).value)
         }
+        val remote = SharedToolsSync.agentRequest(listOf("C:/agent/dpai.cmd"), "C:/agent home", true, "C:/My Tools", "python", Secret(value))
+        assertEquals(listOf("C:/agent/dpai.cmd", "tools", "init", "--repo", "C:/My Tools", "--python", "python", "--github-stdin", "--home", "C:/agent home"), remote.command)
+        assertFalse(remote.command.any { value in it })
+        assertNull(remote.environment)
+        assertEquals(value, (((JsonParser().parse(remote.stdin!!) as Outcome.Success).value as JsonObject)["token"] as JsonString).value)
     }
 }
