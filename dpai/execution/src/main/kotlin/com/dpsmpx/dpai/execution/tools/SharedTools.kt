@@ -14,15 +14,19 @@ import com.dpsmpx.dpai.execution.process.ProcessSpec
 import com.dpsmpx.dpai.execution.process.RunningProcess
 
 /**
- * Общие инструменты на POSIX target (D-122, DPmetaApp:D-89).
+ * Общие инструменты target (D-122, DPmetaApp:D-89).
  * Только пути и имя Python; учётные данные Git здесь не хранятся.
  * Контроллер устанавливается отдельно, полный DP-Verify — его изменяемая Git-копия.
  */
 data class SharedTools(val repository: String, val controller: String, val python: String = "python3") {
     init {
-        require(absolute(repository) && absolute(controller)) { "папка и контроллер — абсолютные POSIX-пути без «..» и управляющих символов" }
+        require(absolute(repository) && absolute(controller) && windowsPath(repository) == windowsPath(controller)) {
+            "папка и контроллер — абсолютные пути одной платформы (Linux или C:/Windows), без «..» и управляющих символов"
+        }
         require(python.isNotBlank() && python.none { it.code < 32 }) { "нужно имя программы Python" }
     }
+
+    val windows: Boolean get() = windowsPath(repository)
 
     fun toJson(): JsonObject = JsonObject.of(
         *FormatHeader.write(FORMAT, VERSION),
@@ -62,8 +66,17 @@ data class SharedTools(val repository: String, val controller: String, val pytho
         /** Метка раннера, а не переменная пользовательского слота. Старый агент её просто передаёт. */
         const val EXECUTOR_ENV = "DPAI_EXECUTOR"
 
-        private fun absolute(value: String): Boolean = value.startsWith('/') && value.length > 1 &&
-            value.none { it.code < 32 } && value.split('/').none { it == "." || it == ".." }
+        private fun windowsPath(value: String): Boolean = value.length > 2 &&
+            (value[0] in 'a'..'z' || value[0] in 'A'..'Z') && value[1] == ':' && value[2] in "/\\"
+
+        private fun absolute(value: String): Boolean {
+            if (value.any { it.code < 32 || it.code == 127 }) return false
+            if (windowsPath(value)) {
+                val tail = value.drop(3).replace('\\', '/')
+                return tail.isNotEmpty() && tail.none { it in ":\"<>|?*" } && tail.split('/').none { it == "." || it == ".." }
+            }
+            return value.startsWith('/') && value.length > 1 && value.split('/').none { it == "." || it == ".." }
+        }
 
         fun parse(value: JsonObject): Outcome<SharedTools> {
             val diagnostics = DiagnosticCollector()
@@ -94,8 +107,8 @@ class SharedToolsHost(
             ?: return Outcome.failure(DiagCode.VALUE_INVALID, "неизвестный исполнитель общих инструментов", SharedTools.EXECUTOR_ENV)
         return when (val configured = load()) {
             is Outcome.Failure -> configured
-            is Outcome.Success -> if (configured.value != null && !posix) {
-                Outcome.failure(DiagCode.UNSUPPORTED, "общие инструменты пока поддерживают только POSIX target", SharedTools.FORMAT)
+            is Outcome.Success -> if (configured.value != null && posix == configured.value.windows) {
+                Outcome.failure(DiagCode.UNSUPPORTED, "пути общих инструментов не соответствуют платформе target", SharedTools.FORMAT)
             } else delegate.start(configured.value?.prepare(spec, executor) ?: spec, onOutput)
         }
     }

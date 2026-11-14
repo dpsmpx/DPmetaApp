@@ -105,7 +105,7 @@ class SharedToolsTest {
     }
 
     @Test
-    fun corruptConfigurationAndUnsupportedWindowsFailBeforeStartingProcess() {
+    fun corruptConfigurationAndMismatchedPlatformsFailBeforeStartingProcess() {
         val recorder = Recorder()
         val host = SharedToolsHost(recorder) { Outcome.failure(DiagCode.STORAGE_CORRUPTED, "образец") }
         val failure = assertIs<Outcome.Failure>(host.start(request(Executor.CLAUDE)))
@@ -114,6 +114,23 @@ class SharedToolsTest {
         val windows = SharedToolsHost(recorder, posix = false) { Outcome.success(config) }
         assertEquals(DiagCode.UNSUPPORTED, assertIs<Outcome.Failure>(windows.start(request(Executor.CLAUDE))).diagnostics.first().code)
         assertEquals(null, recorder.received)
+    }
+
+    @Test
+    fun windowsConfigurationRoundTripsAndWrapsProvidersWithoutShellInterpolation() {
+        val tools = SharedTools("C:/Users/Автор/DP Verify & tests", "C:\\Users\\Автор\\runtime.py", "C:/Python/python.exe")
+        assertTrue(tools.windows)
+        assertEquals(tools, SharedTools.parse(tools.toJson()).valueOrNull())
+        for (executor in Executor.entries) {
+            val recorder = Recorder()
+            SharedToolsHost(recorder, posix = false) { Outcome.success(tools) }.start(request(executor))
+            assertEquals(listOf(tools.python, tools.controller, "--repo", tools.repository, "session", "--"), recorder.received!!.command.take(6))
+            assertEquals(request(executor).stdin, recorder.received!!.stdin!!.substringAfter("\n\n"))
+        }
+        for (path in listOf("C:relative", "C:/", "C:/tools/../other", "C:/tools:stream", "C:/bad?path")) {
+            assertIs<Outcome.Failure>(SharedTools.parse(JsonObject(tools.toJson().fields + ("repository" to JsonString(path)))))
+        }
+        assertIs<Outcome.Failure>(SharedTools.parse(JsonObject(tools.toJson().fields + ("controller" to JsonString("/posix/runtime.py")))))
     }
 
     @Test

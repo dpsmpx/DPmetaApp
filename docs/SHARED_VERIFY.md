@@ -3,7 +3,9 @@
 DP-Verify — отдельная изменяемая Git-папка `/root/dp-verify` в Linux
 приложения. Она подключается к новым ходам Claude/Codex/Gemini target
 «в приложении». На других target настройка пока выполняется через
-`dpai tools configure`, Windows-lock ещё не реализован.
+`dpai tools configure`; Windows-контроллер и CLI реализуются по D-137,
+экран настройки удалённых target — следующий пакет. Проверка Windows 11
+автора остаётся в TODO.
 
 ## Подключение
 

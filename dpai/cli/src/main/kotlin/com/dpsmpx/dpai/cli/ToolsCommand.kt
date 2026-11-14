@@ -7,7 +7,11 @@ import com.dpsmpx.dpai.storage.vfs.NioVfs
 import java.io.File
 
 /** Локальная настройка target (D-122). Не устанавливает зависимости и не читает ключи. */
-class ToolsCommand(private val out: (String) -> Unit, private val err: (String) -> Unit) {
+class ToolsCommand(
+    private val out: (String) -> Unit,
+    private val err: (String) -> Unit,
+    private val windows: Boolean = File.separatorChar == '\\',
+) {
     fun run(args: List<String>): Int {
         val action = args.firstOrNull()
         if (action !in setOf("configure", "status", "disable")) return usage()
@@ -25,10 +29,10 @@ class ToolsCommand(private val out: (String) -> Unit, private val err: (String) 
             "configure" -> {
                 val repository = values["--repo"] ?: return usage()
                 val controller = values["--controller"] ?: return usage()
-                val value = runCatching { SharedTools(repository, controller, values["--python"] ?: "python3") }
+                val value = runCatching { SharedTools(repository, controller, values["--python"] ?: if (windows) "python" else "python3") }
                     .getOrElse { err(it.message ?: "неверная настройка"); return Cli.USAGE_ERROR }
-                if (File.separatorChar == '\\') {
-                    err("Общие инструменты пока поддерживают Linux и Termux; Windows — отдельный этап")
+                if (value.windows != windows) {
+                    err("Пути общих инструментов не соответствуют платформе target")
                     return 1
                 }
                 store.write(value)

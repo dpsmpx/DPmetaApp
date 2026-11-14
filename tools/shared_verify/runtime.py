@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 from threading import Event
+import uuid
 
 if os.name == 'nt':
     import ctypes
@@ -34,6 +35,12 @@ if os.name == 'nt':
     kernel.UnlockFileEx.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD,
                                    wintypes.DWORD, ctypes.POINTER(Overlapped)]
     kernel.UnlockFileEx.restype = wintypes.BOOL
+    kernel.CreateEventW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel.CreateEventW.restype = wintypes.HANDLE
+    kernel.OpenEventW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel.OpenEventW.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
 else:
     import fcntl
 
@@ -43,6 +50,7 @@ VALIDATION_TIMEOUT = 15 * 60
 POLL_SECONDS = 60
 ACCOUNT = None
 TOKEN_ENV = 'DPMETA_VERIFY_GITHUB_TOKEN'
+EVENT_PREFIX = 'Global\\DPmetaAppVerify-'
 
 
 def credential(operation):
@@ -162,15 +170,54 @@ def unlock_file(descriptor, overlapped):
         raise ctypes.WinError(ctypes.get_last_error())
 
 
+def event_exists(name):
+    handle = kernel.OpenEventW(0x00100000, False, name)  # SYNCHRONIZE
+    if handle:
+        kernel.CloseHandle(handle)
+        return True
+    error = ctypes.get_last_error()
+    if error == 2:  # ERROR_FILE_NOT_FOUND: последний владелец уже закончил работу.
+        return False
+    raise ctypes.WinError(error)
+
+
+def windows_users(path):
+    """LockFileEx привязан к процессу: у живого инструмента отдельный liveness handle."""
+    folder = path.with_name(path.name + '.users')
+    active = False
+    for marker in folder.glob('*.json'):
+        try:
+            identity = marker.stem
+            value = json.loads(marker.read_text())
+            if (len(identity) != 32 or any(c not in '0123456789abcdef' for c in identity)
+                    or value != {'event': EVENT_PREFIX + identity}):
+                raise ValueError()
+        except (ValueError, TypeError) as error:
+            raise Refused('invalid_tools_lease') from error
+        if event_exists(value['event']):
+            active = True
+        else:
+            marker.unlink()
+    return active
+
+
 @contextmanager
 def file_lease(path, exclusive=False, blocking=False):
     with path.open('a+b') as handle:
         private_file(handle)
-        locked = lock_file(handle.fileno(), exclusive, blocking)
-        try:
-            yield handle.fileno()
-        finally:
-            unlock_file(handle.fileno(), locked)
+        while True:
+            locked = lock_file(handle.fileno(), exclusive, blocking)
+            try:
+                if not (os.name == 'nt' and exclusive and windows_users(path)):
+                    yield handle.fileno()
+                    return
+                if not blocking:
+                    raise Busy('tools_in_use')
+            finally:
+                unlock_file(handle.fileno(), locked)
+            # Не держать writer lock в ожидании инструмента: ему может понадобиться
+            # вложенная проверка под shared lease.
+            Event().wait(0.05)
 
 
 @contextmanager
@@ -383,25 +430,43 @@ def session_command(command):
     raise Refused('git_bash_required')
 
 
-def guarded_process(command, env, descriptor):
+def guarded_process(command, env, descriptor, lease_path=None):
     if os.name != 'nt':
         return subprocess.run(command, env=env, pass_fds=(descriptor,)).returncode
-    handle = msvcrt.get_osfhandle(descriptor)
-    previous = os.get_handle_inheritable(handle)
+    if lease_path is None:
+        raise Refused('lease_path_required')
+    folder = Path(lease_path).with_name(Path(lease_path).name + '.users')
+    folder.mkdir(exist_ok=True)
+    identity = uuid.uuid4().hex
+    name = EVENT_PREFIX + identity
+    marker = folder / (identity + '.json')
+    handle = kernel.CreateEventW(None, True, False, name)
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
     startup = subprocess.STARTUPINFO()
     startup.lpAttributeList = {'handle_list': [handle]}
-    os.set_handle_inheritable(handle, True)
     try:
-        child = subprocess.Popen(command, env=env, close_fds=True, startupinfo=startup)
-    finally:
-        os.set_handle_inheritable(handle, previous)
-    with child:
+        # Запись предшествует запуску: после аварии до CreateProcess живого
+        # события не будет; после запуска его держит наследник, даже без обёртки.
+        write_state(folder, marker.name, {'event': name})
+        os.set_handle_inheritable(handle, True)
         try:
-            return child.wait()
-        except BaseException:
-            child.kill()
-            child.wait()
-            raise
+            child = subprocess.Popen(command, env=env, close_fds=True, startupinfo=startup)
+        finally:
+            os.set_handle_inheritable(handle, False)
+        with child:
+            try:
+                return child.wait()
+            except BaseException:
+                child.kill()
+                child.wait()
+                raise
+    finally:
+        kernel.CloseHandle(handle)
+        # При любой неполной остановке оставить маркер: отказ безопаснее
+        # обновления папки, которую всё ещё использует дочерний процесс.
+        if not event_exists(name):
+            marker.unlink(missing_ok=True)
 
 
 def session(repo, command):
@@ -429,7 +494,7 @@ def run(repo, command, exclusive=False):
     with lease(repo, exclusive=exclusive, blocking=True) as descriptor:
         env = tool_environment(repo)
         # Дочерний процесс сохраняет lease даже при аварийном завершении обёртки.
-        return guarded_process(native_tool_command(command), env, descriptor)
+        return guarded_process(native_tool_command(command), env, descriptor, lock_path(repo))
 
 
 def main(argv=None):

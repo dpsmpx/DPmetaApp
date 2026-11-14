@@ -4913,6 +4913,24 @@ DPmetaApp (`DPmetaApp:ROADMAP/ROADMAP.md`: «Контекст ИИ по стру
 `git`), `V1ScenariosTest.turnContextCarriesCodeMapOfTheTaskTree` (карта в
 prompt хода: импорты, объявления со строками, без не-исходников и тел).
 
+### D-172 — Общие инструменты на Windows-target
+
+**Статус.** Принято 14 ноября 2026, `DPmetaApp:D-134`, `DPmetaApp:D-137`.
+
+**Решение.** Настройка `dpai.shared-tools` принимает абсолютные пути
+одной платформы: прежние POSIX или Windows с диском. Формат документа
+v1 сохраняется; смена платформы не угадывается при запуске. CLI и
+SharedToolsHost отказывают при несовместимости путей с target.
+В Windows по умолчанию программа Python — `python`, в POSIX — `python3`;
+пользователь может задать полный путь. Все исполнители проходят один
+контроллер. Git Bash нужен для npm-launcher и буквального prompt;
+shared/exclusive Windows lease и защита дочернего инструмента — у
+контроллера D-137. Старый агент необходимо обновить перед подключением.
+
+**Проверка.** `SharedToolsTest`, `ToolsCommandTest`, межпроцессные
+проверки контроллера `DPmetaApp:tests/test_shared_verify_lease.py`.
+Телефон и Windows 11 автора остаются в `DPmetaApp:TODO.md`.
+
 ## Отложено
 
 Решения, которые принимаются в начале своего этапа и до этого не

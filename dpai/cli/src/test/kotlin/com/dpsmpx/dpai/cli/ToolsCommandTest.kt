@@ -38,4 +38,20 @@ class ToolsCommandTest {
         assertEquals(2, command.run(listOf("status", "--home", home.toString(), "--home", home.toString())))
         assertEquals(2, command.run(listOf("configure", "--repo", "relative", "--controller", "/tools/runtime.py")))
     }
+
+    @Test
+    fun windowsTargetPersistsConfigurationAndCanDisableIt() {
+        val out = mutableListOf<String>()
+        val errors = mutableListOf<String>()
+        val command = ToolsCommand({ out += it }, { errors += it }, windows = true)
+        val base = listOf("--home", home.toString())
+        assertEquals(0, command.run(listOf("configure") + base + listOf("--repo", "C:/tools/DP Verify", "--controller", "C:/tools/runtime.py")))
+        assertEquals(0, command.run(listOf("status") + base))
+        assertTrue(out.contains("Папка: C:/tools/DP Verify"))
+        assertTrue(out.contains("Python: python"))
+        assertEquals(0, command.run(listOf("disable") + base))
+        assertEquals(0, command.run(listOf("status") + base))
+        assertTrue(out.last().contains("выключены"))
+        assertTrue(errors.isEmpty())
+    }
 }
