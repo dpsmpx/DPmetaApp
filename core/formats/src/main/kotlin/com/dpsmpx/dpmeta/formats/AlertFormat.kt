@@ -102,27 +102,33 @@ object AlertFormat {
     )
 
     /** Канонический текст редактора; все поля и порядок правил сохраняются. */
-    fun write(rules: AlertRules): String = buildString {
-        append("schema = ").append(rules.schema).append('\n')
-        fun text(key: String, value: String) { append(key).append(" = ").append(CanonicalJson.write(JsonString(value))).append('\n') }
-        for (rule in rules.rules) {
-            append("\n[[rule]]\n")
-            text("id", rule.id); text("title", rule.title); text("on", rule.on); text("action", rule.action.code)
-            rule.channel?.let { text("channel", it.code) }
-            text("importance", rule.importance.code)
-            append("enabled = ").append(rule.enabled).append('\n')
-            rule.project?.let { text("project", it) }
-            rule.contains?.let { text("contains", it) }
-            rule.regex?.let { text("regex", it.pattern) }
-            rule.number?.let { n ->
-                text("field", n.field)
-                n.atLeast?.let { append("at_least = ").append(java.math.BigDecimal.valueOf(it).toPlainString()).append('\n') }
-                n.atMost?.let { append("at_most = ").append(java.math.BigDecimal.valueOf(it).toPlainString()).append('\n') }
+    fun write(rules: AlertRules): Outcome<String> {
+        val result = buildString {
+            append("schema = ").append(rules.schema).append('\n')
+            fun text(key: String, value: String) { append(key).append(" = ").append(CanonicalJson.write(JsonString(value))).append('\n') }
+            for (rule in rules.rules) {
+                append("\n[[rule]]\n")
+                text("id", rule.id); text("title", rule.title); text("on", rule.on); text("action", rule.action.code)
+                rule.channel?.let { text("channel", it.code) }
+                text("importance", rule.importance.code)
+                append("enabled = ").append(rule.enabled).append('\n')
+                rule.project?.let { text("project", it) }
+                rule.contains?.let { text("contains", it) }
+                rule.regex?.let { text("regex", it.pattern) }
+                rule.number?.let { n ->
+                    text("field", n.field)
+                    // Подмножество TOML принимает Int64, а числовой движок хранит Double.
+                    for ((key, value) in listOf("at_least" to n.atLeast, "at_most" to n.atMost)) if (value != null) {
+                        if (!value.isFinite() || value.toLong().toDouble() != value) return Outcome.failure(DiagCode.VALUE_INVALID, "границы правила TOML должны быть целыми Int64", key)
+                        append(key).append(" = ").append(value.toLong()).append('\n')
+                    }
+                }
+                if (rule.days.isNotEmpty()) append("days = ").append(rule.days.sortedBy { it.value }.joinToString(", ", "[", "]") { day -> CanonicalJson.write(JsonString(DAYS.entries.first { it.value == day }.key)) }).append('\n')
+                rule.debounce?.let { append("limit = ").append(it.limit).append("\nwindow = ").append(it.windowMinutes).append('\n') }
+                append("quiet = ").append(rule.quiet).append('\n')
             }
-            if (rule.days.isNotEmpty()) append("days = ").append(rule.days.sortedBy { it.value }.joinToString(", ", "[", "]") { day -> CanonicalJson.write(JsonString(DAYS.entries.first { it.value == day }.key)) }).append('\n')
-            rule.debounce?.let { append("limit = ").append(it.limit).append("\nwindow = ").append(it.windowMinutes).append('\n') }
-            append("quiet = ").append(rule.quiet).append('\n')
         }
+        return Outcome.success(result)
     }
 
     fun parse(text: String, catalog: EventCatalog, source: String = "alerts.toml"): Outcome<AlertRules> {

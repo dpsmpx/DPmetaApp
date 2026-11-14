@@ -107,7 +107,7 @@ object PultAlerts {
         if (text != null) Outcome.success(text) else defaultsText(context)
     }
 
-    fun defaultsText(context: Context): Outcome<String> = defaults(context).map { AlertFormat.write(it.rules) }
+    fun defaultsText(context: Context): Outcome<String> = defaults(context).then { AlertFormat.write(it.rules) }
 
     fun saveRules(context: Context, text: String): Outcome<Unit> = defaults(context).then { user(context).save(text, it.catalog) }
     fun resetRules(context: Context): Outcome<Unit> = user(context).reset()

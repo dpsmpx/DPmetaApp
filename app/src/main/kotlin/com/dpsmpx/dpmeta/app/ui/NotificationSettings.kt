@@ -115,7 +115,12 @@ private fun AlertRulesDialog(feed: List<FeedEvent>, onClose: () -> Unit) {
 
     fun change(value: String) { text = value; resetting = false; preview = emptyMap(); note = null }
     fun update(id: String, transform: (AlertRule) -> AlertRule) {
-        current?.let { change(AlertFormat.write(it.copy(rules = it.rules.map { r -> if (r.id == id) transform(r) else r }))) }
+        current?.let { rules ->
+            when (val result = AlertFormat.write(rules.copy(rules = rules.rules.map { r -> if (r.id == id) transform(r) else r }))) {
+                is Outcome.Failure -> note = result.diagnostics.first().message
+                is Outcome.Success -> change(result.value)
+            }
+        }
     }
     fun close() { if (text != original || resetting) closing = true else onClose() }
     fun save() {

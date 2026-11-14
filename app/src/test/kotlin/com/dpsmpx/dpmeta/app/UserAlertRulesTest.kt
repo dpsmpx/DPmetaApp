@@ -87,11 +87,23 @@ class UserAlertRulesTest {
     @Test
     fun canonicalTextRetainsEveryConditionAndRuleOrder() {
         val rules = (AlertFormat.parse(text, catalog) as Outcome.Success).value
-        val encoded = AlertFormat.write(rules)
-        val back = (AlertFormat.parse(encoded, catalog) as Outcome.Success).value
+        val encoded = (AlertFormat.write(rules) as Outcome.Success).value
+        val parsed = AlertFormat.parse(encoded, catalog)
+        val back = assertIs<Outcome.Success<com.dpsmpx.dpmeta.model.AlertRules>>(parsed, parsed.toString()).value
         assertEquals(rules.rules.map { it.copy(regex = null) }, back.rules.map { it.copy(regex = null) })
         assertEquals(rules.rules.map { it.regex?.pattern }, back.rules.map { it.regex?.pattern })
-        assertEquals(encoded, AlertFormat.write(back))
+        assertEquals(encoded, (AlertFormat.write(back) as Outcome.Success).value)
+    }
+
+    @Test
+    fun integerThresholdsStayReadableAtInt64BoundaryAndFractionsAreRefused() {
+        val rules = (AlertFormat.parse(text.replace("at_most = 8", "at_most = 9223372036854775807"), catalog) as Outcome.Success).value
+        val encoded = (AlertFormat.write(rules) as Outcome.Success).value
+        val back = (AlertFormat.parse(encoded, catalog) as Outcome.Success).value
+        assertEquals(rules.rules.first().number, back.rules.first().number)
+        val first = rules.rules.first()
+        val fraction = first.copy(number = first.number!!.copy(atLeast = 1.5))
+        assertIs<Outcome.Failure>(AlertFormat.write(rules.copy(rules = listOf(fraction))))
     }
 
     @Test
