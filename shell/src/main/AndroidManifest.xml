@@ -12,6 +12,12 @@
         android:icon="@mipmap/ic_launcher_dpmeta"
         android:roundIcon="@mipmap/ic_launcher_dpmeta"
         tools:replace="android:name,android:label,android:icon,android:roundIcon">
+        <receiver android:name=".StudioWidget" android:exported="false" android:label="@string/widget_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/studio_widget_info" />
+        </receiver>
         <!-- Поворот, тема, шрифт — без пересоздания, как у PultActivity (UX-3): здесь первый экран — наследник,
              и без этих флагов место, итог синхронизации и окно клонов терялись в APK (проверка PR #172). -->
         <activity

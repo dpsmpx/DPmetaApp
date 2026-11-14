@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_title">DPmetaApp</string>
+    <string name="widget_description">Счётчики разработки, ИИ и переходы в студию. Без имён и содержимого проектов.</string>
+    <string name="widget_refresh">Обновить</string>
+    <string name="widget_refresh_description">Перечитать локальное состояние без сети</string>
+    <string name="widget_ide">IDE</string>
+    <string name="widget_ai">ИИ</string>
+    <string name="widget_check">Проверка</string>
+</resources>
