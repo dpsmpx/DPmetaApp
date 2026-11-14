@@ -52,6 +52,7 @@ class StudioWidgetTest {
         var bottom = last.bottom
         var parent = last.parent
         while (parent is View && parent !== view) { bottom += parent.top; parent = parent.parent }
+        println("Widget API ${RuntimeEnvironment.getApiLevel()}: ${width}x$height, низ кнопок $bottom, отступ ${view.paddingBottom}")
         assertTrue(bottom <= height - view.paddingBottom, "кнопки должны помещаться при минимальном размере: низ $bottom, доступно ${height - view.paddingBottom}")
         assertEquals(text.projects, view.findViewById<TextView>(R.id.widget_projects).text.toString())
         assertEquals("Нет среза проектов", view.findViewById<TextView>(R.id.widget_project_date).text.toString())
