@@ -341,3 +341,60 @@ title = "Уведомление приложения из белого спис�
 source = ["listener"]
 channel = "claude"
 fields = ["package", "title"]
+
+# Обычные сообщения всех исполнителей DPai после агрегации ядром (D-142).
+[[event]]
+type = "ai.info"
+title = "Сведения ИИ"
+source = ["app"]
+channel = "claude"
+fields = ["title", "category"]
+numbers = ["count"]
+
+[[event]]
+type = "ai.progress"
+title = "Ход работы ИИ"
+source = ["app"]
+channel = "claude"
+fields = ["title", "category"]
+numbers = ["count"]
+
+[[event]]
+type = "ai.success"
+title = "ИИ завершил работу"
+source = ["app"]
+channel = "claude"
+fields = ["title", "category"]
+numbers = ["count"]
+
+[[event]]
+type = "ai.system"
+title = "Системное сообщение ИИ"
+source = ["app"]
+channel = "claude"
+fields = ["title", "category"]
+numbers = ["count"]
+
+[[event]]
+type = "ai.warning"
+title = "Предупреждение ИИ"
+source = ["app"]
+channel = "claude"
+fields = ["title", "category"]
+numbers = ["count"]
+
+[[event]]
+type = "ai.blocked"
+title = "ИИ нужен разбор остановки"
+source = ["app"]
+channel = "claude"
+fields = ["title", "category"]
+numbers = ["count"]
+
+[[event]]
+type = "ai.failure"
+title = "Сбой ИИ"
+source = ["app"]
+channel = "claude"
+fields = ["title", "category"]
+numbers = ["count"]

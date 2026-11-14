@@ -191,7 +191,8 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 withContext(Dispatchers.IO) {
                     // Копия настроек — после изменения и раз в час (D-51); служба делает то же в своём такте.
                     runCatching { SettingsBackups.tick(context.applicationContext, Controller.get(context.filesDir)) }
-                    if (background) model.view(s) else model.step(s)
+                    // Оформление оболочки читает правила и сохраняет историю (D-176): тоже вне UI.
+                    (if (background) model.view(s) else model.step(s))?.also { fresh -> fresh.notifications.forEach(notifier::show) }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -210,7 +211,6 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
             }
             if (next != null) {
                 failure = null
-                next.notifications.forEach(notifier::show)
                 // Такт держит замок — снимок опубликован службой без экрана сессии: прежний экран остаётся,
                 // а не сменяется крутилкой и обратно (экран «прыгал», проверка на Redmi Note 13).
                 val keep = snapshot?.session?.takeIf { next.session == null && s != null && it.session.value == s }

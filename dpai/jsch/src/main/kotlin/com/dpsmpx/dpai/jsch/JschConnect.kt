@@ -7,6 +7,7 @@ import com.jcraft.jsch.Identity
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
+import java.io.ByteArrayInputStream
 import java.io.File
 import kotlin.time.Duration
 
@@ -18,15 +19,19 @@ import kotlin.time.Duration
 internal object JschConnect {
     private val DEFAULT_IDENTITIES = listOf("id_ed25519", "id_ecdsa", "id_rsa")
 
-    fun open(endpoint: SshEndpoint, identities: List<Identity>, connectTimeout: Duration, subject: String): Outcome<Session> {
+    fun open(endpoint: SshEndpoint, identities: List<Identity>, connectTimeout: Duration, subject: String, knownHostsSnapshot: String? = null): Outcome<Session> {
         val jsch = JSch()
         val home = System.getProperty("user.home")
         val knownHosts = endpoint.knownHostsFile ?: home?.let { File(it, ".ssh/known_hosts").path }
-        if (knownHosts == null || !File(knownHosts).isFile) {
+        if (knownHostsSnapshot == null && (knownHosts == null || !File(knownHosts).isFile)) {
             return Outcome.failure(DiagCode.SSH_HOST_KEY_REJECTED, "нет файла известных хостов: ключ хоста не проверить (T2)", subject)
         }
         return try {
-            jsch.setKnownHosts(knownHosts)
+            // Секретная операция использует ровно подтверждённый снимок, даже если файл
+            // изменён между пробой и подключением. Маркеры @revoked и CA сохраняются.
+            if (knownHostsSnapshot != null) {
+                ByteArrayInputStream(knownHostsSnapshot.toByteArray(Charsets.UTF_8)).use(jsch::setKnownHosts)
+            } else jsch.setKnownHosts(knownHosts)
             if (identities.isNotEmpty()) {
                 identities.forEach { jsch.addIdentity(it, null) }
             } else {

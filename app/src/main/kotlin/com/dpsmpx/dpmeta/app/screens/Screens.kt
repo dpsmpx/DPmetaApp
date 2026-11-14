@@ -183,7 +183,7 @@ object Screens {
 
     data class ProjectRow(val name: String, val working: String, val decisions: String, val todo: String, val roadmap: String, val pulls: String, val errors: Int)
 
-    data class Group(val title: String, val rows: List<ProjectRow>)
+    data class Group(val title: String, val rows: List<ProjectRow>, val place: Place? = null)
 
     /**
      * Вторая строка проекта в списке (UX-18): ROADMAP, PR, TODO — без
@@ -208,7 +208,7 @@ object Screens {
                 errors = p.errors.size,
             )
         }
-        if (rows.isEmpty()) null else Group(place.title, rows)
+        if (rows.isEmpty()) null else Group(place.title, rows, place)
     }
 
     // --- Карточка проекта (F-06…F-08, F-11, F-14, F-16) ---

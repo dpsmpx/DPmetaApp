@@ -73,14 +73,54 @@ class CodeServerSetupTest {
     }
 
     @Test
+    fun kotlinDoesNotTrustChecksumProvidedByTheArchiveMirror(@TempDir dir: File) {
+        val payload = File(dir, "mirror.tgz").apply { writeText("недоверенный архив") }
+        val mirrorSum = MessageDigest.getInstance("SHA-256").digest(payload.readBytes()).joinToString("") { "%02x".format(it) }
+        val requests = File(dir, "requests")
+        val bin = File(dir, "bin").apply { mkdirs() }
+        File(bin, "curl").apply {
+            writeText("""
+                #!/bin/sh
+                URL=; OUT=
+                while [ "${'$'}#" -gt 0 ]; do
+                    case "${'$'}1" in
+                        https://*) URL="${'$'}1"; printf '%s\n' "${'$'}URL" >> '${requests.path}';;
+                        -o) OUT="${'$'}2"; shift;;
+                    esac
+                    shift
+                done
+                case "${'$'}URL" in
+                    *.sha256) printf '%s\n' '$mirrorSum' > "${'$'}OUT";;
+                    *) cp '${payload.path}' "${'$'}OUT";;
+                esac
+            """.trimIndent())
+            setExecutable(true)
+        }
+        val root = File(dir, "kotlin-lsp").apply { mkdirs() }
+        val old = File(root, "previous").apply { mkdirs() }
+        File(old, "keep").writeText("работающая версия")
+        java.nio.file.Files.createSymbolicLink(File(root, "current").toPath(), old.toPath())
+        val command = (CodeServerSetup.kotlinInstall(KotlinLsp.PINNED_BUILD, "aarch64") as Outcome.Success).value.toMutableList()
+        command[4] = root.path
+        val refused = run(command, bin.path)
+        assertTrue(refused.code != 0 && "DPAI_KOTLIN_LSP_CHECKSUM" in refused.out, refused.out)
+        assertEquals("работающая версия", File(root, "current/keep").readText())
+        assertFalse(File(root, KotlinLsp.PINNED_BUILD).exists())
+        assertEquals(listOf(KotlinLsp.archiveUrl(KotlinLsp.PINNED_BUILD, "aarch64")), requests.readLines())
+        assertEquals(setOf("previous", "current"), root.list()!!.toSet(), "неудачная установка не оставляет staging")
+    }
+
+    @Test
     fun kotlinBuildAndCommandsAreChecked() {
-        assertEquals("263.7084.0", CodeServerSetup.latestBuild(listOf("HTTP/2 302", "Location: https://github.com/Kotlin/kotlin-lsp/releases/tag/v263.7084.0", "")))
-        assertNull(CodeServerSetup.latestBuild(listOf("HTTP/2 200")))
-        assertNull(CodeServerSetup.latestBuild(listOf("location: https://github.com/Kotlin/kotlin-lsp/releases/tag/v1;reboot")))
         assertTrue(CodeServerSetup.kotlinInstall("1.2;rm", "aarch64") is Outcome.Failure)
+        assertTrue(CodeServerSetup.kotlinInstall("263.9999.1", "aarch64") is Outcome.Failure)
         assertTrue(CodeServerSetup.kotlinInstall("263.7084.0", "mips") is Outcome.Failure)
         val install = (CodeServerSetup.kotlinInstall("263.7084.0", "aarch64") as Outcome.Success).value
-        assertEquals(listOf("/root/tools/ide/kotlin-lsp", "263.7084.0", KotlinLsp.archiveUrl("263.7084.0", "aarch64"), KotlinLsp.ROCKSDB_URL, KotlinLsp.ROCKSDB_SHA256, "librocksdbjni-linux-aarch64-musl.so"), install.drop(4))
+        assertEquals(listOf("/root/tools/ide/kotlin-lsp", "263.7084.0", KotlinLsp.archiveUrl("263.7084.0", "aarch64"), KotlinLsp.ROCKSDB_URL, KotlinLsp.ROCKSDB_SHA256, "librocksdbjni-linux-aarch64-musl.so", KotlinLsp.archiveSha256("aarch64")), install.drop(4))
+        assertFalse("server.sha256" in install[2])
+        assertEquals(KotlinLsp.PINNED_BUILD, KotlinLsp.productBuild("{\"buildNumber\":\"${KotlinLsp.PINNED_BUILD}\"}"))
+        assertNull(KotlinLsp.productBuild("{\"buildNumber\":42}"))
+        assertNull(KotlinLsp.productBuild("not JSON"))
         val (info, vm) = assertNotNull(CodeServerSetup.kotlinFiles(listOf("{\"launch\":[]}", "", "--DPAI-VMOPTIONS--", "-Xmx2048m")))
         assertEquals("{\"launch\":[]}\n", info)
         assertEquals("-Xmx2048m", vm)

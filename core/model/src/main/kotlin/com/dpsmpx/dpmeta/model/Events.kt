@@ -22,7 +22,7 @@ enum class EventSource(val code: String) {
 
 /** Вид канала уведомлений Android (F-38): у каждого своя важность, звук и вибрация. */
 enum class AlertChannel(val code: String, val title: String) {
-    CLAUDE("claude", "Claude"),
+    CLAUDE("claude", "ИИ"),
     DEV("dev", "Разработка"),
     SOCIAL("social", "Соцсети"),
     SITE("site", "Сайт"),
@@ -117,7 +117,7 @@ data class AlertRule(
     val enabled: Boolean,
     val project: String?,
     val contains: String?,
-    val regex: Regex?,
+    val regex: AlertPattern?,
     val number: NumberCondition?,
     val days: Set<java.time.DayOfWeek>,
     val debounce: Debounce?,

@@ -60,6 +60,11 @@ open class DpaiApplication : Application() {
     /** Есть ли [ecosystemManifest] у этой сборки — без вызова (он читает клоны). */
     open val ecosystemRegistry: Boolean get() = false
 
+    /** Обычное сообщение по политике оболочки; callback — под её guard приватности (D-176). */
+    open fun presentNotice(notice: com.dpsmpx.dpai.notifications.Notification, render: (com.dpsmpx.dpai.ui.NoticePresentation) -> Boolean) {
+        render(com.dpsmpx.dpai.ui.NoticePresentation())
+    }
+
     /** Аккаунт предоставляет оболочка; подсистема не знает ни хранилища, ни токена пульта (D-125). */
     open val sharedToolsAccountAvailable: Boolean get() = false
 

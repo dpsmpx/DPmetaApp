@@ -17,6 +17,9 @@ plugins {
  * а не загрузкой из теста (как у тестов экранов DPpass, DPpass:D-86).
  */
 val screenshots = providers.gradleProperty("dpmeta.screenshots").isPresent
+// Один проверенный образ на запуск; стандартные снимки сохраняют API 36.
+val testSdk = providers.gradleProperty("dpmeta.test.sdk").orElse("36").get()
+require(testSdk in setOf("30", "36")) { "dpmeta.test.sdk: поддерживаются закреплённые образы 30 и 36" }
 val robolectricImage: Configuration = configurations.create("robolectricAndroid") {
     isCanBeConsumed = false
     isTransitive = false
@@ -122,7 +125,8 @@ dependencies {
         testImplementation(project(":core:sync"))
         testImplementation(project(":core:formats"))
         testImplementation(project(":core:metrics"))
-        robolectricImage(libs.robolectric.android.all)
+        testImplementation(project(":core:notify"))
+        robolectricImage(if (testSdk == "30") libs.robolectric.android30 else libs.robolectric.android.all)
     }
 }
 
@@ -133,7 +137,7 @@ if (screenshots) {
         inputs.files(image)
         // Robolectric ничего не скачивает сам: образ уже сверен Gradle.
         systemProperty("robolectric.offline", "true")
-        systemProperty("robolectric.enabledSdks", "36")
+        systemProperty("robolectric.enabledSdks", testSdk)
         // Образ Android 16 заводит общую память через внутренности FileDescriptor JDK — только в JVM тестов.
         jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
         jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Drobolectric.dependency.dir=" + image.singleFile.parentFile.path) })

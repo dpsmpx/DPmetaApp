@@ -18,3 +18,10 @@ application {
 tasks.jar {
     manifest { attributes("Implementation-Version" to project.version.toString()) }
 }
+
+// Единственный исходник контроллера поставляется также с обновлением агента.
+tasks.processResources {
+    from(rootProject.layout.projectDirectory.file("../tools/shared_verify/runtime.py")) {
+        into("shared-verify")
+    }
+}

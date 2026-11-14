@@ -17,6 +17,26 @@ import java.time.ZoneId
  * блокировки, правила с «что сработало бы за 7 дней». Чистый Kotlin.
  */
 object AlertActions {
+    /** Контентные события сохраняются в общих исходных файлах до выноса, но не входят в студию. */
+    fun studioCatalog(catalog: EventCatalog): EventCatalog = catalog.copy(types = catalog.types.filter {
+        it.channel != com.dpsmpx.dpmeta.model.AlertChannel.SITE && it.channel != com.dpsmpx.dpmeta.model.AlertChannel.SOCIAL
+    })
+
+    /** Время пользовательской ночи; одинаковые границы не маскируются под включённый режим. */
+    fun quiet(from: String, to: String, days: Set<java.time.DayOfWeek>): com.dpsmpx.dpai.core.result.Outcome<QuietHours> {
+        fun minute(value: String): Int? {
+            if (!value.matches(Regex("[0-9]{2}:[0-9]{2}"))) return null
+            val h = value.take(2).toInt()
+            val m = value.takeLast(2).toInt()
+            return if (h in 0..23 && m in 0..59) h * 60 + m else null
+        }
+        val start = minute(from.trim())
+        val end = minute(to.trim())
+        return if (start == null || end == null || start == end) {
+            com.dpsmpx.dpai.core.result.Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.VALUE_INVALID, "время — ЧЧ:ММ, от 00:00 до 23:59; начало и конец должны отличаться")
+        } else com.dpsmpx.dpai.core.result.Outcome.success(QuietHours(start, end, days))
+    }
+
     /** Тихие часы на выбор: «выкл» и три обычных ночи. */
     val PRESETS: List<QuietHours?> = listOf(null, QuietHours(22 * 60, 7 * 60), QuietHours(23 * 60, 8 * 60), QuietHours(0, 8 * 60))
 
@@ -44,8 +64,8 @@ object AlertActions {
      * Правила с «что сработало бы» (F-53) по событиям ленты [feed] за 7 дней до [now]:
      * сколько раз правило уведомило бы (или отправило в сводку).
      */
-    fun rows(rules: AlertRules, catalog: EventCatalog, feed: List<FeedEvent>, now: Timestamp, zone: ZoneId, quiet: QuietHours?): List<Row> {
-        val events = feed.mapNotNull(Feed::event)
+    fun rows(rules: AlertRules, catalog: EventCatalog, feed: List<FeedEvent>, now: Timestamp, zone: ZoneId, quiet: QuietHours?, extra: List<com.dpsmpx.dpmeta.model.Event> = emptyList()): List<Row> {
+        val events = feed.mapNotNull(Feed::event) + extra
         return rules.rules.map { r ->
             val tried = Alerts.tryRule(r, events, catalog, now, zone, quiet).count { it is Decision.Notify || it is Decision.Digest }
             val conditions = listOfNotNull(

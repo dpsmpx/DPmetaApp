@@ -737,7 +737,7 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
                 CodeEditor(buffer, path, revision, onChange = { revision++; status = null; if (draft != null) Drafts.changed(draftKey) },
                     enabled = documentEditing && recovery.ready && !readOnly && !saving,
                     modifier = Modifier.weight(1f).fillMaxWidth(), callbacks = callbacks, guestPath = guestPath, guestRoot = guestRoot,
-                    presentation = true, editing = documentEditing, onActivate = if (!readOnly && recovery.ready && !saving && (draft != null || !loading)) ({
+                    presentation = true, editing = documentEditing, editorRootKey = editorRootKey, onActivate = if (!readOnly && recovery.ready && !saving && (draft != null || !loading)) ({
                         if (!documentEditing) {
                             val started = draft ?: original?.let { Drafts.startFile(draftKey, it, source.orEmpty(), guestPath) }
                             if (started == null) issue(Drafts.startFailure(draftKey)) else {

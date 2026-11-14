@@ -8,10 +8,12 @@ import com.dpsmpx.dpai.core.serialization.JsonNumber
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
+import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpmeta.model.AlertAction
 import com.dpsmpx.dpmeta.model.AlertChannel
 import com.dpsmpx.dpmeta.model.AlertImportance
 import com.dpsmpx.dpmeta.model.AlertRule
+import com.dpsmpx.dpmeta.model.AlertPattern
 import com.dpsmpx.dpmeta.model.AlertRules
 import com.dpsmpx.dpmeta.model.Debounce
 import com.dpsmpx.dpmeta.model.EventCatalog
@@ -19,7 +21,6 @@ import com.dpsmpx.dpmeta.model.EventSource
 import com.dpsmpx.dpmeta.model.EventType
 import com.dpsmpx.dpmeta.model.NumberCondition
 import java.time.DayOfWeek
-import java.util.regex.PatternSyntaxException
 
 /**
  * Строгий разбор `config/events.toml` — каталога событий (ТЗ, §8.1, F-51; D-85):
@@ -84,8 +85,8 @@ object EventCatalogFormat {
  */
 object AlertFormat {
     const val SCHEMA = 1
-    const val MAX_RULES = 200
-    const val MAX_REGEX = 200
+    const val MAX_RULES = 256
+    const val MAX_REGEX = AlertPattern.MAX_LENGTH
 
     private val TOP = setOf("schema", "rule")
     private val RULE = setOf(
@@ -99,6 +100,36 @@ object AlertFormat {
         "mon" to DayOfWeek.MONDAY, "tue" to DayOfWeek.TUESDAY, "wed" to DayOfWeek.WEDNESDAY, "thu" to DayOfWeek.THURSDAY,
         "fri" to DayOfWeek.FRIDAY, "sat" to DayOfWeek.SATURDAY, "sun" to DayOfWeek.SUNDAY,
     )
+
+    /** Канонический текст редактора; все поля и порядок правил сохраняются. */
+    fun write(rules: AlertRules): Outcome<String> {
+        val result = buildString {
+            append("schema = ").append(rules.schema).append('\n')
+            fun text(key: String, value: String) { append(key).append(" = ").append(CanonicalJson.write(JsonString(value))).append('\n') }
+            for (rule in rules.rules) {
+                append("\n[[rule]]\n")
+                text("id", rule.id); text("title", rule.title); text("on", rule.on); text("action", rule.action.code)
+                rule.channel?.let { text("channel", it.code) }
+                text("importance", rule.importance.code)
+                append("enabled = ").append(rule.enabled).append('\n')
+                rule.project?.let { text("project", it) }
+                rule.contains?.let { text("contains", it) }
+                rule.regex?.let { text("regex", it.pattern) }
+                rule.number?.let { n ->
+                    text("field", n.field)
+                    // Подмножество TOML принимает Int64, а числовой движок хранит Double.
+                    for ((key, value) in listOf("at_least" to n.atLeast, "at_most" to n.atMost)) if (value != null) {
+                        if (!value.isFinite() || value.toLong().toDouble() != value) return Outcome.failure(DiagCode.VALUE_INVALID, "границы правила TOML должны быть целыми Int64", key)
+                        append(key).append(" = ").append(value.toLong()).append('\n')
+                    }
+                }
+                if (rule.days.isNotEmpty()) append("days = ").append(rule.days.sortedBy { it.value }.joinToString(", ", "[", "]") { day -> CanonicalJson.write(JsonString(DAYS.entries.first { it.value == day }.key)) }).append('\n')
+                rule.debounce?.let { append("limit = ").append(it.limit).append("\nwindow = ").append(it.windowMinutes).append('\n') }
+                append("quiet = ").append(rule.quiet).append('\n')
+            }
+        }
+        return Outcome.success(result)
+    }
 
     fun parse(text: String, catalog: EventCatalog, source: String = "alerts.toml"): Outcome<AlertRules> {
         val list = when (val t = Doc.top(text, source, TOP, SCHEMA, "rule")) {
@@ -145,10 +176,9 @@ object AlertFormat {
         val contains = f.text("contains", 200).let { if (it is Outcome.Failure) return it else it.valueOrNull() }
         val regexText = f.text("regex", MAX_REGEX).let { if (it is Outcome.Failure) return it else it.valueOrNull() }
         val regex = regexText?.let {
-            try {
-                Regex(it, RegexOption.IGNORE_CASE)
-            } catch (_: PatternSyntaxException) {
-                return Outcome.failure(DiagCode.RULE_INVALID, "regex не разбирается", "$at.regex")
+            when (val compiled = AlertPattern.compile(it, "$at.regex")) {
+                is Outcome.Failure -> return compiled
+                is Outcome.Success -> compiled.value
             }
         }
         val field = f.text("field", 32).let { if (it is Outcome.Failure) return it else it.valueOrNull() }

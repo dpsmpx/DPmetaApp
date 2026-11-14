@@ -26,6 +26,8 @@ androidx-core = "1.18.0"
 jgit = "5.13.5.202508271544-r"
 # SSH на JVM для приложения Android (D-35).
 jsch = "2.28.7"
+# Только модель правил пульта DPmetaApp (DPmetaApp:D-141), ядро dpai не зависит от RE2.
+re2j = "1.8"
 # Снимки экранов DPmetaApp на JVM (DPmetaApp:docs/SCREENSHOTS.md): только тестам модуля
 # :shell корня и только по свойству dpmeta.screenshots — в APK и обычную сборку не
 # попадают. Версии — те же, что у тестов экранов DPpass (DPpass:D-86): «Android
@@ -33,6 +35,7 @@ jsch = "2.28.7"
 robolectric = "4.17"
 junit4 = "4.13.2"
 robolectric-android-all = "16-robolectric-13921718-i7"
+robolectric-android30 = "11-robolectric-6757853-i7"
 
 [libraries]
 sora-editor = { module = "io.github.rosemoe:editor", version.ref = "sora" }
@@ -45,6 +48,7 @@ junit-vintage-engine = { module = "org.junit.vintage:junit-vintage-engine" }
 junit4 = { module = "junit:junit", version.ref = "junit4" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 robolectric-android-all = { module = "org.robolectric:android-all-instrumented", version.ref = "robolectric-android-all" }
+robolectric-android30 = { module = "org.robolectric:android-all-instrumented", version.ref = "robolectric-android30" }
 
 # Модуль android (D-34).
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
@@ -53,6 +57,7 @@ activity-compose = { module = "androidx.activity:activity-compose", version.ref 
 androidx-core = { module = "androidx.core:core", version.ref = "androidx-core" }
 jgit = { module = "org.eclipse.jgit:org.eclipse.jgit", version.ref = "jgit" }
 jsch = { module = "com.github.mwiede:jsch", version.ref = "jsch" }
+re2j = { module = "com.google.re2j:re2j", version.ref = "re2j" }
 
 # Плагины для build-logic (подключаются как обычные зависимости): Kotlin, Android и
 # Compose — с одного classpath, KGP загружается один раз (D-102).

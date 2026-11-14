@@ -26,6 +26,11 @@ android {
         it.systemProperty("corpus.ecosystem", corpus.asFile.absolutePath)
         it.systemProperty("snapshots.dir", layout.projectDirectory.dir("src/test/snapshots").asFile.absolutePath)
         it.inputs.dir(layout.projectDirectory.dir("src/test/snapshots")).withPropertyName("snapshots")
+        // Регрессия шаблонов уведомлений проверяет именно данные, включаемые в APK.
+        it.systemProperty("corpus.repo", rootProject.layout.projectDirectory.asFile.absolutePath)
+        for (name in listOf("events", "alerts")) {
+            it.inputs.file(rootProject.layout.projectDirectory.file("config/$name.toml")).withPropertyName("config:$name")
+        }
     }
 
     // Предупреждения Lint — ошибки (CLAUDE.md, «Правила кода»).
@@ -83,6 +88,7 @@ dependencies {
     implementation(project(":core:actions"))
     implementation(project(":core:notify"))
     implementation("com.dpsmpx.dpai:ui")
+    implementation("com.dpsmpx.dpai:notifications")
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.activity.compose)

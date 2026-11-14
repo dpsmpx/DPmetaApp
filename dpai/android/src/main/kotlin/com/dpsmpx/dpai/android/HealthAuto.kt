@@ -117,11 +117,14 @@ object HealthAuto {
         }.toList()
 
     /** Сколько пунктов проверки требуют внимания — по последней проверке; для строки пульта. */
-    fun count(context: Context): Int = prefs(context).getInt(COUNT, 0)
+    fun count(context: Context): Int = lastCount(context) ?: 0
+
+    /** Нет результата проверки — неизвестно, а не успешная проверка с нулём проблем (D-13). */
+    fun lastCount(context: Context): Int? = prefs(context).let { if (it.contains(COUNT)) it.getInt(COUNT, 0) else null }
 
     /** Запомнить итог проверки [items] — для полосы и строки пульта без нового сбора. */
     fun remember(context: Context, items: Int) {
-        if (count(context) != items) prefs(context).edit { putInt(COUNT, items) }
+        if (lastCount(context) != items) prefs(context).edit { putInt(COUNT, items) }
     }
 
     /**

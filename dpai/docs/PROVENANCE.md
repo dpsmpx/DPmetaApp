@@ -18,6 +18,7 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 <!-- provenance: begin -->
 | Компонент | Версия | Лицензия | Куда попадает | Источник | Проверено |
 |---|---|---|---|---|---|
+| `re2j` (RE2/J) | 1.8 | BSD-3-Clause (Go License) | только модель правил пульта DPmetaApp (`:core:model`); ядро dpai не зависит от библиотеки (`DPmetaApp:D-141`) | Maven Central, `com.google.re2j:re2j`; лицензия поставляется пультом | 14 ноября 2026 |
 | `kotlin` (Kotlin Gradle Plugin, плагин компилятора Compose, stdlib, kotlin-test) | 2.4.20 | Apache-2.0 | stdlib — во время выполнения; остальное — сборка и тесты | Maven Central, `org.jetbrains.kotlin` | 6 октября 2026 |
 | `junit` (JUnit BOM, Jupiter, Platform Launcher) | 6.1.3 | EPL-2.0 | только тесты | Maven Central, `org.junit` | 6 октября 2026 |
 | `agp` (Android Gradle Plugin) | 9.4.1 | Apache-2.0 | только сборка: classpath `build-logic` (D-102), модули Android | Google Maven, `com.android.tools.build` | 7 октября 2026 |
@@ -31,6 +32,7 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 | `robolectric` (Robolectric) | 4.17 | MIT; транзитивные — как у DPpass (`DPpass:docs/PROVENANCE.md`) | только тесты `:shell` корня DPmetaApp и только по свойству `dpmeta.screenshots` — снимки экранов на JVM (`DPmetaApp:docs/SCREENSHOTS.md`); в APK и обычную сборку не попадает | Maven Central, `org.robolectric` | 13 ноября 2026 |
 | `junit4` (JUnit 4) | 4.13.2 | EPL-1.0 | там же: API запускателя Robolectric; запуск — `junit-vintage-engine` из JUnit BOM | Maven Central, `junit` | 13 ноября 2026 |
 | `robolectric-android-all` (образ «Android целиком», SDK 36) | 16-robolectric-13921718-i7 | Apache-2.0 | там же: образ, который ждёт Robolectric 4.17; берётся Gradle со сверкой суммы в `verification-metadata.xml` | Maven Central, `org.robolectric` | 13 ноября 2026 |
+| `robolectric-android30` (образ SDK 30) | 11-robolectric-6757853-i7 | Apache-2.0 | только тесты виджета `:shell` DPmetaApp при `dpmeta.test.sdk=30`, в APK не попадает; SHA-256 закреплены в проверке Gradle корня | Maven Central, `org.robolectric`; версия из DefaultSdkProvider 4.17 | 14 ноября 2026 |
 <!-- provenance: end -->
 
 Предпросмотр на ПК (D-169) кладёт в домашний каталог ПК init-скрипт, который

@@ -31,6 +31,7 @@ object Feed {
 
     /** Виды событий: код → подпись фильтра. */
     val KINDS: Map<String, String> = linkedMapOf(
+        "ai.notice" to "ИИ",
         "main" to "коммит в main",
         "pr.opened" to "PR открыт",
         "pr.merged" to "PR влит",

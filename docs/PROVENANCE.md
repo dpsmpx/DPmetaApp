@@ -20,7 +20,7 @@ DP-Verify и других репозиториев автора — источн
 
 ## Зависимости
 
-Модули `:core:*` (кроме `:core:git` — JGit, ниже), `:cli` и `:tests:corpus` сторонних зависимостей не имеют —
+Модули `:core:*` (кроме `:core:git` — JGit и `:core:model` — RE2/J, ниже), `:cli` и `:tests:corpus` сторонних зависимостей не имеют —
 только ядро `dpai/` (`core`, `storage`) и JDK (`java.net.http` — транспорт
 `dpmeta-cli`; TLS — системными корнями).
 Каждая новая зависимость — строка ниже и запись в каталоге версий;
@@ -31,16 +31,32 @@ Compose, JSch; wrapper Gradle со сверкой SHA-256) — `dpai/docs/PROVEN
 
 | Компонент | Версия | Лицензия | Зачем | Модуль | Решение |
 |---|---|---|---|---|---|
+| RE2/J (`com.google.re2j:re2j`, каталог `re2j`) | 1.8 | BSD-3-Clause (Go License) | линейный поиск по пользовательским выражениям правил, без backtracking; без дополнительных runtime-зависимостей | `:core:model` | D-141 |
 | Eclipse JGit (`org.eclipse.jgit:org.eclipse.jgit`, каталог `jgit`; с ним JavaEWAH 1.1.13 — Apache-2.0, SLF4J API 1.7.30 — MIT) | 5.13.5.202508271544-r | EDL-1.0 (BSD-3-Clause) | клоны репозиториев: клонирование, обновление, ветки и файлы (ветка 5.13 — последняя для Java 8, на Android без недостающих API JDK 11+; CVE-2023-4759 закрыта) | `:core:git` | D-65 |
 | AndroidX Core (`androidx.core:core`, каталог `androidx-core`) | 1.18.0 | Apache-2.0 | `FileProvider` — «Поделиться» экспортом истории (F-36) | `:app` | D-67 |
 | Robolectric (`org.robolectric:robolectric`, каталог `robolectric`; с ним JUnit 4 `junit:junit` 4.13.2 — EPL-1.0 и `junit-vintage-engine` из JUnit BOM — EPL-2.0) | 4.17 | MIT (транзитивные — как у DPpass, `dppass/docs/PROVENANCE.md`) | снимки экранов на JVM (`docs/SCREENSHOTS.md`): только тестам `:shell` и только по свойству `dpmeta.screenshots`; в APK и обычную сборку не попадает | `:shell` (тест) | те же версии, что у тестов экранов DPpass (`DPpass:D-86`) |
 | Образ «Android целиком» (`org.robolectric:android-all-instrumented`, каталог `robolectric-android-all`) | 16-robolectric-13921718-i7 | Apache-2.0 | образ SDK 36 для Robolectric 4.17; берётся Gradle со сверкой суммы, тест ничего не скачивает | `:shell` (тест) | `DPpass:D-86`; SHA-256 — `gradle/verification-metadata.xml` |
+
+Образ Robolectric API 30 (`org.robolectric:android-all-instrumented`
+11-robolectric-6757853-i7, каталог `robolectric-android30`, Apache-2.0) —
+только тестам `:shell` при `dpmeta.test.sdk=30`. Версия сверена с
+DefaultSdkProvider Robolectric 4.17; JAR/POM SHA-256 получены из Maven Central
+и закреплены в `gradle/verification-metadata.xml`. В APK не включается.
 
 Предпросмотр на ПК (`DP_AI_Orcestrator:D-169`) на один запуск добавляет тестам
 модуля проекта на ПК Robolectric 4.17 и JUnit 4.13.2 — версии закреплены в
 ресурсе init-скрипта (`dpai/docs/PROVENANCE.md`); скачивает их Gradle ПК, суммы
 сверяет только `verification-metadata.xml` проекта, в APK DPmetaApp они не
 попадают.
+
+RE2/J проверен 14 ноября 2026: [официальный README](https://github.com/google/re2j/blob/re2j-1.8/README.md),
+[лицензия](https://github.com/google/re2j/blob/re2j-1.8/LICENSE), Maven Central.
+JAR SHA-256 `7b52c72156dd7f98b3237a5b35c1d34fba381b21048c89208913ad80a45dfbd7`,
+POM SHA-256 `df62699335cd46fc465f4c03b8c581d3d507792212d27b65adb923b4c27de4e7`.
+Обе суммы закреплены в Gradle; полный текст лицензии поставляется в
+`app/src/main/assets/licenses/re2j-1.8.txt`. Сопоставление выполняется
+без учёта регистра. RE2 не поддерживает весь синтаксис Java Regex:
+неподдержанное отклоняется явно, без запасного небезопасного движка.
 
 ## Данные
 
@@ -95,8 +111,13 @@ https://repo.maven.apache.org/maven2/ , с POM и транзитивными з�
   sha512 совпал с `dist.integrity` реестра. Работает на Node.js Alpine.
 - kotlin-lsp (JetBrains, Apache-2.0 с закрытыми частями JetBrains Air и
   Fleet; https://github.com/Kotlin/kotlin-lsp ): сборки EAP, срок около
-  30 дней, поэтому версия не закреплена — сборка со страницы выпусков,
-  архив и его `.sha256` с download.jetbrains.com. Запуск без встроенной
+  30 дней. По D-136 закреплена 263.7084.0; новые версии — с обновлением
+  приложения. SHA-256 целых архивов проверены потоковым скачиванием
+  14 ноября 2026: aarch64 —
+  `450ab7c1d80e48106aa429b48cb4226d82ca12a8a2400447ae02386794780cac`,
+  x86_64 — `ae0c4b01e17ab73a4a5227a78ea99e6dcbe3e499600315b22759a4e4cddd11df`.
+  Суммы зашиты в APK; файл `.sha256` сервера при установке не читается.
+  Запуск без встроенной
   glibc-JVM: JDK 25 Alpine, gcompat для наблюдения за файлами,
   `--data-sharing=none`. Проверена сборка 263.7084.0: на Alpine x86_64
   (musl) в chroot и на хосте — импорт Gradle, диагностика, переходы,

@@ -216,6 +216,7 @@ private fun TargetCard(
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
     var settings by rememberSaveable(t.id.value) { mutableStateOf(false) }
+    var sharedVerify by remember { mutableStateOf(false) }
     var terminalMenu by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
     val posixSlot = t.configDir != null && t.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX
@@ -302,13 +303,14 @@ private fun TargetCard(
             lines?.forEach { c -> CheckRow(c) }
             val local = TermuxLauncher.local(t)
             val posix = t.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX
-            if (t.configDir != null || local || posix) {
+            if (t.configDir != null || local || posix || !t.inApp) {
                 Text(
                     if (settings) "Настройки target ▾" else "Настройки target ▸",
                     Modifier.fillMaxWidth().clickable { settings = !settings }.padding(vertical = 8.dp),
                     style = MaterialTheme.typography.labelLarge,
                 )
                 if (settings) {
+                    if (!t.inApp) TextButton(onClick = { sharedVerify = true }) { Text("Общие инструменты DP-Verify…") }
                     if (t.configDir != null) {
                         TargetSwitches(model, t)
                         UsageAutoSwitch(model, t)
@@ -320,6 +322,7 @@ private fun TargetCard(
             }
         }
     }
+    if (sharedVerify) RemoteSharedVerifyDialog(controller, t) { sharedVerify = false }
 }
 
 /** Строка входа в «Linux в приложении» (AI:A-3): среда — своим экраном. */

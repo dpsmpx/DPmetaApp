@@ -106,7 +106,7 @@ class OwnDocumentsTest {
 
     /**
      * Каталог событий и правила тревог (F-37, F-51; D-85): разбираются; в каталоге —
-     * все типы ТЗ, §8.1, и каждый вид ленты; правило F-37 — у каждого пункта по умолчанию.
+     * все типы ТЗ, §8.1, дополнение D-142 и каждый вид ленты; правила F-37 сохранены.
      */
     @Test
     fun ownEventsAndAlertsParse() {
@@ -116,10 +116,11 @@ class OwnDocumentsTest {
         val named = Regex("^\\| ([^|]+) \\|", RegexOption.MULTILINE).findAll(section)
             .flatMap { m -> Regex("`([a-z][a-z0-9_.]*)`").findAll(m.groupValues[1]).map { it.groupValues[1] } }.toSet()
         assertTrue(named.size >= 40, "типов в §8.1: ${named.size}")
-        assertEquals(named, catalog.types.map { it.type }.toSet(), "каталог — ровно типы ТЗ, §8.1")
+        val ai = setOf("ai.info", "ai.progress", "ai.success", "ai.system", "ai.warning", "ai.blocked", "ai.failure")
+        assertEquals(named + ai, catalog.types.map { it.type }.toSet(), "каталог — ровно типы ТЗ, §8.1 и дополнение D-142; обязательных категорий в нём нет")
         for (t in com.dpsmpx.dpmeta.metrics.Feed.TYPES.values) assertTrue(catalog.type(t) != null, "вид ленты $t — не в каталоге")
         val rules = AlertFormat.parse(text("config/alerts.toml"), catalog, "config/alerts.toml").ok("config/alerts.toml").rules
-        assertEquals(14, rules.size, "правил по умолчанию F-37")
+        assertEquals(20, rules.size, "14 правил F-37 и 6 обычных правил ИИ D-142")
         assertTrue(rules.all { it.enabled })
         assertEquals(listOf("claude.input"), rules.filter { !it.quiet }.map { it.id }, "звучит в тихие часы — только «Claude ждёт»")
     }

@@ -1,5 +1,8 @@
 package com.dpsmpx.dpai.lsp
 
+import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpai.core.result.Outcome
+
 /**
  * clangd — языковая служба C и C++ (D-137): команда запуска и то, что
  * редактору нужно знать о проекте до запуска.
@@ -41,6 +44,33 @@ object Clangd {
     /** Корень проекта для службы и каталог `compile_commands.json` в нём (`null` — файла нет). */
     data class Project(val root: String, val compileCommandsDir: String?)
 
+    /** Подготовка ручного индекса: проба записи и локальное исключение только кэша. */
+    fun prepareIndex(project: Project): Outcome<List<String>> {
+        val database = project.compileCommandsDir
+            ?: return Outcome.failure(DiagCode.VALUE_INVALID, "для индекса проекта нужен compile_commands.json")
+        if (listOf(project.root, database).any { !it.startsWith('/') || it == "/" || it.any { c -> c.code < 32 || c.code == 127 } }) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, "корень индекса и каталог сборки должны быть абсолютными каталогами проекта")
+        }
+        val script = """
+            test -f "$2/compile_commands.json" || { printf 'Файл compile_commands.json больше не найден\n'; exit 1; }
+            PROBE=${'$'}(mktemp "$2/.dpmetaapp-index.XXXXXX") || { printf 'Каталог кэша индекса недоступен для записи\n'; exit 1; }
+            rm -f "${'$'}PROBE" || exit
+            if git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                COMMON=${'$'}(git -C "$1" rev-parse --path-format=absolute --git-common-dir) || exit
+                EXCLUDE="${'$'}COMMON/info/exclude"
+                if test -L "${'$'}COMMON/info" || test -L "${'$'}EXCLUDE"; then
+                    printf 'Локальные исключения Git перенаправлены ссылкой; индекс не включён\n'; exit 1
+                fi
+                mkdir -p "${'$'}COMMON/info" || exit
+                if ! test -f "${'$'}EXCLUDE" || ! grep -Fxq '**/.cache/clangd/' "${'$'}EXCLUDE"; then
+                    printf '\n%s\n' '**/.cache/clangd/' >> "${'$'}EXCLUDE" || { printf 'Не удалось сохранить локальное исключение кэша Git\n'; exit 1; }
+                fi
+            fi
+            printf 'DPAI_CPP_INDEX_READY\n'
+        """.trimIndent()
+        return Outcome.success(listOf("sh", "-c", script, "dpai-cpp-index", project.root, database))
+    }
+
     /**
      * Команда `sh`, которая ищет проект файла на машине службы: от каталога
      * файла [fileDir] вверх до [stopDir] — первый каталог с
@@ -70,8 +100,8 @@ object Clangd {
     /**
      * Команда службы. [jobs] — потоков разбора; [backgroundIndex] — индекс
      * всего проекта в фоне: нужен ссылкам и переименованию между файлами,
-     * стоит памяти и батареи, поэтому включается явно. Индекс и кэш
-     * заголовков — на диске (`.cache/clangd` проекта), не в памяти телефона.
+     * стоит памяти и батареи, поэтому включается явно. Кэш индекса и
+     * заголовков — на диске (`.cache/clangd` проекта); службе также нужна RAM.
      */
     fun command(compileCommandsDir: String?, jobs: Int = 2, backgroundIndex: Boolean = false): List<String> {
         require(jobs in 1..16) { "потоков — от 1 до 16" }
@@ -82,6 +112,7 @@ object Clangd {
             add("-j=$jobs")
             add("--pch-storage=disk")
             add("--background-index=${if (backgroundIndex) "true" else "false"}")
+            if (backgroundIndex) add("--background-index-priority=low")
             // Заголовки в файл сама служба не дописывает: правка вне места курсора — только явная.
             add("--header-insertion=never")
             add("--limit-results=200")

@@ -129,10 +129,11 @@ class NativeProcessHostTest {
         val lines = CopyOnWriteArrayList<OutputLine>()
         val p = start(fake, ProcessSpec(listOf("/bin/sh", "-c", "x"), workDir = "/w", environment = mapOf("A" to "1"), stdin = "ввод"), lines)
         assertEquals(Triple(listOf("/bin/sh", "-c", "x"), mapOf("A" to "1"), "/w"), fake.spawned.single())
-        assertEquals("ввод", fake.stdin.toString(Charsets.UTF_8))
         assertEquals(ROOT.toLong(), p.pid)
         fake.exitNow(3)
         assertEquals(3, p.awaitExit(5.seconds))
+        // Запись stdin асинхронна: awaitExit дожидается также её потока (PR #188).
+        assertEquals("ввод", fake.stdin.toString(Charsets.UTF_8))
         assertFalse(p.isAlive)
         assertEquals(listOf("раз", "два"), lines.filter { it.stream == OutputStream.STDOUT }.map { it.text })
         assertEquals(listOf("ошибка"), lines.filter { it.stream == OutputStream.STDERR }.map { it.text })

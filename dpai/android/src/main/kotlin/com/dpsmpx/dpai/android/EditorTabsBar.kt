@@ -107,6 +107,14 @@ internal fun rememberOpenEditorFiles(key: String): OpenEditorFiles {
         mutableStateOf(EditorTabs(paths, stored.active?.takeIf { it in paths }))
     }
     val files = remember(key) { OpenEditorFiles(key, state) }
+    val serviceOwner = remember(key) { Any() }
+    androidx.compose.runtime.DisposableEffect(key, serviceOwner) {
+        CodeService.enterEditor(key, serviceOwner)
+        onDispose { CodeService.leaveEditor(key, serviceOwner) }
+    }
+    LaunchedEffect(key, serviceOwner, files.tabs.paths) {
+        CodeService.retainEditor(key, serviceOwner, files.tabs.paths.toSet())
+    }
     // Переход из вывода сборки (D-153): запрос этого корня открывает файл вкладкой на строке.
     val jump by IdeState.jump.collectAsState()
     LaunchedEffect(key, jump, files.busy) {

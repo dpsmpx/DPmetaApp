@@ -132,17 +132,18 @@ class ControllerService : Service() {
                         model.resumeManualProfile()
                         // Без targets служба занимается только общими инструментами; демо в фоне не шагает (A-28).
                         if (!model.hasLive()) {
-                            if (!SharedVerify.enabled(app) && !LongJobs.get(app).busy(LongJobs.SHARED_VERIFY, LongJobs.WORKSPACE_PROFILE)) {
+                            if (!SharedVerify.enabled(app) && !RemoteSharedVerify.enabled(app) && !RemoteSharedVerify.working(app) && !LongJobs.get(app).busy(LongJobs.SHARED_VERIFY, LongJobs.WORKSPACE_PROFILE)) {
                                 log.step("служба контроллера: нет targets и фоновых инструментов")
                                 stopSelf()
                                 return@scheduleWithFixedDelay
                             }
                             try {
                                 SharedVerify.tick(app)
+                                RemoteSharedVerify.tick(app)
                             } catch (e: Exception) {
                                 log.warn("общие инструменты", AppLogs.describe(e))
                             }
-                            val working = LongJobs.get(app).busy(LongJobs.SHARED_VERIFY)
+                            val working = LongJobs.get(app).busy(LongJobs.SHARED_VERIFY) || RemoteSharedVerify.working(app)
                             // Один DP-Verify не держит CPU в ожидании PIN/изменений; долгую проверку поддерживает keeper.
                             if (working) lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES)) else if (lock.isHeld) lock.release()
                             val line = if (working) "DP-Verify: проверка и синхронизация" else "DP-Verify: ожидание следующей попытки"
@@ -159,6 +160,7 @@ class ControllerService : Service() {
                         // Проверка общей папки идёт отдельно: не задерживает такт и ждёт lease инструментов.
                         try {
                             SharedVerify.tick(app)
+                            RemoteSharedVerify.tick(app)
                         } catch (e: Exception) {
                             log.warn("общие инструменты", AppLogs.describe(e))
                         }
