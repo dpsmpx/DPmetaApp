@@ -79,7 +79,8 @@ class AiNoticeHistoryTest {
     @Test
     fun textCutDoesNotSplitSurrogatePairOrIntroduceFilterFields() {
         val prefix = notice().title.length + 1
-        val source = "x".repeat(AiNoticeHistory.MAX_TEXT - prefix - 1) + "😀tail"
+        val before = AiNoticeHistory.MAX_TEXT - prefix - 1
+        val source = "word ".repeat(before / 5 + 1).take(before) + "😀tail"
         val event = AiNotices.event(notice().copy(body = source))!!
         val saved = (store().add(RecordedNotice(event, true), Timestamp(20)) as Outcome.Success).value.single()
         val back = (store().read(Timestamp(20)) as Outcome.Success).value.single()
