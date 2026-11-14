@@ -18,6 +18,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -26,6 +27,7 @@ import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [30, 36], application = Application::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class StudioWidgetTest {
     @Test
     fun noHealthCheckIsUnknownAndFirstSuccessfulCheckRecordsZero() {
