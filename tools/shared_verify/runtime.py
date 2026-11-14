@@ -1,21 +1,41 @@
 #!/usr/bin/env python3
-"""Общая папка DP-Verify: POSIX lease и проверенная fast-forward синхронизация.
+"""Общая папка DP-Verify: lease и проверенная fast-forward синхронизация.
 
 D-89. Не меняет работающие инструменты; проверяет кандидата до публикации.
 Подключение Android/SSH-сессий описывается отдельно от этого контроллера.
 """
 import argparse
 from contextlib import contextmanager
-import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
 from threading import Event
+
+if os.name == 'nt':
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+
+    class Overlapped(ctypes.Structure):
+        _fields_ = [('Internal', ctypes.c_size_t), ('InternalHigh', ctypes.c_size_t),
+                    ('Offset', wintypes.DWORD), ('OffsetHigh', wintypes.DWORD),
+                    ('hEvent', wintypes.HANDLE)]
+
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.LockFileEx.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD,
+                                 wintypes.DWORD, wintypes.DWORD, ctypes.POINTER(Overlapped)]
+    kernel.LockFileEx.restype = wintypes.BOOL
+    kernel.UnlockFileEx.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD,
+                                   wintypes.DWORD, ctypes.POINTER(Overlapped)]
+    kernel.UnlockFileEx.restype = wintypes.BOOL
+else:
+    import fcntl
 
 UPSTREAM = 'https://github.com/dpsmpx/DP-Verify.git'
 GIT_TIMEOUT = 120
@@ -111,19 +131,46 @@ def lock_path(repo):
     return common / 'dpmetaapp-tools.lock'
 
 
+def private_file(handle, mode=0o600):
+    # На Windows сохраняется унаследованный ACL папки; chmod не заменяет ACL.
+    if os.name != 'nt':
+        os.fchmod(handle.fileno(), mode)
+
+
+def lock_file(descriptor, exclusive, blocking):
+    if os.name != 'nt':
+        try:
+            fcntl.flock(descriptor, (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) |
+                        (0 if blocking else fcntl.LOCK_NB))
+        except BlockingIOError as error:
+            raise Busy('tools_in_use') from error
+        return None
+    overlapped = Overlapped()
+    flags = (2 if exclusive else 0) | (0 if blocking else 1)
+    if not kernel.LockFileEx(msvcrt.get_osfhandle(descriptor), flags, 0, 1, 0, ctypes.byref(overlapped)):
+        error = ctypes.get_last_error()
+        if error == 33:  # ERROR_LOCK_VIOLATION
+            raise Busy('tools_in_use')
+        raise ctypes.WinError(error)
+    return overlapped
+
+
+def unlock_file(descriptor, overlapped):
+    if os.name != 'nt':
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+    elif not kernel.UnlockFileEx(msvcrt.get_osfhandle(descriptor), 0, 1, 0, ctypes.byref(overlapped)):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
 @contextmanager
 def file_lease(path, exclusive=False, blocking=False):
     with path.open('a+b') as handle:
-        os.chmod(path, 0o600)
-        mode = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
-        try:
-            fcntl.flock(handle, mode | (0 if blocking else fcntl.LOCK_NB))
-        except BlockingIOError as error:
-            raise Busy('tools_in_use') from error
+        private_file(handle)
+        locked = lock_file(handle.fileno(), exclusive, blocking)
         try:
             yield handle.fileno()
         finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
+            unlock_file(handle.fileno(), locked)
 
 
 @contextmanager
@@ -143,7 +190,7 @@ def state_folder(repo, state):
 def write_state(state, name, value):
     temporary = state / (name + '.tmp')
     with temporary.open('w') as handle:
-        os.fchmod(handle.fileno(), 0o600)
+        private_file(handle)
         json.dump(value, handle)
         handle.write('\n')
     temporary.replace(state / name)
@@ -192,9 +239,9 @@ def validate(repo, revision, state, command):
         git(repo, 'worktree', 'add', '--detach', str(candidate), revision)
         try:
             with (state / 'validation.log').open('wb') as log:
-                os.fchmod(log.fileno(), 0o600)
+                private_file(log)
                 try:
-                    rc = subprocess.run(command, cwd=candidate, stdout=log, stderr=subprocess.STDOUT,
+                    rc = subprocess.run(native_tool_command(command), cwd=candidate, stdout=log, stderr=subprocess.STDOUT,
                                         env=dict(clean_environment(), GIT_TERMINAL_PROMPT='0'),
                                         timeout=VALIDATION_TIMEOUT).returncode
                 except subprocess.TimeoutExpired as error:
@@ -314,6 +361,49 @@ def tool_environment(repo):
                 DP_VERIFY_CONTROLLER=str(Path(__file__).resolve()), DP_VERIFY_PYTHON=sys.executable)
 
 
+def native_tool_command(command):
+    # DP Verify — Python launcher без .exe; CreateProcess не использует shebang.
+    if os.name == 'nt' and Path(command[0]).name == 'dpv':
+        return [sys.executable, '-X', 'utf8', '-I', '-B', *command]
+    return command
+
+
+def session_command(command):
+    if os.name != 'nt':
+        return command
+    # У npm есть shell-launcher рядом с .cmd. Git Bash передаёт произвольный
+    # prompt без повторного разбора метасимволов cmd.exe; нужен также Claude.
+    git_program = shutil.which('git')
+    if git_program:
+        root = Path(git_program).resolve().parent
+        for bash in (root / 'bash.exe', root.parent / 'bin' / 'bash.exe'):
+            if bash.is_file():
+                return [str(bash), '--noprofile', '--norc', '-c',
+                        'exec ' + ' '.join(shlex.quote(part) for part in command)]
+    raise Refused('git_bash_required')
+
+
+def guarded_process(command, env, descriptor):
+    if os.name != 'nt':
+        return subprocess.run(command, env=env, pass_fds=(descriptor,)).returncode
+    handle = msvcrt.get_osfhandle(descriptor)
+    previous = os.get_handle_inheritable(handle)
+    startup = subprocess.STARTUPINFO()
+    startup.lpAttributeList = {'handle_list': [handle]}
+    os.set_handle_inheritable(handle, True)
+    try:
+        child = subprocess.Popen(command, env=env, close_fds=True, startupinfo=startup)
+    finally:
+        os.set_handle_inheritable(handle, previous)
+    with child:
+        try:
+            return child.wait()
+        except BaseException:
+            child.kill()
+            child.wait()
+            raise
+
+
 def session(repo, command):
     """Ожидающая ИИ-сессия не держит lease. dpv на PATH берёт его на саму проверку (D-92)."""
     repo = canonical(repo)
@@ -326,12 +416,12 @@ def session(repo, command):
         # Отдельная папка: управляемая обёртка не меняет Git-дерево DP-Verify.
         with tempfile.NamedTemporaryFile(mode='w', dir=bindir, delete=False) as temporary:
             temporary.write(content)
-            os.fchmod(temporary.fileno(), 0o700)
+            private_file(temporary, 0o700)
             temporary_path = Path(temporary.name)
         temporary_path.replace(bindir / 'dpv')
         env = tool_environment(repo)
         env['PATH'] = str(bindir) + os.pathsep + env.get('PATH', os.defpath)
-    return subprocess.run(command, env=env).returncode
+    return subprocess.run(session_command(command), env=env).returncode
 
 
 def run(repo, command, exclusive=False):
@@ -339,7 +429,7 @@ def run(repo, command, exclusive=False):
     with lease(repo, exclusive=exclusive, blocking=True) as descriptor:
         env = tool_environment(repo)
         # Дочерний процесс сохраняет lease даже при аварийном завершении обёртки.
-        return subprocess.run(command, env=env, pass_fds=(descriptor,)).returncode
+        return guarded_process(native_tool_command(command), env, descriptor)
 
 
 def main(argv=None):
