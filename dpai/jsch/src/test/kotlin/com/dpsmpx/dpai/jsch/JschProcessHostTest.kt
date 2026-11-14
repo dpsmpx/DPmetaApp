@@ -92,8 +92,9 @@ class JschProcessHostTest {
     @Test
     fun approvedSnapshotSurvivesFileReplacementOnRealTarget() {
         val (original, platform, _) = realTarget()
-        val approved = File(original.knownHostsFile!!).readText()
-        val key = JSch().apply { setKnownHosts(original.knownHostsFile) }.hostKeyRepository
+        val approvedFile = original.knownHostsFile ?: File(System.getProperty("user.home"), ".ssh/known_hosts").path
+        val approved = File(approvedFile).readText()
+        val key = JSch().apply { setKnownHosts(approvedFile) }.hostKeyRepository
             .getHostKey(SshKeys.knownHostsName(original.host, original.port), null).first()
         val changed = Base64.getDecoder().decode(key.key).also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }
         val other = "${key.host} ${key.type} ${Base64.getEncoder().encodeToString(changed)}\n"
@@ -101,7 +102,8 @@ class JschProcessHostTest {
         val endpoint = original.copy(knownHostsFile = mutableFile.toString())
         // В файле уже доверен сервер, но разрешение операции было выдано другому ключу.
         mutableFile.writeText(approved)
-        val spec = ProcessSpec(listOf("true"), stdin = "данные только подтверждённому устройству")
+        val command = if (platform == TargetPlatform.WINDOWS) listOf("cmd.exe", "/c", "exit", "0") else listOf("true")
+        val spec = ProcessSpec(command, stdin = "данные только подтверждённому устройству")
         assertEquals(DiagCode.SSH_HOST_KEY_REJECTED, code(JschProcessHost(endpoint, platform, knownHostsSnapshot = other).start(spec)))
         // Смена файла не отменяет начатое разрешение и не подменяет его другим ключом.
         mutableFile.writeText(other)
