@@ -41,10 +41,11 @@ def child_main(args):
         wait_for(lambda: (folder / 'release').exists())
         return 0
     if action == 'wrapper':
-        with runtime.file_lease(lock) as descriptor:
+        exclusive = len(args) > 2 and args[2] == 'exclusive'
+        with runtime.file_lease(lock, exclusive=exclusive) as descriptor:
             return runtime.guarded_process(
                 [sys.executable, '-X', 'utf8', str(Path(__file__)), '--child', 'hold-child', str(folder)],
-                runtime.clean_environment(), descriptor, lock)
+                runtime.clean_environment(), descriptor, lock, exclusive=exclusive)
     if action == 'hold-owner':
         with runtime.file_lease(lock, exclusive=True):
             (folder / 'ready').write_text('locked')
@@ -121,6 +122,47 @@ class SharedVerifyLeaseTest(unittest.TestCase):
                     wrapper.wait(timeout=30)
                 wrapper.communicate(timeout=30)
         wait_for(lambda: self.probe('exclusive') == 0)
+
+    def test_running_editor_blocks_readers_after_wrapper_is_killed(self):
+        with self.child('wrapper', 'exclusive') as wrapper:
+            try:
+                wait_for(lambda: (self.folder / 'child.pid').exists())
+                wrapper.kill()
+                wrapper.wait(timeout=30)
+                self.assertEqual(self.probe('shared'), 75)
+                self.assertEqual(self.probe('exclusive'), 75)
+            finally:
+                (self.folder / 'release').write_text('finish')
+                if wrapper.poll() is None:
+                    wrapper.wait(timeout=30)
+                wrapper.communicate(timeout=30)
+        wait_for(lambda: self.probe('shared') == 0 and self.probe('exclusive') == 0)
+
+    def test_marker_modes_and_legacy_are_fail_closed_for_incompatible_requests(self):
+        folder = self.lock.with_name(self.lock.name + '.users')
+        folder.mkdir()
+        marker = folder / ('f' * 32 + '.json')
+        event = runtime.EVENT_PREFIX + 'f' * 32
+        with patch.object(runtime, 'event_exists', return_value=True):
+            for value, blocks_reader in [({'event': event}, True),
+                                         ({'event': event, 'exclusive': True}, True),
+                                         ({'event': event, 'exclusive': False}, False)]:
+                with self.subTest(value=value):
+                    marker.write_text(json.dumps(value))
+                    self.assertEqual(runtime.windows_users(self.lock, False), blocks_reader)
+                    self.assertTrue(runtime.windows_users(self.lock, True))
+            for mode in [None, 0, 1, 'shared']:
+                marker.write_text(json.dumps({'event': event, 'exclusive': mode}))
+                for exclusive in [False, True]:
+                    with self.assertRaises(runtime.Refused):
+                        runtime.windows_users(self.lock, exclusive)
+
+    def test_unreadable_marker_directory_cannot_become_a_free_lease(self):
+        for exclusive in [False, True]:
+            with patch.object(Path, 'iterdir', side_effect=PermissionError('denied')):
+                with self.assertRaisesRegex(runtime.Refused, 'tools_lease_unreadable'):
+                    runtime.windows_users(self.lock, exclusive)
+        self.assertFalse(runtime.windows_users(self.lock, True))  # только отсутствие разрешено
 
     def test_python_launcher_receives_arguments_without_shell_expansion(self):
         script = self.folder / 'dpv'

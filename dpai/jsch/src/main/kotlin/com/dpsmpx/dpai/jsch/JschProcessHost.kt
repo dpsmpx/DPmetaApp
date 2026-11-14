@@ -52,6 +52,8 @@ class JschProcessHost(
     private val connectTimeout: Duration = 10.seconds,
     /** Ключи входа без файла — в приложении ключ Android Keystore ([EcdsaSignerIdentity]); пусто — файлы. */
     private val identities: List<Identity> = emptyList(),
+    /** Неизменяемый набор доверенных ключей для операции с секретом; null — текущий файл. */
+    private val knownHostsSnapshot: String? = null,
 ) : ProcessHost {
     private val subject = "ssh ${endpoint.user}@${endpoint.host}:${endpoint.port}"
 
@@ -85,7 +87,7 @@ class JschProcessHost(
         }
     }
 
-    private fun connect(): Outcome<Session> = JschConnect.open(endpoint, identities, connectTimeout, subject)
+    private fun connect(): Outcome<Session> = JschConnect.open(endpoint, identities, connectTimeout, subject, knownHostsSnapshot)
 
     companion object {
         /** Отказ JSch → код: ключ хоста, вход, связь; неопознанное — отказ связи (D-05). */

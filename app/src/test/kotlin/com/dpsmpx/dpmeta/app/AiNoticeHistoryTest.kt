@@ -17,8 +17,12 @@ import com.dpsmpx.dpmeta.app.screens.AlertActions
 import com.dpsmpx.dpmeta.formats.AlertFormat
 import com.dpsmpx.dpmeta.formats.EventCatalogFormat
 import com.dpsmpx.dpmeta.model.Event
+import com.dpsmpx.dpmeta.model.AlertImportance
+import com.dpsmpx.dpmeta.notify.Alerts
+import com.dpsmpx.dpmeta.notify.Decision
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
+import java.io.File
 import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -31,6 +35,27 @@ class AiNoticeHistoryTest {
     @TempDir lateinit var dir: Path
     private fun store() = AiNoticeHistory(DocumentStore(NioVfs(dir), "settings"))
     private fun notice() = Notification("task-key", NotificationCategory.INFO, "ProjectX: задача", "ответ", null, 1, Timestamp(10), Timestamp(11))
+
+    @Test
+    fun shippedDefaultsPreserveImportanceForEveryOrdinaryAiCategory() {
+        val root = File(System.getProperty("corpus.repo") ?: error("нет corpus.repo"))
+        val catalog = EventCatalogFormat.parse(File(root, "config/events.toml").readText()).valueOrNull()!!
+        val rules = AlertFormat.parse(File(root, "config/alerts.toml").readText(), catalog).valueOrNull()!!
+        val expected = mapOf(
+            NotificationCategory.INFO to AlertImportance.LOW,
+            NotificationCategory.PROGRESS to AlertImportance.LOW,
+            NotificationCategory.SUCCESS to AlertImportance.LOW,
+            NotificationCategory.SYSTEM to AlertImportance.LOW,
+            NotificationCategory.WARNING to AlertImportance.DEFAULT,
+            NotificationCategory.BLOCKED to AlertImportance.HIGH,
+            NotificationCategory.FAILURE to AlertImportance.HIGH,
+        )
+        for ((category, importance) in expected) {
+            val event = AiNotices.event(notice().copy(category = category))!!
+            val decision = Alerts.decide(listOf(event), catalog, rules, Timestamp(30), ZoneOffset.UTC, null, emptyList()).decisions.single()
+            assertEquals(importance, assertIs<Decision.Notify>(decision).importance, category.name)
+        }
+    }
 
     @Test
     fun requiredMessagesCannotEnterUserFilterAndProjectIsNotGuessed() {

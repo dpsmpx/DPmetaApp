@@ -163,7 +163,15 @@ action = "notify"
 importance = "low"
 
 [[rule]]
+id = "ai.warning"
+title = "Предупреждение ИИ"
+on = "ai.warning"
+action = "notify"
+importance = "default"
+
+[[rule]]
 id = "ai.other"
 title = "Остальные сообщения ИИ"
 on = "ai.*"
 action = "notify"
+importance = "low"

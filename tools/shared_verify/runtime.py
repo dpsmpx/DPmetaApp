@@ -181,23 +181,39 @@ def event_exists(name):
     raise ctypes.WinError(error)
 
 
-def windows_users(path):
-    """LockFileEx привязан к процессу: у живого инструмента отдельный liveness handle."""
+def windows_users(path, exclusive):
+    """Есть живой наследник с несовместимым lease; неизвестный режим закрывает оба входа."""
     folder = path.with_name(path.name + '.users')
     active = False
-    for marker in folder.glob('*.json'):
+    try:
+        # glob скрывает OSError перечисления: запрет ACL нельзя считать пустой папкой.
+        markers = list(folder.iterdir())
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        raise Refused('tools_lease_unreadable') from error
+    for marker in markers:
+        if marker.suffix != '.json':
+            continue
         try:
             identity = marker.stem
             value = json.loads(marker.read_text())
             if (len(identity) != 32 or any(c not in '0123456789abcdef' for c in identity)
-                    or value != {'event': EVENT_PREFIX + identity}):
+                    or not isinstance(value, dict)
+                    or set(value) not in ({'event'}, {'event', 'exclusive'})
+                    or value.get('event') != EVENT_PREFIX + identity
+                    or ('exclusive' in value and type(value['exclusive']) is not bool)):
                 raise ValueError()
+        except FileNotFoundError:
+            # Другой читатель уже убрал маркер завершившегося инструмента.
+            continue
         except (ValueError, TypeError) as error:
             raise Refused('invalid_tools_lease') from error
         if event_exists(value['event']):
-            active = True
+            # Старый маркер без режима также считается exclusive, пока жив его Event.
+            active = active or exclusive or value.get('exclusive', True)
         else:
-            marker.unlink()
+            marker.unlink(missing_ok=True)
     return active
 
 
@@ -208,7 +224,7 @@ def file_lease(path, exclusive=False, blocking=False):
         while True:
             locked = lock_file(handle.fileno(), exclusive, blocking)
             try:
-                if not (os.name == 'nt' and exclusive and windows_users(path)):
+                if not (os.name == 'nt' and windows_users(path, exclusive)):
                     yield handle.fileno()
                     return
                 if not blocking:
@@ -430,7 +446,7 @@ def session_command(command):
     raise Refused('git_bash_required')
 
 
-def guarded_process(command, env, descriptor, lease_path=None):
+def guarded_process(command, env, descriptor, lease_path=None, exclusive=False):
     if os.name != 'nt':
         return subprocess.run(command, env=env, pass_fds=(descriptor,)).returncode
     if lease_path is None:
@@ -448,7 +464,7 @@ def guarded_process(command, env, descriptor, lease_path=None):
     try:
         # Запись предшествует запуску: после аварии до CreateProcess живого
         # события не будет; после запуска его держит наследник, даже без обёртки.
-        write_state(folder, marker.name, {'event': name})
+        write_state(folder, marker.name, {'event': name, 'exclusive': exclusive})
         os.set_handle_inheritable(handle, True)
         try:
             child = subprocess.Popen(command, env=env, close_fds=True, startupinfo=startup)
@@ -494,7 +510,7 @@ def run(repo, command, exclusive=False):
     with lease(repo, exclusive=exclusive, blocking=True) as descriptor:
         env = tool_environment(repo)
         # Дочерний процесс сохраняет lease даже при аварийном завершении обёртки.
-        return guarded_process(native_tool_command(command), env, descriptor, lock_path(repo))
+        return guarded_process(native_tool_command(command), env, descriptor, lock_path(repo), exclusive=exclusive)
 
 
 def main(argv=None):

@@ -221,7 +221,7 @@ private fun AlertRulesDialog(feed: List<FeedEvent>, onClose: () -> Unit) {
                     }
                     val notices = (history as Outcome.Success).value
                     preview = withContext(Dispatchers.Default) { AlertActions.rows(rules, known, feed, Clock.SYSTEM.now(), DisplayZone.current, PultAlerts.settings(context).quiet, notices.map { it.event }).associate { it.id to it.tried } }
-                    note = "Проба готова по загруженной ленте; разрешения Android и доставка здесь не проверяются" + if (notices.any { it.truncated }) "; длинные сообщения ИИ представлены выдержками" else ""
+                    note = "Каждое правило проверено отдельно по загруженной ленте; при доставке действует первое подходящее. Разрешения Android и доставка здесь не проверяются" + if (notices.any { it.truncated }) "; длинные сообщения ИИ представлены выдержками" else ""
                     busy = false
                     advanced = false
                 }

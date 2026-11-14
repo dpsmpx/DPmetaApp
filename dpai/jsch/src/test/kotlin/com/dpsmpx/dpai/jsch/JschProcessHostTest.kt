@@ -18,9 +18,13 @@ import com.dpsmpx.dpai.execution.target.SshEndpoint
 import com.dpsmpx.dpai.execution.target.TargetPlatform
 import com.dpsmpx.dpai.execution.target.TargetType
 import com.dpsmpx.dpai.testkit.RealTime
+import com.jcraft.jsch.JSch
+import java.io.File
 import java.net.ServerSocket
 import java.nio.file.Path
+import java.util.Base64
 import kotlin.io.path.createFile
+import kotlin.io.path.writeText
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -82,6 +86,31 @@ class JschProcessHostTest {
     fun unknownHostKeyIsRejectedOnRealTarget() {
         val (endpoint, platform, _) = realTarget(dir.resolve("empty_known_hosts").createFile().toString())
         assertEquals(DiagCode.SSH_HOST_KEY_REJECTED, code(JschProcessHost(endpoint, platform).start(ProcessSpec(listOf("true")))))
+    }
+
+    /** Файл заменён между разрешением операции и SSH: новый ключ не получает stdin. */
+    @Test
+    fun approvedSnapshotSurvivesFileReplacementOnRealTarget() {
+        val (original, platform, _) = realTarget()
+        val approved = File(original.knownHostsFile!!).readText()
+        val key = JSch().apply { setKnownHosts(original.knownHostsFile) }.hostKeyRepository
+            .getHostKey(SshKeys.knownHostsName(original.host, original.port), null).first()
+        val changed = Base64.getDecoder().decode(key.key).also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }
+        val other = "${key.host} ${key.type} ${Base64.getEncoder().encodeToString(changed)}\n"
+        val mutableFile = dir.resolve("mutable_known_hosts")
+        val endpoint = original.copy(knownHostsFile = mutableFile.toString())
+        // В файле уже доверен сервер, но разрешение операции было выдано другому ключу.
+        mutableFile.writeText(approved)
+        val spec = ProcessSpec(listOf("true"), stdin = "данные только подтверждённому устройству")
+        assertEquals(DiagCode.SSH_HOST_KEY_REJECTED, code(JschProcessHost(endpoint, platform, knownHostsSnapshot = other).start(spec)))
+        // Смена файла не отменяет начатое разрешение и не подменяет его другим ключом.
+        mutableFile.writeText(other)
+        val started = JschProcessHost(endpoint, platform, knownHostsSnapshot = approved).start(spec)
+        assertTrue(started.isSuccess, started.diagnostics.toString())
+        assertEquals(0, started.valueOrNull()!!.awaitExit(10.seconds))
+        // Снимок передаётся целиком, вместе с маркером отзыва.
+        val revoked = "@revoked ${key.host} ${key.type} ${key.key}\n"
+        assertEquals(DiagCode.SSH_HOST_KEY_REJECTED, code(JschProcessHost(endpoint, platform, knownHostsSnapshot = revoked).start(spec)))
     }
 
     /** Тот же путь, что `AgentCommandTest` через OpenSSH, — через JSch: doctor, запуск, поток хода, остановка. */

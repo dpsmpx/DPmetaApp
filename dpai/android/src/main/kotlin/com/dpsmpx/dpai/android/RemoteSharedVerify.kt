@@ -16,6 +16,8 @@ import com.dpsmpx.dpai.execution.tools.SharedToolsSync
 import com.dpsmpx.dpai.jsch.SshKeys
 import com.dpsmpx.dpai.ui.TargetEntry
 import com.jcraft.jsch.JSch
+import java.io.ByteArrayInputStream
+import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,17 +39,32 @@ internal object RemoteSharedVerify {
     }
 
     /** Не включает чужие хосты в доверие: используются только уже подтверждённые ключи. */
-    private fun binding(controller: Controller, target: TargetEntry, root: String, python: String): String? = runCatching {
-        val ssh = JSch().apply { setKnownHosts(controller.knownHostsFile) }
+    private data class Binding(val identity: String, val knownHosts: String)
+
+    private fun binding(controller: Controller, target: TargetEntry, root: String, python: String): Binding? = runCatching {
+        // Одно ограниченное чтение: этот же снимок применяется при обоих SSH-входах.
+        val snapshot = File(controller.knownHostsFile).bufferedReader(Charsets.UTF_8).use { reader ->
+            val text = StringBuilder()
+            val chars = CharArray(4096)
+            while (true) {
+                val count = reader.read(chars)
+                if (count < 0) break
+                if (text.length + count > 1_048_576) return null
+                text.append(chars, 0, count)
+            }
+            text.toString()
+        }
+        val ssh = JSch().apply { ByteArrayInputStream(snapshot.toByteArray(Charsets.UTF_8)).use(::setKnownHosts) }
         val keys = ssh.hostKeyRepository.getHostKey(SshKeys.knownHostsName(target.host, target.port), null).orEmpty()
         if (keys.isEmpty()) return null
         val fields = listOf(target.host, target.port.toString(), target.user, target.platform.name, target.agent, root, python) +
-            keys.map { "${it.type}:${it.key}" }.sorted()
-        MessageDigest.getInstance("SHA-256").digest(fields.joinToString("\u0000").toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+            keys.map { "${it.marker}:${it.host}:${it.type}:${it.key}" }.sorted()
+        val identity = MessageDigest.getInstance("SHA-256").digest(fields.joinToString("\u0000").toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+        Binding(identity, snapshot)
     }.getOrNull()
 
-    fun probe(controller: Controller, target: TargetEntry): Outcome<SharedToolsStatus> {
-        val host = when (val r = controller.pcHost(target)) {
+    fun probe(controller: Controller, target: TargetEntry, knownHostsSnapshot: String? = null): Outcome<SharedToolsStatus> {
+        val host = when (val r = controller.pcHost(target, knownHostsSnapshot)) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }
@@ -76,13 +93,14 @@ internal object RemoteSharedVerify {
         val started = LongJobs.get(app).start(key(target), "DP-Verify: ${target.label}") {
             val controller = Controller.get(app.filesDir)
             if (controller.targets().none { it == target }) return@start LongJobs.Done("Настройка target изменилась; подключите заново", failed = true)
-            val identity = binding(controller, target, root, python)
+            val trust = binding(controller, target, root, python)
                 ?: return@start LongJobs.Done("Сначала подтвердите SSH-ключ target", failed = true)
+            val identity = trust.identity
             val config = prefs(app)
             if (background && (!automatic(app, target) || config.getString("${target.id.value}.binding", null) != identity)) {
                 return@start LongJobs.Done("Адрес, ключ SSH или настройка папки изменились; нужен новый вход и подключение", failed = true)
             }
-            val status = when (val r = probe(controller, target)) {
+            val status = when (val r = probe(controller, target, trust.knownHosts)) {
                 is Outcome.Failure -> return@start LongJobs.Done(r.diagnostics.first().message, failed = true)
                 is Outcome.Success -> r.value
             }
@@ -92,7 +110,7 @@ internal object RemoteSharedVerify {
             }
             if (background && current == null) return@start LongJobs.Done("На ПК папка отключена; подключите её заново", failed = true)
             // Повторная проверка после сети — до выдачи токена новому процессу.
-            if (controller.targets().none { it == target } || binding(controller, target, root, python) != identity) {
+            if (controller.targets().none { it == target } || binding(controller, target, root, python)?.identity != identity) {
                 return@start LongJobs.Done("Target изменился во время проверки; повторите подключение", failed = true)
             }
             val account = (app as? DpaiApplication)?.sharedToolsAccount()
@@ -102,7 +120,7 @@ internal object RemoteSharedVerify {
                 return@start LongJobs.Done("Нужен вход по PIN/биометрии кнопкой синхронизации", failed = true)
             }
             awaitingAccount.value = false
-            val host = when (val r = controller.pcHost(target)) {
+            val host = when (val r = controller.pcHost(target, trust.knownHosts)) {
                 is Outcome.Failure -> return@start LongJobs.Done(r.diagnostics.first().message, failed = true)
                 is Outcome.Success -> r.value
             }
@@ -125,7 +143,7 @@ internal object RemoteSharedVerify {
                 }
                 return@start LongJobs.Done(text, failed = done.exitCode != 75)
             }
-            if (!background && controller.targets().any { it == target } && binding(controller, target, root, python) == identity) {
+            if (!background && controller.targets().any { it == target } && binding(controller, target, root, python)?.identity == identity) {
                 config.edit { putString("${target.id.value}.binding", identity); putString("${target.id.value}.root", root); putString("${target.id.value}.python", python) }
             }
             LongJobs.Done("Проверенная версия ${revision.take(12)} подключена к новым ИИ-ходам")
