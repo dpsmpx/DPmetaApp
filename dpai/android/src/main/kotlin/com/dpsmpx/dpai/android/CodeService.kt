@@ -50,11 +50,11 @@ internal object CodeService {
         PYTHON_HEAVY("Поставить pyright", "Node.js из Alpine и pyright ${PythonServers.PYRIGHT_VERSION} из реестра npm со сверкой SHA-256, плюс ruff: около 130 МБ. Проверка типов; памяти нужно больше, чем лёгкой службе.", 130L shl 20),
         KOTLIN(
             "Поставить kotlin-lsp",
-            "Последняя сборка официальной службы JetBrains с download.jetbrains.com со сверкой SHA-256 (около 370 МБ загрузки, около 1 ГБ на диске), RocksDB для musl с Maven Central (84 МБ) и JDK 25/21 Alpine. " +
-                "Сборки EAP перестают запускаться примерно через 30 дней — тогда «Обновить». Статистика и отчёты JetBrains выключены (--data-sharing=none).",
+            "Проверенная сборка ${KotlinLsp.PINNED_BUILD} официальной службы JetBrains: SHA-256 закреплена в приложении (около 370 МБ загрузки, около 1 ГБ на диске), RocksDB для musl с Maven Central (84 МБ) и JDK 25/21 Alpine. " +
+                "Сборки EAP перестают запускаться примерно через 30 дней — новая проверенная версия приходит с обновлением DPmetaApp. Статистика и отчёты JetBrains выключены (--data-sharing=none).",
             1536L shl 20,
         ),
-        KOTLIN_UPDATE("Обновить kotlin-lsp", KOTLIN.note, 1536L shl 20),
+        KOTLIN_UPDATE("Поставить проверенную версию", KOTLIN.note, 1536L shl 20),
         ANDROID_SDK("Поставить платформу Android", "Платформа Android SDK уровня compileSdk проекта из репозитория Google (около 65 МБ) — после того, как вы примете её лицензию.", 65L shl 20),
     }
 
@@ -305,17 +305,19 @@ internal object CodeService {
             is Outcome.Failure -> return Plan.Stop(State.Failed(r.diagnostics.first().message, listOf(Install.KOTLIN_UPDATE)))
             is Outcome.Success -> r.value
         }
+        if (KotlinLsp.productBuild(files.first) != KotlinLsp.PINNED_BUILD) {
+            return Plan.Stop(State.Failed("Установленная сборка kotlin-lsp не закреплена в этой версии DPmetaApp", listOf(Install.KOTLIN_UPDATE)))
+        }
         state(State.Starting("проверяю срок сборки kotlin-lsp"))
         val validity = when (val r = host.run(ProcessSpec(KotlinLsp.statusCommand(command)), 2.minutes)) {
             is Outcome.Failure -> return Plan.Stop(State.Failed(r.diagnostics.first().message))
             is Outcome.Success -> KotlinLsp.validity(r.value.exitCode, (r.value.stdout + r.value.stderr).joinToString("\n"))
         }
-        if (validity.expired) return Plan.Stop(State.Failed("Сборка kotlin-lsp истекла (EAP работает около 30 дней) — поставьте последнюю", listOf(Install.KOTLIN_UPDATE)))
+        if (validity.expired) return Plan.Stop(State.Failed("Срок проверенной сборки kotlin-lsp истёк — обновите DPmetaApp для получения новой версии службы"))
         val notes = mutableListOf("Импорт Gradle идёт в фоне: первые минуты замечаний может не быть; синхронизация качает зависимости проекта из его репозиториев")
         val actions = mutableListOf<Install>()
         validity.daysLeft?.takeIf { it <= 3 }?.let {
-            notes += "сборка kotlin-lsp истекает через $it дн."
-            actions += Install.KOTLIN_UPDATE
+            notes += "проверенная сборка kotlin-lsp истекает через $it дн.; новая версия службы приходит с обновлением DPmetaApp"
         }
         if (found.androidProject && found.androidSdk == null) {
             notes += "Android-проект: нет платформы Android SDK${found.compileSdk?.let { " $it" }.orEmpty()} — Android API служба не увидит"
@@ -418,11 +420,7 @@ internal object CodeService {
         }
         done(LinuxSetup.runSteps(context, listOf(apk)), null).let { if (it is Outcome.Failure) return it }
         val host = LinuxSetup.guestHost(context) ?: return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сначала установите Linux")
-        val build = when (val r = host.run(ProcessSpec(CodeServerSetup.kotlinLatest()), 90.seconds)) {
-            is Outcome.Failure -> return r
-            is Outcome.Success -> CodeServerSetup.latestBuild(r.value.stdout)
-                ?: return Outcome.failure(DiagCode.VALUE_INVALID, "страница выпусков kotlin-lsp не назвала сборку")
-        }
+        val build = KotlinLsp.PINNED_BUILD
         val arch = when (val r = host.run(ProcessSpec(listOf("uname", "-m")), 20.seconds)) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value.stdout.firstOrNull()?.trim().orEmpty()

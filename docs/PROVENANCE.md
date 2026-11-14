@@ -95,8 +95,13 @@ https://repo.maven.apache.org/maven2/ , с POM и транзитивными з�
   sha512 совпал с `dist.integrity` реестра. Работает на Node.js Alpine.
 - kotlin-lsp (JetBrains, Apache-2.0 с закрытыми частями JetBrains Air и
   Fleet; https://github.com/Kotlin/kotlin-lsp ): сборки EAP, срок около
-  30 дней, поэтому версия не закреплена — сборка со страницы выпусков,
-  архив и его `.sha256` с download.jetbrains.com. Запуск без встроенной
+  30 дней. По D-136 закреплена 263.7084.0; новые версии — с обновлением
+  приложения. SHA-256 целых архивов проверены потоковым скачиванием
+  14 ноября 2026: aarch64 —
+  `450ab7c1d80e48106aa429b48cb4226d82ca12a8a2400447ae02386794780cac`,
+  x86_64 — `ae0c4b01e17ab73a4a5227a78ea99e6dcbe3e499600315b22759a4e4cddd11df`.
+  Суммы зашиты в APK; файл `.sha256` сервера при установке не читается.
+  Запуск без встроенной
   glibc-JVM: JDK 25 Alpine, gcompat для наблюдения за файлами,
   `--data-sharing=none`. Проверена сборка 263.7084.0: на Alpine x86_64
   (musl) в chroot и на хосте — импорт Gradle, диагностика, переходы,

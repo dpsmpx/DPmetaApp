@@ -126,6 +126,14 @@ object KotlinLsp {
     fun languageId(fileName: String): String? = if (LanguageServers.extension(fileName) in setOf("kt", "kts")) "kotlin" else null
 
     const val RELEASES_LATEST: String = "https://github.com/Kotlin/kotlin-lsp/releases/latest"
+    /** Проверенный дистрибутив: новые версии приходят только с обновлением APK (DPmetaApp:D-136). */
+    const val PINNED_BUILD: String = "263.7084.0"
+
+    fun archiveSha256(arch: String): String = when (arch) {
+        "aarch64" -> "450ab7c1d80e48106aa429b48cb4226d82ca12a8a2400447ae02386794780cac"
+        "x86_64" -> "ae0c4b01e17ab73a4a5227a78ea99e6dcbe3e499600315b22759a4e4cddd11df"
+        else -> throw IllegalArgumentException("архитектура $arch не поддержана")
+    }
     private val BUILD = Regex("[0-9]{3}\\.[0-9]{1,6}\\.[0-9]{1,6}")
 
     /** Номер сборки из адреса страницы выпуска (`…/releases/tag/v263.7084.0`); иное — `null`. */
@@ -135,6 +143,11 @@ object KotlinLsp {
     }
 
     fun validBuild(build: String): Boolean = BUILD.matches(build)
+
+    fun productBuild(productInfo: String): String? {
+        val info = (JsonParser().parse(productInfo) as? Outcome.Success)?.value as? JsonObject ?: return null
+        return LspParse.str(info["buildNumber"])?.takeIf(::validBuild)
+    }
 
     /** Архив сборки под [arch] (`aarch64` или `x86_64`); файл `.sha256` лежит рядом. */
     fun archiveUrl(build: String, arch: String): String {

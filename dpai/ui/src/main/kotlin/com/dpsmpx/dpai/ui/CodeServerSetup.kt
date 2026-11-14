@@ -47,20 +47,15 @@ object CodeServerSetup {
         PYRIGHT_HOME, PythonServers.PYRIGHT_URL, PythonServers.PYRIGHT_SHA256,
     )
 
-    /** Заголовки страницы последнего выпуска kotlin-lsp: номер сборки — в `location` ([latestBuild]). */
-    fun kotlinLatest(): List<String> = listOf("curl", "-sSI", "--max-redirs", "0", "--proto", "=https", "--connect-timeout", "30", "--max-time", "60", KotlinLsp.RELEASES_LATEST)
-
-    fun latestBuild(headers: List<String>): String? =
-        headers.firstOrNull { it.trim().lowercase().startsWith("location:") }?.substringAfter(':')?.let { KotlinLsp.build(it) }
-
     /**
-     * Поставить сборку [build] kotlin-lsp под [arch]: архив и его `.sha256` —
-     * с download.jetbrains.com, musl-RocksDB — закреплённый архив Maven
+     * Поставить закреплённую сборку [build] kotlin-lsp под [arch]: SHA-256 —
+     * из приложения (DPmetaApp:D-136), musl-RocksDB — закреплённый архив Maven
      * Central; glibc-JVM сборки удаляется (служба работает на JDK 25 Alpine),
      * прежние сборки — после успешной установки: истёкшие не запускаются.
      */
     fun kotlinInstall(build: String, arch: String): Outcome<List<String>> {
         if (!KotlinLsp.validBuild(build)) return Outcome.failure(DiagCode.VALUE_INVALID, "номер сборки kotlin-lsp непонятен: $build")
+        if (build != KotlinLsp.PINNED_BUILD) return Outcome.failure(DiagCode.VALUE_INVALID, "сборка kotlin-lsp $build не закреплена в этой версии приложения — обновите DPmetaApp")
         if (arch != "aarch64" && arch != "x86_64") return Outcome.failure(DiagCode.UNSUPPORTED, "архитектура $arch не поддержана")
         return Outcome.success(
             sh(
@@ -71,11 +66,7 @@ object CodeServerSetup {
                 STAGE=${'$'}(mktemp -d "${'$'}ROOT/install.XXXXXX") || exit
                 trap 'rm -rf "${'$'}STAGE"' EXIT
                 $CURL "$3" -o "${'$'}STAGE/server.tgz" || exit
-                $CURL "$3.sha256" -o "${'$'}STAGE/server.sha256" || exit
-                EXPECTED=${'$'}(cut -d ' ' -f 1 "${'$'}STAGE/server.sha256")
-                case "${'$'}EXPECTED" in *[!0-9a-f]*|'') printf 'DPAI_KOTLIN_LSP_CHECKSUM: unreadable\n'; exit 1;; esac
-                test "${'$'}{#EXPECTED}" -eq 64 || { printf 'DPAI_KOTLIN_LSP_CHECKSUM: unreadable\n'; exit 1; }
-                printf '%s  %s\n' "${'$'}EXPECTED" "${'$'}STAGE/server.tgz" | sha256sum -c - >/dev/null || { printf 'DPAI_KOTLIN_LSP_CHECKSUM: failed\n'; exit 1; }
+                printf '%s  %s\n' "$7" "${'$'}STAGE/server.tgz" | sha256sum -c - >/dev/null || { printf 'DPAI_KOTLIN_LSP_CHECKSUM: failed\n'; exit 1; }
                 $CURL "$4" -o "${'$'}STAGE/rocksdb.jar" || exit
                 printf '%s  %s\n' "$5" "${'$'}STAGE/rocksdb.jar" | sha256sum -c - >/dev/null || { printf 'DPAI_ROCKSDB_CHECKSUM: failed\n'; exit 1; }
                 mkdir "${'$'}STAGE/out" && tar -xzf "${'$'}STAGE/server.tgz" -C "${'$'}STAGE/out" || exit
@@ -88,7 +79,7 @@ object CodeServerSetup {
                 for OLD in "${'$'}ROOT"/[0-9]*; do test "${'$'}OLD" = "${'$'}DEST" || rm -rf "${'$'}OLD"; done
                 printf 'DPAI_KOTLIN_LSP_OK\n'
                 """,
-                "$HOME/kotlin-lsp", build, KotlinLsp.archiveUrl(build, arch), KotlinLsp.ROCKSDB_URL, KotlinLsp.ROCKSDB_SHA256, KotlinLsp.rocksDbLibrary(arch),
+                "$HOME/kotlin-lsp", build, KotlinLsp.archiveUrl(build, arch), KotlinLsp.ROCKSDB_URL, KotlinLsp.ROCKSDB_SHA256, KotlinLsp.rocksDbLibrary(arch), KotlinLsp.archiveSha256(arch),
             ),
         )
     }
