@@ -33,15 +33,17 @@ class StudioWidget : AppWidgetProvider() {
         thread(name = "dpmeta-widget") {
             try {
                 val projects = WidgetCache.projects(app)
-                val ai = AiSummary.read(app)
-                val counts = Screens.AiCounts(ai.configured, ai.waiting, ai.running, ai.nearLimit, ai.problems)
+                val ai = runCatching { AiSummary.read(app) }.getOrNull()
+                val counts = ai?.let { Screens.AiCounts(it.configured, it.waiting, it.running, it.nearLimit, it.problems) }
                 val text = WidgetText.of((projects as? Outcome.Success)?.value, counts, HealthAuto.lastCount(app))
-                val views = render(app, text, AiSummary.open(app, ai.request), "Прочитано: ${Screens.time(Clock.SYSTEM.now())}")
+                val views = render(app, text, AiSummary.open(app, ai?.request), "Прочитано: ${Screens.time(Clock.SYSTEM.now())}")
                 if (projects is Outcome.Failure) views.setTextViewText(R.id.widget_project_date, "Кэш проектов не прочитан; откройте приложение")
                 // Обновляются все текущие экземпляры, в том числе добавленные во время чтения.
                 manager.updateAppWidget(ComponentName(app, StudioWidget::class.java), views)
             } catch (error: Exception) {
                 AppLogs.info(app, "виджет", "Не обновлён: ${error.javaClass.simpleName}")
+                manager.updateAppWidget(ComponentName(app, StudioWidget::class.java),
+                    render(app, WidgetText.of(null, null), AiSummary.open(app, null), "Не прочитано; откройте приложение"))
             } finally {
                 updating.set(false)
                 pending?.finish()
