@@ -32,6 +32,7 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 | `robolectric` (Robolectric) | 4.17 | MIT; транзитивные — как у DPpass (`DPpass:docs/PROVENANCE.md`) | только тесты `:shell` корня DPmetaApp и только по свойству `dpmeta.screenshots` — снимки экранов на JVM (`DPmetaApp:docs/SCREENSHOTS.md`); в APK и обычную сборку не попадает | Maven Central, `org.robolectric` | 13 ноября 2026 |
 | `junit4` (JUnit 4) | 4.13.2 | EPL-1.0 | там же: API запускателя Robolectric; запуск — `junit-vintage-engine` из JUnit BOM | Maven Central, `junit` | 13 ноября 2026 |
 | `robolectric-android-all` (образ «Android целиком», SDK 36) | 16-robolectric-13921718-i7 | Apache-2.0 | там же: образ, который ждёт Robolectric 4.17; берётся Gradle со сверкой суммы в `verification-metadata.xml` | Maven Central, `org.robolectric` | 13 ноября 2026 |
+| `robolectric-android30` (образ SDK 30) | 11-robolectric-6757853-i7 | Apache-2.0 | только тесты виджета `:shell` DPmetaApp при `dpmeta.test.sdk=30`, в APK не попадает; SHA-256 закреплены в проверке Gradle корня | Maven Central, `org.robolectric`; версия из DefaultSdkProvider 4.17 | 14 ноября 2026 |
 <!-- provenance: end -->
 
 Предпросмотр на ПК (D-169) кладёт в домашний каталог ПК init-скрипт, который
@@ -183,7 +184,3 @@ https://registry.npmjs.org/@anthropic-ai/claude-code/2.1.322 .
 |---|---|
 | editor-0.24.7.aar | cdfdacdb3ac8605b190768d93f504935400c9aa37b773dc6f6c840311faf2b4c |
 | language-textmate-0.24.7.aar | eca50e81595cd4cf1f677cca12c5fa2203d6051eaf87dabc7e7489413dd098f1 |
-
-Каталог `robolectric-android30` — проверенный образ Android 11 для тестов
-виджета оболочки DPmetaApp (DPmetaApp:D-144), в подсистеме не используется.
-Происхождение и SHA-256 — DPmetaApp:docs/PROVENANCE.md.

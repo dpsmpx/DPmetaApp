@@ -10,6 +10,8 @@ import com.dpsmpx.dpai.android.AiSummary
 import com.dpsmpx.dpai.android.MainActivity
 import com.dpsmpx.dpai.android.HealthAuto
 import com.dpsmpx.dpmeta.app.screens.WidgetText
+import com.dpsmpx.dpmeta.app.screens.Screens
+import com.dpsmpx.dpai.core.measure.Measure
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -37,9 +39,18 @@ class StudioWidgetTest {
     @Test
     fun remoteViewsContainOnlyStatusAndActionsOpenTheNormalInternalEntry() {
         val app = RuntimeEnvironment.getApplication()
-        val text = WidgetText.of(null, null)
+        val text = WidgetText.of(null, Screens.AiCounts(true, Measure.unknown("остановлен"), Measure.unknown("остановлен"), Measure.unknown("остановлен")))
         val remote = StudioWidget.render(app, text, AiSummary.open(app, null), "Прочитано: сейчас")
         val view = remote.apply(app, FrameLayout(app))
+        val width = app.resources.getDimensionPixelSize(R.dimen.widget_min_width)
+        val height = app.resources.getDimensionPixelSize(R.dimen.widget_min_height)
+        view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+        view.layout(0, 0, width, height)
+        val last = view.findViewById<View>(R.id.widget_check)
+        var bottom = last.bottom
+        var parent = last.parent
+        while (parent is View && parent !== view) { bottom += parent.top; parent = parent.parent }
+        assertTrue(bottom <= height - view.paddingBottom, "кнопки должны помещаться при минимальном размере: низ $bottom, доступно ${height - view.paddingBottom}")
         assertEquals(text.projects, view.findViewById<TextView>(R.id.widget_projects).text.toString())
         assertEquals("Нет среза проектов", view.findViewById<TextView>(R.id.widget_project_date).text.toString())
         assertFalse(view.findViewById<TextView>(R.id.widget_ai_counts).text.contains("0"))
