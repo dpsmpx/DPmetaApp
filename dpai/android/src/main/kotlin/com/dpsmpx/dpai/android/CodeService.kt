@@ -175,7 +175,7 @@ internal object CodeService {
         }
     }
 
-    /** Только подключение к уже запущенной службе. Не импортирует проект и не запускает процессы. */
+    /** Подключение к работающей службе после определения корня; без нового LSP-сервера и импорта. */
     @Synchronized
     fun resume(context: Context, session: Session, stopDir: String) {
         if (session.closed || session.ready() != null || synchronized(lock) { running.isEmpty() }) return

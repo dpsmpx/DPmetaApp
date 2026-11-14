@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <dimen name="widget_min_width">250dp</dimen>
-    <dimen name="widget_min_height">280dp</dimen>
+    <dimen name="widget_min_height">250dp</dimen>
     <string name="widget_title">DPmetaApp</string>
     <string name="widget_description">Счётчики разработки, ИИ и переходы в студию. Без имён и содержимого проектов.</string>
     <string name="widget_refresh">Обновить</string>
