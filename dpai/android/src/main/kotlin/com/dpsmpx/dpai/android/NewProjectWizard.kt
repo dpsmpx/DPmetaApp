@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
@@ -79,6 +78,7 @@ internal fun NewProjectWizard(onLinux: () -> Unit, onOpen: () -> Unit, onClose: 
     var error by remember { mutableStateOf<String?>(null) }
     var written by remember { mutableStateOf(false) }
     var created by remember { mutableStateOf<NewProjectRun.Created?>(null) }
+    var installNote by remember { mutableStateOf<String?>(null) }
 
     val template = NewProject.Template.valueOf(templateName)
     val options = rememberRead(Unit, initial = emptyList()) { NewProjectRun.places(context, Controller.get(context.filesDir).targets()) }
@@ -188,11 +188,15 @@ internal fun NewProjectWizard(onLinux: () -> Unit, onOpen: () -> Unit, onClose: 
                                         Text("Поставить в Linux приложения: ${NewProject.alpinePackages(template).joinToString()}" +
                                             (if (NewProject.needsKotlinc(template)) " и kotlinc ${com.dpsmpx.dpai.ui.KotlinRuntime.VERSION}" else "") + " — нужна сеть.", style = MaterialTheme.typography.bodySmall)
                                         OutlinedButton(enabled = !installing && busy == null, onClick = {
-                                            jobs.start(LongJobs.LINUX_APK, "Инструменты шаблона", LongJobs.GUEST, onFinished = { probeRound++ }) {
+                                            installNote = null
+                                            jobs.start(LongJobs.LINUX_APK, "Инструменты шаблона", LongJobs.GUEST, onFinished = { d ->
+                                                installNote = d.note.takeIf { d.failed }
+                                                probeRound++
+                                            }) {
                                                 NewProjectRun.install(context, template)
                                             }
                                         }) { Text(if (installing) "Ставлю…" else "Поставить недостающее") }
-                                        jobState[LongJobs.LINUX_APK]?.let { s -> if (!s.running && s.done?.failed == true) Text(s.done?.message.orEmpty(), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                                        installNote?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                                     } else {
                                         Text("Установите их на «${place?.title}». Проект можно создать и сейчас: соберётся, когда инструменты появятся." +
                                             (if ("git" in m) " Без Git проект не создать." else ""), style = MaterialTheme.typography.bodySmall)

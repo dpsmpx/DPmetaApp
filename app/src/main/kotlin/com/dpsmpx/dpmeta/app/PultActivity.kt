@@ -174,6 +174,15 @@ open class PultActivity : ComponentActivity() {
      */
     protected open fun aiCounts(): com.dpsmpx.dpmeta.app.screens.Screens.AiCounts? = null
 
+    /** Рабочие проекты на устройстве (D-150) от оболочки; `null` — подсистемы нет. Не на главном потоке. */
+    protected open fun localProjects(): List<com.dpsmpx.dpmeta.app.screens.Screens.LocalProject>? = null
+
+    /** Мастер нового проекта (D-150); `null` — подсистемы нет. */
+    protected open fun newProjectIntent(): Intent? = null
+
+    /** Выбрать рабочий проект [id] и открыть его в IDE; не на главном потоке. */
+    protected open fun openProjectIntent(id: String): Intent? = null
+
     /** Версия подсистемы «AI» для «О программе» (UX-23, D-54); `null` — подсистемы нет. */
     protected open fun aiVersion(): String? = null
 
@@ -294,7 +303,8 @@ open class PultActivity : ComponentActivity() {
                 pool.execute {
                     // Сбой чтения — прежние числа, а не пропавшая строка.
                     val c = runCatching { aiCounts() }.getOrElse { view.value.ai }
-                    runOnUiThread { if (view.value.ai != c) view.value = view.value.copy(ai = c) }
+                    val l = runCatching { localProjects() }.getOrElse { view.value.local }
+                    runOnUiThread { if (view.value.ai != c || view.value.local != l) view.value = view.value.copy(ai = c, local = l) }
                 }
             }
             ui.postDelayed(this, AI_REFRESH_MS)
@@ -472,6 +482,8 @@ open class PultActivity : ComponentActivity() {
                     onDeleteClone = ::deleteClone,
                     onZone = ::zoneChosen,
                     onBackground = ::backgroundChosen,
+                    onNewProject = newProjectIntent()?.let { i -> { startActivity(i) } },
+                    onOpenProject = { id -> pool.execute { openProjectIntent(id)?.let { i -> runOnUiThread { startActivity(i) } } } },
                 )
             }
         }

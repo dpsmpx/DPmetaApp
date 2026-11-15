@@ -254,6 +254,8 @@ data class PultView(
     val backgroundMinutes: Int = com.dpsmpx.dpmeta.app.data.BackgroundSync.DEFAULT,
     /** Итог последнего фонового запуска; не было — `null`. */
     val backgroundLine: String? = null,
+    /** Рабочие проекты на устройстве (D-150) от оболочки; `null` — подсистемы «AI» нет. */
+    val local: List<Screens.LocalProject>? = null,
 )
 
 /**
@@ -523,6 +525,10 @@ fun PultApp(
     onBackground: (Int) -> Unit = {},
     /** Итог окна клонов: отмеченные или `null` — «Позже» / «Отмена». */
     onClonesChosen: (Set<String>?) -> Unit = {},
+    /** Мастер нового проекта (D-150); `null` — подсистемы «AI» нет. */
+    onNewProject: (() -> Unit)? = null,
+    /** Открыть рабочий проект в IDE (D-150). */
+    onOpenProject: (String) -> Unit = {},
 ) {
     // Пункт и стеки — rememberSaveable: поворот, тема и шрифт больше не сбрасывают место (UX-3).
     val context = LocalContext.current.applicationContext
@@ -626,6 +632,7 @@ fun PultApp(
                 twoPane -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
                     val chosen = top?.project
                     Column(Modifier.weight(2f).fillMaxSize()) {
+                        LocalProjects(view.local, onNewProject, onOpenProject, compact = true)
                         // Другой проект — вместо открытой карточки, а не поверх неё: «Назад» — к списку.
                         Projects(remember(s) { Screens.projects(s) }, chosen) { stacks[tab] = listOf(Nav.Card(it)) }
                     }
@@ -674,12 +681,19 @@ fun PultApp(
                 }
                 s == null && view.loading -> Text("Читаю срез…", style = MaterialTheme.typography.bodySmall)
                 // Пустое состояние ведёт дальше (UX-11): кнопкой, а не словами «где-то в настройках».
-                s == null -> Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
-                    Text(if (view.hasToken) "Среза ещё нет." else "Нужен токен GitHub — только для чтения.")
+                // Без GitHub — проекты на устройстве (D-150): токен нужен только карточкам GitHub, клонам и PR.
+                s == null -> Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                    LocalProjects(view.local, onNewProject, onOpenProject, compact = false)
                     if (view.hasToken) {
+                        Text("Среза GitHub ещё нет.")
                         Button(onClick = onSync, enabled = !view.busy) { Text("Обновить") }
                     } else {
-                        Button(onClick = { tab = Section.MORE }) { Text("Ввести токен") }
+                        Text(
+                            if (view.local != null) "GitHub — по желанию: токен (только чтение) нужен для карточек репозиториев, клонов и PR."
+                            else "Нужен токен GitHub — только для чтения.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        OutlinedButton(onClick = { tab = Section.MORE }) { Text("Подключить GitHub") }
                     }
                 }
                 tab == Section.SUMMARY -> Summary(
@@ -697,7 +711,10 @@ fun PultApp(
                 ) { open(Nav.Feed) }
                 tab == Section.DEV -> Column(Modifier.fillMaxSize()) {
                     when (devTab) {
-                        DevTab.PROJECTS -> Projects(remember(s) { Screens.projects(s) }) { open(Nav.Card(it)) }
+                        DevTab.PROJECTS -> {
+                            LocalProjects(view.local, onNewProject, onOpenProject, compact = true)
+                            Projects(remember(s) { Screens.projects(s) }) { open(Nav.Card(it)) }
+                        }
                         DevTab.PULLS -> Pulls(remember(s) { Screens.pulls(s) }, s.asOf, pullFilter, pullProject, { pullFilter = it }, { pullProject = it }) { r -> open(Nav.Pull(r.project, r.number.toInt())) }
                         DevTab.QUESTIONS -> Questions(remember(s) { Screens.questions(s) }, remember(s) { Screens.pulls(s) }, loader, open)
                     }
@@ -746,6 +763,35 @@ private fun Header(title: String, view: PultView, onSync: () -> Unit, onCancel: 
             }
             // Полоса — того же места и без синхронизации: заголовок не прыгает.
             if (view.busy) LinearProgressIndicator(Modifier.fillMaxWidth()) else Spacer(Modifier.height(4.dp))
+        }
+    }
+}
+
+/**
+ * Рабочие проекты на устройстве и target (D-150): GitHub им не нужен. Касание —
+ * проект в IDE; «Создать проект…» — мастер. [compact] — над списком GitHub: без
+ * пояснений. Нет подсистемы «AI» — ничего.
+ */
+@Composable
+private fun LocalProjects(list: List<Screens.LocalProject>?, onNew: (() -> Unit)?, onOpen: (String) -> Unit, compact: Boolean) {
+    if (list == null || onNew == null) return
+    if (compact && list.isEmpty()) {
+        TextButton(onClick = onNew) { Text("Создать проект на устройстве…") }
+        return
+    }
+    Card(Modifier.fillMaxWidth().padding(bottom = Tokens.gap)) {
+        Column(Modifier.padding(Tokens.gap), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("На устройстве", style = MaterialTheme.typography.titleMedium)
+            if (list.isEmpty() && !compact) {
+                Text("Проектов пока нет. Создайте C++, Kotlin или Python — локальный Git, без GitHub; опубликовать можно позже.", style = MaterialTheme.typography.bodySmall)
+            }
+            for (p in list) {
+                Column(Modifier.fillMaxWidth().clickable { onOpen(p.id) }.padding(vertical = 4.dp)) {
+                    Text(p.name + if (p.selected) " · открыт" else "", style = MaterialTheme.typography.bodyLarge)
+                    Text("${p.place} · ${p.root}", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+            }
+            Button(onClick = onNew) { Text("Создать проект…") }
         }
     }
 }

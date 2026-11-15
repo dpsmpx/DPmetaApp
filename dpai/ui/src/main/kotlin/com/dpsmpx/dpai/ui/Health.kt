@@ -24,7 +24,8 @@ enum class HealthAction(val label: String) {
 data class HealthItem(val id: String, val level: HealthLevel, val title: String, val detail: String, val actions: List<HealthAction> = emptyList())
 
 /** Шаг мастера настройки: [done] — сделан ли; `null` — к этому устройству не относится. */
-data class SetupStepItem(val id: String, val title: String, val text: String, val done: Boolean?, val action: HealthAction? = null)
+/** Шаг мастера настройки; [optional] — по желанию: несделанный не держит мастер открытым (`DPmetaApp:D-150`). */
+data class SetupStepItem(val id: String, val title: String, val text: String, val done: Boolean?, val action: HealthAction? = null, val optional: Boolean = false)
 
 /** Состояние Termux-target на этом телефоне (sshd на loopback, D-46). */
 enum class TermuxState { LISTENING, NOT_INSTALLED, NO_RUN_COMMAND, NO_PERMISSION, REQUESTED_NOT_UP, STARTING }
@@ -176,8 +177,9 @@ object Health {
             ),
             SetupStepItem(
                 "github", "Токен GitHub",
-                "Нужен пульту для клонов и PR; ИИ и терминал получают его, только если включить «давать ИИ».",
-                f.githubToken, HealthAction.OPEN_SECRETS.takeIf { f.githubToken == false },
+                "По желанию: нужен для карточек GitHub, клонов, PR и «Опубликовать». Без него проекты создаются и работают на устройстве. " +
+                    "ИИ и терминал получают токен, только если включить «давать ИИ».",
+                f.githubToken, HealthAction.OPEN_SECRETS.takeIf { f.githubToken == false }, optional = true,
             ),
             SetupStepItem(
                 "git", "Автор коммитов Git",
@@ -189,7 +191,7 @@ object Health {
     }
 
     /** Настройка закончена: все шаги, которые относятся к устройству, сделаны. */
-    fun setupDone(f: HealthFacts): Boolean = setup(f).all { it.done != false }
+    fun setupDone(f: HealthFacts): Boolean = setup(f).all { it.optional || it.done != false }
 
     /** Сколько пунктов требуют внимания — для полосы и строки сводки. */
     fun count(items: List<HealthItem>): Int = items.size

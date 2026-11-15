@@ -51,6 +51,27 @@ class DpmetaActivity : PultActivity() {
     // Пункт «IDE» левой панели (D-112): окно «AI» на «Файлах» — дерево, редактор, терминал проекта.
     override fun ideIntent(): Intent = MainActivity.ide(this)
 
+    // Проекты без GitHub (D-150): рабочие проекты контроллера и мастер нового — в окне «AI».
+    override fun localProjects(): List<com.dpsmpx.dpmeta.app.screens.Screens.LocalProject> {
+        val controller = com.dpsmpx.dpai.android.Controller.get(filesDir)
+        val targets = controller.targets().associateBy { it.id }
+        val book = controller.projects()
+        return book.projects.map { p ->
+            com.dpsmpx.dpmeta.app.screens.Screens.LocalProject(
+                p.project.value, p.root.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\').ifEmpty { p.root },
+                targets[p.target]?.let { if (it.inApp) "телефон" else it.label } ?: "target удалён", p.root, p.project == book.current?.project,
+            )
+        }
+    }
+
+    override fun newProjectIntent(): Intent = MainActivity.newProject(this)
+
+    override fun openProjectIntent(id: String): Intent? {
+        val pid = com.dpsmpx.dpai.core.ids.IdKinds.PROJECT.parse(id).valueOrNull() ?: return null
+        if (com.dpsmpx.dpai.android.Controller.get(filesDir).selectProject(pid) is Outcome.Failure) return null
+        return MainActivity.workspace(this)
+    }
+
     override fun aiVersion(): String = com.dpsmpx.dpai.android.BuildConfig.DPAI_VERSION
 
     /** Строки пульта — в журнал приложения подсистемы «AI» (D-39: один журнал отладки на приложение; там же Redactor). */

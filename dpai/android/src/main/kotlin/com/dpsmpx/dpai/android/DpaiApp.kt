@@ -245,6 +245,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         incoming.tab?.let { name -> AiTab.entries.firstOrNull { it.name == name }?.let { t -> selectedId = null; settings = false; openTab(t) } }
         if (incoming.settings) { selectedId = null; settings = true; settingsSub = incoming.settingsSub }
         if (incoming.newProject) NewProjectRequests.request()
+        if (incoming.workspace) IdeState.workspaceRequest.value = true
         if (incoming != Incoming()) onIncoming()
     }
     confirmUri?.let { uri -> ConfirmDialog(model, snapshot?.requests.orEmpty(), uri) { confirmUri = null } }

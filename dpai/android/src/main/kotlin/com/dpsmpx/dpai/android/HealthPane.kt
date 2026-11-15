@@ -208,7 +208,7 @@ private fun SetupStepRow(step: SetupStepItem, enabled: Boolean, onAction: (Healt
             color = if (step.done == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
         )
         Column(Modifier.weight(1f)) {
-            Text(step.title, style = MaterialTheme.typography.bodyMedium)
+            Text(step.title + if (step.optional && step.done != true) " · по желанию" else "", style = MaterialTheme.typography.bodyMedium)
             Text(step.text, style = MaterialTheme.typography.bodySmall)
         }
         step.action?.let { a -> TextButton(enabled = enabled, onClick = { onAction(a) }) { Text(a.label) } }
