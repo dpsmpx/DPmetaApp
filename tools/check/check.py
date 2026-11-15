@@ -912,6 +912,40 @@ def check_commands(repo, r):
         seen.add(c.get("id"))
 
 
+PROVENANCE_DOCS = ("docs/PROVENANCE.md", "dpai/docs/PROVENANCE.md")
+APP_BUILD = "app/build.gradle.kts"
+
+
+def check_about(repo, r):
+    """about.licenses — лицензии «О программе» совпадают с происхождением (F-50, A-12): APK несёт
+    оба документа происхождения как есть, и у каждой строки их таблиц с колонкой «Лицензия»
+    (кроме таблиц идей) лицензия указана — экран показывает её, а не пустое место."""
+    build = repo.text(APP_BUILD) if repo.exists(APP_BUILD) else ""
+    for doc in PROVENANCE_DOCS:
+        if f'"{doc}"' not in (build or ""):
+            r.add(APP_BUILD, f"{doc} не попадает в APK — «О программе» не покажет его лицензии (A-12)")
+        if not repo.exists(doc):
+            r.add(doc, "нет документа происхождения")
+            continue
+        header = None
+        for n, raw in enumerate((repo.text(doc) or "").splitlines(), 1):
+            line = raw.strip()
+            if not line.startswith("|"):
+                header = None
+                continue
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            if header is None:
+                header = cells if any(c.startswith("Лицензия") for c in cells) and cells[0] != "Идея" else []
+                continue
+            if not header or all(re.fullmatch(r":?-{3,}:?", c) for c in cells):
+                continue
+            r.scanned += 1
+            i = next(k for k, c in enumerate(header) if c.startswith("Лицензия"))
+            value = cells[i].replace("`", "").replace("*", "").strip() if i < len(cells) else ""
+            if not value or value in {"—", "-", "?"}:
+                r.add(f"{doc}:{n}", f"у «{cells[0][:60]}» не указана лицензия")
+
+
 def check_files(repo, r):
     """process.files — обязательные документы процесса на месте."""
     r.scanned = len(REQUIRED)
@@ -939,6 +973,7 @@ CHECKS = [
     ("build.wrapper", check_wrapper),
     ("build.verification", check_verification),
     ("config.commands", check_commands),
+    ("about.licenses", check_about),
 ]
 
 

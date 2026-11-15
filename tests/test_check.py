@@ -55,7 +55,9 @@ CLEAN = {
     check.ROADMAP: ROADMAP_TEXT,
     "docs/direction/REQUEST.md": "# Постановка\n\nСм. [решения](DECISIONS.md#d-01--образец-решения).\n",
     "docs/PROCESS.md": "# Процесс\n",
-    "docs/PROVENANCE.md": "# Происхождение\n",
+    "docs/PROVENANCE.md": "# Происхождение\n\n| Компонент | Версия | Лицензия |\n|---|---|---|\n| RE2/J | 1.8 | BSD-3-Clause |\n",
+    "dpai/docs/PROVENANCE.md": "# Происхождение\n\n| Файл | Лицензия |\n|---|---|\n| proot | GPL-2.0 |\n\n| Идея | Откуда | Лицензия, дата |\n|---|---|---|\n| очередь | DP-Verify | |\n",
+    "app/build.gradle.kts": 'from(file("docs/PROVENANCE.md"))\nfrom(file("dpai/docs/PROVENANCE.md"))\n',
     ".claude/settings.json": "{}\n",
     ".claude/hooks/session-start.sh": "#!/bin/sh\necho start\n",
     ".github/pull_request_template.md": "## Что\n",
@@ -321,6 +323,25 @@ class WrapperTest(CheckCase):
         found = s.run("format.text").findings
         self.assertFalse(any("gradlew.bat" in f for f in found))
         self.assertTrue(any("docs/PROCESS.md" in f for f in found))
+
+
+class AboutLicensesTest(CheckCase):
+    """about.licenses (F-50, A-12): у строк таблиц происхождения — лицензия; оба документа — в APK."""
+
+    def test_clean(self):
+        self.assertClean(self.sample().run("about.licenses"))
+
+    def test_row_without_license(self):
+        s = self.sample({"docs/PROVENANCE.md": "# П\n\n| Компонент | Версия | Лицензия |\n|---|---|---|\n| JGit | 5.13 | — |\n"})
+        self.assertCatches(s.run("about.licenses"), "не указана лицензия")
+
+    def test_document_not_in_apk(self):
+        s = self.sample({"app/build.gradle.kts": 'from(file("docs/PROVENANCE.md"))\n'})
+        self.assertCatches(s.run("about.licenses"), "dpai/docs/PROVENANCE.md не попадает в APK")
+
+    def test_ideas_table_is_not_components(self):
+        s = self.sample()
+        self.assertEqual(s.run("about.licenses").findings, [], "пустая лицензия в таблице идей — не находка")
 
 
 def quiet_report(results, strict=False):

@@ -253,11 +253,25 @@ open class PultActivity : ComponentActivity() {
         }
     }
 
-    /** «О программе» (UX-23, D-54): версия DPmetaApp из пакета и версия «AI» от оболочки. */
+    /**
+     * «О программе» (UX-23, D-54; F-50): версия DPmetaApp из пакета и «AI» от оболочки, коммит
+     * сборки, отпечаток SHA-256 сертификата, которым подписан установленный APK.
+     */
     private fun about(): String {
         val app = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "?"
-        return "DPmetaApp $app" + (aiVersion()?.let { " · AI $it" } ?: "")
+        val signer = runCatching {
+            packageManager.getPackageInfo(packageName, android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES).signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray()
+        }.getOrNull()?.let { cert -> java.security.MessageDigest.getInstance("SHA-256").digest(cert).joinToString(":") { "%02X".format(it) } }
+        return "DPmetaApp $app" + (aiVersion()?.let { " · AI $it" } ?: "") +
+            "\nКоммит сборки: ${getString(R.string.dpmeta_build_commit)}" +
+            "\nПодпись APK, SHA-256: ${signer ?: "не прочитана"}"
     }
+
+    /** Лицензии компонентов (F-50, A-12): документы происхождения из APK; не на главном потоке. */
+    private fun licenses(): List<com.dpsmpx.dpmeta.app.data.Licenses.Row> =
+        listOf("about/PROVENANCE.md" to "DPmetaApp", "about/PROVENANCE-ai.md" to "AI").flatMap { (path, name) ->
+            runCatching { assets.open(path).bufferedReader().use { it.readText() } }.getOrNull()?.let { com.dpsmpx.dpmeta.app.data.Licenses.parse(name, it) }.orEmpty()
+        }
 
     /** Пояс показа выбран в «Ещё» (UX-22): сохраняется, действует сразу и для «AI». */
     private fun zoneChosen(minutes: Int) {
@@ -412,6 +426,11 @@ open class PultActivity : ComponentActivity() {
         loadState()
         // История растёт с каждой синхронизацией — читается в фоне, холодный старт её не ждёт (N-02).
         loadHistory()
+        // Лицензии компонентов (F-50) — в фоне: документы происхождения читаются из APK.
+        pool.execute {
+            val rows = licenses()
+            runOnUiThread { view.value = view.value.copy(licenses = rows) }
+        }
         // Файлы прежних «Поделиться» (D-67) живут до следующего входа в пульт — не до поворота.
         if (coldStart) pool.execute { File(cacheDir, EXPORT_DIR).deleteRecursively() }
         // Клоны 0.4.0-dev.8 — плоскими каталогами «владелец_2fимя», без работы ИИ (Linux их не видел): место — назад (D-72).

@@ -51,7 +51,8 @@ android {
 // событий и правила тревог (F-37, F-51; D-85) — только config/projects/*.toml, config/briefs/*.md,
 // config/commands.toml, config/events.toml и config/alerts.toml корня, в ресурсах APK —
 // assets/projects/<Проект>.toml, assets/briefs/<ключ>.md, assets/commands.toml, assets/events.toml
-// и assets/alerts.toml; другие файлы config/ в APK не попадают.
+// и assets/alerts.toml; другие файлы config/ в APK не попадают. Документы происхождения корня и
+// «AI» — assets/about/PROVENANCE.md и PROVENANCE-ai.md («О программе», F-50).
 val panelAssets = tasks.register<Sync>("panelAssets") {
     from(rootProject.layout.projectDirectory.dir("config/projects")) {
         include("*.toml")
@@ -64,6 +65,12 @@ val panelAssets = tasks.register<Sync>("panelAssets") {
     from(rootProject.layout.projectDirectory.file("config/commands.toml"))
     from(rootProject.layout.projectDirectory.file("config/events.toml"))
     from(rootProject.layout.projectDirectory.file("config/alerts.toml"))
+    // «О программе» (F-50, A-12): лицензии компонентов — документы происхождения как есть.
+    from(rootProject.layout.projectDirectory.file("docs/PROVENANCE.md")) { into("about") }
+    from(rootProject.layout.projectDirectory.file("dpai/docs/PROVENANCE.md")) {
+        into("about")
+        rename { "PROVENANCE-ai.md" }
+    }
     into(layout.buildDirectory.dir("generated/panel-assets"))
 }
 androidComponents {

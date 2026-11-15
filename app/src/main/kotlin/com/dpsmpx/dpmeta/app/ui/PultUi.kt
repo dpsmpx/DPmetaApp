@@ -246,8 +246,10 @@ data class PultView(
     val loading: Boolean = false,
     /** Пояс показа, минуты от UTC (UX-22): ключ перерисовки строк со временем. */
     val zone: Int = 180,
-    /** «О программе» (UX-23): версии DPmetaApp и «AI». */
+    /** «О программе» (UX-23; F-50): версии DPmetaApp и «AI», коммит сборки, отпечаток подписи. */
     val about: String = "",
+    /** Лицензии компонентов из документов происхождения (F-50, A-12). */
+    val licenses: List<com.dpsmpx.dpmeta.app.data.Licenses.Row> = emptyList(),
 )
 
 /**
@@ -1424,10 +1426,21 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
             }
         }
     }
-    // «О программе» (UX-23, D-54): версия приложения и подсистемы «AI».
+    // «О программе» (UX-23, D-54; F-50): версии, коммит, подпись, лицензии компонентов.
     if (view.about.isNotEmpty()) {
         Text("О программе", style = MaterialTheme.typography.titleMedium)
         Text(view.about, style = MaterialTheme.typography.bodySmall)
+        if (view.licenses.isNotEmpty()) {
+            var open by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+            TextButton(onClick = { open = !open }) { Text(if (open) "Скрыть лицензии" else "Лицензии компонентов (${view.licenses.size})") }
+            if (open) {
+                // По разделам документов происхождения — так же, как в docs/PROVENANCE.md (A-12).
+                for ((section, rows) in view.licenses.groupBy { it.section }) {
+                    Text(section, style = MaterialTheme.typography.labelLarge)
+                    for (r in rows) Text("${r.component}${r.version?.let { " $it" }.orEmpty()} — ${r.license.ifEmpty { "лицензия не указана" }}", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
     }
 }
 
