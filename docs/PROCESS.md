@@ -75,7 +75,9 @@
   `docs.refs`, `process.decisions`, `process.todo`, `process.roadmap`,
   `process.files`, `readme.status`, `core.single`, `modules.root`,
   `code.forbidden` (запрещённое ТЗ, §6.5: A-06, A-07), `ui.words` (номеров
-  решений в строках экранов нет), `build.wrapper`. Что
+  решений в строках экранов нет), `build.wrapper`, `build.verification`,
+  `config.commands`, `about.licenses` (A-12: у строк таблиц происхождения
+  — лицензия, оба документа происхождения — в APK для «О программе»). Что
   ловит каждая — строка документации в `tools/check/check.py`. Каталог
   `dpai/` — подсистема со своими проверками: её текст, ссылки и номера
   здесь не сверяются, секреты — сверяются (D-28).
