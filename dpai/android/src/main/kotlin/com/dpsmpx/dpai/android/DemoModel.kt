@@ -165,6 +165,9 @@ class DemoModel(
      * новые и обновлённые (ТЗ, §36), у демо — только проверочные запросы.
      */
     private fun drain(v: ControlView): List<Notification> {
+        // Контур проекта — свой счётчик, общий с фоновым показом (D-179): переключение проекта
+        // не показывает заново уже отданные уведомления.
+        if (v is LiveSystem) return drainBackground(v)
         if (drainedOf !== v) {
             drainedOf = v
             drained = 0
@@ -238,7 +241,7 @@ class DemoModel(
         }
     }
 
-    /** Новые уведомления фонового контура [b]: показываются так же, как у выбранного. */
+    /** Новые уведомления контура проекта [b] — выбранного или фонового; счётчик у каждого свой. */
     private fun drainBackground(b: LiveSystem): List<Notification> {
         val (fresh, next) = b.orchestrator.postedSince(drainedBy[b] ?: 0L)
         drainedBy[b] = next
