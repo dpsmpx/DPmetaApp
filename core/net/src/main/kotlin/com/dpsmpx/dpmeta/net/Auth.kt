@@ -35,6 +35,18 @@ object FormBody {
     const val CONTENT_TYPE = "application/x-www-form-urlencoded"
 }
 
+/**
+ * Подпись событий мгновенного канала (D-23, D-152; F-55): HMAC-SHA256 общим ключом —
+ * шестнадцатеричной строкой. Ключ раскрывается здесь, в `:core:net`.
+ */
+object PushSignature {
+    fun hex(key: Secret, data: String): String {
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec(key.reveal().toByteArray(Charsets.UTF_8), "HmacSHA256"))
+        return mac.doFinal(data.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    }
+}
+
 /** Байты секрета для шифрования на устройстве (`:app`, Keystore): раскрытие — здесь, в `:core:net`. */
 object Secrets {
     fun bytes(secret: Secret): ByteArray = secret.reveal().toByteArray(Charsets.UTF_8)
