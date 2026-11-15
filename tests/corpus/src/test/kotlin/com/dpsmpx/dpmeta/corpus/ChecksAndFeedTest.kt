@@ -8,6 +8,7 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpmeta.formats.Checks
 import com.dpsmpx.dpmeta.formats.RegistryFormat
+import com.dpsmpx.dpmeta.formats.SessionLink
 import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.metrics.Feed
 import com.dpsmpx.dpmeta.metrics.Rules
@@ -61,6 +62,9 @@ class ChecksAndFeedTest {
         val alpha = state().project("Alpha")!!
         val open = ((alpha.sections["pulls"]!!.payload as JsonObject)["pulls"] as JsonArray).items.single() as JsonObject
         assertEquals("green", (open["checks"] as JsonString).value)
+        // Сессия Claude Code из описания (F-58; D-161): только id, описание в срез не идёт.
+        assertEquals("session_01AlphaCorpus7Q", (open["session"] as JsonString).value)
+        assertEquals(null, open["body"])
         val merged = ((alpha.sections["merged"]!!.payload as JsonObject)["pulls"] as JsonArray).items
         assertEquals(1, merged.size, "закрытый без влития — не влитой")
         assertEquals("red", ((merged.single() as JsonObject)["checks"] as JsonString).value)
@@ -91,5 +95,22 @@ class ChecksAndFeedTest {
         assertTrue(events.any { it.text.startsWith("PR #2 влит") })
         assertTrue(events.any { it.text.startsWith("новое решение D-02") })
         assertEquals(events, Feed.merge(emptyList(), events + events).let { Feed.merge(it, emptyList()) }, "повтор не дублируется")
+        // F-58 (D-161): PR сессии, запущенной маршрутом из пульта, — «от маршрута»; чужая сессия — как обычно.
+        val routed = Feed.diff(previous, next, mapOf("session_01AlphaCorpus7Q" to "Ночной"))
+        assertTrue(routed.any { it.kind == "pr.opened" && it.text == "PR #3 от маршрута «Ночной»: Этап 1" }, routed.joinToString("\n"))
+        val other = Feed.diff(previous, next, mapOf("session_01OtherSession9" to "Ночной"))
+        assertTrue(other.any { it.kind == "pr.opened" && it.text == "PR #3 открыт: Этап 1" }, other.joinToString("\n"))
+    }
+
+    @Test
+    fun sessionLinkOnlyClaudeCodeSessions() {
+        assertEquals("session_019A75vVH7hUn16v", SessionLink.of("Сделано.\n\nhttps://claude.ai/code/session_019A75vVH7hUn16v\n"))
+        assertEquals("session_01AbCdEf", SessionLink.of("см. https://claude.ai/code/session_01AbCdEf)."))
+        for (bad in listOf(
+            null, "", "https://claude.ai/code/session_short",
+            "http://claude.ai/code/session_01AbCdEf", "https://claude.ai.evil/code/session_01AbCdEf", "https://claude.ai/code/01AbCdEfGh",
+        )) {
+            assertEquals(null, SessionLink.of(bad), "$bad")
+        }
     }
 }

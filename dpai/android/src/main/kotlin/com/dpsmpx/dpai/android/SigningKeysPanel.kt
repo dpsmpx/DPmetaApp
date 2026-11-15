@@ -116,7 +116,7 @@ private fun ReleaseKeyDialog(onClose: () -> Unit, onNote: (String?) -> Unit) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     "Команда keytool создаст ключ RSA 4096 в файле .p12 в домашней папке. В Termux нужен JDK: pkg install openjdk-21. " +
-                        "В Termux (bash, zsh) пароль идёт в команду через окружение, и строка убирает себя из истории; в zsh с общей историей (share_history) без hist_ignore_space строка попадёт в файл до исполнения — вставьте её в bash. В PowerShell пароль не нужен: его спросит keytool. Приложение поля не хранит.",
+                        "В Termux (bash, zsh) пароль идёт в команду через окружение, и строка убирает себя из истории; в zsh с share_history или inc_append_history без hist_ignore_space строка попадёт в файл до исполнения — вставьте её в bash. В PowerShell пароль не нужен: его спросит keytool. Приложение поля не хранит.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 OutlinedTextField(name, { name = it.take(64) }, label = { Text("Имя в сертификате") }, singleLine = true)

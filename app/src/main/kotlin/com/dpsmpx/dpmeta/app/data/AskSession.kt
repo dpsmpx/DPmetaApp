@@ -30,6 +30,23 @@ object AskSession {
         ): Outcome<AskActions.Answer>
     }
 
+    /**
+     * Ответ начат и кончен (F-58; D-161): служба переднего плана на время ответа и событие
+     * «ответ готов», если приложение не на экране. [profile] — профиль ответа.
+     */
+    interface Watcher {
+        fun started()
+        fun finished(ok: Boolean, profile: String?)
+    }
+
+    @Volatile
+    private var watcher: Watcher? = null
+
+    /** Поставить [Watcher] — один раз на процесс (оболочка Android). */
+    fun watch(w: Watcher) {
+        if (watcher == null) watcher = w
+    }
+
     /** История и выбор автора; `null` — ещё не прочитаны. */
     var saved by mutableStateOf<AskActions.Saved?>(null)
         private set
@@ -96,6 +113,7 @@ object AskSession {
         val withQuestion = s.copy(entries = (s.entries + asked).takeLast(AskActions.MAX_ENTRIES), profile = profile.id, model = model, effort = effort)
         persist(withQuestion)
         running = Running()
+        watcher?.started()
         val request = AskActions.Request(profile.id, model, effort, AskActions.system(snap), AskActions.turns(withQuestion.entries), AskActions.TOOLS)
         Thread {
             val text = StringBuilder()
@@ -127,6 +145,7 @@ object AskSession {
             }
             main.post {
                 running = null
+                watcher?.finished(r is Outcome.Success, profile.id)
                 // «Новый разговор» во время ответа: история уже пуста — ответ на стёртый вопрос не возвращается.
                 val latest = saved ?: return@post
                 if (latest.entries.lastOrNull() == asked) persist(latest.copy(entries = (latest.entries + entry).takeLast(AskActions.MAX_ENTRIES)))

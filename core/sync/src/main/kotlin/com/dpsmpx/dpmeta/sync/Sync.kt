@@ -271,6 +271,8 @@ object Sync {
                         "checks" to JsonString(checks.verdict.code),
                     ).apply {
                         checks.line?.let { put("checksLine", JsonString(it)) }
+                        // Сессия Claude Code, открывшая PR (F-58; D-161): только id, не описание.
+                        com.dpsmpx.dpmeta.formats.SessionLink.of(p.body)?.let { put("session", JsonString(it)) }
                         p.mergedAt?.let { put("mergedAt", JsonNumber.of(it.epochMillis)) }
                         p.createdAt?.let { put("createdAt", JsonNumber.of(it.epochMillis)) }
                     },

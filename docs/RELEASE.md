@@ -32,7 +32,8 @@ D-104 разрешает ручную выкладку APK в GitHub Releases з
 2. **В Termux или на ПК.** «Ключи подписи» → «Ключ выпуска в Termux или на ПК…»:
    имя, страна, файл и пароль — в готовую команду `keytool` в буфер обмена. Для
    Termux (bash, zsh) пароль — через окружение, а строка убирает себя из истории
-   (D-160; в zsh с `share_history` без `hist_ignore_space` — вставлять в bash). В
+   (D-160; в zsh с `share_history` или `inc_append_history` без `hist_ignore_space`
+   — вставлять в bash). В
    PowerShell пароль в команду не встраивается — PowerShell сохраняет историю
    строк, — его спросит `keytool`. «Скопировать и открыть
    Termux» сразу открывает Termux (нужен JDK: `pkg install openjdk-21`). Приложение

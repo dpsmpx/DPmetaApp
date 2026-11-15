@@ -21,7 +21,8 @@ import com.dpsmpx.dpmeta.notify.SnoozeOption
 /**
  * Карточка уведомления пульта (D-152): всё, чтобы показать её снова после «Отложить» —
  * та же метка, канал, текст и кнопки. [pullProject]/[pullNumber] — для «Открыть PR»,
- * [url] — для «Открыть сессию» (мгновенный канал).
+ * [url] — для «Открыть сессию» (мгновенный канал); [ask] — касание открывает чат
+ * «Спросить Claude» (F-58; D-161).
  */
 data class NoticeCard(
     val tag: String,
@@ -34,6 +35,7 @@ data class NoticeCard(
     val pullProject: String? = null,
     val pullNumber: Int? = null,
     val url: String? = null,
+    val ask: Boolean = false,
 ) {
     fun toBundle(): PersistableBundle = PersistableBundle().apply {
         putString("tag", tag); putString("channel", channel); putString("title", title); putString("text", text)
@@ -41,19 +43,20 @@ data class NoticeCard(
         pullProject?.let { putString("pullProject", it) }
         pullNumber?.let { putInt("pullNumber", it) }
         url?.let { putString("url", it) }
+        if (ask) putBoolean("ask", true)
     }
 
     companion object {
         fun from(b: PersistableBundle): NoticeCard? = NoticeCard(
             b.getString("tag") ?: return null, b.getString("channel") ?: return null, b.getString("title") ?: return null,
             b.getString("text") ?: return null, b.getString("typeTitle") ?: return null, b.getLong("when"), b.getString("group") ?: return null,
-            b.getString("pullProject"), b.getInt("pullNumber", -1).takeIf { it > 0 }, b.getString("url"),
+            b.getString("pullProject"), b.getInt("pullNumber", -1).takeIf { it > 0 }, b.getString("url"), b.getBoolean("ask", false),
         )
 
         fun from(b: android.os.Bundle): NoticeCard? = NoticeCard(
             b.getString("tag") ?: return null, b.getString("channel") ?: return null, b.getString("title") ?: return null,
             b.getString("text") ?: return null, b.getString("typeTitle") ?: return null, b.getLong("when"), b.getString("group") ?: return null,
-            b.getString("pullProject"), b.getInt("pullNumber", -1).takeIf { it > 0 }, b.getString("url"),
+            b.getString("pullProject"), b.getInt("pullNumber", -1).takeIf { it > 0 }, b.getString("url"), b.getBoolean("ask", false),
         )
 
         fun toBundle(c: NoticeCard): android.os.Bundle = android.os.Bundle().apply {
@@ -62,6 +65,7 @@ data class NoticeCard(
             c.pullProject?.let { putString("pullProject", it) }
             c.pullNumber?.let { putInt("pullNumber", it) }
             c.url?.let { putString("url", it) }
+            if (c.ask) putBoolean("ask", true)
         }
     }
 }

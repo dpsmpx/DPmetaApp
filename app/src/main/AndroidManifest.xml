@@ -5,7 +5,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
-    <!-- Клонирование под службой переднего плана (D-78): процесс не выгружается на середине клона. -->
+    <!-- Клонирование (D-78) и ответ чата в фоне (F-58; D-161) под службой переднего плана:
+         процесс не выгружается на середине. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Мгновенный канал (D-152): соединение с ntfy держит служба `specialUse`, пока канал включён. -->
@@ -40,6 +41,11 @@
         <!-- Служба клонирования (D-78): только изнутри; держит процесс и показывает ход с «Отменить». -->
         <service
             android:name="com.dpsmpx.dpmeta.app.CloneService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <!-- Ответ «Спросить Claude» в фоне (F-58; D-161): только изнутри; держит процесс, пока идёт ответ. -->
+        <service
+            android:name="com.dpsmpx.dpmeta.app.AskAnswerService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
         <!-- Фоновое обновление пульта (D-149): запускает только система (BIND_JOB_SERVICE), снаружи не виден. -->

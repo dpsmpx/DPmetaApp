@@ -54,6 +54,9 @@ open class PultActivity : ComponentActivity() {
 
     private val openPull = mutableStateOf<Pair<String, Int>?>(null)
 
+    /** «Ответ готов» из уведомления (F-58; D-161): открыть чат. */
+    private val openAsk = mutableStateOf(false)
+
     private fun takeSection(intent: Intent?) {
         // «Открыть PR» из уведомления (D-152): проект и номер — только из своего PendingIntent.
         val pullProject = intent?.getStringExtra(EXTRA_PULL_PROJECT)
@@ -61,6 +64,10 @@ open class PultActivity : ComponentActivity() {
         if (pullProject != null && pullNumber > 0) {
             intent.removeExtra(EXTRA_PULL_PROJECT)
             openPull.value = pullProject to pullNumber
+        }
+        if (intent?.getBooleanExtra(EXTRA_ASK, false) == true) {
+            intent.removeExtra(EXTRA_ASK)
+            openAsk.value = true
         }
         val name = intent?.getStringExtra(EXTRA_SECTION) ?: return
         goTo.value = com.dpsmpx.dpai.ui.AppSection.entries.firstOrNull { it.name == name }
@@ -101,6 +108,8 @@ open class PultActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         coldStart = savedInstanceState == null
+        // Ответ чата в фоне (F-58; D-161): служба на время ответа и «Ответ готов».
+        AskAnswerService.install(this)
         // Окно знакомства (D-150) — само только до первого закрытия.
         if (!com.dpsmpx.dpmeta.app.ui.Intro.seen(this)) view.value = view.value.copy(intro = true)
         savedInstanceState?.getString(PENDING_PERIOD)?.let { p ->
@@ -495,6 +504,7 @@ open class PultActivity : ComponentActivity() {
                     onAi = ai, onIde = ideIntent()?.let { i -> { startActivity(i) } }, onExport = ::export,
                     goTo = goTo.value, onGoTo = { goTo.value = null }, settingsDocument = settingsDocument,
                     openPull = openPull.value, onPullOpened = { openPull.value = null },
+                    openAsk = openAsk.value, onAskOpened = { openAsk.value = false },
                     onClones = { withToken { token -> if (token != null) askClones(token, first = false) } }, onClonesChosen = ::clonesChosen,
                     onCancelSync = {
                         repo.cancelClones()
@@ -693,7 +703,15 @@ open class PultActivity : ComponentActivity() {
             fun go(confirm: (com.dpsmpx.dpmeta.actions.Actions) -> com.dpsmpx.dpmeta.actions.Confirmation) =
                 if (c.kind == com.dpsmpx.dpmeta.actions.ActionKind.ROUTE_RUN) {
                     // Маршрут (F-22): токен GitHub не нужен — запуск идёт мостом к «AI».
-                    background({ repo.fire(c, confirm, request.text.orEmpty()) { id, t -> fireRoute(id, t) } }, logged)
+                    background({
+                        repo.fire(c, confirm, request.text.orEmpty()) { id, t -> fireRoute(id, t) }.also { r ->
+                            // F-58 (D-161): запуск — в ленту и в правила (по умолчанию уведомления нет, кроме предела).
+                            if (r is Outcome.Success) {
+                                val app = applicationContext
+                                runCatching { com.dpsmpx.dpmeta.app.data.PultAlerts.postEvents(app, listOf(repo.routineFired(c, r.value.link, routes())), Clock.SYSTEM.now()) }
+                            }
+                        }
+                    }, logged)
                 } else {
                     run({ repo.act(it, c, confirm, request.text) }, logged)
                 }
@@ -1077,6 +1095,9 @@ open class PultActivity : ComponentActivity() {
         /** «Открыть PR» из уведомления (D-152). */
         const val EXTRA_PULL_PROJECT = "com.dpsmpx.dpmeta.PULL_PROJECT"
         const val EXTRA_PULL_NUMBER = "com.dpsmpx.dpmeta.PULL_NUMBER"
+
+        /** «Ответ готов» из уведомления чата (F-58; D-161): открыть «Спросить Claude». */
+        const val EXTRA_ASK = "com.dpsmpx.dpmeta.ASK"
 
         /** Как часто строка «AI» сводки перечитывает числа, пока пульт на экране (D-76). */
         private const val AI_REFRESH_MS = 5_000L

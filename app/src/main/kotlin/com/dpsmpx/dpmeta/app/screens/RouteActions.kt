@@ -10,6 +10,9 @@ import com.dpsmpx.dpmeta.actions.ActionResult
 import com.dpsmpx.dpmeta.actions.ActionStatus
 import com.dpsmpx.dpmeta.actions.ActionTarget
 import com.dpsmpx.dpmeta.formats.Brief
+import com.dpsmpx.dpmeta.formats.SessionLink
+import com.dpsmpx.dpmeta.metrics.FeedEvent
+import com.dpsmpx.dpmeta.model.Event
 import com.dpsmpx.dpmeta.model.RepoRef
 
 /**
@@ -120,6 +123,38 @@ object RouteActions {
         } ?: return null
         val after = pulls.filter { it.project == q.project && (it.createdAt ?: -1) >= e.at.epochMillis }.sortedBy { it.createdAt }
         return Answered(e.at, e.link, after)
+    }
+
+    /**
+     * F-58 (D-161): сессии запусков маршрутов из пульта — id `session_…` → имя маршрута, по
+     * журналу действий (итог «выполнено» или «неизвестен»). По ним лента узнаёт PR своего
+     * запуска; позднейший запуск с тем же id (не бывает) побеждает.
+     */
+    fun sessions(entries: List<ActionEntry>): Map<String, String> = entries
+        .filter { it.kind == ActionKind.ROUTE_RUN.code && (it.status == ActionStatus.DONE || it.status == ActionStatus.UNKNOWN) }
+        .mapNotNull { e -> SessionLink.of(e.link)?.let { it to (e.params["route"] ?: "маршрут") } }
+        .toMap()
+
+    /**
+     * Запуск состоялся (F-58; D-161): строка ленты «запуск маршрута» и событие
+     * `claude.routine.fired` для правил — маршрут, подписка, сессия и [count] запусков за час
+     * уже с этим (число `left` — сколько осталось до предела маршрута).
+     */
+    fun fired(c: ActionCommand, route: Route?, link: String?, count: HourCount, at: Timestamp): Pair<FeedEvent, Event> {
+        val name = c.params["route"] ?: route?.name ?: "маршрут"
+        val project = c.params["project"] ?: c.target.display
+        val text = "Маршрут «$name» запущен"
+        val fields = buildMap {
+            put("route", name)
+            route?.subscription?.let { put("account", it) }
+            SessionLink.of(link)?.let { put("session", it) }
+        }
+        val event = Event(
+            "claude.routine.fired", at, project, text, fields,
+            mapOf("left" to (ROUTE_PER_HOUR - count.route).coerceAtLeast(0).toDouble()),
+            key = fields["session"] ?: "$name ${at.epochMillis}",
+        )
+        return FeedEvent(at, project, "routine", text) to event
     }
 
     /** Окно «что уйдёт» (уровень 1): куда и чем; сам текст экран показывает целиком под этими строками. */
