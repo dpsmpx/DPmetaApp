@@ -103,7 +103,16 @@ object AppBackup {
             }
         } else bytes
         if (plain.size > MAX_BYTES) return Outcome.failure(DiagCode.VALUE_INVALID, "файл больше ${MAX_BYTES shr 20} МиБ — это не копия настроек", FORMAT)
-        return read(plain.toString(Charsets.UTF_8))
+        val archive = when (val r = read(plain.toString(Charsets.UTF_8))) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        // Секреты — только из копии под паролем (F-47): открытый файл с ними мог дописать любой,
+        // кто пишет в общую папку, — подменить ключи подписи и SSH (проверка PR #190).
+        if (!sealed(bytes) && archive.hasSecrets) {
+            return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "секреты в копии без пароля — копия подменена или не из приложения; не восстанавливается", FORMAT)
+        }
+        return Outcome.success(archive)
     }
 
     private fun toJson(a: Archive): JsonObject = JsonObject(

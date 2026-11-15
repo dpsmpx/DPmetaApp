@@ -5,11 +5,14 @@ import com.dpsmpx.dpai.core.diagnostics.Secret
 import com.dpsmpx.dpai.core.result.Outcome
 
 /**
- * Команда создания ключа выпуска (`DPmetaApp:D-158`): поля формы приложения —
- * в готовую команду `keytool` для Termux/Linux или PowerShell, в буфер обмена.
- * Приложение эти данные не хранит. Пароль — в переменной окружения только для
- * `keytool` (`-storepass:env`), а не в аргументах процесса; история оболочки на время
- * команды выключена. Раскрытие пароля — только здесь (правило `secret-reveal`).
+ * Команда создания ключа выпуска (`DPmetaApp:D-158`, `DPmetaApp:D-160`): поля формы
+ * приложения — в готовую команду `keytool` для Termux/Linux или PowerShell, в буфер
+ * обмена. Приложение эти данные не хранит. Termux/bash: пароль — в переменной окружения
+ * только для `keytool` (`-storepass:env`), а не в аргументах процесса; строка команды
+ * сама удаляет себя из истории (`history -d -1`; где его нет — история сеанса не
+ * сохраняется). PowerShell сохраняет историю строк сам (PSReadLine), поэтому туда пароль
+ * не встраивается: его спрашивает `keytool`. Раскрытие пароля — только здесь (правило
+ * `secret-reveal`).
  */
 object ReleaseKeyCommand {
     enum class Shell { POSIX, POWERSHELL }
@@ -54,12 +57,15 @@ object ReleaseKeyCommand {
         val pass = f.password.reveal()
         return Outcome.success(
             when (shell) {
+                // Bash заносит строку в историю до исполнения: «set +o history» в той же строке не помогает
+                // (проверка PR #190) — строка удаляет себя сама; без «history -d» — история сеанса не пишется.
                 Shell.POSIX ->
-                    "set +o history; DPMETA_KS_PASS=${posix(pass)} keytool $args -keystore ~/${f.file.trim()} " +
-                        "-dname ${posix(dname)} -storepass:env DPMETA_KS_PASS -keypass:env DPMETA_KS_PASS; set -o history"
+                    "DPMETA_KS_PASS=${posix(pass)} keytool $args -keystore ~/${f.file.trim()} " +
+                        "-dname ${posix(dname)} -storepass:env DPMETA_KS_PASS -keypass:env DPMETA_KS_PASS; " +
+                        "history -d -1 2>/dev/null || unset HISTFILE"
+                // PSReadLine пишет каждую строку в свой файл истории — пароль в строку не идёт, его спросит keytool.
                 Shell.POWERSHELL ->
-                    "\$env:DPMETA_KS_PASS = ${ps(pass)}; keytool $args -keystore \"\$HOME\\${f.file.trim()}\" " +
-                        "-dname ${ps(dname)} -storepass:env DPMETA_KS_PASS -keypass:env DPMETA_KS_PASS; Remove-Item Env:DPMETA_KS_PASS"
+                    "keytool $args -keystore \"\$HOME\\${f.file.trim()}\" -dname ${ps(dname)}"
             },
         )
     }

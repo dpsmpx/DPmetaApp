@@ -112,6 +112,9 @@ object KeystoreKey {
     @Synchronized
     fun publicKey(): ECPublicKey {
         loadPortable()?.let { return it.public as ECPublicKey }
+        // Файл есть, но не читается — не подменять ключ молча: строка на target перестала бы подходить
+        // (проверка PR #190). Новый — только явно, «Новый переносимый ключ SSH…».
+        check(!portable()) { "ключ SSH не читается — восстановите копию или создайте новый ключ явно" }
         if (legacy()) return store().getCertificate(ALIAS).publicKey as ECPublicKey
         return createPortable().public as ECPublicKey
     }

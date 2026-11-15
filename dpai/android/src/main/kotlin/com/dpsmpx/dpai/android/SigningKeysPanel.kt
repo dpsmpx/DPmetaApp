@@ -116,7 +116,7 @@ private fun ReleaseKeyDialog(onClose: () -> Unit, onNote: (String?) -> Unit) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     "Команда keytool создаст ключ RSA 4096 в файле .p12 в домашней папке. В Termux нужен JDK: pkg install openjdk-21. " +
-                        "Пароль попадает только в команду (через окружение, без истории оболочки); приложение поля не хранит.",
+                        "В Termux пароль идёт в команду через окружение, и строка сама удаляет себя из истории; в PowerShell пароль спросит keytool — PowerShell сохраняет историю строк. Приложение поля не хранит.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 OutlinedTextField(name, { name = it.take(64) }, label = { Text("Имя в сертификате") }, singleLine = true)

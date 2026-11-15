@@ -40,6 +40,16 @@ class CheckApkTest(unittest.TestCase):
         self.assertEqual((signer["dn"], signer["sha256"]), ("CN=dpsmpx, C=RU", SHA))
         self.assertEqual(check_apk.parse_badging("minSdkVersion:'30'\n")["minSdk"], "30")
 
+    def test_without_cert_or_aapt2_is_unchecked(self):
+        badging = check_apk.parse_badging(BADGING)
+        self.assertEqual(check_apk.unchecked(badging, SHA), [])
+        self.assertTrue(any("--cert" in m for m in check_apk.unchecked(badging, None)))
+        self.assertTrue(any("aapt2" in m for m in check_apk.unchecked(None, SHA)))
+
+    def test_second_signer_fails(self):
+        two = check_apk.parse_signer(SIGNED.replace("Number of signers: 1", "Number of signers: 2"))
+        self.assertTrue(any("подписантов 2" in p for p in check_apk.problems(two, check_apk.parse_badging(BADGING), SHA)))
+
     def test_unverified_or_v1_only_fails(self):
         v1 = check_apk.parse_signer("DOES NOT VERIFY\nVerified using v1 scheme (JAR signing): true\n")
         found = check_apk.problems(v1, None, None)

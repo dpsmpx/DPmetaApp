@@ -14,8 +14,11 @@ out="${in%.apk}-signed.apk"
 tmp="${in%.apk}-aligned.apk"
 zipalign -f -p 4 "$in" "$tmp"
 printf 'Пароль ключа (не отображается): '
+# Эхо возвращается и после Ctrl-C; IFS= — пробелы по краям пароля не обрезаются (проверка PR #190).
+trap 'stty echo 2>/dev/null || true' EXIT
+trap 'exit 130' INT TERM
 stty -echo 2>/dev/null || true
-read -r DPMETA_KS_PASS
+IFS= read -r DPMETA_KS_PASS
 stty echo 2>/dev/null || true
 echo
 export DPMETA_KS_PASS

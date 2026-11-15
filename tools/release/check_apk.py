@@ -7,10 +7,14 @@
 - сертификат — не отладочный (`CN=Android Debug`) и, если задан `--cert`, его SHA-256
   совпадает с отпечатком ключа выпуска автора;
 - пакет, версия и SDK — из `aapt2 dump badging` (если aapt2 есть);
-- APK не `debuggable`.
+- APK не `debuggable`;
+- подписант один.
+
+Без `--cert` или без aapt2 итог — «не проверено» (код 2), а не «годится»: отпечаток и
+`debuggable` D-158 требует сверить (проверка PR #190).
 
 Ничего не меняет и никуда не отправляет. Код выхода: 0 — годится, 1 — нет, 2 — нет
-инструмента или файла.
+инструмента или файла или проверено не всё.
 
     python3 tools/release/check_apk.py app.apk --cert 1a2b…
 """
@@ -31,7 +35,9 @@ def parse_signer(text):
     dn = re.search(r"(?:Signer #1|V[0-9.]+ Signer): certificate DN: (.+)", text) or re.search(r"Signer #1 certificate DN: (.+)", text)
     sha = re.search(r"(?:Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest: ([0-9a-f]{64})", text) \
         or re.search(r"Signer #1 certificate SHA-256 digest: ([0-9a-f]{64})", text)
+    signers = re.search(r"Number of signers: (\d+)", text)
     return {
+        "signers": int(signers.group(1)) if signers else None,
         "verified": text.strip().startswith("Verifies"),
         "schemes": sorted(schemes),
         "dn": dn.group(1).strip() if dn else None,
@@ -67,6 +73,18 @@ def problems(signer, badging, cert):
         out.append("отпечаток сертификата не совпадает с ключом выпуска")
     if badging and badging["debuggable"]:
         out.append("APK собран как debuggable")
+    if signer.get("signers") and signer["signers"] > 1:
+        out.append(f"подписантов {signer['signers']} — ожидается один ключ выпуска")
+    return out
+
+
+def unchecked(badging, cert):
+    """Что не проверено: пустой список — проверено всё, что требует D-158."""
+    out = []
+    if not cert:
+        out.append("отпечаток не сверен: нужен --cert <SHA-256 сертификата ключа выпуска>")
+    if badging is None:
+        out.append("debuggable, пакет и версия не проверены: нужен aapt2 (Termux — pkg install aapt2)")
     return out
 
 
@@ -102,9 +120,16 @@ def main(argv=None):
     found = problems(signer, badging, a.cert)
     for p in found:
         print(f"✗ {p}")
-    if not found:
-        print("✓ годится для выкладки")
-    return 1 if found else 0
+    if found:
+        return 1
+    missing = unchecked(badging, a.cert)
+    for m in missing:
+        print(f"? {m}")
+    if missing:
+        print("— не проверено до конца: для выкладки не годится, пока не проверено всё")
+        return 2
+    print("✓ годится для выкладки")
+    return 0
 
 
 if __name__ == "__main__":

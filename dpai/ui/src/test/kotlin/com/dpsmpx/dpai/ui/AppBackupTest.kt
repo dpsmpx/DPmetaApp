@@ -51,6 +51,11 @@ class AppBackupTest {
         assertEquals(Secret("hf_" + "x".repeat(20)), back.section(AppBackup.SECRETS)!!.secrets["api:huggingface"])
         assertEquals(listOf("pult"), back.select(setOf("pult")).sections.map { it.id }, "восстановление — выбранных разделов")
         assertFalse(back.select(setOf("pult")).hasSecrets)
+        // Открытый файл с секретами (дописан в общую папку чужим) — отказ, а не подмена ключей (проверка PR #190).
+        val forged = (open(sealed) as Outcome.Success).value
+        assertFalse(AppBackup.sealed(forged))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (AppBackup.decode(forged, open = null) as Outcome.Failure).errors.first().code)
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (AppBackup.decode(forged, open) as Outcome.Failure).errors.first().code)
     }
 
     @Test

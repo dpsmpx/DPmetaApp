@@ -47,11 +47,14 @@ object PushPrefs {
 
     fun hasKey(context: Context): Boolean = SecretStore.push(context).exists()
 
-    /** Ключ есть — он; нет — новый. */
+    /**
+     * Ключ есть — он; нет — новый. Не читается — отказ, а не молчаливая замена: хук перестал
+     * бы проходить проверку (проверка PR #190); новый — только «Новый ключ…».
+     */
     @Synchronized
     fun ensureKey(context: Context): Outcome<Secret> = when (val k = key(context)) {
         is Outcome.Success -> k.value?.let { Outcome.success(it) } ?: newKey(context)
-        is Outcome.Failure -> newKey(context)
+        is Outcome.Failure -> k
     }
 
     /** Новый ключ: старый перестаёт проходить проверку — хуку нужен новый `DPMETA_PUSH_KEY`. */

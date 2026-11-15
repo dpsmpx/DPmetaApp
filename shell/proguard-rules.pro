@@ -35,7 +35,8 @@
 -dontwarn org.newsclub.net.unix.**
 -dontwarn org.ietf.jgss.**
 -dontwarn org.apache.logging.log4j.**
-# JGit: сведения JMX о процессе и ProcessHandle (Java 9+) — только для отладки на JVM.
+# JMX и ProcessHandle (Java 9+): JGit и свой код только для JVM (dpai ProcessTree, OsFacts; D-75) —
+# на Android этих путей нет, как и в debug.
 -dontwarn java.lang.management.**
 -dontwarn javax.management.**
 -dontwarn com.sun.management.**
