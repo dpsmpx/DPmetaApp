@@ -5148,6 +5148,28 @@ target); на телефоне — DPmetaApp:TODO.md.
 отказ), `LiveSystemTest.twoProjectContoursShareOneTargetPlace` (одно
 место) и `twoPlacesRunTwoProjectsAtOnce`; на телефоне — DPmetaApp:TODO.md.
 
+### D-181 — Новый проект: шаблоны, файлы на target и первый коммит
+
+**Статус.** Принято 15 ноября 2026 при исполнении DPmetaApp:D-150.
+**Решение.** `ui.NewProject` без сети и процессов: проверка ввода
+(`form`, `identity`), файлы шаблона (`files`; Gradle-шаблоны получают
+wrapper из APK), команды (`commands`: профили BUILD и CHECK, `RunProfile`
+и argv проверки задач ИИ, строкой для `ProjectForm` — `checkText`,
+разбор которой возвращает тот же argv), проверка инструментов (`probe`,
+`missing`) и сценарий первого коммита (`gitInit`: значения — аргументами
+`sh -c` или в кавычках PowerShell, не текстом сценария; повтор после
+сбоя безопасен). Оболочка пишет файлы через `FileTree`: в Linux
+приложения — домашнее дерево гостя, на Termux и ПК — SFTP от домашнего
+каталога; путь — папка от домашней и имя, деревья задач —
+`<папка>/.trees/<имя>`. Непустая папка — отказ до записи. Затем
+`gitInit` на target, рабочий проект через `ProjectForm` и
+`Controller.putProject`, профили — `ManualProfiles`. У проекта есть
+слот ИИ (`ProjectForm`: каталог Claude на target): в Linux приложения
+мастер добавляет слот, если его нет (`addInApp`).
+**Почему.** DPmetaApp:D-150.
+**Проверка.** `NewProjectTest`; шаблоны C++, Python и kotlinc собраны
+своими командами (описание PR); на телефоне — DPmetaApp:TODO.md.
+
 ## Отложено
 
 Решения, которые принимаются в начале своего этапа и до этого не
