@@ -84,6 +84,13 @@ open class DpaiApplication : Application() {
     /** Служба контроллера остановлена: оболочка отзывает права, выданные «до остановки службы» (`DPmetaApp:D-114`). */
     open fun controllerStopped() = Unit
 
+    /**
+     * Числа для виджета могли измениться (`DPmetaApp:D-153`): ручной запуск кончился,
+     * у «AI» другие счётчики, новая проверка. Оболочка DPmetaApp обновляет виджет; в
+     * подсистеме виджета нет. Быстро и с любого потока.
+     */
+    open fun studioChanged() = Unit
+
     /** Раздел приложения вне окна «AI» (`DPmetaApp:D-112`): окно пульта на нём; `null` — пульта нет (отдельная сборка). */
     open fun sectionIntent(section: com.dpsmpx.dpai.ui.AppSection): android.content.Intent? = null
 }

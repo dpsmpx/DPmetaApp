@@ -1043,6 +1043,8 @@ open class PultActivity : ComponentActivity() {
                 val line = runCatching { com.dpsmpx.dpmeta.app.data.PultAlerts.post(app, r.value.events, Clock.SYSTEM.now()) }.getOrElse { "сбой: ${it.javaClass.simpleName}" }
                 debugLog("тревоги", line)
             }
+            // Виджет (D-153): новый срез — перечитать сразу, а не через полчаса.
+            if (r is Outcome.Success) com.dpsmpx.dpmeta.app.data.WidgetCache.changed(app)
             val state = (repo.state() as? Outcome.Success)?.value
             val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
             runOnUiThread {

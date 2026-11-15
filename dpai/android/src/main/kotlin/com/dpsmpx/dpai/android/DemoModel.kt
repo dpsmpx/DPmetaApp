@@ -193,8 +193,20 @@ class DemoModel(
         ).also {
             published = it
             publishedOf = v
+            // Виджет (DPmetaApp:D-153) — только когда его числа «AI» сменились, а не на каждом такте.
+            val counts = listOf(it.requests.size, it.dashboard.active, it.dashboard.limits.count { l -> l.near })
+            if (counts != widgetCounts) {
+                widgetCounts = counts
+                (context?.applicationContext as? DpaiApplication)?.studioChanged()
+            }
         }
     }
+
+    @Volatile private var widgetCounts: List<Int>? = null
+
+    /** Счётчики ручных сборок и проверок для виджета (DPmetaApp:D-153): идущий запуск и итоги за сутки. */
+    fun manualCounts(now: com.dpsmpx.dpai.core.clock.Timestamp): com.dpsmpx.dpai.ui.ManualCounts =
+        com.dpsmpx.dpai.ui.ManualCounts.of(controller.manualProfiles.snapshot().active, projects().projects.map { controller.manualProfiles.history(it) }, now)
 
     /** Такт и снимок; новые уведомления — в снимке, один раз. */
     fun step(selected: String?): Snapshot = lock.withLock {
@@ -562,7 +574,8 @@ class DemoModel(
         val app = context ?: return
         val active = controller.manualProfiles.snapshot().active ?: return
         if (!controller.manualProfiles.blocked) return
-        LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST) {
+        LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST,
+            onFinished = { (app.applicationContext as? DpaiApplication)?.studioChanged() }) {
             val client = manualClient(active.target)
                 ?: return@start LongJobs.Done("target недоступен; пауза сохраняется", failed = true)
             watchManual(client)
@@ -573,7 +586,10 @@ class DemoModel(
         onFinished: ((LongJobs.Done, com.dpsmpx.dpai.ui.ManualRunView) -> Unit)? = null): Boolean {
         val app = context ?: return false
         return LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST,
-            onFinished = { done -> onFinished?.invoke(done, controller.manualProfiles.snapshot()) }) {
+            onFinished = { done ->
+                (app.applicationContext as? DpaiApplication)?.studioChanged()
+                onFinished?.invoke(done, controller.manualProfiles.snapshot())
+            }) {
             val target = controller.targets().firstOrNull { it.id == location.target }
                 ?: return@start LongJobs.Done("target удалён", failed = true)
             // Сборка в Linux приложения пишет на диск телефона — под защитой места (DPmetaApp:D-113); на ПК-target место — его.

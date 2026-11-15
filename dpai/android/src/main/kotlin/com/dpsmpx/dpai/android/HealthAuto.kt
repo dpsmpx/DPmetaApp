@@ -124,7 +124,10 @@ object HealthAuto {
 
     /** Запомнить итог проверки [items] — для полосы и строки пульта без нового сбора. */
     fun remember(context: Context, items: Int) {
-        if (lastCount(context) != items) prefs(context).edit { putInt(COUNT, items) }
+        if (lastCount(context) != items) {
+            prefs(context).edit { putInt(COUNT, items) }
+            (context.applicationContext as? DpaiApplication)?.studioChanged()
+        }
     }
 
     /**

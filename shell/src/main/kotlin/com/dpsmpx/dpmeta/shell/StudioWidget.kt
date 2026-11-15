@@ -35,7 +35,7 @@ class StudioWidget : AppWidgetProvider() {
                 val projects = WidgetCache.projects(app)
                 val ai = runCatching { AiSummary.read(app) }.getOrNull()
                 val counts = ai?.let { Screens.AiCounts(it.configured, it.waiting, it.running, it.nearLimit, it.problems) }
-                val text = WidgetText.of((projects as? Outcome.Success)?.value, counts, HealthAuto.lastCount(app))
+                val text = WidgetText.of((projects as? Outcome.Success)?.value, counts, HealthAuto.lastCount(app), ai?.manual)
                 val views = render(app, text, AiSummary.open(app, ai?.request), "Прочитано: ${Screens.time(Clock.SYSTEM.now())}")
                 if (projects is Outcome.Failure) views.setTextViewText(R.id.widget_project_date, "Кэш проектов не прочитан; откройте приложение")
                 // Обновляются все текущие экземпляры, в том числе добавленные во время чтения.
@@ -55,6 +55,17 @@ class StudioWidget : AppWidgetProvider() {
         private const val REFRESH = "com.dpsmpx.dpmeta.WIDGET_REFRESH"
         private val updating = AtomicBoolean()
 
+        /**
+         * Перечитать по такту (D-153): синхронизация пульта, конец ручного запуска, новые числа
+         * «AI» или проверки. Виджета на экране нет — ничего не читается.
+         */
+        fun refresh(context: Context) {
+            val app = context.applicationContext
+            val ids = runCatching { AppWidgetManager.getInstance(app).getAppWidgetIds(ComponentName(app, StudioWidget::class.java)) }.getOrNull()
+            if (ids == null || ids.isEmpty()) return
+            app.sendBroadcast(Intent(app, StudioWidget::class.java).setAction(REFRESH))
+        }
+
         /** Отдельно от чтения: проверяется настоящий RemoteViews и маршруты, без запуска контура. */
         internal fun render(context: Context, text: WidgetText, ai: Intent, readAt: String): RemoteViews =
             RemoteViews(context.packageName, R.layout.studio_widget).apply {
@@ -62,6 +73,7 @@ class StudioWidget : AppWidgetProvider() {
                 setTextViewText(R.id.widget_project_date, text.projectDate)
                 setTextViewText(R.id.widget_ai_counts, text.ai)
                 setTextViewText(R.id.widget_health, text.health)
+                setTextViewText(R.id.widget_runs, text.runs)
                 setTextViewText(R.id.widget_read_at, readAt)
                 setOnClickPendingIntent(R.id.widget_ide, open(context, 1, MainActivity.ide(context)))
                 setOnClickPendingIntent(R.id.widget_ai, open(context, 2, ai))

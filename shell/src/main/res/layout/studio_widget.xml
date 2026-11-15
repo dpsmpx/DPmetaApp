@@ -20,6 +20,8 @@
         android:textColor="@color/widget_foreground" android:textSize="14sp" />
     <TextView android:id="@+id/widget_health" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:textColor="@color/widget_secondary" android:textSize="12sp" />
+    <TextView android:id="@+id/widget_runs" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:maxLines="1" android:ellipsize="end" android:textColor="@color/widget_secondary" android:textSize="12sp" />
     <TextView android:id="@+id/widget_read_at" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:textColor="@color/widget_secondary" android:textSize="12sp" />
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">

@@ -35,7 +35,12 @@ class DpmetaApplication : DpaiApplication() {
         com.dpsmpx.dpai.android.StorageMap.refresh(this)
         // Мгновенный канал (D-152): включённый поднимается с любым окном — из фона Android 12+ службу не запустить.
         registerActivityLifecycleCallbacks(PushOnResume)
+        // Виджет по такту (D-153): синхронизация пульта перечитывает его сразу.
+        com.dpsmpx.dpmeta.app.data.WidgetCache.onChanged = { StudioWidget.refresh(it) }
     }
+
+    /** Ручной запуск кончился, числа «AI» или проверки сменились (D-153). */
+    override fun studioChanged() = StudioWidget.refresh(this)
 
     private object PushOnResume : android.app.Application.ActivityLifecycleCallbacks {
         override fun onActivityResumed(activity: android.app.Activity) = com.dpsmpx.dpmeta.app.PushChannelService.ensure(activity)
@@ -129,7 +134,11 @@ class DpmetaApplication : DpaiApplication() {
     override fun sharedToolsSessionClosed() = com.dpsmpx.dpmeta.app.data.ConnectedGitHub.close()
 
     /** Служба остановлена: право ИИ на токен GitHub отзывается (D-114). */
-    override fun controllerStopped() = com.dpsmpx.dpmeta.app.data.AiGitHub.close()
+    override fun controllerStopped() {
+        com.dpsmpx.dpmeta.app.data.AiGitHub.close()
+        // Служба остановлена — числа «AI» на виджете становятся «неизвестно» (D-13, D-153).
+        StudioWidget.refresh(this)
+    }
 
     /** Вход для токена GitHub ИИ (D-114): PIN или биометрия, право — до остановки процесса или службы. */
     private fun unlockGithubForAi(activity: android.app.Activity, done: (com.dpsmpx.dpai.core.result.Outcome<Unit>) -> Unit) {

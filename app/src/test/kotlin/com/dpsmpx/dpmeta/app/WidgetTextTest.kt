@@ -28,4 +28,12 @@ class WidgetTextTest {
         assertEquals("ИИ: в работе 3 · ждут 0", WidgetText.of(null, ready).ai)
         assertEquals("ИИ не настроен", WidgetText.of(null, ready.copy(configured = false)).ai)
     }
+
+    @Test
+    fun manualRunsLineKeepsUnknownApartFromZero() {
+        assertEquals("Запуски: за сутки неизвестно", WidgetText.of(null, null).runs)
+        assertEquals("Запуски: за сутки ✓ 0 · ✗ 0", WidgetText.runs(com.dpsmpx.dpai.ui.ManualCounts(null, 0, 0)))
+        assertEquals("Запуски: идёт сборка · за сутки ✓ 2 · ✗ 1", WidgetText.runs(com.dpsmpx.dpai.ui.ManualCounts(com.dpsmpx.dpai.ui.ManualProfileKind.BUILD, 2, 1)))
+        assertEquals("Запуски: идёт проверка · за сутки неизвестно", WidgetText.runs(com.dpsmpx.dpai.ui.ManualCounts(com.dpsmpx.dpai.ui.ManualProfileKind.CHECK, null, null)))
+    }
 }

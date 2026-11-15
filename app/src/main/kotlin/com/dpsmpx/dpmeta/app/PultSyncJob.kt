@@ -90,6 +90,7 @@ class PultSyncJob : JobService() {
                 is Outcome.Success -> {
                     // Тревоги (D-85): новые события — через правила в уведомления, как у «Обновить».
                     if (r.value.events.isNotEmpty()) runCatching { com.dpsmpx.dpmeta.app.data.PultAlerts.post(app, r.value.events, Clock.SYSTEM.now()) }
+                    com.dpsmpx.dpmeta.app.data.WidgetCache.changed(app)
                     BackgroundSync.Result.Done(r.value.line)
                 }
             }
