@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.edit
 
 /**
  * Окно знакомства с приложением (D-150): само — при первом запуске, затем — из
@@ -103,7 +104,7 @@ object Intro {
     fun seen(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(SEEN, false)
 
     fun markSeen(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(SEEN, true).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putBoolean(SEEN, true) }
     }
 }
 
