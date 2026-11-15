@@ -64,6 +64,7 @@ AGP 9.4.1 берёт по умолчанию; Apache-2.0 и другие сво�
 | Версия | 9.8.0 |
 | Дистрибутив | `gradle-9.8.0-bin.zip`, SHA-256 `bafd5ce9cfaea0fbccfdc8439a1ac42fbd4cd9c89dc9a988228d8a2639a58e6c` (по `services.gradle.org`; совпадает с `DPpass:gradle/wrapper/gradle-wrapper.properties`) |
 | `gradle/wrapper/gradle-wrapper.jar` | SHA-256 `238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5` (по `gradle-9.8.0-wrapper.jar.sha256`) |
+| Мастер нового проекта (D-181) | `gradlew`, `gradlew.bat`, `gradle-wrapper.jar` и `gradle-wrapper.properties` этой сборки (Apache-2.0) копируются задачей `newProjectAssets` в assets `newproject/` APK и оттуда — в Gradle-шаблоны; второй копии в репозитории нет |
 
 ## 4. Двоичные файлы
 

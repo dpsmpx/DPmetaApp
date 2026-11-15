@@ -3,6 +3,14 @@
 Вехи проекта: этапы, форматы, публичные контракты. Подробности — в git
 и PR; что решено — `docs/direction/DECISIONS.md`.
 
+## 15 ноября 2026 — новый проект: шаблоны и первый коммит (D-181)
+
+- `ui.NewProject`: шаблоны C++ (CMake), Kotlin (kotlinc, Gradle JVM,
+  Android), Python; профили сборки, проверки и запуска для POSIX и
+  Windows; сценарии первого коммита и «Опубликовать»; мастер в «Файлах»,
+  рабочем проекте и Targets; Gradle wrapper — в assets `newproject/`.
+- Шаг «Токен GitHub» мастера настройки — по желанию (`SetupStepItem.optional`).
+
 ## 15 ноября 2026 — места target для сессий ИИ (D-180)
 
 - `TargetEntry.sessions` 1…4, `dpai.app-targets` v6; `LiveSystem` даёт
