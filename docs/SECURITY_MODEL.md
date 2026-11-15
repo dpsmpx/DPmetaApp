@@ -5,7 +5,7 @@
 выпуске (этап 8). Подсистемы — по своим документам (`dpai/docs/SECURITY_MODEL.md`,
 `dppass/docs/SECURITY_MODEL.md`).
 
-## Сделано (этапы 2–3)
+## Сделано (обзор T-01…T-11 — `docs/audits/2026-11-15-threats.md`)
 
 | | Угроза | Защита в коде | Где | Проверка |
 |---|---|---|---|---|
@@ -14,14 +14,22 @@
 | T-03 | Вредоносное приложение на том же телефоне | из активностей экспортирован только вход лаунчера — `DpmetaActivity` (за входом по PIN, D-59); экран «AI» и `PultActivity` не экспортируются, вход «AI» из лаунчера снят; «AI» открывается из своей вкладки явным интентом (D-53); ещё наружу — поставщик диска «AI» `AppDiskProvider`, только под `MANAGE_DOCUMENTS` системы (`DP_AI_Orcestrator:D-96`); поставщик «Поделиться» экспортом `ExportProvider` не экспортируется, видит только каталог экспорта в кэше, право чтения — по URI получателю одной отправки (D-67) | `shell/src/main/AndroidManifest.xml`, `app/src/main/AndroidManifest.xml` | Lint; манифест APK (`aapt2 dump badging`) |
 | T-04 | Подмена ответов сети | только https с системными корнями, своих `TrustManager` нет; переадресации выключены (адрес не уходит мимо списка); http — только сайт и без секрета | `core/net/…/Net.kt` (`AllowList`) | `NetTest.refusesHostsNotInListAndPlainHttpWithSecrets` |
 | T-04 | Подмена ответов сети: ссылки в документах (F-09) | внешний адрес (D-75): первое касание копирует и показывает его целиком, второе той же ссылки открывает в браузере телефона — только `https` с хостом; `http`, `intent:`, `javascript:`, `file:` и прочие не открываются — адрес остаётся скопированным, на экране — почему; правило одно на пульт, «AI» и терминал; переходы — только по файлам репозиториев реестра, без выхода за корень; файлы кода не сохраняются в кэше | `dpai/ui/…/LinkTaps.kt`, `app/…/screens/Links.kt`, `app/…/ui/DocText.kt`, `app/…/ui/PultUi.kt` (`external`) | `LinkTapsTest`, `LinksTest` |
-| T-07 | Лишние права токенов | PAT — только чтение (Contents, Pull requests, Metadata), так и просит экран; GitHub App — device flow (D-17) | `app/…/ui/PultUi.kt`, `core/github/…/DeviceFlow.kt` | `GitHubTest` |
-| T-09 | Цепочка поставки | сторонних зависимостей у модулей DPmetaApp нет: JDK, ядро `dpai/`, Compose из того же каталога, что у оболочки | `docs/PROVENANCE.md` | `tools/check` |
-| T-11 | Обход правил выгрузки сайта через приложение | выгрузки сайта в коде приложения нет — ни команды, ни адреса, ни ключа хостинга; выгружает только подсистема SocialMediaImage (D-40, D-48); изменяющих вызовов Admin API, скрейпинга и автоматизации браузера нет (D-08, D-20) | весь код приложения | `tools/check` (`code.forbidden`; A-06, A-07) |
+| T-05 | Подсказка-инъекция из репозиториев и PR в чат | инструменты «Спросить Claude» только читают срез (шесть, `AskActions.TOOLS`); действий из ответа чата нет | `app/…/screens/AskActions.kt` | `AskActionsTest` |
+| T-06 | Ошибочное значимое или опасное действие | `:core:actions`: уровни 0–3, экран «что изменится», вход устройства для уровня 2, красный экран и ввод имени для уровня 3, журнал (D-07, D-37) | `core/actions/…/Actions.kt` | `ActionsTest`, `RouteActionsTest` |
+| T-07 | Лишние права токенов | PAT: для чтения — «Read-only» (Contents, Pull requests, Metadata), запись — только для действий с PR (D-80) и «Опубликовать» (D-150), так и просит экран; GitHub App — device flow (D-17); Admin API — только `GET` и пути из списка; токен маршрута — свой у каждого | `app/…/ui/PultUi.kt`, `core/github/…/DeviceFlow.kt`, `dpai/providers/…/AdminClient.kt` | `GitHubTest`, `AdminClientTest` |
+| T-08 | Закрытое на экране блокировки и в виджете | приватность уведомлений по умолчанию включена: на блокировке — только вид события; виджет — только числа и даты (D-144) | `app/…/data/PultAlerts.kt`, `app/…/screens/WidgetText.kt` | `WidgetTextTest` |
+| T-09 | Цепочка поставки | версии — только каталогом `dpai/gradle/libs.versions.toml`, без динамических; проверка сумм Gradle (`verification-metadata.xml`, `verify-metadata=true`) у обеих сборок; строка PROVENANCE у каждой зависимости (JGit, JSch, Compose и др.) | `gradle/`, `dpai/gradle/`, `docs/PROVENANCE.md`, `dpai/docs/PROVENANCE.md` | `tools/check` (`build.verification`), `dpai/tools/verify/check_dependencies.py` |
+| T-10 | Потеря ключа подписи | ключ — у автора (D-158): две копии .p12 и пароль отдельно, копия в приложении — под паролем (D-157); подпись v2 и v3 (ротация ключа) — release Gradle, `apksigner`, подпись в приложении | `dpai/build-logic/…/dpai.android-application.gradle.kts`, `dpai/android/…/ApkSign.kt`, `docs/RELEASE.md` | `apksigner verify` release (обзор угроз 15 ноября 2026), `tests/test_check_apk.py` |
+| T-11 | Обход правил выгрузки сайта через приложение | SocialMediaImage вынесен из DPmetaApp (D-154): выгрузки сайта, адресов хостинга и ключей в репозитории нет; изменяющих вызовов Admin API, скрейпинга и автоматизации браузера нет (D-08, D-20) | весь код приложения | `tools/check` (`code.forbidden`; A-06, A-07) |
 
-## Ещё нет
+## Остальные (T-12…T-18)
 
-- T-05, T-06, T-17 — действия и чат Claude: этап 5 (`:core:actions`).
-- T-08 — экран блокировки и виджет: этап 7.
-- T-10 — ключ выпуска: этап 8.
-- T-12…T-16 — площадки, мгновенный канал, слушатель уведомлений: этапы 6–7.
-- T-18 — журнал отладки файлом: этап 5.
+- T-12, T-15 — площадки и публичные ответы: вне приложения (D-154,
+  SocialMediaImage).
+- T-13, T-14 — мгновенный канал: подпись HMAC, окно 10 минут, повтор по id,
+  только тип/проект/ветка/время/сессия (D-152).
+- T-16 — слушатель уведомлений: выключен, белый список (D-155).
+- T-17 — уровень 3 только после входа (D-37, D-59).
+- T-18 — журнал отладки файлом в приложении (D-39).
+
+Построчно — отдельным обзором; хвосты проверки PR #190 — `TODO.md`, «Система».
