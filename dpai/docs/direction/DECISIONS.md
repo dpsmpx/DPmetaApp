@@ -5192,7 +5192,7 @@ wrapper из APK), команды (`commands`: профили BUILD и CHECK, `R
 (токен GitHub пульта — регистрирует оболочка `:shell`), ключ SSH и ключи
 подписи (только стереть); `SecretRevoke` — где отозвать.
 **Почему.** DPmetaApp:D-151.
-**Проверка.** `AppBackupTest`, `SecretRevokeTest`; на телефоне —
+**Проверка.** `AppBackupTest` (в т. ч. страницы отзыва и слово стирания); на телефоне —
 DPmetaApp:TODO.md.
 
 ## Отложено
