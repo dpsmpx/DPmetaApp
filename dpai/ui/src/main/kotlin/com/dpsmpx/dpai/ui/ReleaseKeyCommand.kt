@@ -7,12 +7,13 @@ import com.dpsmpx.dpai.core.result.Outcome
 /**
  * Команда создания ключа выпуска (`DPmetaApp:D-158`, `DPmetaApp:D-160`): поля формы
  * приложения — в готовую команду `keytool` для Termux/Linux или PowerShell, в буфер
- * обмена. Приложение эти данные не хранит. Termux/bash: пароль — в переменной окружения
- * только для `keytool` (`-storepass:env`), а не в аргументах процесса; строка команды
- * сама удаляет себя из истории (`history -d -1`; где его нет — история сеанса не
- * сохраняется). PowerShell сохраняет историю строк сам (PSReadLine), поэтому туда пароль
- * не встраивается: его спрашивает `keytool`. Раскрытие пароля — только здесь (правило
- * `secret-reveal`).
+ * обмена. Приложение эти данные не хранит. Termux/bash/zsh: пароль — в переменной
+ * окружения только для `keytool` (`-storepass:env`), а не в аргументах процесса; строка
+ * начинается с пробела (`ignorespace`/`hist_ignore_space`) и убирает себя из истории сама:
+ * bash — `history -d -1`, zsh — история сеанса не сохраняется (там `history -d` только
+ * печатает список). PowerShell сохраняет историю строк сам (PSReadLine), поэтому туда
+ * пароль не встраивается: его спрашивает `keytool`. Раскрытие пароля — только здесь
+ * (правило `secret-reveal`).
  */
 object ReleaseKeyCommand {
     enum class Shell { POSIX, POWERSHELL }
@@ -50,7 +51,9 @@ object ReleaseKeyCommand {
 
     /** Команда для [shell]; файл — в домашней папке. */
     fun build(f: Form, shell: Shell): Outcome<String> {
-        problem(f)?.let { return Outcome.failure(DiagCode.VALUE_INVALID, it) }
+        // PowerShell: пароль спросит keytool — поле пароля не нужно (проверка PR #190).
+        val check = if (shell == Shell.POWERSHELL) f.copy(password = Secret("x".repeat(MIN_PASSWORD))) else f
+        problem(check)?.let { return Outcome.failure(DiagCode.VALUE_INVALID, it) }
         val dname = listOfNotNull("CN=${f.name.trim()}", f.organization.trim().takeIf { it.isNotEmpty() }?.let { "O=$it" }, "C=${f.country.trim()}").joinToString(", ")
         val days = f.years * 365 + f.years / 4
         val args = "-genkeypair -v -storetype PKCS12 -keyalg RSA -keysize 4096 -validity $days -alias ${f.alias.trim()}"
@@ -58,11 +61,12 @@ object ReleaseKeyCommand {
         return Outcome.success(
             when (shell) {
                 // Bash заносит строку в историю до исполнения: «set +o history» в той же строке не помогает
-                // (проверка PR #190) — строка удаляет себя сама; без «history -d» — история сеанса не пишется.
+                // (проверка PR #190). Пробел в начале — не в историю при ignorespace/hist_ignore_space; иначе
+                // bash удаляет строку сам, zsh (его «history -d» только печатает) — не сохраняет историю сеанса.
                 Shell.POSIX ->
-                    "DPMETA_KS_PASS=${posix(pass)} keytool $args -keystore ~/${f.file.trim()} " +
+                    " DPMETA_KS_PASS=${posix(pass)} keytool $args -keystore ~/${f.file.trim()} " +
                         "-dname ${posix(dname)} -storepass:env DPMETA_KS_PASS -keypass:env DPMETA_KS_PASS; " +
-                        "history -d -1 2>/dev/null || unset HISTFILE"
+                        "if [ -n \"\${ZSH_VERSION-}\" ]; then unset HISTFILE; else history -d -1 2>/dev/null || unset HISTFILE; fi"
                 // PSReadLine пишет каждую строку в свой файл истории — пароль в строку не идёт, его спросит keytool.
                 Shell.POWERSHELL ->
                     "keytool $args -keystore \"\$HOME\\${f.file.trim()}\" -dname ${ps(dname)}"

@@ -110,6 +110,9 @@ def main(argv=None):
     signer = parse_signer(run([apksigner, "verify", "--print-certs", "-v", a.apk]))
     aapt2 = shutil.which("aapt2")
     badging = parse_badging(run([aapt2, "dump", "badging", a.apk])) if aapt2 else None
+    # aapt2 есть, но не разобрал APK — это «не проверено», а не «проверено» (проверка PR #190).
+    if badging is not None and not badging["package"]:
+        badging = None
     print(f"APK SHA-256: {digest}")
     print(f"Подпись: {', '.join(signer['schemes']) or '—'}; {signer['dn'] or '—'}")
     print(f"Сертификат SHA-256: {signer['sha256'] or '—'}")

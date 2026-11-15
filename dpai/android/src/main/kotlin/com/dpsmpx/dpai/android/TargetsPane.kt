@@ -420,7 +420,8 @@ internal fun AppKeyCard(controller: Controller) {
             Text("Добавьте строку в ~/.ssh/authorized_keys на target.", style = MaterialTheme.typography.bodySmall)
             val key = publicKey
             if (key == null) {
-                TextButton(onClick = { scope.launch { publicKey = withContext(Dispatchers.IO) { controller.publicKeyLine() } } }) {
+                // Испорченный файл ключа — сообщение, а не падение окна (проверка PR #190).
+                TextButton(onClick = { scope.launch { publicKey = withContext(Dispatchers.IO) { runCatching { controller.publicKeyLine() }.getOrElse { "Ключ не читается: ${it.message}. «Резервная копия» → «Новый переносимый ключ SSH…»." } } } }) {
                     Text("Показать открытый ключ")
                 }
             } else {
@@ -988,7 +989,9 @@ internal fun RestoreCard(controller: Controller, framed: Boolean = true, onHide:
     var message by remember { mutableStateOf<String?>(null) }
     var report by remember { mutableStateOf<List<String>>(emptyList()) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
-        command = withContext(Dispatchers.IO) { com.dpsmpx.dpai.ui.TermuxRestore.command(controller.publicKeyLine(), nonce) }
+        val line = withContext(Dispatchers.IO) { runCatching { controller.publicKeyLine() } }
+        line.onSuccess { command = com.dpsmpx.dpai.ui.TermuxRestore.command(it, nonce) }
+            .onFailure { message = "Ключ SSH не читается: ${it.message}. «Резервная копия» → «Новый переносимый ключ SSH…»." }
     }
     suspend fun attempt(quiet: Boolean): Boolean {
         val u = user ?: run { message = "Termux не установлен"; return true }
