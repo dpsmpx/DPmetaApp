@@ -510,6 +510,12 @@
   `./gradlew assemble${VARIANT}`, окружение `OUT=${TREE}/out` — кнопки
   «debug»/«release», запуск с «release» собирает release; повторный вход —
   выбор «release» помнится; `GITHUB_TOKEN=…` в окружении — отказ при сохранении.
+- `С` На устройстве, Android SDK (D-159, `DP_AI_Orcestrator:D-185`): «Linux в
+  приложении» → «Android SDK…» без галочки лицензии — «Установить» неактивна;
+  с галочкой — около 1,5 ГБ, итог «Android SDK: /root/android-sdk»; Gradle-
+  проект Android с окружением профиля `ANDROID_HOME=/root/android-sdk` —
+  без aapt2 сообщества сборка с ресурсами падает на aapt2 (так и сказано), с
+  aapt2 сообщества (адрес и SHA-256 вводите вы) — собирается. На ПК — свой SDK.
 - `С` Ключ выпуска (D-158) — автор: «Ключи подписи» → «Ключ выпуска в Termux
   или на ПК…» → «Скопировать и открыть Termux» → вставить (`pkg install
   openjdk-21` до этого) — файл `~/dpmetaapp-release.p12` создан, в истории

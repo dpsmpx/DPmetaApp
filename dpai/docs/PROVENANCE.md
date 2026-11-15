@@ -127,6 +127,17 @@ Sysroot сборки proot — пакеты Alpine 3.24 `main` (в APK из ни
 | `SECCOMP_BLOCKLIST_APP.TXT` | `e263498e629301339a121703960458bf305ec6e559907bf6ae12d4b56c275d96` | Apache-2.0 | там же |
 | `SECCOMP_PRIORITY.TXT` | `69719591740fe41a2d9662579d93a7874364fea9d341f348d0cba71ade5411da` | Apache-2.0 | там же |
 
+### Android SDK в Linux приложения по кнопке (D-185)
+
+В APK и репозиторий не входит: загружается в госте по согласию автора с
+лицензией Android SDK (`developer.android.com/studio/terms`).
+
+| Что | Версия | SHA-256 | Откуда и как проверено |
+|---|---|---|---|
+| `commandlinetools-linux-16111833_latest.zip` | cmdline-tools 23.0 | `0877a1d048fe4a24efe2eff536ca4223f7adeb58648bb81909d33c446918cfa8` | `dl.google.com/android/repository`; SHA-1 `e025545c62a8e64c7559119566a569fb1dec5f60` совпал с манифестом `repository2-3.xml`, 15 ноября 2026 |
+| `platforms;android-36`, `build-tools;36.1.0`, `ndk;29.0.14206865` (x86_64) | — | суммы сверяет `sdkmanager` по манифесту Google | `dl.google.com` |
+| aapt2 и NDK для linux-arm64 | по выбору автора | вводит автор вместе с адресом | сборки сообщества; сессия их не закрепляет и не проверяет содержимое — только сумму |
+
 ## 5. Идеи из экосистемы
 
 ТЗ, §5 велит взять проверенные идеи других репозиториев автора. Здесь —

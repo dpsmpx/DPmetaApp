@@ -4,6 +4,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -32,6 +34,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.android.linux.LinuxSetup
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.ui.AndroidSdk
 import com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -73,6 +76,7 @@ fun LinuxScreen(onBack: () -> Unit) {
     var packages by rememberSaveable { mutableStateOf("") }
     var howto by rememberSaveable { mutableStateOf(false) }
     var slotMenu by remember { mutableStateOf(false) }
+    var sdkOpen by remember { mutableStateOf(false) }
 
     fun run(label: String, job: () -> Outcome<com.dpsmpx.dpai.execution.process.Completed>, done: (com.dpsmpx.dpai.execution.process.Completed) -> String) {
         allOutput = false
@@ -121,6 +125,21 @@ fun LinuxScreen(onBack: () -> Unit) {
                             if (it.ok) "tmux: установлен" else "apk завершился с кодом ${it.exitCode} — причина в выводе ниже"
                         }
                     }) { Text("Поставить tmux") }
+                    // Android SDK по желанию (D-185): официальное по суммам, сборки сообщества — по сумме автора.
+                    TextButton(enabled = !running, onClick = { sdkOpen = true }) { Text("Android SDK…") }
+                }
+                if (sdkOpen) AndroidSdkDialog(onCancel = { sdkOpen = false }) { licenses, ndk, aapt2, ndkCommunity ->
+                    sdkOpen = false
+                    run("Установка Android SDK", {
+                        (StorageSpace.check(context, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.DOWNLOAD, AndroidSdk.spaceBytes(ndk), "Android SDK") as? Outcome.Failure)?.let { return@run it }
+                        when (val first = LinuxEnvironment.apk(LinuxEnvironment.Apk.ADD, AndroidSdk.packages)) {
+                            is Outcome.Failure -> first
+                            is Outcome.Success -> LinuxSetup.runSteps(context, listOf(first.value, com.dpsmpx.dpai.execution.process.ProcessSpec(AndroidSdk.install(licenses, ndk, aapt2, ndkCommunity))))
+                        }
+                    }) {
+                        if (it.ok && it.stdout.any { l -> "DPAI_ANDROID_SDK_OK" in l }) "Android SDK: ${AndroidSdk.HOME}; в профиль сборки — окружение ANDROID_HOME=${AndroidSdk.HOME}"
+                        else "Установка завершилась с кодом ${it.exitCode} — причина в выводе ниже"
+                    }
                 }
                 // Target «в приложении» (D-75, шаг 5): задачи — в этом Linux, без SSH; слот — каталог в госте (D-29).
                 androidx.compose.foundation.layout.Box {
@@ -223,4 +242,60 @@ fun AppDiskCard() {
             )
         }
     }
+}
+
+/**
+ * Android SDK по желанию (D-185): лицензия — галочкой человека; NDK — по желанию;
+ * aapt2 и NDK для arm64 — сборкой сообщества по адресу и SHA-256, которые вводит автор.
+ */
+@Composable
+private fun AndroidSdkDialog(onCancel: () -> Unit, onInstall: (Boolean, Boolean, AndroidSdk.Community?, AndroidSdk.Community?) -> Unit) {
+    var license by remember { mutableStateOf(false) }
+    var ndk by remember { mutableStateOf(false) }
+    var aapt2Url by remember { mutableStateOf("") }
+    var aapt2Sha by remember { mutableStateOf("") }
+    var ndkUrl by remember { mutableStateOf("") }
+    var ndkSha by remember { mutableStateOf("") }
+    var problem by remember { mutableStateOf<String?>(null) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Android SDK") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "С официальных источников Google: cmdline-tools ${AndroidSdk.CMDLINE_VERSION} (по закреплённой сумме), " +
+                        "android-36 и build-tools 36.1.0 — sdkmanager. Около ${AndroidSdk.spaceBytes(false) shr 20} МБ, с NDK — ${AndroidSdk.spaceBytes(true) shr 30} ГБ. " +
+                        "Под arm64 Google не выпускает aapt2 для Gradle и NDK: по желанию — сборка сообщества по адресу и SHA-256, которые вы вводите.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(license, { license = it })
+                    Text("Принимаю лицензию Android SDK (${AndroidSdk.LICENSE_URL})", style = MaterialTheme.typography.bodySmall)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(ndk, { ndk = it })
+                    Text("И NDK", style = MaterialTheme.typography.bodySmall)
+                }
+                OutlinedTextField(aapt2Url, { aapt2Url = it.take(500) }, label = { Text("aapt2 arm64 (сообщество): адрес https") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(aapt2Sha, { aapt2Sha = it.take(64) }, label = { Text("aapt2: SHA-256") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                if (ndk) {
+                    OutlinedTextField(ndkUrl, { ndkUrl = it.take(500) }, label = { Text("NDK arm64 (сообщество): адрес https") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(ndkSha, { ndkSha = it.take(64) }, label = { Text("NDK: SHA-256") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
+                problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = license, onClick = {
+                val a = AndroidSdk.community(aapt2Url, aapt2Sha, "aapt2")
+                val n = if (ndk) AndroidSdk.community(ndkUrl, ndkSha, "NDK") else Outcome.success(null)
+                when {
+                    a is Outcome.Failure -> problem = a.errors.first().message
+                    n is Outcome.Failure -> problem = n.errors.first().message
+                    else -> onInstall(license, ndk, (a as Outcome.Success).value, (n as Outcome.Success).value)
+                }
+            }) { Text("Установить") }
+        },
+        dismissButton = { TextButton(onClick = onCancel) { Text("Отмена") } },
+    )
 }
