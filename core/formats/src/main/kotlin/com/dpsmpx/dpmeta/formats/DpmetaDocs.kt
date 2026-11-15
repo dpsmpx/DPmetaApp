@@ -3,7 +3,7 @@ package com.dpsmpx.dpmeta.formats
 /**
  * Счётчики документов DPmeta для метрик `eco.*` (ТЗ, §8): заголовки
  * `C-`, `RISK-`, `SQ-` — как у наборов прогресса сайта
- * (`socialmediaimage/data/progress/scope.yaml`, счётчики DPmeta).
+ * (`SocialMediaImage:data/progress/scope.yaml`, счётчики DPmeta).
  */
 object DpmetaDocs {
     /** Пути от корня DPmeta (подсистема `dpmeta/` DPmetaApp — читатель подставляет каталог). */

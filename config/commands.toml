@@ -49,10 +49,10 @@ timeout = 5
 
 [[command]]
 id = "dpprofile.quick"
-title = "Быстрые проверки DPprofile"
-project = "DPprofile"
+title = "Быстрые проверки DPprofile (компонент SocialMediaImage)"
+project = "SocialMediaImage"
 path = "/bin/bash"
-args = ["tools/verify/run.sh", "--quick"]
+args = ["dpprofile/tools/verify/run.sh", "--quick"]
 plan = "background"
 level = 0
 packages = ["bash", "python3", "git"]

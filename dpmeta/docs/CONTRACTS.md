@@ -126,7 +126,7 @@ DPmeta: у каждого есть владелец, и правится он т
     точное место (`путь@sha`, коммит, релиз); факты не переписываются;
     из других репозиториев — только идентификаторы и выжимки до 300 знаков
     (`DPprofile:D-04`…`DPprofile:D-06`); полная проверка сверяет ссылки с
-    клонами источников (`DPprofile:tools/verify/fetch_sources.sh`);
+    клонами источников (`SocialMediaImage:dpprofile/tools/verify/fetch_sources.sh`);
   - **SocialMediaImage** — публичные утверждения: класс, источник, коммит,
     дата и срок перепроверки (`SocialMediaImage:data/facts/facts.yaml`);
     решения проектов не переписываются, расхождение — находка в
@@ -144,7 +144,7 @@ DPmeta: у каждого есть владелец, и правится он т
   профиль и публичные проекты (S-00…S-22); DP-Verify, DPlearn,
   SocialMediaImage, DP_game_market_analytic_system и DPmeta в нём нет —
   по правилу DPprofile «закрытые репозитории, которых нет в реестре, — до
-  отдельного решения» (`DPprofile:docs/direction/SCOPE.md`). Карта проектов
+  отдельного решения» (`SocialMediaImage:dpprofile/docs/direction/SCOPE.md`). Карта проектов
   SocialMediaImage тоже знает только часть (SQ-12).
 
 ## C-05 — Закрытый код не выходит наружу
@@ -177,7 +177,7 @@ DPmeta: у каждого есть владелец, и правится он т
 ## C-06 — Ссылки между репозиториями
 
 - **Вид:** рекомендация (основа — две принятые формы).
-- **Суть:** чужой номер — `Проект:номер` (`DPprofile:docs/direction/DECISIONS.md`,
+- **Суть:** чужой номер — `Проект:номер` (`SocialMediaImage:dpprofile/docs/direction/DECISIONS.md`,
   правила журнала), чужой путь — `Проект:путь` (`DP-Verify:V-17`), с
   нынешним именем проекта (`docs/NAMING.md`).
 - **Чем проверяется:** `tools/xref.py` — номер есть в журнале цели, путь
@@ -345,7 +345,7 @@ DPmeta: у каждого есть владелец, и правится он т
   документов DPmeta теперь стоит менять, помня об этом контракте.
 - **25 октября 2026:** SocialMediaImage и DPmeta — подсистемы DPmetaApp
   (`DPmetaApp:D-43`); владелец и формат те же, пути —
-  `DPmetaApp:socialmediaimage/` и `DPmetaApp:dpmeta/`. Сбор находит клоны
+  каталог socialmediaimage/ DPmetaApp (до `DPmetaApp:D-154`) и `DPmetaApp:dpmeta/`. Сбор находит клоны
   по `slug` из `scope.yaml`: для DPmeta, DPvisualisation, DPprofile, DPpass,
   самой SocialMediaImage и оркестратора это замороженные репозитории —
   их история кончается переездом, а работа после него и счётчики

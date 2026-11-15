@@ -419,7 +419,7 @@ DPmeta их не принимает (M-03): здесь — разбор и пр�
   подготовке выпуска; для онлайн-компилятора DPlang — то же для его
   развёртывания (RISK-09).
 - **25 октября 2026:** SocialMediaImage — подсистема
-  `DPmetaApp:socialmediaimage/` (`DPmetaApp:D-43`): её `.claude/` больше
+  каталог socialmediaimage/ DPmetaApp (до `DPmetaApp:D-154`) (`DPmetaApp:D-43`): её `.claude/` больше
   ни на что не влияет, правила `ask` на выгрузку (`publish`,
   `site deploy`, ярлык) перенесены в `DPmetaApp:.claude/settings.json`;
   облачная сессия не выгружает, из приложения выгрузки нет до полной
