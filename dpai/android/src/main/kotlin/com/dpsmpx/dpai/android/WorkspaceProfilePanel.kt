@@ -217,6 +217,47 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
             }
             if (list.items.size > PROBLEMS_SHOWN) Text("…и ещё ${list.items.size - PROBLEMS_SHOWN}: исправьте первые и запустите снова", style = MaterialTheme.typography.bodySmall)
         }
+        // Варианты без ИИ (D-188; DPmetaApp:D-168): правила по ошибке, выбор — человека; «Поручить ИИ» — последним.
+        var askAi by remember { mutableStateOf(false) }
+        if (!run.blocked && run.results.lastOrNull()?.ok == false) {
+            val steps = (form() as? Outcome.Success)?.value?.steps.orEmpty()
+            val problems = found ?: com.dpsmpx.dpai.ui.BuildProblemList(emptyList(), false)
+            val options = com.dpsmpx.dpai.ui.FailureOptions.of(steps, run.results, run.output, problems) { p -> location?.let { com.dpsmpx.dpai.ui.BuildProblems.relative(p, it.path) } }
+            Text("Что делать — без ИИ", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+            for (o in options) TextButton(onClick = {
+                when (o.kind) {
+                    com.dpsmpx.dpai.ui.FailureOptions.Kind.OPEN_PROBLEM -> onProblem(o.path ?: return@TextButton, o.line ?: 1)
+                    com.dpsmpx.dpai.ui.FailureOptions.Kind.ASK_AI -> askAi = true
+                    else -> note = o.detail
+                }
+            }) { Text(o.title) }
+            if (askAi) androidx.compose.material3.AlertDialog(
+                onDismissRequest = { askAi = false },
+                title = { Text("Поручить ИИ?") },
+                text = { Text("Новая задача ИИ с выжимкой ошибки: шаг, команда, до 5 мест и 40 последних строк вывода. Это расход токенов.", style = MaterialTheme.typography.bodySmall) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        askAi = false
+                        val (title, objective) = com.dpsmpx.dpai.ui.FailureOptions.aiTask(kind, steps, run.results, run.output, problems, location?.branch.orEmpty())
+                        scope.launch {
+                            val r = withContext(Dispatchers.IO) {
+                                val key = com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure())
+                                    .next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
+                                when (val f = com.dpsmpx.dpai.ui.NewTaskForm.command(title, objective, key)) {
+                                    is Outcome.Failure -> f
+                                    is Outcome.Success -> model.addTask(f.value)
+                                }
+                            }
+                            note = when (r) {
+                                is Outcome.Success -> "Задача ИИ создана: «$title» — она на странице «ИИ»"
+                                is Outcome.Failure -> r.diagnostics.first().message
+                            }
+                        }
+                    }) { Text("Поручить") }
+                },
+                dismissButton = { TextButton(onClick = { askAi = false }) { Text("Отмена") } },
+            )
+        }
         if (run.output.isNotEmpty()) SelectionContainer { Text(run.output, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
         if (kind == ManualProfileKind.BUILD) {
             val saved = remember(artifactsText) { (com.dpsmpx.dpai.files.TreeArtifacts.patterns(artifactsText) as? Outcome.Success)?.value.orEmpty() }
