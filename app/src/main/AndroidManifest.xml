@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Мгновенный канал (D-152): соединение с ntfy держит служба `specialUse`, пока канал включён. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Сеть вернулась — канал переподключается сразу, а не после паузы (обычное разрешение). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Тревоги пульта (F-38; D-85): Android 13+ спрашивает разрешение; без него — только лента. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Фоновое обновление пульта (D-149): задача JobScheduler переживает перезагрузку (setPersisted).

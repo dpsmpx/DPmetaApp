@@ -388,6 +388,7 @@ object Words {
 
         // Сеть и GitHub модулей DPmetaApp (DPmetaApp:D-10, D-17).
         "HOST_NOT_ALLOWED" -> "адрес не из списка разрешённых — запрос не отправлен"
+        "PUSH_SIGNATURE_INVALID" -> "событие мгновенного канала отброшено: подпись, срок или повтор"
         "GITHUB_AUTH_EXPIRED" -> "GitHub не принял вход — войдите заново"
         "GITHUB_RATE_LIMITED" -> "лимит запросов GitHub исчерпан — остальное после сброса"
         "GITHUB_NOT_FOUND" -> "на GitHub не найдено или скрыто от входа"
