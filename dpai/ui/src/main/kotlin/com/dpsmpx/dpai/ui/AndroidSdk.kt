@@ -30,6 +30,28 @@ object AndroidSdk {
     /** Сколько места нужно: SDK — около 1,5 ГБ, с NDK — около 4 ГБ. */
     fun spaceBytes(ndk: Boolean): Long = if (ndk) 4L shl 30 else 3L shl 29
 
+    /**
+     * Чего из [needs] профиля нет в госте (D-186): [exists] — есть ли путь гостя, [hasNdk] —
+     * есть ли каталог NDK (официальный или сообщества). Пусто — всё на месте.
+     */
+    fun missing(needs: Set<ManualNeed>, exists: (String) -> Boolean, hasNdk: Boolean): List<String> = buildList {
+        if (ManualNeed.ANDROID_SDK in needs || ManualNeed.ANDROID_NDK in needs) {
+            for ((path, what) in listOf("$HOME/platforms/android-36" to PLATFORM, "$HOME/build-tools/36.1.0" to BUILD_TOOLS)) if (!exists(path)) add(what)
+        }
+        if (ManualNeed.ANDROID_NDK in needs && !hasNdk) add("NDK")
+    }
+
+    /** Окружение шагов профиля, которому нужен SDK (D-186): ANDROID_HOME и ANDROID_SDK_ROOT, если профиль не задал свои. */
+    fun env(needs: Set<ManualNeed>, env: List<Pair<String, String>>): List<Pair<String, String>> {
+        if (needs.isEmpty()) return env
+        val names = env.map { it.first }.toSet()
+        return env + listOf("ANDROID_HOME" to HOME, "ANDROID_SDK_ROOT" to HOME).filter { it.first !in names }
+    }
+
+    /** Подсказка экрана для [missing]. */
+    fun hint(missing: List<String>): String =
+        "Профилю нужно: ${missing.joinToString()} — поставьте: «Настройки AI» → «Linux в приложении» → «Android SDK…»"
+
     /** Сборка сообщества: адрес https и SHA-256 (64 шестнадцатеричных знака). */
     data class Community(val url: String, val sha256: String)
 
@@ -52,6 +74,8 @@ object AndroidSdk {
      * Итог — строка `DPAI_ANDROID_SDK_OK`; ошибки — строками `DPAI_ANDROID_…`.
      */
     fun install(licenses: Boolean, ndk: Boolean, aapt2: Community?, ndkCommunity: Community?): List<String> {
+        // Адрес и сумма идут в скрипт: проверка — и здесь, конструктор Community открыт (проверка PR #190).
+        for (c in listOfNotNull(aapt2, ndkCommunity)) require(URL.matches(c.url) && SHA.matches(c.sha256)) { "сборка сообщества — только через community()" }
         val script = buildString {
             appendLine(KotlinRuntime.javaEnvironment)
             appendLine("set -e")

@@ -610,6 +610,17 @@ class DemoModel(
                 is Outcome.Success -> r.value
             }
             if (choices != null) controller.manualProfiles.saveChoices(p, profile.kind, choices)
+            // Что профилю нужно (D-186): в Linux приложения — проверка до запуска и ANDROID_HOME в окружение шагов;
+            // на ПК-target SDK — его собственный.
+            val ready = if (target.inApp && resolved.needs.isNotEmpty()) {
+                val rootfs = java.io.File(app.filesDir, com.dpsmpx.dpai.android.linux.LinuxSetup.environment(app).rootfs)
+                val guest = { path: String -> java.io.File(rootfs, path.removePrefix("/")) }
+                val missing = com.dpsmpx.dpai.ui.AndroidSdk.missing(resolved.needs, { guest(it).exists() },
+                    guest(com.dpsmpx.dpai.ui.AndroidSdk.HOME + "/ndk").list()?.isNotEmpty() == true)
+                if (missing.isNotEmpty()) return@start LongJobs.Done(com.dpsmpx.dpai.ui.AndroidSdk.hint(missing), failed = true)
+                resolved.copy(env = com.dpsmpx.dpai.ui.AndroidSdk.env(resolved.needs, resolved.env)).takeIf { it.valid }
+                    ?: return@start LongJobs.Done("окружение шагов переполнено: добавьте ANDROID_HOME в профиль сами", failed = true)
+            } else resolved
             // Сборка в Linux приложения пишет на диск телефона — под защитой места (DPmetaApp:D-113); на ПК-target место — его.
             if (profile.kind == com.dpsmpx.dpai.ui.ManualProfileKind.BUILD && target.inApp) {
                 (StorageSpace.check(app, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.BUILD, null, "ручная сборка проекта") as? Outcome.Failure)
@@ -628,7 +639,7 @@ class DemoModel(
                 }
                 if (!Drafts.recovery.value.ready) return@withLock Outcome.failure(DiagCode.STATE_CONFLICT, "сначала дождитесь восстановления черновиков")
                 if (Drafts.dirtyIn(location, target.inApp)) return@withLock Outcome.failure(DiagCode.STATE_CONFLICT, "сначала сохраните или отмените правки редактора в этом дереве")
-                controller.manualProfiles.prepare(p, target, location, resolved)
+                controller.manualProfiles.prepare(p, target, location, ready)
             }
             if (prepared is Outcome.Failure) return@start LongJobs.Done(prepared.errors.first().message, failed = true)
             manualStop = false
