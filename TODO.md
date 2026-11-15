@@ -510,6 +510,12 @@
   `./gradlew assemble${VARIANT}`, окружение `OUT=${TREE}/out` — кнопки
   «debug»/«release», запуск с «release» собирает release; повторный вход —
   выбор «release» помнится; `GITHUB_TOKEN=…` в окружении — отказ при сохранении.
+- `С` Ключ выпуска (D-158) — автор: «Ключи подписи» → «Ключ выпуска в Termux
+  или на ПК…» → «Скопировать и открыть Termux» → вставить (`pkg install
+  openjdk-21` до этого) — файл `~/dpmetaapp-release.p12` создан, в истории
+  Termux пароля нет; «Импортировать…» его в глобальный ключ; на ПК — свойства
+  `dpai.release.*`, `./gradlew :shell:assembleRelease`, затем
+  `python3 tools/release/check_apk.py <apk> --cert <SHA-256>` — «годится».
 - `С` На устройстве, переносимые ключи (D-157, `DP_AI_Orcestrator:D-184`):
   «Резервная копия» — строка «Ключ SSH — прежний» → «Новый переносимый ключ
   SSH…» → строку в authorized_keys ПК и Termux, вход работает; ключ подписи —
