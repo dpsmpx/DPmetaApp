@@ -76,8 +76,29 @@ class DemoModel(
 ) {
     private val lock = ReentrantLock()
     private var demo: DemoSystem? = null
+    /** Контур выбранного рабочего проекта — его показывают экраны (D-179). */
     private var live: LiveSystem? = null
+
+    /** Выбранный проект, для которого собран [live]. */
     private var liveFor: Pair<List<TargetEntry>, ProjectEntry?>? = null
+
+    /**
+     * Контуры всех рабочих проектов (`DPmetaApp:D-147`; D-179): ключ — проект, `null` — контур
+     * без проекта (список пуст). Такт идёт всем по очереди под [lock]; места на target —
+     * общие ([neighboursOf]).
+     */
+    private val contours = LinkedHashMap<com.dpsmpx.dpai.core.ids.ProjectId?, LiveSystem>()
+    private var contoursFor: Pair<List<TargetEntry>, List<ProjectEntry>>? = null
+
+    /** Сколько отдано уведомлений каждого фонового контура. */
+    private val drainedBy = HashMap<LiveSystem, Long>()
+
+    /** Незавершённые сессии контуров, кроме контура проекта [self] (D-179). */
+    private fun neighboursOf(self: com.dpsmpx.dpai.core.ids.ProjectId?) = object : com.dpsmpx.dpai.orchestrator.NeighbourLoad {
+        private fun others() = contours.filterKeys { it != self }.values.map { it.orchestrator.sessions.sessions.values.filter { s -> !s.terminal } }
+        override fun sessions(target: com.dpsmpx.dpai.core.ids.ExecutionTargetId): Int = others().sumOf { list -> list.count { it.target == target } }
+        override fun total(): Int = others().sumOf { it.size }
+    }
 
     /** Система, собранная последней: команды кладутся в её очередь без замка. */
     @Volatile
@@ -95,22 +116,31 @@ class DemoModel(
     private fun current(): ControlView {
         val targets = controller.targets()
         if (targets.any { it.configDir != null }) {
-            val key = targets to controller.project()
+            val projects = controller.projects()
+            val all = targets to projects.projects
             // Журнал закрыт после отказа записи (кончилось место, A-4): раз в минуту — контур заново, журнал
             // открывается с проверкой хвоста; места всё ещё нет — следующая запись снова закроет его.
-            val broken = live?.orchestrator?.storageBroken == true && Clock.SYSTEM.monotonicNanos() - builtAt >= REOPEN_NANOS
-            if (live == null || liveFor != key || broken) {
-                // Потоки событий прежней системы (D-76) не переживают её: каналы SSH закрываются.
-                live?.close()
+            val broken = contours.values.any { it.orchestrator.storageBroken } && Clock.SYSTEM.monotonicNanos() - builtAt >= REOPEN_NANOS
+            if (contours.isEmpty() || contoursFor != all || broken) {
+                // Потоки событий прежних систем (D-76) не переживают их: каналы SSH закрываются.
+                contours.values.forEach { it.close() }
+                contours.clear()
+                drainedBy.clear()
                 val started = Clock.SYSTEM.monotonicNanos()
                 builtAt = Clock.SYSTEM.monotonicNanos()
                 // Target «в приложении» (D-75, шаг 5): агент — в процессе, ходы — в Alpine приложения.
-                val inApp = context?.takeIf { key.first.any { it.inApp } }?.let { com.dpsmpx.dpai.android.linux.LinuxSetup.agentHost(it, controller.version) }
+                val inApp = context?.takeIf { targets.any { it.inApp } }?.let { com.dpsmpx.dpai.android.linux.LinuxSetup.agentHost(it, controller.version) }
                 val guest = inApp?.let { context.let(com.dpsmpx.dpai.android.linux.LinuxSetup::guestHost) }
-                live = controller.live(key.first, key.second, onEvents, onProblem, inApp, guest)
-                liveFor = key
-                perf("контроллер построен", started)
+                // Контур на рабочий проект (D-179); список пуст — один контур без проекта, как раньше.
+                for (p in projects.projects.ifEmpty { listOf(null) }) {
+                    contours[p?.project] = controller.live(targets, p, onEvents, onProblem, inApp, guest, neighbours = neighboursOf(p?.project))
+                }
+                contoursFor = all
+                perf("контуры построены: ${contours.size}", started)
             }
+            val selected = projects.current
+            live = contours[selected?.project] ?: contours.values.first()
+            liveFor = targets to selected
             return live!!.also { built = it }
         }
         return (
@@ -178,7 +208,47 @@ class DemoModel(
         v.step()
         perf("такт", started)
         context?.let { SettingIntents.reconcile(it, v.orchestrator) }
-        snapshot(v, selected, drain(v))
+        // Фоновые рабочие проекты (D-179): такт по очереди; сбой одного не останавливает остальные.
+        val background = ArrayList<Notification>()
+        for (b in contours.values.filter { it !== v }) {
+            val t = Clock.SYSTEM.monotonicNanos()
+            runCatching { b.step() }.onFailure { onProblem(Diagnostic.fromThrowable(com.dpsmpx.dpai.core.diagnostics.DiagCode.INTERNAL_ERROR, "такт фонового проекта не прошёл", it)) }
+            perf("такт фонового проекта", t)
+            background += drainBackground(b)
+        }
+        snapshot(v, selected, drain(v) + background)
+    }
+
+    /** Рабочие проекты (D-179): список и выбранный. */
+    fun projects(): com.dpsmpx.dpai.ui.Projects = controller.projects()
+
+    /** Показывать проект [id]: контуры не пересобираются, меняется только выбранный. */
+    fun selectProject(id: com.dpsmpx.dpai.core.ids.ProjectId): Outcome<Unit> = controller.selectProject(id)
+
+    /**
+     * Убрать рабочий проект [id] (D-179) — под замком такта: между проверкой и записью
+     * контур не начнёт новую сессию. Идут сессии — отказ: их ходы остались бы без контура.
+     */
+    fun removeProject(id: com.dpsmpx.dpai.core.ids.ProjectId): Outcome<Unit> = lock.withLock {
+        val active = contours[id]?.orchestrator?.sessions?.sessions?.values?.count { !it.terminal } ?: 0
+        if (active > 0) {
+            Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, "у проекта идут сессии ($active): дождитесь конца или остановите их", id.value)
+        } else {
+            controller.removeProject(id)
+        }
+    }
+
+    /** Новые уведомления фонового контура [b]: показываются так же, как у выбранного. */
+    private fun drainBackground(b: LiveSystem): List<Notification> {
+        val (fresh, next) = b.orchestrator.postedSince(drainedBy[b] ?: 0L)
+        drainedBy[b] = next
+        return fresh.mapNotNull {
+            when (it) {
+                is NotificationDecision.Post -> it.notification
+                is NotificationDecision.Update -> it.notification
+                is NotificationDecision.Held -> null
+            }
+        }
     }
 
     /** Контур, по которому опубликован последний снимок: новый контур — новый снимок до такта. */

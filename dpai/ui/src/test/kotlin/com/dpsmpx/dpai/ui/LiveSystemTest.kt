@@ -92,6 +92,40 @@ class LiveSystemTest {
         assertEquals(emptyList(), s.drainNotifications())
     }
 
+    /**
+     * Два рабочих проекта (D-179): контуры над одним target с одним местом. Ход идёт у
+     * одного — второй ждёт, хотя своих сессий у него нет; ход кончился — место берёт второй.
+     */
+    @Test
+    fun twoProjectContoursShareOneTargetPlace() {
+        val t = entry("сервер", "/home/dev/.claude-dpai")
+        slow = true
+        val all = arrayOfNulls<LiveSystem>(2)
+        fun live(s: LiveSystem?) = s?.orchestrator?.sessions?.sessions?.values?.filter { !it.terminal }.orEmpty()
+        fun others(i: Int) = object : com.dpsmpx.dpai.orchestrator.NeighbourLoad {
+            override fun sessions(target: com.dpsmpx.dpai.core.ids.ExecutionTargetId) = all.filterIndexed { k, _ -> k != i }.sumOf { s -> live(s).count { it.target == target } }
+            override fun total() = all.filterIndexed { k, _ -> k != i }.sumOf { live(it).size }
+        }
+        for (i in 0..1) {
+            all[i] = LiveSystem(clock, NioVfs(dir.resolve("p$i").also { it.toFile().mkdirs() }), listOf(t), { _, _ -> host }, "/known_hosts", RandomSource.seeded(80L + i), neighbours = others(i))
+        }
+        val (a, b) = all.map { it!! }
+        a.step(); b.step(); clock.advance(1.seconds)
+        val ta = a.addTask("A", "цель A").valueOrNull()!!
+        val tb = b.addTask("B", "цель B").valueOrNull()!!
+        repeat(3) { a.step(); b.step(); clock.advance(1.seconds) }
+        assertEquals(1, live(a).size + live(b).size, "одно место на target — одно на двоих")
+        assertEquals(1, live(a).size, "первым начал контур, чей такт раньше")
+        // Ход A доходит до конца — место переходит ко второму проекту.
+        repeat(20) {
+            for (r in host.runIds()) while (host.advance(r)) continue
+            a.step(); b.step(); clock.advance(1.seconds)
+        }
+        assertTrue(a.orchestrator.sessions.sessions.values.filter { it.task == ta }.all { it.terminal }, "ход A кончился: ${a.orchestrator.tasks.tasks.getValue(ta).state}")
+        assertTrue(b.orchestrator.sessions.sessions.values.any { it.task == tb }, "второй проект получил место")
+        assertTrue(live(a).size + live(b).size <= 1)
+    }
+
     @Test
     fun problemsKeepOnlyTheLatest() {
         // Отказ каждый такт (target недоступен) не растит список без предела (ревью 8 октября 2026, A-33, A-83).

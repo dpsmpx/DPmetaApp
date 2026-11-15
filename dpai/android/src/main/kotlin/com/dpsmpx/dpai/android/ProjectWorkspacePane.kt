@@ -43,6 +43,7 @@ import com.dpsmpx.dpai.ui.ProjectWorkspaceView
 import com.dpsmpx.dpai.ui.WorkspaceLocation
 import com.dpsmpx.dpai.ui.WorkspacePaths
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private enum class WorkspacePage(val title: String) { FILES("Файлы"), AI("ИИ"), CHANGES("Изменения"), CHECKS("Проверки"), BUILD("Сборка"), RUN("Запуск") }
@@ -94,6 +95,17 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
             TextButton(onClick = { draftsOpen = true }) { Text("Черновики") }
         }
         if (!keyboard) {
+        // Несколько рабочих проектов (D-147): работают все, экран показывает выбранный — переключатель.
+        val all = remember(project.project) { model.projects() }
+        val switchScope = androidx.compose.runtime.rememberCoroutineScope()
+        if (all.projects.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
+            for (p in all.projects) {
+                val name = p.root.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\').ifEmpty { p.root }
+                FilterChip(selected = p.project == project.project, onClick = {
+                    if (p.project != project.project) switchScope.launch { withContext(Dispatchers.IO) { model.selectProject(p.project) } }
+                }, label = { Text(name) })
+            }
+        }
         Column(Modifier.padding(horizontal = 12.dp)) {
             Text(project.root, style = MaterialTheme.typography.bodySmall)
             Text("Target: ${current.target?.label ?: "не найден"}", style = MaterialTheme.typography.bodySmall)

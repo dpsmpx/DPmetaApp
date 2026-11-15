@@ -197,3 +197,80 @@ object ProjectBook {
         return Outcome.success(ProjectEntry(project, repository, target, root, worktreeRoot, branch, checks, claude))
     }
 }
+
+/**
+ * Рабочие проекты приложения (`DPmetaApp:D-147`; D-179) — документ `dpai.app-projects`:
+ * список проектов, [selected] — какой показывают экраны (`null` — первый), [liveProject] —
+ * чей контур живёт в прежнем каталоге журнала `live/` (назначается один раз и не
+ * переназначается: журнал одного проекта не достаётся другому). Прежний документ
+ * `dpai.app-project` читается как список из одного проекта с `live/`.
+ */
+data class Projects(val projects: List<ProjectEntry>, val selected: ProjectId? = null, val liveProject: ProjectId? = null) {
+    /** Выбранный проект: [selected], если он в списке, иначе первый; пусто — `null`. */
+    val current: ProjectEntry? get() = projects.firstOrNull { it.project == selected } ?: projects.firstOrNull()
+
+    /** Каталог журнала контура проекта [id] от каталога данных контроллера. */
+    fun journalDir(id: ProjectId): String = if (id == liveProject) "live" else "live-projects/${id.value}"
+
+    /**
+     * Добавить или заменить проект (по id) и сделать его выбранным. Первый проект при
+     * пустом [liveProject] получает `live/` — как одиночный проект до D-179.
+     */
+    fun put(p: ProjectEntry): Outcome<Projects> {
+        val replaced = projects.any { it.project == p.project }
+        if (!replaced && projects.size >= MAX) return Outcome.failure(DiagCode.VALUE_INVALID, "рабочих проектов — не больше $MAX")
+        // Форма проекта даёт новые id каждый раз: дубликат — тот же каталог на том же target.
+        if (projects.any { it.project != p.project && (it.repository == p.repository || it.target == p.target && it.root.trimEnd('/', '\\') == p.root.trimEnd('/', '\\')) }) {
+            return Outcome.failure(DiagCode.STATE_CONFLICT, "этот репозиторий уже есть в рабочих проектах")
+        }
+        val list = if (replaced) projects.map { if (it.project == p.project) p else it } else projects + p
+        return Outcome.success(copy(projects = list, selected = p.project, liveProject = liveProject ?: if (projects.isEmpty()) p.project else null))
+    }
+
+    /** Убрать проект [id]; выбран был он — выбран первый из оставшихся. `live/` за ним остаётся. */
+    fun remove(id: ProjectId): Projects = copy(projects = projects.filter { it.project != id }, selected = selected.takeIf { it != id })
+
+    fun select(id: ProjectId): Outcome<Projects> =
+        if (projects.any { it.project == id }) Outcome.success(copy(selected = id)) else Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "такого рабочего проекта нет", id.value)
+
+    companion object {
+        const val FORMAT = "dpai.app-projects"
+        const val VERSION = 1
+        const val MAX = 12
+        val EMPTY = Projects(emptyList())
+
+        fun toJson(p: Projects): JsonObject = JsonObject(
+            linkedMapOf<String, JsonValue>(*FormatHeader.write(FORMAT, VERSION), "projects" to JsonArray(p.projects.map(ProjectBook::toJson))).also { m ->
+                p.selected?.let { m["selected"] = JsonString(it.value) }
+                p.liveProject?.let { m["liveProject"] = JsonString(it.value) }
+            },
+        )
+
+        /** Новый формат или прежний одиночный `dpai.app-project` (тогда его контур — в `live/`). */
+        fun fromJson(value: JsonValue): Outcome<Projects> {
+            val o = value as? JsonObject ?: return Outcome.failure(DiagCode.FIELD_TYPE, "ожидался объект", "$")
+            if ((o["format"] as? JsonString)?.value == ProjectBook.FORMAT) {
+                return when (val one = ProjectBook.fromJson(value)) {
+                    is Outcome.Failure -> one
+                    is Outcome.Success -> Outcome.success(Projects(listOf(one.value), one.value.project, one.value.project))
+                }
+            }
+            val d = DiagnosticCollector()
+            val f = JsonFields.root(value, d) ?: return Outcome.Failure(d.all)
+            FormatHeader.read(f, FORMAT, 1..VERSION, d) ?: return Outcome.Failure(d.all)
+            val items = f.array("projects")?.items.orEmpty().mapIndexed { i, v ->
+                when (val r = ProjectBook.fromJson(v)) {
+                    is Outcome.Failure -> { d.error(DiagCode.VALUE_INVALID, "проект не читается: ${r.diagnostics.first().message}", "$.projects[$i]"); null }
+                    is Outcome.Success -> r.value
+                }
+            }
+            val selected = f.optString("selected")?.let { IdKinds.PROJECT.parse(it).valueOrNull() }
+            val live = f.optString("liveProject")?.let { IdKinds.PROJECT.parse(it).valueOrNull() }
+            f.finish()
+            val list = items.filterNotNull()
+            if (list.map { it.project }.toSet().size != list.size) d.error(DiagCode.VALUE_INVALID, "проект в списке дважды", "$.projects")
+            if (d.hasErrors) return Outcome.Failure(d.all)
+            return Outcome.success(Projects(list, selected, live))
+        }
+    }
+}

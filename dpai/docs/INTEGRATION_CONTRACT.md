@@ -238,7 +238,8 @@ API не включён. Граница — этот раздел и реест�
 | `dpai.backup-manifest` | 1 | `BackupService` | `manifest.json` копии |
 | `dpai.restore-marker` | 1 | `BackupService` | `restore.pending` — начатое восстановление |
 | `dpai.app-targets` | 5 (1–5) | `TargetBook` | документ `targets` приложения; v1 — без `configDir`; v3 — target «в приложении» (`kind`); v4 — `executor`; v5 — `tmux` (только `false`) |
-| `dpai.app-project` | 2 (1–2) | `ProjectBook` | документ `project` приложения; v1 — без маршрута `claude` (D-50) |
+| `dpai.app-projects` | 1 | `Projects` | документ `projects` приложения — рабочие проекты (D-179) |
+| `dpai.app-project` | 2 (1–2) | `ProjectBook` | элемент `dpai.app-projects`; прежний документ `project` приложения читается как список из одного; v1 — без маршрута `claude` (D-50) |
 | `dpai.agent-reply` | 2 | `AgentReply` | стандартный вывод агента; не хранится |
 | `dpai.run-spec` | 1 | `RunSpec` | стандартный вход `dpai agent start --spec-stdin`; внутри `dpai.agent-run` |
 | `dpai.agent-run` | 2 (только 2) | `AgentRuntime` | `runs/<SessionId>/run` на target |
@@ -475,7 +476,7 @@ DP-Verify как шаг профиля проверки (D-16).
 
 | Владелец | Данные | Что делает оркестратор |
 |---|---|---|
-| Оркестратор (контроллер) | журнал, снимки, документы контура (контекст, handoff, итоги прогона), реестры задач, сессий, слотов, деревьев, слияний; настройки приложения (`dpai.app-targets`, `dpai.app-project`), known_hosts приложения | источник истины (D-01, D-24): переживает смену сессии, аккаунта и перезапуск |
+| Оркестратор (контроллер) | журнал, снимки, документы контура (контекст, handoff, итоги прогона), реестры задач, сессий, слотов, деревьев, слияний; настройки приложения (`dpai.app-targets`, `dpai.app-projects`), known_hosts приложения | источник истины (D-01, D-24): переживает смену сессии, аккаунта и перезапуск |
 | Агент на target | `runs/<SessionId>/`: документ запуска, журнал `events.jsonl`, `stop-request` | пишет только супервизор (D-31); контроллер читает события по номерам |
 | Claude Code на target | каталог слота `CLAUDE_CONFIG_DIR`: вход claude.ai, настройки, своя история сессий | не читает, не копирует, не хранит, не передаёт (D-27); знает только итог `claude auth status --json` — способ входа и отпечаток аккаунта (хеш `orgId` и email; сам email не хранится, D-30) |
 | Anthropic | аккаунт, подписка, пределы | наблюдает пределы по ответам Claude Code и не обходит их (D-04) |
@@ -525,7 +526,6 @@ DP-Verify как шаг профиля проверки (D-16).
 | Команды контура возвращают `Outcome`, а не `OperationResult` (D-06 — пока на уровне типа) | раздел 11.1 |
 | `cli` — только `version`, `help` и `agent`: режима контроллера без интерфейса, `doctor` контроллера и сценариев на `MockRunner` в команде нет; контроллер — в приложении (D-35) | `cli/src/main/kotlin/com/dpsmpx/dpai/cli/Main.kt` |
 | Тело `dpai.verification-report` контур не сохраняет: в журнале — вердикт и хеш | раздел 10 |
-| Один проект на контроллер приложения | `dpai.app-project` |
 | `GitHubCommands` строит команды `gh`, но контур их не вызывает; предохранитель `CircuitLifecycle` подключён только к здоровью targets | `docs/ECOSYSTEM.md`, §3; `docs/EXECUTION_MODEL.md`, §2 |
 | Модуль `analytics` пуст: граница закреплена, кода нет | `docs/ARCHITECTURE.md`, §2 |
 | Канал запуска — опрос агента; вывод процессов читается как UTF-8 (кодовая страница OEM на Windows искажается); `SequenceTracker` канала держит id событий запуска в памяти | `TODO.md`, «Известные долги» |

@@ -293,7 +293,9 @@ Android 11 (`DPmetaApp:D-74`); `LinkTaps` — касание внешней сс
 `dpai.app-targets`: слот на target, `SlotAuthProbe`, `RoutingRunner`;
 с проектом (`dpai.app-project`) — репозиторий на target, `GitService`
 поверх SSH-хоста (`git -C`), проверка через агента (`AgentStepRunner`),
-слияние по одобрению.
+слияние по одобрению. Рабочих проектов несколько (`dpai.app-projects`,
+D-179): по `LiveSystem` на проект, места на target общие — `NeighbourLoad`
+оркестратора.
 Обе — `ControlView`: оболочка рисует любую.
 
 Модуль `android` (этап 11, D-34): Jetpack Compose рисует снимок `ui`;

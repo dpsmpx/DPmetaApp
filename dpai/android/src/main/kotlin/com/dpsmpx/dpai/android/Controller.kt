@@ -188,10 +188,7 @@ class Controller(private val root: File, val version: String?) {
     private var targetsCache: List<TargetEntry>? = null
 
     @Volatile
-    private var projectCache: ProjectEntry? = null
-
-    @Volatile
-    private var projectKnown = false
+    private var projectsCache: com.dpsmpx.dpai.ui.Projects? = null
 
     @Synchronized
     fun targets(): List<TargetEntry> {
@@ -208,17 +205,53 @@ class Controller(private val root: File, val version: String?) {
     fun form(label: String, host: String, port: String, user: String, windows: Boolean, agent: String, configDir: String): Outcome<TargetEntry> =
         TargetForm.validate(ids.next(IdKinds.TARGET), label, host, port, user, windows, agent, configDir)
 
-    /** Проект контроллера (один): репозиторий на target, деревья задач, проверка. */
+    /**
+     * Рабочие проекты (`DPmetaApp:D-147`; D-179): документ `dpai.app-projects`, а до первой
+     * записи — прежний одиночный `dpai.app-project` как список из одного. Неудачное чтение
+     * не запоминается.
+     */
     @Synchronized
-    fun project(): ProjectEntry? {
-        if (projectKnown) return projectCache
-        val (ok, value) = bookDocument(PROJECT) { ProjectBook.fromJson(it) }
-        if (ok) {
-            projectCache = value
-            projectKnown = true
-        }
-        return value
+    fun projects(): com.dpsmpx.dpai.ui.Projects {
+        projectsCache?.let { return it }
+        val (ok, value) = bookDocument(PROJECTS) { com.dpsmpx.dpai.ui.Projects.fromJson(it) }
+        if (!ok) return com.dpsmpx.dpai.ui.Projects.EMPTY
+        if (value != null) return value.also { projectsCache = it }
+        val (legacyOk, legacy) = bookDocument(PROJECT) { com.dpsmpx.dpai.ui.Projects.fromJson(it) }
+        val v = legacy ?: com.dpsmpx.dpai.ui.Projects.EMPTY
+        if (legacyOk) projectsCache = v
+        return v
     }
+
+    /** Выбранный рабочий проект — его показывают экраны (D-179); остальные работают в фоне. */
+    fun project(): ProjectEntry? = projects().current
+
+    /** Записать список; прежний одиночный документ после этого не нужен. Отказ — кэш сброшен до чтения с диска. */
+    private fun writeProjects(p: com.dpsmpx.dpai.ui.Projects): Outcome<Unit> = manualProfiles.edit {
+        when (val w = docs.write(PROJECTS, com.dpsmpx.dpai.ui.Projects.toJson(p))) {
+            is Outcome.Failure -> { projectsCache = null; w }
+            is Outcome.Success -> {
+                projectsCache = p
+                if ((docs.read(PROJECT) as? Outcome.Success)?.value != null) docs.delete(PROJECT)
+                Outcome.success(Unit)
+            }
+        }
+    }
+
+    /** Добавить или заменить рабочий проект и выбрать его. */
+    @Synchronized
+    fun putProject(p: ProjectEntry): Outcome<Unit> = when (val n = projects().put(p)) {
+        is Outcome.Failure -> n
+        is Outcome.Success -> writeProjects(n.value)
+    }
+
+    @Synchronized
+    fun selectProject(id: com.dpsmpx.dpai.core.ids.ProjectId): Outcome<Unit> = when (val n = projects().select(id)) {
+        is Outcome.Failure -> n
+        is Outcome.Success -> if (n.value == projects()) Outcome.success(Unit) else writeProjects(n.value)
+    }
+
+    @Synchronized
+    fun removeProject(id: com.dpsmpx.dpai.core.ids.ProjectId): Outcome<Unit> = writeProjects(projects().remove(id))
 
     /** [claudeOn] — где идёт ход Claude, если не на [target] (D-50); ключ и known_hosts — пути на нём. */
     fun projectForm(
@@ -232,13 +265,10 @@ class Controller(private val root: File, val version: String?) {
         knownHostsFile: String = "",
     ): Outcome<ProjectEntry> = ProjectForm.validate(ids, target, root, worktreeRoot, branch, check, claudeOn, identityFile, knownHostsFile)
 
+    /** Прежний вход экранов: [p] — добавить или заменить и выбрать; `null` — убрать выбранный. */
     @Synchronized
-    fun setProject(p: ProjectEntry?): Outcome<Unit> = manualProfiles.edit {
-        val r = if (p == null) docs.delete(PROJECT) else docs.write(PROJECT, ProjectBook.toJson(p)).let { w -> if (w is Outcome.Failure) w else Outcome.success(Unit) }
-        projectCache = p
-        projectKnown = r is Outcome.Success
-        r
-    }
+    fun setProject(p: ProjectEntry?): Outcome<Unit> =
+        if (p != null) putProject(p) else projects().current?.let { removeProject(it.project) } ?: Outcome.success(Unit)
 
     /** Настоящий контроллер над [targets]: SSH — JSch с ключом Keystore, журнал — в каталоге контроллера. */
     /** Разрешены ли уведомления приложения (D-36) — сигнал самодиагностики; задаёт экран. */
@@ -254,8 +284,11 @@ class Controller(private val root: File, val version: String?) {
         inAppHost: com.dpsmpx.dpai.execution.process.ProcessHost? = null,
         /** Процессы гостя — Git проекта на target «в приложении». */
         inAppGuest: com.dpsmpx.dpai.execution.process.ProcessHost? = null,
+        /** Сессии контуров других рабочих проектов (D-179). */
+        neighbours: com.dpsmpx.dpai.orchestrator.NeighbourLoad = com.dpsmpx.dpai.orchestrator.NeighbourLoad.NONE,
     ): LiveSystem {
-        val dir = NioVfs(File(root, "live").apply { mkdirs() }.toPath())
+        // Журнал контура — свой у каждого рабочего проекта; первый (прежний) — в `live/` (D-179).
+        val dir = NioVfs(File(root, project?.let { projects().journalDir(it.project) } ?: "live").apply { mkdirs() }.toPath())
         // Карантин хвоста журнала — только после «да» человека и только на одну сборку (D-24).
         val confirmed = dir.exists(QUARANTINE_CONFIRMED)
         return LiveSystem(
@@ -270,6 +303,7 @@ class Controller(private val root: File, val version: String?) {
             inAppHost = inAppHost,
             inAppGuest = inAppGuest,
             externalPause = { manualProfiles.blocked },
+            neighbours = neighbours,
         ).also { if (confirmed) runCatching { dir.delete(QUARANTINE_CONFIRMED) } }
     }
 
@@ -522,6 +556,7 @@ class Controller(private val root: File, val version: String?) {
         private const val QUARANTINE_CONFIRMED = "quarantine-confirmed"
         private const val BOOK = "targets"
         private const val PROJECT = "project"
+        private const val PROJECTS = "projects"
         private const val KNOWN_HOSTS = "known_hosts"
         private const val APP_KEY = "app_key.pub"
 
