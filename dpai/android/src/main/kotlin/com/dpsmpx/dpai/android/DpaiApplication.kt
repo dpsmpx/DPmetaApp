@@ -15,6 +15,8 @@ import com.dpsmpx.dpai.core.diagnostics.Redactor
 open class DpaiApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        // Ключ SSH приложения — переносимый файлом (D-184): ему нужен каталог процесса.
+        KeystoreKey.install(this)
         // Восстановление из резервной копии (DPmetaApp:D-151) — до чтения настроек и хранилищ.
         AppBackups.applyPending(this)
         Drafts.install(this)

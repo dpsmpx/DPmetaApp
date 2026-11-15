@@ -15,8 +15,10 @@ import java.security.cert.X509Certificate
  * Ключи подписи APK автора в Android Keystore (D-157, D-178): глобальный и свой у
  * проекта ([project] — id проекта, `null` — глобальный). Импорт из файла PKCS#12 или
  * созданный ключ с копией-файлом у автора; подпись — только после входа (PIN или
- * сильная биометрия, действует минуту). Закрытый ключ из Keystore не извлекается;
- * файл и пароль приложение не хранит.
+ * сильная биометрия, действует минуту). Закрытый ключ из Keystore не извлекается.
+ * С D-184 (`DPmetaApp:D-157`) рядом — копия файла .p12 с паролем, зашифрованная ключом
+ * Keystore со входом: она уходит в резервную копию под паролем и из неё восстанавливает
+ * ключ. У ключей, импортированных раньше, копии нет — их импортируют заново.
  */
 internal object SigningKeys {
     private const val STORE = "AndroidKeyStore"
@@ -76,15 +78,20 @@ internal object SigningKeys {
     fun import(context: Context, bytes: ByteArray, password: Secret, alias: String?, project: String?): Outcome<Info> {
         if (info(project) != null) return Outcome.failure(DiagCode.STATE_CONFLICT, "ключ уже есть — сначала удалите прежний")
         val chars = password.reveal().toCharArray()
-        val parsed = try {
-            when (val r = KeyFile.read(bytes, chars, alias)) {
+        try {
+            val parsed = when (val r = KeyFile.read(bytes, chars, alias)) {
                 is Outcome.Failure -> return r
                 is Outcome.Success -> r.value
             }
+            val info = when (val r = put(context, parsed, project, "импортирован")) {
+                is Outcome.Failure -> return r
+                is Outcome.Success -> r.value
+            }
+            seal(context, bytes, chars, alias, project)
+            return Outcome.success(info)
         } finally {
             chars.fill('\u0000')
         }
-        return put(context, parsed, project, "импортирован")
     }
 
     /**
@@ -97,7 +104,53 @@ internal object SigningKeys {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }
-        return put(context, parsed, project, "создан, копия — файлом у автора")
+        val info = when (val r = put(context, parsed, project, "создан, копия — файлом у автора")) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        seal(context, file, password, KeyFile.ALIAS, project)
+        return Outcome.success(info)
+    }
+
+    private const val WRAP = "dpai-sign-wrap"
+    private const val SEALED = "dpai.signing-key"
+
+    private fun sealedName(project: String?): String = "sign-" + (project?.lowercase()?.filter { it.isLetterOrDigit() || it == '_' || it == '-' } ?: "global") + ".p12"
+
+    /** Есть ли копия ключа уровня [project] для резервной копии (D-184). */
+    fun portable(context: Context, project: String?): Boolean = KeyWrap.exists(context.applicationContext.noBackupFilesDir, sealedName(project))
+
+    /** Копия файла и пароля — ключом Keystore со входом; не вышло — ключ работает, но в копию не попадёт. */
+    private fun seal(context: Context, file: ByteArray, password: CharArray, alias: String?, project: String?) {
+        val doc = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(com.dpsmpx.dpai.core.serialization.JsonObject(linkedMapOf<String, com.dpsmpx.dpai.core.serialization.JsonValue>(
+            "format" to com.dpsmpx.dpai.core.serialization.JsonString(SEALED),
+            "version" to com.dpsmpx.dpai.core.serialization.JsonNumber.of(1),
+            "p12" to com.dpsmpx.dpai.core.serialization.JsonString(java.util.Base64.getEncoder().encodeToString(file)),
+            "password" to com.dpsmpx.dpai.core.serialization.JsonString(String(password)),
+        ).apply { alias?.let { put("alias", com.dpsmpx.dpai.core.serialization.JsonString(it)) } }))
+        when (val w = KeyWrap.write(context.applicationContext.noBackupFilesDir, WRAP, userAuth = true, sealedName(project), doc.toByteArray(Charsets.UTF_8))) {
+            is Outcome.Failure -> AppLogs.info(context, "подпись", "копия ключа (${level(project)}) для резервной копии не сохранена: ${w.diagnostics.first().message}")
+            is Outcome.Success -> AppLogs.info(context, "подпись", "копия ключа (${level(project)}) для резервной копии сохранена")
+        }
+    }
+
+    /** Значение для копии под паролем; нужен недавний вход (окно [KeyWrap.AUTH_SECONDS]). */
+    fun exportValue(context: Context, project: String?): Outcome<Secret?> = when (val r = KeyWrap.read(context.applicationContext.noBackupFilesDir, WRAP, userAuth = true, sealedName(project))) {
+        is Outcome.Failure -> r
+        is Outcome.Success -> Outcome.success(r.value?.let { b -> try { Secret(String(b, Charsets.UTF_8)) } finally { b.fill(0) } })
+    }
+
+    /** Ключ из копии (D-184): прежний ключ уровня заменяется; копия снова сохраняется. */
+    fun importValue(context: Context, project: String?, value: Secret): Outcome<Info> {
+        val o = com.dpsmpx.dpai.core.serialization.JsonParser().parse(value.reveal()).valueOrNull() as? com.dpsmpx.dpai.core.serialization.JsonObject
+        val p12 = (o?.get("p12") as? com.dpsmpx.dpai.core.serialization.JsonString)?.value?.let { runCatching { java.util.Base64.getDecoder().decode(it) }.getOrNull() }
+        val pw = (o?.get("password") as? com.dpsmpx.dpai.core.serialization.JsonString)?.value
+        if ((o?.get("format") as? com.dpsmpx.dpai.core.serialization.JsonString)?.value != SEALED || p12 == null || pw == null) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, "ключ подписи в копии не читается")
+        }
+        val alias = (o["alias"] as? com.dpsmpx.dpai.core.serialization.JsonString)?.value
+        if (info(project) != null) delete(context, project)
+        return import(context, p12, Secret(pw), alias, project).also { p12.fill(0) }
     }
 
     private fun put(context: Context, parsed: KeyFile.Parsed, project: String?, what: String): Outcome<Info> {
@@ -129,6 +182,7 @@ internal object SigningKeys {
         val before = info(project) ?: return Outcome.success(Unit)
         return try {
             store().deleteEntry(alias(project))
+            KeyWrap.delete(context.applicationContext.noBackupFilesDir, sealedName(project))
             AppLogs.info(context, "подпись", "ключ подписи (${level(project)}) удалён: ${before.subject}, SHA-256 ${before.certSha256}")
             Outcome.success(Unit)
         } catch (e: Exception) {

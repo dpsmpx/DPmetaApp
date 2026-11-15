@@ -137,7 +137,8 @@ private fun KeyLevelRow(title: String, level: String?, key: SigningKeys.Info?, e
     }
     picked?.let { bytes ->
         KeyPasswordDialog(onCancel = { bytes.fill(0); picked = null }) { password, alias ->
-            scope.launch {
+            // Вход — до импорта: копия ключа для резервной копии шифруется ключом Keystore со входом (D-184).
+            DeviceConfirm.ask(context, "Ключ подписи — в приложение", onOk = { scope.launch {
                 val r = withContext(Dispatchers.IO) { SigningKeys.import(app, bytes, password, alias, level) }
                 when (r) {
                     is Outcome.Success -> { bytes.fill(0); picked = null; onChanged(); onNote("Ключ импортирован. Файл ключа приложение не хранит.") }
@@ -148,13 +149,16 @@ private fun KeyLevelRow(title: String, level: String?, key: SigningKeys.Info?, e
                         if (d.code != DiagCode.FIELD_MISSING && d.code != DiagCode.VALUE_INVALID) { bytes.fill(0); picked = null }
                     }
                 }
-            }
+            } }, onDenied = { why -> onNote("Ключ не импортирован: $why") })
         }
     }
     if (creating) CreateKeyDialog(onCancel = { creating = false }) { name, password ->
         creating = false
         pending = name to password
-        save.launch(if (level == null) "dpmetaapp-signing.p12" else "dpmetaapp-signing-${level.lowercase()}.p12")
+        // Вход — до создания: копия ключа для резервной копии шифруется ключом Keystore со входом (D-184).
+        DeviceConfirm.ask(context, "Ключ подписи — в приложение",
+            onOk = { save.launch(if (level == null) "dpmetaapp-signing.p12" else "dpmetaapp-signing-${level.lowercase()}.p12") },
+            onDenied = { why -> pending?.second?.fill('\u0000'); pending = null; onNote("Ключ не создан: $why") })
     }
     if (deleting) AlertDialog(
         onDismissRequest = { deleting = false },

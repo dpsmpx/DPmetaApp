@@ -134,6 +134,7 @@ fun AppBackupCard() {
             }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            PortableSshRow(refresh) { refresh++ }
         }
     }
 
@@ -369,5 +370,54 @@ private fun EraseDialog(rows: List<AppSecrets.Row>, onCancel: () -> Unit, onEras
             TextButton(enabled = SecretRevoke.eraseConfirmed(typed), onClick = onErase) { Text("Стереть", color = MaterialTheme.colorScheme.error) }
         },
         dismissButton = { TextButton(onClick = onCancel) { Text("Отмена") } },
+    )
+}
+
+/**
+ * Ключ SSH в копии (D-184): переносимый — уходит в копию под паролем; прежний внутри
+ * Keystore не извлекается — его можно сменить на новый переносимый (строку на ПК и в
+ * Termux тогда нужно заменить).
+ */
+@Composable
+private fun PortableSshRow(refresh: Int, onChanged: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val state = rememberRead(refresh, initial = null) { if (!KeystoreKey.exists()) null else KeystoreKey.portable() }
+    var confirm by remember { mutableStateOf(false) }
+    var line by remember { mutableStateOf<String?>(null) }
+    var note by remember { mutableStateOf<String?>(null) }
+    when (state) {
+        null -> return
+        true -> Text("Ключ SSH приложения — переносимый: уходит в копию под паролем.", style = MaterialTheme.typography.bodySmall)
+        false -> {
+            Text("Ключ SSH приложения — прежний, внутри Keystore: в копию не уходит. Новый переносимый ключ уйдёт в неё, но строку ключа на ПК и в Termux нужно будет заменить.",
+                style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = { confirm = true }) { Text("Новый переносимый ключ SSH…") }
+        }
+    }
+    line?.let { l ->
+        Text(l, style = MaterialTheme.typography.bodySmall)
+        TextButton(onClick = {
+            context.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(android.content.ClipData.newPlainText("ключ SSH", l))
+            note = "Строка скопирована — добавьте её в ~/.ssh/authorized_keys на ПК и в Termux"
+        }) { Text("Скопировать строку ключа") }
+    }
+    note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+    if (confirm) AlertDialog(
+        onDismissRequest = { confirm = false },
+        title = { Text("Новый ключ SSH") },
+        text = { Text("Прежний ключ будет стёрт: подключения к ПК и Termux перестанут работать, пока вы не добавите новую строку ключа в authorized_keys.") },
+        confirmButton = {
+            TextButton(onClick = {
+                confirm = false
+                scope.launch {
+                    when (val r = withContext(Dispatchers.IO) { KeystoreKey.renew() }) {
+                        is Outcome.Failure -> note = "Ключ не сменён: ${r.errors.first().message}"
+                        is Outcome.Success -> { line = r.value; note = "Новый переносимый ключ создан"; onChanged() }
+                    }
+                }
+            }) { Text("Создать новый") }
+        },
+        dismissButton = { TextButton(onClick = { confirm = false }) { Text("Отмена") } },
     )
 }

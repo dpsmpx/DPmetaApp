@@ -1,7 +1,6 @@
 package com.dpsmpx.dpai.android
 
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
+import android.content.Context
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
@@ -44,34 +43,81 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Ключ входа приложения (D-35): ECDSA P-256 в Android Keystore. Закрытая
- * часть не покидает устройство и не попадает ни в журнал, ни в копию
- * (D-14, T6); на target уходит только строка открытого ключа.
+ * Ключ входа приложения (D-35): ECDSA P-256. С D-184 (`DPmetaApp:D-157`) — переносимый:
+ * закрытый ключ файлом в `noBackupFilesDir`, зашифрованный ключом Keystore без входа
+ * (фоновые подключения к target идут и при запертом телефоне), и попадает в копию под
+ * паролем (`AppSecrets`). Прежний ключ внутри Keystore не извлекается: он работает, пока
+ * его не сменят на переносимый ([renew]). В журнал и на target — только открытая строка.
  */
 object KeystoreKey {
     private const val ALIAS = "dpai-ssh"
+    private const val WRAP = "dpai-ssh-wrap"
+    private const val FILE = "ssh.key"
+    private const val FORMAT = "dpai.ssh-key"
     const val COMMENT = "dpai-android"
+
+    /** Каталог `noBackupFilesDir` приложения — не сам Context (утечка в статическом поле). */
+    @Volatile private var app: java.io.File? = null
+    @Volatile private var cached: java.security.KeyPair? = null
+
+    /** Оболочка — при запуске процесса: где лежит переносимый ключ. */
+    fun install(context: Context) { app = context.applicationContext.noBackupFilesDir }
 
     private fun store(): KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
+    private fun legacy(): Boolean = try { store().containsAlias(ALIAS) } catch (_: Exception) { false }
+
+    /** Переносимый ключ есть (и попадёт в копию под паролем). */
+    fun portable(): Boolean = app?.let { KeyWrap.exists(it, FILE) } == true
+
+    @Synchronized
+    private fun loadPortable(): java.security.KeyPair? {
+        cached?.let { return it }
+        val base = app ?: return null
+        val plain = (KeyWrap.read(base, WRAP, userAuth = false, FILE) as? Outcome.Success)?.value ?: return null
+        return try { decode(String(plain, Charsets.UTF_8)) } finally { plain.fill(0) }?.also { cached = it }
+    }
+
+    private fun decode(text: String): java.security.KeyPair? = runCatching {
+        val o = com.dpsmpx.dpai.core.serialization.JsonParser().parse(text).valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject
+        require((o["format"] as com.dpsmpx.dpai.core.serialization.JsonString).value == FORMAT)
+        val f = java.security.KeyFactory.getInstance("EC")
+        val b64 = java.util.Base64.getDecoder()
+        val priv = f.generatePrivate(java.security.spec.PKCS8EncodedKeySpec(b64.decode((o["private"] as com.dpsmpx.dpai.core.serialization.JsonString).value)))
+        val pub = f.generatePublic(java.security.spec.X509EncodedKeySpec(b64.decode((o["public"] as com.dpsmpx.dpai.core.serialization.JsonString).value))) as ECPublicKey
+        require(pub.params.curve.field.fieldSize == 256)
+        java.security.KeyPair(pub, priv)
+    }.getOrNull()
+
+    private fun encode(pair: java.security.KeyPair): String {
+        val b64 = java.util.Base64.getEncoder()
+        return com.dpsmpx.dpai.core.serialization.CanonicalJson.write(com.dpsmpx.dpai.core.serialization.JsonObject.of(
+            "format" to com.dpsmpx.dpai.core.serialization.JsonString(FORMAT),
+            "version" to com.dpsmpx.dpai.core.serialization.JsonNumber.of(1),
+            "private" to com.dpsmpx.dpai.core.serialization.JsonString(b64.encodeToString(pair.private.encoded)),
+            "public" to com.dpsmpx.dpai.core.serialization.JsonString(b64.encodeToString(pair.public.encoded)),
+        ))
+    }
+
+    @Synchronized
+    private fun createPortable(): java.security.KeyPair {
+        val base = checkNotNull(app) { "KeystoreKey.install не вызван" }
+        val pair = KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec("secp256r1")) }.generateKeyPair()
+        val w = KeyWrap.write(base, WRAP, userAuth = false, FILE, encode(pair).toByteArray(Charsets.UTF_8))
+        check(w is Outcome.Success) { "ключ SSH не записан" }
+        cached = pair
+        return pair
+    }
+
     @Synchronized
     fun publicKey(): ECPublicKey {
-        val ks = store()
-        if (!ks.containsAlias(ALIAS)) {
-            KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore").apply {
-                initialize(
-                    KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_SIGN)
-                        .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
-                        .setDigests(KeyProperties.DIGEST_SHA256)
-                        .build(),
-                )
-            }.generateKeyPair()
-        }
-        return ks.getCertificate(ALIAS).publicKey as ECPublicKey
+        loadPortable()?.let { return it.public as ECPublicKey }
+        if (legacy()) return store().getCertificate(ALIAS).publicKey as ECPublicKey
+        return createPortable().public as ECPublicKey
     }
 
     /** Есть ли ключ — для аварийного отзыва; проверка не создаёт новый. */
-    fun exists(): Boolean = try { store().containsAlias(ALIAS) } catch (_: Exception) { false }
+    fun exists(): Boolean = portable() || legacy()
 
     /**
      * Стереть ключ (аварийный отзыв, `DPmetaApp:D-151`): следующее подключение создаст
@@ -79,15 +125,40 @@ object KeystoreKey {
      */
     @Synchronized
     fun erase(): Outcome<Unit> = try {
-        store().deleteEntry(ALIAS)
+        cached = null
+        app?.let { KeyWrap.delete(it, FILE) }
+        if (legacy()) store().deleteEntry(ALIAS)
         Outcome.success(Unit)
     } catch (e: Exception) {
         Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "ключ SSH не стёрт", e))
     }
 
+    /** Сменить ключ на новый переносимый (D-184): прежняя строка на target перестаёт подходить. */
+    @Synchronized
+    fun renew(): Outcome<String> = when (val e = erase()) {
+        is Outcome.Failure -> e
+        is Outcome.Success -> runCatching { createPortable() }.fold({ Outcome.success(authorizedKey()) },
+            { Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "новый ключ SSH не создан", it)) })
+    }
+
+    /** Значение для копии под паролем: переносимый ключ; прежний неизвлекаемый — `null`. */
+    fun exportValue(): com.dpsmpx.dpai.core.diagnostics.Secret? = loadPortable()?.let { com.dpsmpx.dpai.core.diagnostics.Secret(encode(it)) }
+
+    /** Ключ из копии (D-184): заменяет и прежний неизвлекаемый, и переносимый. */
+    @Synchronized
+    fun importValue(text: String): Outcome<Unit> {
+        val pair = decode(text) ?: return Outcome.failure(DiagCode.VALUE_INVALID, "ключ SSH в копии не читается")
+        val base = app ?: return Outcome.failure(DiagCode.STATE_CONFLICT, "приложение не готово")
+        if (legacy()) runCatching { store().deleteEntry(ALIAS) }
+        return when (val w = KeyWrap.write(base, WRAP, userAuth = false, FILE, encode(pair).toByteArray(Charsets.UTF_8))) {
+            is Outcome.Failure -> w
+            is Outcome.Success -> { cached = pair; Outcome.success(Unit) }
+        }
+    }
+
     fun identity(): EcdsaSignerIdentity = EcdsaSignerIdentity(COMMENT, publicKey()) { data ->
         Signature.getInstance("SHA256withECDSA").run {
-            initSign(store().getKey(ALIAS, null) as PrivateKey)
+            initSign(loadPortable()?.private ?: store().getKey(ALIAS, null) as PrivateKey)
             update(data)
             sign()
         }

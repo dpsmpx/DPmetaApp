@@ -12,7 +12,8 @@ import java.util.concurrent.CopyOnWriteArrayList
  * Все секреты устройства (`DPmetaApp:D-151`; D-182): для аварийного отзыва (F-46) — где
  * каждый отозвать и «стереть»; для копии под паролем (F-47) — вынуть и записать.
  * `ApiKeys` — по именам; внешние (токен GitHub пульта) — регистрирует оболочка;
- * ключ SSH и ключи подписи живут в Keystore — их можно только стереть.
+ * ключ SSH и ключи подписи (D-184, `DPmetaApp:D-157`) уходят в копию, если они
+ * переносимые; прежние неизвлекаемые — только стереть или сменить.
  */
 object AppSecrets {
     /**
@@ -70,8 +71,16 @@ object AppSecrets {
                 else -> Row(API + name, "Секрет $name", null, "отзовите там, где он выдан", true)
             }
         }
-        if (KeystoreKey.exists()) out += Row(SSH, "Ключ SSH приложения", null, "уберите его строку из authorized_keys на ПК и в Termux", false)
-        for (p in SigningKeys.all()) out += Row(SIGN + (p ?: GLOBAL), if (p == null) "Ключ подписи APK — общий" else "Ключ подписи APK проекта $p", null, "копия — ваш файл .p12", false)
+        if (KeystoreKey.exists()) {
+            val portable = KeystoreKey.portable()
+            out += Row(SSH, "Ключ SSH приложения", null,
+                "уберите его строку из authorized_keys на ПК и в Termux" + if (portable) "" else "; прежний, не переносится — «Новый переносимый ключ SSH…»", portable)
+        }
+        for (p in SigningKeys.all()) {
+            val portable = SigningKeys.portable(app, p)
+            out += Row(SIGN + (p ?: GLOBAL), if (p == null) "Ключ подписи APK — общий" else "Ключ подписи APK проекта $p", null,
+                if (portable) "копия — ваш файл .p12 и копия под паролем" else "копия — ваш файл .p12; в копию под паролем — после повторного импорта", portable)
+        }
         return out
     }
 
@@ -81,8 +90,16 @@ object AppSecrets {
      */
     fun unlockAll(activity: Activity, includeAbsent: Boolean = false, done: (Outcome<Unit>) -> Unit) {
         val pending = externals.filter { it.unlock != null && (includeAbsent || runCatching { it.present(activity) }.getOrDefault(false)) }.toMutableList()
+        // Копии ключей подписи (D-184) открываются только после входа — один вход на все.
+        val signing = includeAbsent || SigningKeys.all().any { SigningKeys.portable(activity, it) }
         fun next() {
-            val e = pending.removeFirstOrNull() ?: return done(Outcome.success(Unit))
+            val e = pending.removeFirstOrNull()
+            if (e == null) {
+                if (!signing) return done(Outcome.success(Unit))
+                return DeviceConfirm.ask(activity, "Ключи подписи — в копию или из неё",
+                    onOk = { done(Outcome.success(Unit)) },
+                    onDenied = { why -> done(Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "вход не подтверждён: $why")) })
+            }
             e.unlock!!.invoke(activity) { r -> if (r is Outcome.Failure) done(r) else next() }
         }
         next()
@@ -103,6 +120,15 @@ object AppSecrets {
             val v = ApiKeys.getNamed(app, name) ?: return Outcome.failure(DiagCode.STORAGE_CORRUPTED, "секрет $name не расшифровался — сохраните его заново или сотрите", name)
             out[API + name] = v
         }
+        // Переносимые ключи (D-184): SSH — без входа, подписи — после входа (unlockAll).
+        KeystoreKey.exportValue()?.let { out[SSH] = it }
+        for (p in SigningKeys.all()) {
+            if (!SigningKeys.portable(app, p)) continue
+            when (val r = SigningKeys.exportValue(app, p)) {
+                is Outcome.Failure -> return Outcome.failure(r.errors.first().code, "ключ подписи ${p ?: GLOBAL} не прочитан: ${r.errors.first().message}", p ?: GLOBAL)
+                is Outcome.Success -> r.value?.let { out[SIGN + (p ?: GLOBAL)] = it }
+            }
+        }
         return Outcome.success(out)
     }
 
@@ -117,6 +143,11 @@ object AppSecrets {
                 key.startsWith(EXT) -> {
                     val e = externals.firstOrNull { it.id == key.removePrefix(EXT) }
                     if (e != null && e.write(app, v) is Outcome.Success) n++ else failed += key
+                }
+                key == SSH -> if (PortableKeys.importSsh(v) is Outcome.Success) n++ else failed += key
+                key.startsWith(SIGN) -> {
+                    val level = key.removePrefix(SIGN).takeIf { it != GLOBAL }
+                    if (SigningKeys.importValue(app, level, v) is Outcome.Success) n++ else failed += key
                 }
                 else -> failed += key
             }
