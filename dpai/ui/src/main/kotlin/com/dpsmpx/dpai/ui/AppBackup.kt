@@ -198,6 +198,42 @@ object AppBackup {
 }
 
 /**
+ * Перенос хранилищ раздела (`DPmetaApp:D-151`): документы — по фильтру ключей, настройки —
+ * заменой ключей раздела. Чистые функции над `DocumentStore` и картами — их проверяет
+ * тест на JVM; оболочка только открывает хранилища и `SharedPreferences`.
+ */
+object AppBackupStores {
+    /** Документы [store] с ключами по [take]; нечитаемый — отказ с ключом. */
+    fun export(store: com.dpsmpx.dpai.storage.document.DocumentStore, take: (String) -> Boolean): Outcome<Map<String, JsonObject>> {
+        val out = LinkedHashMap<String, JsonObject>()
+        for (key in store.keys().filter(take)) {
+            when (val r = store.read(key)) {
+                is Outcome.Failure -> return Outcome.failure(r.errors.first().code, "документ $key не прочитан: ${r.errors.first().message}", key)
+                is Outcome.Success -> r.value?.let { out[key] = it.content }
+            }
+        }
+        return Outcome.success(out)
+    }
+
+    /**
+     * Документы раздела — как в копии: ключи по [take], которых в копии нет, удаляются;
+     * остальные ключи хранилища (служебные) не трогаются.
+     */
+    fun apply(store: com.dpsmpx.dpai.storage.document.DocumentStore, values: Map<String, JsonObject>, take: (String) -> Boolean): Outcome<Unit> {
+        val wanted = values.filterKeys(take)
+        for (key in store.keys().filter(take)) if (key !in wanted) (store.delete(key) as? Outcome.Failure)?.let { return it }
+        for ((key, doc) in wanted) (store.write(key, doc) as? Outcome.Failure)?.let { return it }
+        return Outcome.success(Unit)
+    }
+
+    /** Что сделать с файлом настроек: удалить [remove], записать [put]; ключи по [skip] не трогаются. */
+    data class PrefsChange(val remove: Set<String>, val put: Map<String, AppBackup.Pref>)
+
+    fun prefs(current: Set<String>, restored: Map<String, AppBackup.Pref>, skip: (String) -> Boolean): PrefsChange =
+        PrefsChange(current.filterNot(skip).filter { it !in restored }.toSet(), restored.filterKeys { !skip(it) })
+}
+
+/**
  * Где отозвать секрет (F-46; `DPmetaApp:D-151`): страница сервиса, выдавшего его. Нет
  * своей страницы — `null`, человеку — подсказка словами.
  */

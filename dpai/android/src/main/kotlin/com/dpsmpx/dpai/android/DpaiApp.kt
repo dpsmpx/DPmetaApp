@@ -191,6 +191,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 withContext(Dispatchers.IO) {
                     // Копия настроек — после изменения и раз в час (D-51); служба делает то же в своём такте.
                     runCatching { SettingsBackups.tick(context.applicationContext, Controller.get(context.filesDir)) }
+                    runCatching { AppBackups.tick(context.applicationContext, BuildConfig.DPAI_VERSION) }
                     // Оформление оболочки читает правила и сохраняет историю (D-176): тоже вне UI.
                     (if (background) model.view(s) else model.step(s))?.also { fresh -> fresh.notifications.forEach(notifier::show) }
                 }

@@ -15,6 +15,8 @@ import com.dpsmpx.dpai.core.diagnostics.Redactor
 open class DpaiApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        // Восстановление из резервной копии (DPmetaApp:D-151) — до чтения настроек и хранилищ.
+        AppBackups.applyPending(this)
         Drafts.install(this)
         IdeState.install(this)
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {

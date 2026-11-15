@@ -118,6 +118,13 @@ internal object SigningKeys {
         }
     }
 
+    /** Все ключи подписи в Keystore: `null` — глобальный, иначе id проекта (`DPmetaApp:D-151`). */
+    fun all(): List<String?> = try {
+        store().aliases().toList().filter { it == ALIAS || it.startsWith("$ALIAS@") }.map { if (it == ALIAS) null else it.removePrefix("$ALIAS@") }
+    } catch (_: Exception) {
+        emptyList()
+    }
+
     fun delete(context: Context, project: String?): Outcome<Unit> {
         val before = info(project) ?: return Outcome.success(Unit)
         return try {

@@ -82,6 +82,8 @@ fun SettingsDocument(projects: (@Composable () -> Unit)?, initialQuery: String =
                         LOOK -> LookCard()
                         PROJECTS -> projects?.let { block -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) { block() } } }
                         STORAGE -> StorageSecretsCard()
+                        REVOKE -> EmergencyRevokeCard()
+                        APP_BACKUP -> AppBackupCard()
                         AI_LINUX -> {
                             Entry("Linux в приложении", "Alpine, пакеты, слоты ИИ") { onAiSettings(SETTINGS_LINUX) }
                             Entry("Инструкция", "Termux, агент, ключ, вход, проект, dpai — по шагам") { onAiSettings(SETTINGS_GUIDE) }
@@ -131,6 +133,8 @@ private class Section(val key: String, val title: String, val about: String, val
 private const val LOOK = "look"
 private const val PROJECTS = "projects"
 private const val STORAGE = "storage"
+private const val REVOKE = "revoke"
+private const val APP_BACKUP = "app-backup"
 private const val AI_LINUX = "ai-linux"
 private const val AI_ACCESS = "ai-access"
 private const val AI_SERVICES = "ai-services"
@@ -148,6 +152,10 @@ private fun sections(pult: Boolean): List<Section> = listOfNotNull(
     },
     Section(STORAGE, "Хранилище и секреты", "Предел объёма, свободное место, карта ~/STORAGE.md и секреты для ИИ.",
         "хранилище место память гигабайт предел карта storage секреты токен ключ api hugging face github давать ии"),
+    Section(REVOKE, "Аварийный отзыв", "Все секреты устройства: где каждый отозвать и «Стереть отмеченные» — если телефон потерян или секрет утёк.",
+        "аварийный отзыв секреты стереть удалить потерян украден утечка токен ключ api ssh подпись отозвать"),
+    Section(APP_BACKUP, "Резервная копия приложения", "Копия разделов в файл — с секретами только под паролем; восстановление выбранных разделов; сама раз в сутки без секретов.",
+        "резервная копия бэкап backup восстановить восстановление новый телефон перенос пароль секреты загрузки разделы"),
     Section(AI_LINUX, "Linux и диск приложения", "Linux в приложении, инструкция по шагам, диск приложения в менеджере файлов.",
         "ai linux alpine пакеты слоты termux агент инструкция шаги диск файлы менеджер targets пк"),
     Section(AI_ACCESS, "Управление и доступ", "Пауза и автономность контура, ключ приложения для targets, команда dpai, окно запросов поверх приложений.",

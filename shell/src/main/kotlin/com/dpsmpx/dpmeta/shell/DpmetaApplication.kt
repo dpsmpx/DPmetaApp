@@ -11,6 +11,9 @@ import com.dpsmpx.dpmeta.app.AppLock
  */
 class DpmetaApplication : DpaiApplication() {
     override fun onCreate() {
+        // Раздел пульта и токен GitHub в резервной копии (D-151) — до super: восстановленное
+        // раскладывается в его начале и должно знать раздел пульта.
+        registerBackup()
         super.onCreate()
         AppLock.install(this)
         // Пояс показа — всему приложению с запуска процесса: «AI» строит экраны и без открытого пульта (UX-22).
@@ -30,6 +33,40 @@ class DpmetaApplication : DpaiApplication() {
         )
         com.dpsmpx.dpai.android.StorageMap.prepare(this)
         com.dpsmpx.dpai.android.StorageMap.refresh(this)
+    }
+
+    private fun registerBackup() {
+        val dpmeta = { c: android.content.Context -> c.filesDir.resolve("dpmeta") }
+        com.dpsmpx.dpai.android.AppBackups.register(
+            com.dpsmpx.dpai.android.AppBackups.Section(
+                "pult", "Пульт", "часовой пояс, тихие часы и приватность, отмеченные клоны, фоновое обновление, свои правила тревог",
+                prefs = listOf(
+                    com.dpsmpx.dpai.android.AppBackups.PrefsSpec("dpmeta.settings"),
+                    com.dpsmpx.dpai.android.AppBackups.PrefsSpec("dpmeta.clones") { it == "flat-removed" },
+                    com.dpsmpx.dpai.android.AppBackups.PrefsSpec("dpmeta.background") { it == "last" },
+                ),
+                docs = listOf(
+                    com.dpsmpx.dpai.android.AppBackups.DocsSpec("pult.settings", {
+                        com.dpsmpx.dpai.storage.document.DocumentStore(com.dpsmpx.dpai.storage.vfs.NioVfs(dpmeta(it).apply { mkdirs() }.toPath()), "settings")
+                    }) { it == "alert-rules" },
+                ),
+            ),
+        )
+        val store = { c: android.content.Context -> com.dpsmpx.dpmeta.app.data.SecretStore(com.dpsmpx.dpai.storage.vfs.NioVfs(c.noBackupFilesDir.toPath().resolve("dpmeta"))) }
+        com.dpsmpx.dpai.android.AppSecrets.register(
+            com.dpsmpx.dpai.android.AppSecrets.External(
+                id = "github", name = "Токен GitHub", revoke = com.dpsmpx.dpai.ui.SecretRevoke.GITHUB_TOKENS,
+                present = { com.dpsmpx.dpmeta.app.PultActivity.hasGithubToken(it) },
+                read = { store(it).load() },
+                write = { c, s -> store(c).save(s) },
+                erase = { c -> store(c).forget(); com.dpsmpx.dpai.core.result.Outcome.success(Unit) },
+                unlock = { activity, done ->
+                    com.dpsmpx.dpmeta.app.Lock.ask(activity, "Токен GitHub для резервной копии", pinOnly = false,
+                        onOpen = { if (!activity.isDestroyed) done(com.dpsmpx.dpai.core.result.Outcome.success(Unit)) },
+                        onDenied = { _, _ -> if (!activity.isDestroyed) done(com.dpsmpx.dpai.core.result.Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, "Вход не подтверждён")) })
+                },
+            ),
+        )
     }
 
     /** Опасный ответ окна поверх приложений — только после входа (D-61). */

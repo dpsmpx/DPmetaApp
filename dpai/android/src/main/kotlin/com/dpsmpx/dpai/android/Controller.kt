@@ -70,6 +70,21 @@ object KeystoreKey {
         return ks.getCertificate(ALIAS).publicKey as ECPublicKey
     }
 
+    /** Есть ли ключ — для аварийного отзыва; проверка не создаёт новый. */
+    fun exists(): Boolean = try { store().containsAlias(ALIAS) } catch (_: Exception) { false }
+
+    /**
+     * Стереть ключ (аварийный отзыв, `DPmetaApp:D-151`): следующее подключение создаст
+     * новый — его открытую строку надо снова добавить на target.
+     */
+    @Synchronized
+    fun erase(): Outcome<Unit> = try {
+        store().deleteEntry(ALIAS)
+        Outcome.success(Unit)
+    } catch (e: Exception) {
+        Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "ключ SSH не стёрт", e))
+    }
+
     fun identity(): EcdsaSignerIdentity = EcdsaSignerIdentity(COMMENT, publicKey()) { data ->
         Signature.getInstance("SHA256withECDSA").run {
             initSign(store().getKey(ALIAS, null) as PrivateKey)

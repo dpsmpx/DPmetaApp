@@ -95,3 +95,33 @@ class AppBackupTest {
         assertFalse(SecretRevoke.eraseConfirmed(""))
     }
 }
+
+/** Перенос хранилищ раздела: фильтр ключей, служебное не трогается (`DPmetaApp:D-151`). */
+class AppBackupStoresTest {
+    private fun store(dir: java.nio.file.Path) = com.dpsmpx.dpai.storage.document.DocumentStore(com.dpsmpx.dpai.storage.vfs.NioVfs(dir), "docs")
+    private fun doc(v: String) = JsonObject.of("v" to JsonString(v))
+
+    @Test
+    fun documentsRoundTripWithoutServiceKeys(@org.junit.jupiter.api.io.TempDir tmp: java.nio.file.Path) {
+        val take: (String) -> Boolean = { it != "active" && it != "result" }
+        val old = store(tmp.resolve("old"))
+        old.write("build-p1", doc("b"))
+        old.write("run-p1", doc("r"))
+        old.write("active", doc("идёт"))
+        val exported = (AppBackupStores.export(old, take) as Outcome.Success).value
+        assertEquals(setOf("build-p1", "run-p1"), exported.keys, "идущий профиль — не настройка")
+        val fresh = store(tmp.resolve("new"))
+        fresh.write("run-p9", doc("чужой"))
+        fresh.write("result", doc("итог"))
+        assertIs<Outcome.Success<*>>(AppBackupStores.apply(fresh, exported, take))
+        assertEquals(setOf("build-p1", "run-p1", "result"), fresh.keys().toSet(), "лишнее раздела удалено, служебное осталось")
+        assertEquals(doc("r"), (fresh.read("run-p1") as Outcome.Success).value!!.content)
+    }
+
+    @Test
+    fun prefsReplaceSectionKeysOnly() {
+        val c = AppBackupStores.prefs(setOf("zone", "old", "last"), mapOf("zone" to Pref.Int32(60), "last" to Pref.Str("x")), skip = { it == "last" })
+        assertEquals(setOf("old"), c.remove)
+        assertEquals(mapOf("zone" to Pref.Int32(60)), c.put, "служебный ключ не переписывается копией")
+    }
+}
