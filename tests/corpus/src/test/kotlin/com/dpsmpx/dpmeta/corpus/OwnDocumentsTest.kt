@@ -120,7 +120,8 @@ class OwnDocumentsTest {
         assertEquals(named + ai, catalog.types.map { it.type }.toSet(), "каталог — ровно типы ТЗ, §8.1 и дополнение D-142; обязательных категорий в нём нет")
         for (t in com.dpsmpx.dpmeta.metrics.Feed.TYPES.values) assertTrue(catalog.type(t) != null, "вид ленты $t — не в каталоге")
         val rules = AlertFormat.parse(text("config/alerts.toml"), catalog, "config/alerts.toml").ok("config/alerts.toml").rules
-        assertEquals(20, rules.size, "14 правил F-37 и 6 обычных правил ИИ D-142")
+        assertEquals(21, rules.size, "14 правил F-37, 6 обычных правил ИИ D-142 и уведомления Claude из слушателя D-155")
+        assertTrue(rules.any { it.id == "app.claude" && it.on == "app.notification" }, "правило слушателя D-155")
         assertTrue(rules.all { it.enabled })
         assertEquals(listOf("claude.input"), rules.filter { !it.quiet }.map { it.id }, "звучит в тихие часы — только «Claude ждёт»")
     }

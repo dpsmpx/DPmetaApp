@@ -74,6 +74,17 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+        <!-- Слушатель уведомлений (F-57; D-155): связывает только система (BIND_NOTIFICATION_LISTENER_SERVICE),
+             доступ даёт человек в настройках Android; пока выключен в приложении — всё отбрасывается. -->
+        <service
+            android:name="com.dpsmpx.dpmeta.app.PultListenerService"
+            android:exported="true"
+            android:label="@string/listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
         <!-- Итог Termux (D-84): только через PendingIntent, отданный Termux с вызовом; снаружи не виден. -->
         <receiver
             android:name="com.dpsmpx.dpmeta.app.data.TermuxResultReceiver"

@@ -56,7 +56,7 @@ class DpmetaApplication : DpaiApplication() {
         val dpmeta = { c: android.content.Context -> c.filesDir.resolve("dpmeta") }
         com.dpsmpx.dpai.android.AppBackups.register(
             com.dpsmpx.dpai.android.AppBackups.Section(
-                "pult", "Пульт", "часовой пояс, тихие часы и приватность, отмеченные клоны, фоновое обновление, свои правила тревог, сводка и «Отложить», сервер и тема мгновенного канала",
+                "pult", "Пульт", "часовой пояс, тихие часы и приватность, отмеченные клоны, фоновое обновление, свои правила тревог, сводка и «Отложить», сервер и тема мгновенного канала, белый список уведомлений",
                 prefs = listOf(
                     com.dpsmpx.dpai.android.AppBackups.PrefsSpec("dpmeta.settings"),
                     com.dpsmpx.dpai.android.AppBackups.PrefsSpec("dpmeta.clones") { it == "flat-removed" },
@@ -64,6 +64,8 @@ class DpmetaApplication : DpaiApplication() {
                     // Мгновенный канал (D-152): сервер и тема; ключ — секретом ниже. Включённость не переносится:
                     // на новом телефоне канал включают сами, когда хук получит ключ.
                     com.dpsmpx.dpai.android.AppBackups.PrefsSpec(com.dpsmpx.dpmeta.app.data.PushPrefs.PREFS) { it == com.dpsmpx.dpmeta.app.data.PushPrefs.ENABLED },
+                    // Слушатель (D-155): включённость и белый список; доступ Android даётся заново на новом телефоне.
+                    com.dpsmpx.dpai.android.AppBackups.PrefsSpec(com.dpsmpx.dpmeta.app.data.ListenerPrefs.PREFS),
                 ),
                 docs = listOf(
                     com.dpsmpx.dpai.android.AppBackups.DocsSpec("pult.settings", {
