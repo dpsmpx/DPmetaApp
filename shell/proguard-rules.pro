@@ -27,3 +27,18 @@
 -dontwarn javax.annotation.**
 -dontwarn org.jspecify.**
 -dontwarn com.google.errorprone.annotations.**
+# JSch: необязательные провайдеры — BouncyCastle (свои шифры ChaCha20/Argon2/ML-KEM), JNA и
+# сокеты Unix (агент ssh-agent на ПК), GSS-API (Kerberos), log4j; на Android их нет, и JSch
+# выбирает их, только если класс найден.
+-dontwarn org.bouncycastle.**
+-dontwarn com.sun.jna.**
+-dontwarn org.newsclub.net.unix.**
+-dontwarn org.ietf.jgss.**
+-dontwarn org.apache.logging.log4j.**
+# JGit: сведения JMX о процессе и ProcessHandle (Java 9+) — только для отладки на JVM.
+-dontwarn java.lang.management.**
+-dontwarn javax.management.**
+-dontwarn com.sun.management.**
+-dontwarn java.lang.ProcessHandle
+-dontwarn java.lang.ProcessHandle$Info
+-dontwarn kotlin.Cloneable$DefaultImpls
