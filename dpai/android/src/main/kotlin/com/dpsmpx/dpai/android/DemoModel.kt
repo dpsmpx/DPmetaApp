@@ -582,7 +582,18 @@ class DemoModel(
         }
     }
 
+    /** Последний выбор своих параметров профиля (D-183). */
+    fun manualChoices(p: ProjectEntry, kind: com.dpsmpx.dpai.ui.ManualProfileKind) = controller.manualProfiles.choices(p, kind)
+
+    fun saveManualChoices(p: ProjectEntry, kind: com.dpsmpx.dpai.ui.ManualProfileKind, values: Map<String, String>) =
+        controller.manualProfiles.saveChoices(p, kind, values)
+
+    /**
+     * [choices] — выбранные варианты своих параметров (D-183); `null` — последний сохранённый
+     * выбор (сборка перед запуском, предпросмотр). Профиль раскрывается здесь, до `prepare`.
+     */
     fun startManualProfile(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, profile: com.dpsmpx.dpai.ui.ManualProfile,
+        choices: Map<String, String>? = null,
         onFinished: ((LongJobs.Done, com.dpsmpx.dpai.ui.ManualRunView) -> Unit)? = null): Boolean {
         val app = context ?: return false
         return LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST,
@@ -592,6 +603,13 @@ class DemoModel(
             }) {
             val target = controller.targets().firstOrNull { it.id == location.target }
                 ?: return@start LongJobs.Done("target удалён", failed = true)
+            // Параметры (D-183): встроенные и выбранные — в шаги и окружение; в якорь — уже раскрытый профиль.
+            val chosen = choices ?: controller.manualProfiles.choices(p, profile.kind)
+            val resolved = when (val r = profile.resolve(com.dpsmpx.dpai.ui.ManualVars.builtIns(p, target, location) + chosen)) {
+                is Outcome.Failure -> return@start LongJobs.Done(r.errors.first().message, failed = true)
+                is Outcome.Success -> r.value
+            }
+            if (choices != null) controller.manualProfiles.saveChoices(p, profile.kind, choices)
             // Сборка в Linux приложения пишет на диск телефона — под защитой места (DPmetaApp:D-113); на ПК-target место — его.
             if (profile.kind == com.dpsmpx.dpai.ui.ManualProfileKind.BUILD && target.inApp) {
                 (StorageSpace.check(app, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.BUILD, null, "ручная сборка проекта") as? Outcome.Failure)
@@ -610,7 +628,7 @@ class DemoModel(
                 }
                 if (!Drafts.recovery.value.ready) return@withLock Outcome.failure(DiagCode.STATE_CONFLICT, "сначала дождитесь восстановления черновиков")
                 if (Drafts.dirtyIn(location, target.inApp)) return@withLock Outcome.failure(DiagCode.STATE_CONFLICT, "сначала сохраните или отмените правки редактора в этом дереве")
-                controller.manualProfiles.prepare(p, target, location, profile)
+                controller.manualProfiles.prepare(p, target, location, resolved)
             }
             if (prepared is Outcome.Failure) return@start LongJobs.Done(prepared.errors.first().message, failed = true)
             manualStop = false

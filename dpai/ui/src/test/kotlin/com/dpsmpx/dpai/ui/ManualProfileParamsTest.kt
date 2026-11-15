@@ -6,6 +6,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.junit.jupiter.api.io.TempDir
 
 /** Параметры ручных профилей (D-183): встроенные, свои с вариантами, окружение, формат v3. */
 class ManualProfileParamsTest {
@@ -58,5 +59,21 @@ class ManualProfileParamsTest {
     fun builtInsFromProjectAndTree() {
         assertEquals(setOf("PROJECT", "TREE"), ManualVars.names("\${PROJECT}/\${TREE} \$\${HOME}"))
         assertEquals("x \${Y}", (ManualVars.substitute("x \$\${Y}", emptyMap()) as Outcome.Success).value)
+    }
+
+    @TempDir
+    lateinit var dir: java.nio.file.Path
+
+    @Test
+    fun lastChoiceIsRememberedPerProjectAndKind() {
+        val clock = com.dpsmpx.dpai.core.clock.ManualClock()
+        val ids = com.dpsmpx.dpai.core.ids.IdGenerator(clock, com.dpsmpx.dpai.core.clock.RandomSource.seeded(183))
+        val store = ManualProfiles(com.dpsmpx.dpai.storage.document.DocumentStore(com.dpsmpx.dpai.storage.vfs.NioVfs(dir), "profiles"), ids, clock)
+        val target = TargetForm.inApp(ids.next(com.dpsmpx.dpai.core.ids.IdKinds.TARGET), "Linux", "/root/.claude-slot-1").valueOrNull()!!
+        val project = ProjectEntry(ids.next(com.dpsmpx.dpai.core.ids.IdKinds.PROJECT), ids.next(com.dpsmpx.dpai.core.ids.IdKinds.REPOSITORY), target.id, "/root/repo", "/root/trees", "main", emptyList())
+        assertEquals(emptyMap(), store.choices(project, ManualProfileKind.BUILD))
+        assertTrue(store.saveChoices(project, ManualProfileKind.BUILD, mapOf("VARIANT" to "release", "bad name" to "x")) is Outcome.Success)
+        assertEquals(mapOf("VARIANT" to "release"), store.choices(project, ManualProfileKind.BUILD))
+        assertEquals(emptyMap(), store.choices(project, ManualProfileKind.CHECK), "у проверки — свой выбор")
     }
 }

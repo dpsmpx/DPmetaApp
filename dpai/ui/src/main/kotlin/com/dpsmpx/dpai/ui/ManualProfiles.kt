@@ -428,6 +428,31 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
         }
     }
 
+    /**
+     * Последний выбор своих параметров (D-183) по проекту и виду: имя → вариант.
+     * Нет или испорчен — пусто (тогда первый вариант): выбор не секрет и не обязателен.
+     */
+    @Synchronized
+    fun choices(project: ProjectEntry, kind: ManualProfileKind): Map<String, String> {
+        val doc = (docs.read(choicesKey(project, kind)) as? Outcome.Success)?.value?.content ?: return emptyMap()
+        if (doc.text("format") != "dpai.manual-choices") return emptyMap()
+        val values = doc["values"] as? JsonObject ?: return emptyMap()
+        return values.fields.mapNotNull { (k, v) -> (v as? JsonString)?.value?.let { k to it } }
+            .filter { (k, v) -> ManualParam.NAME.matches(k) && v.length <= ManualParam.MAX_VALUE }.toMap()
+    }
+
+    @Synchronized
+    fun saveChoices(project: ProjectEntry, kind: ManualProfileKind, values: Map<String, String>): Outcome<Unit> {
+        val clean = values.filter { (k, v) -> ManualParam.NAME.matches(k) && v.length <= ManualParam.MAX_VALUE }
+        return when (val r = docs.write(choicesKey(project, kind), JsonObject.of("format" to JsonString("dpai.manual-choices"), "version" to JsonNumber.of(1),
+            "values" to JsonObject(clean.mapValues { JsonString(it.value) })))) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> Outcome.success(Unit)
+        }
+    }
+
+    private fun choicesKey(p: ProjectEntry, kind: ManualProfileKind) = "choices-${kind.name.lowercase()}-${p.project.value.lowercase()}"
+
     @Synchronized
     fun runProfile(project: ProjectEntry): Outcome<RunProfile?> = when (val r = docs.read(runKey(project))) {
         is Outcome.Failure -> r
