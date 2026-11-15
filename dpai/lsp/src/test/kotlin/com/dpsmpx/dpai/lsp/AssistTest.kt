@@ -135,6 +135,33 @@ class AssistTest {
         assertEquals(1, f.commands)
     }
 
+    /** «Исправить всё без ИИ» (D-187): только ★ этого файла, без пересечений, одинаковая правка — раз. */
+    @Test
+    fun fixAllTakesOnlyPreferredNonOverlappingEditsOfThisFile() {
+        fun fix(vararg e: TextEdit, uri: String = here) = WorkspaceEdit(mapOf(uri to e.toList()))
+        val semicolon = edit(0, 5, 0, 5, ";")
+        val include = edit(0, 0, 0, 0, "#include <vector>\n")
+        val perDiagnostic = listOf(
+            listOf(CodeAction("insert ;", "quickfix", fix(semicolon), true)),
+            // Тот же ★ для второго замечания — одна правка, оба исправлены.
+            listOf(CodeAction("insert ;", "quickfix", fix(semicolon), true)),
+            // Без ★ — выбор человека, не трогаем.
+            listOf(CodeAction("rename to foo", "quickfix", fix(edit(1, 0, 1, 3, "foo")), false)),
+            // ★ с правкой другого файла — отказ.
+            listOf(CodeAction("add include", "quickfix", fix(include, uri = DocumentUri.ofPath("$root/src/a.h")), true)),
+            // Пересекается со взятой — остаётся.
+            listOf(CodeAction("replace", "quickfix", fix(edit(0, 4, 0, 6, "x")), true)),
+            // Только команда или не quickfix — остаётся.
+            listOf(CodeAction("run", "quickfix", null, true), CodeAction("extract", "refactor.extract", fix(edit(2, 0, 2, 1, "y")), true)),
+            listOf(CodeAction("add include", "quickfix", fix(include), true)),
+        )
+        val plan = Assist.fixAll(here, perDiagnostic)
+        assertEquals(listOf(include, semicolon), plan.edits, "по порядку в тексте")
+        assertEquals(3, plan.fixed)
+        assertEquals(4, plan.skipped)
+        assertEquals(Assist.FixAll(emptyList(), 0, 0), Assist.fixAll(here, emptyList()))
+    }
+
     /** Без индекса проекта — только символы этого исходного файла. */
     @Test
     fun renameScopeOnlyForSymbolsOfThisSourceFile() {

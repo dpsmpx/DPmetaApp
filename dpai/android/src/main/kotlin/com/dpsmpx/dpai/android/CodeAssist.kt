@@ -293,6 +293,34 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                             }
                         }
                     }) { Text("Формат") }
+                    // Исправления без ИИ (D-187; DPmetaApp:D-168): только ★-правки службы, одной отменой.
+                    TextButton(enabled = enabled && !busy && diagnostics.isNotEmpty(), onClick = {
+                        launch("Исправляю без ИИ…") {
+                            val before = buffer.text
+                            val asked = diagnostics.take(Assist.MAX_FIX_ALL)
+                            val r = withClient { c, _, _ ->
+                                val out = ArrayList<List<CodeAction>>()
+                                for (d in asked) when (val a = c.codeActions(session.uri, d.range, listOf(d))) {
+                                    is Outcome.Failure -> return@withClient a
+                                    is Outcome.Success -> out += a.value
+                                }
+                                Outcome.success(out)
+                            }
+                            when (r) {
+                                is Outcome.Failure -> note = r.diagnostics.first().message
+                                is Outcome.Success -> {
+                                    val plan = Assist.fixAll(session.uri, r.value)
+                                    val left = plan.skipped + (diagnostics.size - asked.size)
+                                    note = when {
+                                        plan.edits.isEmpty() -> "Без ИИ исправить нечего: у службы нет уверенных правок (★) — замечаний $left"
+                                        buffer.text != before -> "Текст изменился, пока служба отвечала; повторите"
+                                        else -> { apply(Assist.applyEdits(before, buffer.state.selection.end, plan.edits), "Исправлено без ИИ: ${plan.fixed}, осталось $left; отмена — ↶"); note }
+                                    }
+                                }
+                                null -> Unit
+                            }
+                        }
+                    }) { Text("Исправить всё") }
                     TextButton(onClick = { kotlin.concurrent.thread(name = "dpai-code-service-release") { CodeService.disable(session) } }) { Text("Выкл") }
                     for (action in state.actions) TextButton(enabled = !busy, onClick = { confirm = action }) { Text(action.title) }
                     state.switchTo?.let { other -> TextButton(enabled = !busy, onClick = { switchPython(other) }) { Text("Взять: ${other.title}") } }
