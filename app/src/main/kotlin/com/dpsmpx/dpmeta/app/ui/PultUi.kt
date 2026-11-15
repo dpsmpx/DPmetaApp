@@ -250,6 +250,10 @@ data class PultView(
     val about: String = "",
     /** Лицензии компонентов из документов происхождения (F-50, A-12). */
     val licenses: List<com.dpsmpx.dpmeta.app.data.Licenses.Row> = emptyList(),
+    /** Интервал фонового обновления, минуты (D-149): 0 — выключено. */
+    val backgroundMinutes: Int = com.dpsmpx.dpmeta.app.data.BackgroundSync.DEFAULT,
+    /** Итог последнего фонового запуска; не было — `null`. */
+    val backgroundLine: String? = null,
 )
 
 /**
@@ -515,6 +519,8 @@ fun PultApp(
     onDeleteClone: (String) -> Unit = {},
     /** Пояс показа выбран (UX-22): минуты от UTC. */
     onZone: (Int) -> Unit = {},
+    /** Интервал фонового обновления выбран (D-149): минуты, 0 — выключено. */
+    onBackground: (Int) -> Unit = {},
     /** Итог окна клонов: отмеченные или `null` — «Позже» / «Отмена». */
     onClonesChosen: (Set<String>?) -> Unit = {},
 ) {
@@ -650,9 +656,9 @@ fun PultApp(
                     val doc = settingsDocument
                     if (doc != null) {
                         // Один документ на приложение (D-112): блок пульта — без своей прокрутки, внутри документа.
-                        doc(settingsQuery) { Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, scroll = false, onFeed = { open(Nav.Feed) }) }
+                        doc(settingsQuery) { Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, scroll = false, onFeed = { open(Nav.Feed) }, onBackground = onBackground) }
                     } else {
-                        Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, onFeed = { open(Nav.Feed) })
+                        Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, onFeed = { open(Nav.Feed) }, onBackground = onBackground)
                     }
                 }
                 // Справка — и без токена и среза (D-112): с неё начинают.
@@ -1329,7 +1335,7 @@ private fun QuestionsList(q: List<Screens.Question>, open: (Nav) -> Unit, below:
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 // Листается (UX-15): при шрифте 200 % и в альбомной ориентации «Клоны…» не уходят за край.
-private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}, onJournal: () -> Unit = {}, onAsk: () -> Unit = {}, onCommands: () -> Unit = {}, onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null, scroll: Boolean = true, onFeed: () -> Unit = {}) = Column(if (scroll) Modifier.verticalScroll(rememberScrollState()) else Modifier, verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}, onJournal: () -> Unit = {}, onAsk: () -> Unit = {}, onCommands: () -> Unit = {}, onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null, scroll: Boolean = true, onFeed: () -> Unit = {}, onBackground: (Int) -> Unit = {}) = Column(if (scroll) Modifier.verticalScroll(rememberScrollState()) else Modifier, verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     var token by remember { mutableStateOf("") }
     // Пока токен сохранён — одна строка, поле — по «Заменить» (UX-12): пустое поле при сохранённом токене путало.
     var replacing by rememberSaveable { mutableStateOf(false) }
@@ -1426,6 +1432,16 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
             }
         }
     }
+    // Фоновое обновление (D-149): интервал и итог последнего запуска; токен — только открытый.
+    Text("Фоновое обновление", style = MaterialTheme.typography.titleMedium)
+    Text("Пульт обновляется сам, если телефон недавно разблокировали: токен GitHub открыт только после входа.", style = MaterialTheme.typography.bodySmall)
+    Row {
+        for (m in com.dpsmpx.dpmeta.app.data.BackgroundSync.INTERVALS) {
+            androidx.compose.material3.FilterChip(selected = view.backgroundMinutes == m, onClick = { onBackground(m) },
+                label = { Text(com.dpsmpx.dpmeta.app.data.BackgroundSync.title(m)) }, modifier = Modifier.padding(end = 4.dp))
+        }
+    }
+    view.backgroundLine?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     // «О программе» (UX-23, D-54; F-50): версии, коммит, подпись, лицензии компонентов.
     if (view.about.isNotEmpty()) {
         Text("О программе", style = MaterialTheme.typography.titleMedium)

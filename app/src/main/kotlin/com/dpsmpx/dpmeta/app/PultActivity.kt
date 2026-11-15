@@ -273,6 +273,12 @@ open class PultActivity : ComponentActivity() {
             runCatching { assets.open(path).bufferedReader().use { it.readText() } }.getOrNull()?.let { com.dpsmpx.dpmeta.app.data.Licenses.parse(name, it) }.orEmpty()
         }
 
+    /** Интервал фонового обновления выбран в «Ещё» (D-149): задача ставится или снимается сразу. */
+    private fun backgroundChosen(minutes: Int) {
+        runCatching { PultSyncJob.setInterval(this, minutes) }
+        view.value = view.value.copy(backgroundMinutes = PultSyncJob.interval(this), backgroundLine = PultSyncJob.lastLine(this))
+    }
+
     /** Пояс показа выбран в «Ещё» (UX-22): сохраняется, действует сразу и для «AI». */
     private fun zoneChosen(minutes: Int) {
         getSharedPreferences(SETTINGS_PREFS, MODE_PRIVATE).edit { putInt(ZONE_MINUTES, minutes) }
@@ -421,11 +427,14 @@ open class PultActivity : ComponentActivity() {
 
     private fun open() {
         val hasToken = secrets.exists()
-        view.value = PultView(null, "", hasToken, busy = false, clones = clonesLine(), loading = true, zone = zoneMinutes(this), about = about())
+        view.value = PultView(null, "", hasToken, busy = false, clones = clonesLine(), loading = true, zone = zoneMinutes(this), about = about(),
+            backgroundMinutes = PultSyncJob.interval(this), backgroundLine = PultSyncJob.lastLine(this))
         // Срез и лента — в фоне, как история (UX-20, N-02): окно не ждёт диска; вход синхронизирует после чтения.
         loadState()
         // История растёт с каждой синхронизацией — читается в фоне, холодный старт её не ждёт (N-02).
         loadHistory()
+        // Фоновое обновление (D-149): задача по настройке «Ещё»; стоит с тем же интервалом — не трогается.
+        runCatching { PultSyncJob.schedule(this) }
         // Лицензии компонентов (F-50) — в фоне: документы происхождения читаются из APK.
         pool.execute {
             val rows = licenses()
@@ -462,6 +471,7 @@ open class PultActivity : ComponentActivity() {
                     },
                     onDeleteClone = ::deleteClone,
                     onZone = ::zoneChosen,
+                    onBackground = ::backgroundChosen,
                 )
             }
         }
@@ -1006,6 +1016,10 @@ open class PultActivity : ComponentActivity() {
         /** Есть ли токен GitHub в хранилище пульта — для карты хранилища (D-111): только признак, без значения. */
         fun hasGithubToken(context: android.content.Context): Boolean =
             com.dpsmpx.dpmeta.app.data.SecretStore(NioVfs(context.noBackupFilesDir.toPath().resolve("dpmeta"))).exists()
+
+        /** Отмеченные клоны (D-70) — для фонового обновления (D-149). */
+        fun selectedClones(context: android.content.Context): Set<String> =
+            context.applicationContext.getSharedPreferences(CLONES_PREFS, MODE_PRIVATE).getStringSet(CLONES_SELECTED, null).orEmpty().toSet()
 
         /** Прежнее место клонов (до D-111, D-113): переезжает в `~/projects`, на старом месте — ссылка. */
         const val LEGACY_CLONES_DIR = "clones"
