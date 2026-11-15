@@ -183,12 +183,23 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
         if (run.output.isNotEmpty()) SelectionContainer { Text(run.output, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
         if (kind == ManualProfileKind.BUILD) {
             val saved = remember(artifactsText) { (com.dpsmpx.dpai.files.TreeArtifacts.patterns(artifactsText) as? Outcome.Success)?.value.orEmpty() }
-            ArtifactsSection(model, view, location, saved, refresh = run.finished)
+            // Последняя успешная сборка не старше суток — её новые APK подписываются сами (D-178).
+            var built by remember(view.project.project) { mutableStateOf<BuildDone?>(null) }
+            LaunchedEffect(view.project.project, run.finished) {
+                val last = withContext(Dispatchers.IO) { model.manualHistory(view.project) }.valueOrNull()?.firstOrNull { it.kind == ManualProfileKind.BUILD }
+                val now = com.dpsmpx.dpai.core.clock.Clock.SYSTEM.now().epochMillis
+                built = last?.takeIf { it.outcome == com.dpsmpx.dpai.ui.ManualOutcome.OK && now - it.finishedAt.epochMillis < SIGN_AFTER_BUILD_MS }
+                    ?.let { BuildDone(it.run.value, it.startedAt?.epochMillis, it.finishedAt.epochMillis) }
+            }
+            ArtifactsSection(model, view, location, saved, refresh = run.finished, built = built)
         }
         ManualHistorySection(model, view.project, kind, location, refresh = run.finished, onProblem = onProblem)
         Text("Ручной итог не завершает задачу ИИ. Перед запуском сохраните или отмените правки; контур должен быть свободен.", style = MaterialTheme.typography.bodySmall)
     }
 }
+
+/** Подписывать сами APK сборки не старше суток (D-178): старые — только по кнопке. */
+private const val SIGN_AFTER_BUILD_MS = 24L * 60 * 60 * 1000
 
 /** Сколько мест показывать под выводом: дальше — шум от первой ошибки. */
 private const val PROBLEMS_SHOWN = 100

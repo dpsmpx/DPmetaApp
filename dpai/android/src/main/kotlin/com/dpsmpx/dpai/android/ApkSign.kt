@@ -146,6 +146,40 @@ internal object KeyFile {
         return Outcome.success(Parsed(name, key, chain))
     }
 
+    /** Не короче — пароль файла созданного ключа (D-178). */
+    const val MIN_PASSWORD = 12
+    const val ALIAS = "dpmetaapp"
+
+    /** PKCS#12 и keytool надёжно понимают только пароль из печатных знаков ASCII (JDK: «Password is not ASCII»). */
+    const val PASSWORD_RULE = "пароль файла ключа — латинские буквы, цифры, пробел и знаки ASCII: кириллицу PKCS#12 и keytool не принимают"
+
+    fun passwordUsable(password: CharArray): Boolean = password.all { it in ' '..'~' }
+    const val YEARS = 30
+
+    /**
+     * Новый ключ подписи (D-178): RSA 4096 и самоподписанный сертификат X.509 v3 на [years]
+     * лет от [now], CN — [name]; итог — байты PKCS#12 под паролем [password] (ключ [ALIAS]).
+     * Ключ живёт только в этих байтах: положить его в Keystore — после сохранения файла.
+     */
+    fun create(name: String, password: CharArray, now: java.time.Instant, random: com.dpsmpx.dpai.core.clock.RandomSource, years: Int = YEARS, bits: Int = 4096): Outcome<ByteArray> {
+        val cn = name.trim()
+        if (cn.isEmpty() || cn.length > 64 || cn.any { it.isISOControl() }) return Outcome.failure(DiagCode.VALUE_INVALID, "имя в сертификате — от 1 до 64 знаков, без управляющих")
+        if (password.size < MIN_PASSWORD) return Outcome.failure(DiagCode.VALUE_INVALID, "пароль файла ключа — не короче $MIN_PASSWORD знаков")
+        if (!passwordUsable(password)) return Outcome.failure(DiagCode.VALUE_INVALID, PASSWORD_RULE)
+        return try {
+            // Ключевую пару создаёт генератор JCA своим криптостойким источником; серийный номер — из RandomSource (D-07).
+            val pair = java.security.KeyPairGenerator.getInstance("RSA").apply { initialize(bits) }.generateKeyPair()
+            val cert = SelfSigned.certificate(pair, cn, now, now.atZone(java.time.ZoneOffset.UTC).plusYears(years.toLong()).toInstant(), random)
+            val store = KeyStore.getInstance("PKCS12").apply { load(null, null) }
+            store.setKeyEntry(ALIAS, pair.private, password, arrayOf(cert))
+            val out = java.io.ByteArrayOutputStream()
+            store.store(out, password)
+            Outcome.success(out.toByteArray())
+        } catch (e: Exception) {
+            Outcome.failure(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "ключ не создан", e))
+        }
+    }
+
     private fun load(bytes: ByteArray, password: CharArray): Outcome<KeyStore> {
         val store = KeyStore.getInstance("PKCS12")
         return try {
@@ -161,5 +195,46 @@ internal object KeyFile {
         } catch (e: Exception) {
             Outcome.failure(Diagnostic.fromThrowable(DiagCode.VALUE_INVALID, "файл ключа не прочитан", e))
         }
+    }
+}
+
+/**
+ * Самоподписанный сертификат X.509 v3 для ключа APK (D-178) — DER вручную: на
+ * Android нет открытого построителя сертификатов, а тянуть библиотеку ради одного
+ * сертификата незачем. Подпись SHA256withRSA, имя — CN в UTF8String, без расширений.
+ */
+internal object SelfSigned {
+    fun certificate(pair: java.security.KeyPair, cn: String, from: java.time.Instant, to: java.time.Instant, random: com.dpsmpx.dpai.core.clock.RandomSource): X509Certificate {
+        val sha256Rsa = seq(byteArrayOf(0x06, 0x09, 0x2a, 0x86.toByte(), 0x48, 0x86.toByte(), 0xf7.toByte(), 0x0d, 0x01, 0x01, 0x0b), byteArrayOf(0x05, 0x00))
+        val name = seq(tlv(0x31, seq(byteArrayOf(0x06, 0x03, 0x55, 0x04, 0x03), tlv(0x0c, cn.toByteArray(Charsets.UTF_8)))))
+        val validity = seq(time(from), time(to))
+        // Серийный номер — положительный, 16 случайных байт (RFC 5280: не длиннее 20).
+        val serial = random.nextBytes(16).also { it[0] = (it[0].toInt() and 0x7f or 0x01).toByte() }
+        val tbs = seq(tlv(0xa0, tlv(0x02, byteArrayOf(2))), tlv(0x02, serial), sha256Rsa, name, validity, name, pair.public.encoded)
+        val signer = java.security.Signature.getInstance("SHA256withRSA").apply { initSign(pair.private); update(tbs) }
+        val der = seq(tbs, sha256Rsa, tlv(0x03, byteArrayOf(0) + signer.sign()))
+        return java.security.cert.CertificateFactory.getInstance("X.509").generateCertificate(der.inputStream()) as X509Certificate
+    }
+
+    /** UTCTime до 2049 года, GeneralizedTime — с 2050 (RFC 5280, 4.1.2.5). */
+    private fun time(t: java.time.Instant): ByteArray {
+        val z = t.atZone(java.time.ZoneOffset.UTC)
+        return if (z.year in 1950..2049) tlv(0x17, java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss'Z'").format(z).toByteArray())
+        else tlv(0x18, java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss'Z'").format(z).toByteArray())
+    }
+
+    private fun seq(vararg parts: ByteArray): ByteArray = tlv(0x30, parts.fold(ByteArray(0)) { a, b -> a + b })
+
+    private fun tlv(tag: Int, body: ByteArray): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        out.write(tag)
+        when {
+            body.size < 0x80 -> out.write(body.size)
+            body.size < 0x100 -> { out.write(0x81); out.write(body.size) }
+            body.size < 0x10000 -> { out.write(0x82); out.write(body.size shr 8); out.write(body.size and 0xff) }
+            else -> error("DER длиннее 64 КиБ")
+        }
+        out.write(body)
+        return out.toByteArray()
     }
 }
