@@ -37,18 +37,49 @@ data class ManualStep(val name: String, val command: List<String>, val timeoutSe
 /**
  * Ручной профиль CHECK/BUILD (D-134, D-154): шаги выполняются по порядку в одном
  * дереве, следующий — только после кода 0 предыдущего. Формат
- * `dpai.manual-profile` v2; v1 (одна команда) читается как один шаг.
+ * `dpai.manual-profile` v2; v1 (одна команда) читается как один шаг; v3 — ещё
+ * свои параметры [params] и окружение шагов [env] (D-183), пишется только с ними.
  */
-data class ManualProfile(val kind: ManualProfileKind, val steps: List<ManualStep>, val artifacts: List<String> = emptyList()) {
+data class ManualProfile(
+    val kind: ManualProfileKind,
+    val steps: List<ManualStep>,
+    val artifacts: List<String> = emptyList(),
+    val params: List<ManualParam> = emptyList(),
+    val env: List<Pair<String, String>> = emptyList(),
+) {
     /** [artifacts] — шаблоны путей артефактов от корня дерева (D-157); их смысл проверяет `files.TreeArtifacts`, здесь — только пределы. */
     val valid: Boolean get() = steps.size in 1..MAX_STEPS && steps.all { it.valid } &&
-        artifacts.size <= MAX_ARTIFACTS && artifacts.all { it.length in 1..300 && it.none { c -> c.isISOControl() || c.isWhitespace() } }
+        artifacts.size <= MAX_ARTIFACTS && artifacts.all { it.length in 1..300 && it.none { c -> c.isISOControl() || c.isWhitespace() } } &&
+        params.size <= ManualParam.MAX && params.all { it.valid } && params.map { it.name }.distinct().size == params.size &&
+        env.size <= ManualVars.MAX_ENV && env.all { (n, v) -> ManualVars.envProblem(n, v) == null } && env.map { it.first }.distinct().size == env.size
+
+    /** Имена подстановок, которых нет ни среди встроенных, ни среди [params] (D-183). */
+    val unknownNames: Set<String>
+        get() = (steps.flatMap { it.command } + env.map { it.second }).flatMap { ManualVars.names(it) }.toSet() - ManualVars.BUILT_IN - params.map { it.name }.toSet()
+
+    /**
+     * Подставить значения (D-183): [values] — встроенные и выбранные варианты; свой
+     * параметр без значения — первый вариант. Итог — профиль без параметров, с готовыми
+     * argv и окружением; его и записывает якорь запуска.
+     */
+    fun resolve(values: Map<String, String>): Outcome<ManualProfile> {
+        val all = params.associate { p -> p.name to (values[p.name]?.takeIf { it in p.choices } ?: p.choices.first()) } + values.filterKeys { it in ManualVars.BUILT_IN }
+        val steps = steps.map { s ->
+            s.copy(command = s.command.map { a -> when (val r = ManualVars.substitute(a, all)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value } })
+        }
+        val env = env.map { (n, v) -> n to when (val r = ManualVars.substitute(v, all)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value } }
+        val out = ManualProfile(kind, steps, artifacts, emptyList(), env)
+        return if (out.valid) Outcome.success(out) else Outcome.failure(DiagCode.VALUE_INVALID, "после подстановки профиль выходит за пределы: длина команды или значения")
+    }
 
     fun toJson(): JsonObject {
-        val m = linkedMapOf<String, com.dpsmpx.dpai.core.serialization.JsonValue>("format" to JsonString(FORMAT), "version" to JsonNumber.of(2),
+        val v3 = params.isNotEmpty() || env.isNotEmpty()
+        val m = linkedMapOf<String, com.dpsmpx.dpai.core.serialization.JsonValue>("format" to JsonString(FORMAT), "version" to JsonNumber.of(if (v3) 3 else 2),
             "kind" to JsonString(kind.name),
             "steps" to JsonArray(steps.map { JsonObject.of("name" to JsonString(it.name), "command" to JsonArray(it.command.map(::JsonString)), "timeout" to JsonNumber.of(it.timeoutSeconds)) }))
         if (artifacts.isNotEmpty()) m["artifacts"] = JsonArray(artifacts.map(::JsonString))
+        if (params.isNotEmpty()) m["params"] = JsonArray(params.map { JsonObject.of("name" to JsonString(it.name), "title" to JsonString(it.title), "choices" to JsonArray(it.choices.map(::JsonString))) })
+        if (env.isNotEmpty()) m["env"] = JsonArray(env.map { JsonObject.of("name" to JsonString(it.first), "value" to JsonString(it.second)) })
         return JsonObject(m)
     }
 
@@ -64,7 +95,15 @@ data class ManualProfile(val kind: ManualProfileKind, val steps: List<ManualStep
         fun form(kind: ManualProfileKind, command: String, timeout: String): Outcome<ManualProfile> = form(kind, listOf(Triple(ManualStep.DEFAULT_NAME, command, timeout)))
 
         /** Шаги из полей экрана: (имя, команда, таймаут). Ошибка называет номер шага. */
-        fun form(kind: ManualProfileKind, rows: List<Triple<String, String, String>>, artifacts: List<String> = emptyList()): Outcome<ManualProfile> {
+        fun form(
+            kind: ManualProfileKind,
+            rows: List<Triple<String, String, String>>,
+            artifacts: List<String> = emptyList(),
+            paramsText: String = "",
+            envText: String = "",
+        ): Outcome<ManualProfile> {
+            val params = when (val r = ManualVars.parseParams(paramsText)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
+            val env = when (val r = ManualVars.parseEnv(envText)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
             if (rows.isEmpty()) return Outcome.failure(DiagCode.FIELD_MISSING, "добавьте хотя бы один шаг")
             if (rows.size > MAX_STEPS) return Outcome.failure(DiagCode.VALUE_INVALID, "шагов — не больше $MAX_STEPS")
             val steps = rows.mapIndexed { i, (name, command, timeout) ->
@@ -76,8 +115,11 @@ data class ManualProfile(val kind: ManualProfileKind, val steps: List<ManualStep
                 }
                 step
             }
-            val profile = ManualProfile(kind, steps, artifacts)
+            val profile = ManualProfile(kind, steps, artifacts, params, env)
             if (!profile.valid) return Outcome.failure(DiagCode.VALUE_INVALID, "шаблонов артефактов — не больше $MAX_ARTIFACTS, каждый — без пробелов, до 300 знаков")
+            profile.unknownNames.takeIf { it.isNotEmpty() }?.let { names ->
+                return Outcome.failure(DiagCode.VALUE_INVALID, "нет параметров ${names.sorted().joinToString { "\${$it}" }}: встроенные — ${ManualVars.BUILT_IN.joinToString()}, свои — в поле «Параметры»")
+            }
             return Outcome.success(profile)
         }
 
@@ -90,14 +132,24 @@ data class ManualProfile(val kind: ManualProfileKind, val steps: List<ManualStep
                     val argv = (o["command"] as? JsonArray)?.items?.map { (it as? JsonString)?.value ?: return null } ?: return null
                     listOf(ManualStep(ManualStep.DEFAULT_NAME, argv, o.number("timeout") ?: return null))
                 }
-                2L -> ((o["steps"] as? JsonArray)?.items ?: return null).map { v ->
+                2L, 3L -> ((o["steps"] as? JsonArray)?.items ?: return null).map { v ->
                     val so = v as? JsonObject ?: return null
                     val argv = (so["command"] as? JsonArray)?.items?.map { (it as? JsonString)?.value ?: return null } ?: return null
                     ManualStep(so.text("name") ?: return null, argv, so.number("timeout") ?: return null)
                 }
                 else -> return null
             }
-            return ManualProfile(kind, steps, artifacts).takeIf { it.valid }
+            val params = (o["params"] as? JsonArray)?.items?.map { v ->
+                val po = v as? JsonObject ?: return null
+                ManualParam(po.text("name") ?: return null, po.text("title") ?: return null,
+                    (po["choices"] as? JsonArray)?.items?.map { (it as? JsonString)?.value ?: return null } ?: return null)
+            }.orEmpty()
+            val env = (o["env"] as? JsonArray)?.items?.map { v ->
+                val eo = v as? JsonObject ?: return null
+                (eo.text("name") ?: return null) to (eo.text("value") ?: return null)
+            }.orEmpty()
+            if (o.number("version") != 3L && (params.isNotEmpty() || env.isNotEmpty())) return null
+            return ManualProfile(kind, steps, artifacts, params, env).takeIf { it.valid }
         }
 
         /** argv обратно в строку для поля: каждое слово в одинарных кавычках, если в нём есть что экранировать. */
@@ -376,6 +428,31 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
         }
     }
 
+    /**
+     * Последний выбор своих параметров (D-183) по проекту и виду: имя → вариант.
+     * Нет или испорчен — пусто (тогда первый вариант): выбор не секрет и не обязателен.
+     */
+    @Synchronized
+    fun choices(project: ProjectEntry, kind: ManualProfileKind): Map<String, String> {
+        val doc = (docs.read(choicesKey(project, kind)) as? Outcome.Success)?.value?.content ?: return emptyMap()
+        if (doc.text("format") != "dpai.manual-choices") return emptyMap()
+        val values = doc["values"] as? JsonObject ?: return emptyMap()
+        return values.fields.mapNotNull { (k, v) -> (v as? JsonString)?.value?.let { k to it } }
+            .filter { (k, v) -> ManualParam.NAME.matches(k) && v.length <= ManualParam.MAX_VALUE }.toMap()
+    }
+
+    @Synchronized
+    fun saveChoices(project: ProjectEntry, kind: ManualProfileKind, values: Map<String, String>): Outcome<Unit> {
+        val clean = values.filter { (k, v) -> ManualParam.NAME.matches(k) && v.length <= ManualParam.MAX_VALUE }
+        return when (val r = docs.write(choicesKey(project, kind), JsonObject.of("format" to JsonString("dpai.manual-choices"), "version" to JsonNumber.of(1),
+            "values" to JsonObject(clean.mapValues { JsonString(it.value) })))) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> Outcome.success(Unit)
+        }
+    }
+
+    private fun choicesKey(p: ProjectEntry, kind: ManualProfileKind) = "choices-${kind.name.lowercase()}-${p.project.value.lowercase()}"
+
     @Synchronized
     fun runProfile(project: ProjectEntry): Outcome<RunProfile?> = when (val r = docs.read(runKey(project))) {
         is Outcome.Failure -> r
@@ -457,7 +534,7 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
         val total = run.profile.steps.size
         if (total > 1) tail = (tail + "── Шаг $step из $total: ${s.name} ──\n").takeLast(MAX_OUTPUT)
         view = view.copy(output = tail)
-        when (val r = client.start(run.id, RunSpec(s.command, run.path, timeout = s.timeoutSeconds.seconds))) {
+        when (val r = client.start(run.id, RunSpec(s.command, run.path, setEnv = run.profile.env.toMap(), timeout = s.timeoutSeconds.seconds))) {
             is Outcome.Failure -> note("шаг $step: ответ на запуск потерян или получен отказ; нужна сверка: ${r.errors.first().message}")
             is Outcome.Success -> note(if (total > 1) "шаг $step из $total «${s.name}» выполняется; проект на паузе" else "команда выполняется; проект на паузе")
         }

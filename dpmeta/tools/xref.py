@@ -184,6 +184,10 @@ class Finding:
     what: str
 
 
+# Срезы на дату (M-03): их пути не переписываются после переездов.
+REPORTS = "docs/reports/"
+
+
 def scan(repos: list[Repo], sources: list[Repo]):
     """Строки берутся из sources; целями остаются все репозитории с клоном."""
     present = [r for r in repos if r.root is not None]
@@ -359,7 +363,11 @@ def main(argv: list[str] | None = None) -> int:
     else:
         sys.stdout.write(report)
 
-    bad = [f for f, ok in [*refs, *paths] if not ok and f.src in a.strict]
+    # Срез на дату (`docs/reports/`) задним числом не правится: путь, верный на его дату,
+    # мог переехать (M-18) — в отчёте он виден, но провалом не считается. Номера решений
+    # не исчезают, их ссылки проверяются везде.
+    dated = [f for f, ok in paths if not ok and f.loc.startswith(REPORTS)]
+    bad = [f for f, ok in [*refs, *paths] if not ok and f.src in a.strict and f not in dated]
     for f in bad:
         print(f"xref: {f.src} {f.loc}: нет {f.target}:{f.what}", file=sys.stderr)
     # Проверяемый источник без клона (копия DPmeta вне рабочего дерева git) — провал, а не «чисто».

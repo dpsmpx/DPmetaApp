@@ -37,7 +37,7 @@ DPvisualisation, DPmeta и DPprofile, как прежде DP_AI_Orcestrator, —
 | SQ-07 | DP-Verify | неверные пути в чужих репозиториях в ТЗ | низкий | открыт — ТЗ меняется решением; те же шесть мест, что 5 октября |
 | SQ-08 | DP-Verify | устаревшие сведения о состоянии других репозиториев | низкий | открыт: пункт `TODO.md` о хуке DPpass снят; «Порядок» ROADMAP и §12.4 ТЗ — прежние |
 | SQ-09 | DP-Verify | VoxelRPG — имя проекта в ссылках и профиле | средний | открыт — RISK-04 |
-| SQ-10 | DPprofile | — | — | расхождений нет; с 25.10 — подсистема `DPmetaApp:dpprofile/` |
+| SQ-10 | DPprofile | — | — | расхождений нет; с 25.10 — подсистема каталог dpprofile/ DPmetaApp (до `DPmetaApp:D-154`) |
 | SQ-11 | DPpass | лицензия и поставка DP-Verify | высокий | сделано: лицензии заменены — `dppass/` 30.10, корень и `dpai/` 4.11.2026 (`DPmetaApp:D-47`) |
 | SQ-12 | SocialMediaImage | карта проектов и черновик README профиля устарели | низкий | частично: карта — сделано; черновик README профиля — сверить с правкой автора (`dpsmpx` `1e0b8ba`) |
 | SQ-13 | DP_game_market_analytic_system | README — один заголовок | низкий | сделано сессией проекта (PR #2, `9edf18c`); ветка `dpmeta/docs-sync` устарела |
@@ -329,7 +329,7 @@ Galdhold); DP Verify 1.0.0-rc2 поставлен в DPpass (этап 6) и Gald
 
 ## DPprofile
 
-С 25 октября 2026 — подсистема `DPmetaApp:dpprofile/` (`DPmetaApp:D-43`),
+С 25 октября 2026 — подсистема каталог dpprofile/ DPmetaApp (до `DPmetaApp:D-154`) (`DPmetaApp:D-43`),
 репозиторий заморожен.
 
 ### SQ-10 — Расхождений нет
@@ -340,7 +340,7 @@ Galdhold); DP Verify 1.0.0-rc2 поставлен в DPpass (этап 6) и Gald
   DP-Verify, DPlearn, SocialMediaImage, DP_game_market_analytic_system и
   DPmeta — по собственному правилу DPprofile (C-04). Проверки зелёные.
 - **Проход 25 октября 2026:** с 25 октября 2026 DPprofile — подсистема
-  `DPmetaApp:dpprofile/` (`DPmetaApp:D-43`, `DPprofile:D-16`), репозиторий
+  каталог dpprofile/ DPmetaApp (до `DPmetaApp:D-154`) (`DPmetaApp:D-43`, `DPprofile:D-16`), репозиторий
   заморожен; полная проверка подсистемы сверяет ссылки с клонами
   источников, как прежде (C-04).
 
@@ -368,7 +368,7 @@ Galdhold); DP Verify 1.0.0-rc2 поставлен в DPpass (этап 6) и Gald
 
 ## SocialMediaImage
 
-С 25 октября 2026 — подсистема `DPmetaApp:socialmediaimage/`
+С 25 октября 2026 — подсистема каталог socialmediaimage/ DPmetaApp (до `DPmetaApp:D-154`)
 (`DPmetaApp:D-43`, `SocialMediaImage:Д45`), репозиторий заморожен; места
 ниже — от каталога подсистемы.
 
@@ -502,7 +502,7 @@ Galdhold); DP Verify 1.0.0-rc2 поставлен в DPpass (этап 6) и Gald
   архив — в `excluded` с причиной, новый набор и текст страницы.
 - **Проход 25 октября 2026:** ветка `claude/dreamy-bardeen-xe4k6r` влита в
   `main` SocialMediaImage до переезда: DPmonetization — в `repos`
-  (`DPmetaApp:socialmediaimage/data/progress/scope.yaml`, ключ `dpmon`),
+  (`SocialMediaImage:data/progress/scope.yaml`, ключ `dpmon`),
   архив — в `excluded` с причиной.
 - **Состояние:** сделано (влито в `main` SocialMediaImage до переезда).
 
@@ -601,7 +601,7 @@ Galdhold); DP Verify 1.0.0-rc2 поставлен в DPpass (этап 6) и Gald
   «отметить фазу B начатой» (`SocialMediaImage:Д44`): у станции плана поле
   `started`, фаза B — «идёт» с 11 октября 2026 (факт APP-PHASE-B). Имена
   убранных проектов (DP_Ecosystem, DP_Repeated_Tasks) — по-прежнему в
-  `DPmetaApp:socialmediaimage/data/progress/scope.yaml:159-160`; ответа
+  `SocialMediaImage:data/progress/scope.yaml:159-160`; ответа
   автора о них нет.
 - **Ответ автора 25 октября 2026:** план — «отметить фазу B начатой»
   (`SocialMediaImage:Д44`); убранные проекты — «Называть по именам»
@@ -612,7 +612,7 @@ Galdhold); DP Verify 1.0.0-rc2 поставлен в DPpass (этап 6) и Gald
 
 - **Вид:** наблюдение. **Риск:** низкий; публичный — страница «Прогресс
   экосистемы» на сайте (C-10).
-- **Где:** `DPmetaApp:socialmediaimage/data/progress/scope.yaml` — в
+- **Где:** `SocialMediaImage:data/progress/scope.yaml` — в
   `repos` отдельными строками `dpsmpx/DP_AI_Orcestrator` (`:111-117`),
   `dpsmpx/DPmeta` (`:98`), `dpsmpx/DPvisualisation` (`:118`), а также
   DPpass (`:59`), SocialMediaImage (`:65`) и DPprofile (`:72`); рядом —
@@ -625,7 +625,7 @@ Galdhold); DP Verify 1.0.0-rc2 поставлен в DPpass (этап 6) и Gald
   Сборщик страницы складывает репозитории и отсеивает повторы только
   внутри одного (SQ-31), поэтому следующий набор посчитает эту историю
   дважды — в строке системы и в строке DPmetaApp, а работа после
-  переезда окажется только у DPmetaApp. `DPmetaApp:socialmediaimage/TODO.md`
+  переезда окажется только у DPmetaApp. `SocialMediaImage:TODO.md`
   («Следующий набор прогресса») называет оркестратор и DPpass, но не
   четыре системы 25 октября. В схеме то же решено `DPvisualisation:D-24`
   и `DPvisualisation:D-26`: история до слияния — у своего узла, у
@@ -691,7 +691,7 @@ DPvisualisation «исправь все несоответствия». `main` D
 - **Проход 25 октября 2026:** ветки влиты: DPvisualisation и
   SocialMediaImage — в свои `main` до переезда (невлитых коммитов нет),
   DPmeta — вместе с переездом (PR #5, `add5eba`, M-14). Пути теперь —
-  `DPmetaApp:dpvisualisation/` и `DPmetaApp:socialmediaimage/`.
+  `DPmetaApp:dpvisualisation/` и каталог socialmediaimage/ DPmetaApp (до `DPmetaApp:D-154`).
 - **Состояние:** сделано.
 
 ### SQ-31 — Оркестратор ещё «войдёт» в DPmetaApp, а он уже там
@@ -750,9 +750,9 @@ DPvisualisation «исправь все несоответствия». `main` D
   оркестратора нет, его работа — у DPmetaApp, репозиторий — в `[registry]
   exclude` (`DPvisualisation:D-22`,
   `DPmetaApp:dpvisualisation/model/ecosystem.toml:48`). Сайт — нет: в
-  `DPmetaApp:socialmediaimage/data/progress/scope.yaml:111-117`
+  `SocialMediaImage:data/progress/scope.yaml:111-117`
   оркестратор — отдельный репозиторий ядра, факты ORC-WHAT и ORC-STAGE —
-  прежние; двойной счёт записан в `DPmetaApp:socialmediaimage/TODO.md`
+  прежние; двойной счёт записан в `SocialMediaImage:TODO.md`
   («Следующий набор прогресса») вместе с DPpass, а после 25 октября он
   шире — SQ-37.
 - **Ответ автора 25 октября 2026:** место решено (M-16, RISK-11 закрыт):

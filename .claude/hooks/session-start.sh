@@ -108,23 +108,10 @@ fi
     echo "  проверки — cd dpai && tools/verify/run.sh static|affected|full."
     echo "Подсистема DPpass — dppass/ (D-30): правила dppass/CLAUDE.md, хвосты dppass/TODO.md,"
     echo "  проверки — cd dppass && tools/hostcheck/run.sh --quick|--full, итог для PR — run.sh report."
-    echo "Подсистема SocialMediaImage — socialmediaimage/ (D-43): правила socialmediaimage/CLAUDE.md, начало —"
-    echo "  его docs/session/HANDOFF.md; проверки — cd socialmediaimage && tools/check.sh --quick|--affected|(полный)."
     echo "Подсистема DPvisualisation — dpvisualisation/ (D-43): правила dpvisualisation/CLAUDE.md;"
     echo "  проверки — cd dpvisualisation && tools/check/run.sh [full] (Python 3.11+; full — Node.js и Chromium)."
     echo "Подсистема DPmeta — dpmeta/ (D-43): правила dpmeta/CLAUDE.md; проверки — cd dpmeta && tools/check.sh"
     echo "  (клоны экосистемы — CLONES=<каталог клонов>); аудит документации — /doc-consistency-audit."
-    echo "Подсистема DPprofile — dpprofile/ (D-43): правила dpprofile/CLAUDE.md; проверки — cd dpprofile &&"
-    echo "  tools/verify/run.sh --quick|--full (--full — после tools/verify/fetch_sources.sh)."
-    # Зависимости проверок SocialMediaImage (PyYAML, jsonschema и др.) — в веб-сессии, если их нет.
-    if ! python3 -c "import yaml, jsonschema" 2>/dev/null; then
-        if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
-            python3 -m pip install -q --require-hashes -r "$PROJ/socialmediaimage/tools/requirements.txt" >/dev/null 2>&1 \
-                || echo "  ! зависимости SocialMediaImage не поставились: python3 -m pip install --require-hashes -r socialmediaimage/tools/requirements.txt"
-        else
-            echo "  ! нужны PyYAML и jsonschema: python3 -m pip install --require-hashes -r socialmediaimage/tools/requirements.txt"
-        fi
-    fi
     for tool in python3 git java; do
         if command -v "$tool" >/dev/null 2>&1; then
             echo "  $tool: есть"

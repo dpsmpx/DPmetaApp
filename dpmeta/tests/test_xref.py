@@ -105,6 +105,20 @@ class XrefTest(unittest.TestCase):
         code, _ = self.run_xref("--strict", "Alpha")
         self.assertEqual(code, 0)
 
+    def test_moved_path_in_dated_report_is_not_fatal(self):
+        # Срез на дату не правится (M-18): переехавший путь в docs/reports/ — в отчёте, но не провал.
+        (self.root / "beta" / "notes.md").write_text("Путь есть: `Alpha:README.md`.\n", encoding="utf-8")
+        report_dir = self.root / "beta" / "docs" / "reports"
+        report_dir.mkdir(parents=True)
+        (report_dir / "2026-10-25.md").write_text("Тогда: `Alpha:docs/MOVED.md`.\n", encoding="utf-8")
+        code, report = self.run_xref("--only", "Beta", "--strict", "Beta")
+        self.assertEqual(code, 0)
+        self.assertIn("Alpha:`docs/MOVED.md`", report)
+        # Тот же путь вне среза — провал.
+        (self.root / "beta" / "notes.md").write_text("Сейчас: `Alpha:docs/MOVED.md`.\n", encoding="utf-8")
+        code, _ = self.run_xref("--only", "Beta", "--strict", "Beta")
+        self.assertEqual(code, 1)
+
     def test_strict_source_without_clone_fails(self):
         # Копия без git (как dpmeta/ вне рабочего дерева): «нет клона» в отчёте и код 1, а не 0.
         plain = self.root / "plain-copy"

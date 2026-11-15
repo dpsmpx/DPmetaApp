@@ -37,6 +37,12 @@ fun versionCodeOf(version: String): Int {
     return stage.toInt() * 10_000 + patch.toInt() * 100 + build
 }
 
+/** Короткий хеш HEAD для «О программе» (F-50): git недоступен или не репозиторий — «неизвестен». */
+val buildCommit: Provider<String> = providers.exec {
+    commandLine("git", "-C", rootProject.layout.projectDirectory.asFile.path, "rev-parse", "--short=12", "HEAD")
+    isIgnoreExitValue = true
+}.standardOutput.asText.map { it.trim().takeIf { h -> h.matches(Regex("^[0-9a-f]{7,40}$")) } ?: "неизвестен" }
+
 android {
     namespace = "com.dpsmpx.dpmeta.shell"
     compileSdk = 37
@@ -47,12 +53,29 @@ android {
         sourceSets["test"].kotlin.directories += listOf("src/screenshots/kotlin")
     }
 
+    // Коммит сборки — строковым ресурсом (resValue): «О программе» в :app читает его по R (F-50).
+    buildFeatures {
+        resValues = true
+    }
+
     defaultConfig {
         applicationId = "com.dpsmpx.dpai"
         minSdk = 30
         targetSdk = 36
         versionName = project.version.toString()
         versionCode = versionCodeOf(versionName!!)
+        // Коммит сборки для «О программе» (F-50); без git (архив исходников) — «неизвестен».
+        resValue("string", "dpmeta_build_commit", buildCommit.get())
+    }
+
+    // R8 (D-156): release — сжатие кода и ресурсов и оптимизация, без обфускации
+    // (proguard-rules.pro); debug для apk_debug — без R8, как был.
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
     }
 
     // Предупреждения Lint — ошибки (CLAUDE.md, «Правила кода»). Код библиотек проверяет Lint своих

@@ -30,6 +30,8 @@ object ActionExecutor {
             // F-26: метка — всегда своя, из кода, а не из параметров.
             ActionKind.ISSUE_OPEN -> w.issue(c.target.repo, c.params["title"].orEmpty(), c.params["body"].orEmpty(), listOf(ISSUE_LABEL))
             ActionKind.FILES_COMMIT_PR, ActionKind.COMMIT_DEFAULT -> edit(w, c, text)
+            // D-150: только закрытый, владелец — из цели команды (его назвал токен до окна).
+            ActionKind.REPO_CREATE -> w.createRepository(c.target.repo, com.dpsmpx.dpmeta.app.screens.PublishActions.description(c))
             else -> return Outcome.failure(DiagCode.UNSUPPORTED, "в пульте этого действия пока нет: ${c.kind.what}", c.target.display)
         }
         return when (r) {
@@ -124,6 +126,7 @@ object ActionExecutor {
         ActionKind.PR_MERGE -> "PR влит"
         ActionKind.PR_CLOSE -> "PR закрыт"
         ActionKind.ISSUE_OPEN -> "issue создан"
+        ActionKind.REPO_CREATE -> "создан закрытый репозиторий ${c.target.repo}"
         ActionKind.FILES_COMMIT_PR -> "правка — в ветке ${c.target.branch}, открыт PR"
         ActionKind.COMMIT_DEFAULT -> "коммит в ${c.target.branch}: ${w.sha?.take(7).orEmpty()}"
         ActionKind.BRANCH_DELETE_MERGED, ActionKind.BRANCH_DELETE_UNMERGED ->

@@ -15,6 +15,10 @@ import com.dpsmpx.dpai.core.diagnostics.Redactor
 open class DpaiApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        // Ключ SSH приложения — переносимый файлом (D-184): ему нужен каталог процесса.
+        KeystoreKey.install(this)
+        // Восстановление из резервной копии (DPmetaApp:D-151) — до чтения настроек и хранилищ.
+        AppBackups.applyPending(this)
         Drafts.install(this)
         IdeState.install(this)
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
@@ -81,6 +85,13 @@ open class DpaiApplication : Application() {
 
     /** Служба контроллера остановлена: оболочка отзывает права, выданные «до остановки службы» (`DPmetaApp:D-114`). */
     open fun controllerStopped() = Unit
+
+    /**
+     * Числа для виджета могли измениться (`DPmetaApp:D-153`): ручной запуск кончился,
+     * у «AI» другие счётчики, новая проверка. Оболочка DPmetaApp обновляет виджет; в
+     * подсистеме виджета нет. Быстро и с любого потока.
+     */
+    open fun studioChanged() = Unit
 
     /** Раздел приложения вне окна «AI» (`DPmetaApp:D-112`): окно пульта на нём; `null` — пульта нет (отдельная сборка). */
     open fun sectionIntent(section: com.dpsmpx.dpai.ui.AppSection): android.content.Intent? = null

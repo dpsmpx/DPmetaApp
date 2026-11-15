@@ -182,6 +182,8 @@ class ControllerService : Service() {
                             // Копия настроек — после изменения и раз в час (D-51).
                             at = Clock.SYSTEM.monotonicNanos()
                             SettingsBackups.tick(app, Controller.get(app.filesDir))
+                            // Копия приложения без секретов — раз в сутки (DPmetaApp:D-151).
+                            runCatching { AppBackups.tick(app, BuildConfig.DPAI_VERSION) }
                             meter.part("копия настроек", at)
                             // Задачи из экосистемы по политике прогона — раз в час (D-106); сбой — в журнал, такт идёт.
                             at = Clock.SYSTEM.monotonicNanos()

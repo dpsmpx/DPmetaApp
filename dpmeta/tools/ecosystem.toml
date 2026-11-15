@@ -61,14 +61,6 @@ dir = "dppass"
 decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
 
 [[repo]]
-name = "DPprofile"
-slug = "dpsmpx/DPprofile"
-clone = "dpprofile"
-place = "core"
-dir = "dpprofile"
-decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
-
-[[repo]]
 name = "DPlearn"
 slug = "dpsmpx/DPlearn"
 clone = "dplearn"
@@ -80,9 +72,13 @@ name = "SocialMediaImage"
 slug = "dpsmpx/SocialMediaImage"
 clone = "socialmediaimage"
 place = "core"
-dir = "socialmediaimage"
+# M-18: DPprofile — компонент dpprofile/ этого репозитория, его журнал D-NN — в defs.
+names = ["DPprofile"]
 decisions = { path = "docs/direction/DECISIONS.md", id = "Д\\d+" }
-defs = [{ path = "docs/identity/IDENTITY_CONFLICTS.md", id = "IC-\\d+" }]
+defs = [
+    { path = "docs/identity/IDENTITY_CONFLICTS.md", id = "IC-\\d+" },
+    { path = "dpprofile/docs/direction/DECISIONS.md", id = "D-\\d+" },
+]
 
 [[repo]]
 name = "DP_game_market_analytic_system"

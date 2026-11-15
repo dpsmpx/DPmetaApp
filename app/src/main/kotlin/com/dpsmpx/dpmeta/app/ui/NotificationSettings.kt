@@ -102,6 +102,9 @@ internal fun NotificationSettings(feed: List<FeedEvent>, onFeed: () -> Unit) {
         }
     }) { Text("Сохранить тихие часы") }
     note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+    DigestAndSnooze()
+    PushSettings()
+    ListenerSettings()
     TextButton(onClick = { rules = true }) { Text("Правила и проба по ленте…") }
     TextButton(onClick = onFeed) { Text("Лента уведомлений ИИ и проектов…") }
     Text("Правила действуют на обычные сообщения ИИ. Запросы на подтверждение и безопасность сохраняют обязательный показ. История ИИ — последние 200 кратких сообщений до 7 дней.", style = MaterialTheme.typography.bodySmall)
@@ -202,7 +205,7 @@ private fun AlertRulesDialog(feed: List<FeedEvent>, onClose: () -> Unit) {
                 }
             }
             (parsed as? Outcome.Failure)?.let { Text(it.diagnostics.first().message, color = MaterialTheme.colorScheme.error) }
-            if (current?.rules?.any { it.action == AlertAction.DIGEST } == true) Text("Дайджест по расписанию ещё в плане; выберите «уведомить» для немедленной доставки.", style = MaterialTheme.typography.bodySmall)
+            if (current?.rules?.any { it.action == AlertAction.DIGEST } == true) Text("«В сводку» приходит одним уведомлением по расписанию сводки (настройка выше).", style = MaterialTheme.typography.bodySmall)
             TextButton(enabled = !busy, onClick = { advanced = !advanced }) { Text(if (advanced) "Переключатели правил" else "Условия, порядок и новые правила (TOML)") }
             if (advanced) {
                 Text("Regex: синтаксис RE2, без обратных ссылок и lookaround. Пороги — целые числа.", style = MaterialTheme.typography.bodySmall)
@@ -243,4 +246,95 @@ private fun AlertRulesDialog(feed: List<FeedEvent>, onClose: () -> Unit) {
     if (closing) AlertDialog(onDismissRequest = { closing = false }, title = { Text("Правила не сохранены") }, text = { Text("Сохранить изменения перед закрытием?") },
         confirmButton = { TextButton(enabled = !busy && current != null, onClick = ::save) { Text("Сохранить") } },
         dismissButton = { Row { TextButton(onClick = onClose) { Text("Не сохранять") }; TextButton(onClick = { closing = false }) { Text("Продолжить") } } })
+}
+
+/** «ЧЧ:ММ» → минута суток; неверное — `null`. */
+private fun clockMinute(text: String): Int? {
+    val m = Regex("(\\d{1,2}):(\\d{2})").matchEntire(text.trim()) ?: return null
+    val h = m.groupValues[1].toInt()
+    val min = m.groupValues[2].toInt()
+    return if (h in 0..23 && min in 0..59) h * 60 + min else null
+}
+
+/**
+ * Сводка по расписанию и две кнопки «Отложить» (D-152): все варианты — настройкой,
+ * по умолчанию сводка раз в день в 09:00, кнопки «На час» и «До утра (09:00)».
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun DigestAndSnooze() {
+    val context = LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
+    val initial = remember { com.dpsmpx.dpmeta.app.data.PultNotices.digest(context) }
+    var kind by remember { mutableStateOf(initial.javaClass.simpleName) }
+    var first by remember { mutableStateOf(com.dpsmpx.dpmeta.notify.clock(when (initial) { is com.dpsmpx.dpmeta.notify.DigestSchedule.Daily -> initial.minute; is com.dpsmpx.dpmeta.notify.DigestSchedule.Twice -> initial.first; else -> 540 })) }
+    var second by remember { mutableStateOf(com.dpsmpx.dpmeta.notify.clock((initial as? com.dpsmpx.dpmeta.notify.DigestSchedule.Twice)?.second ?: 19 * 60)) }
+    var hours by remember { mutableStateOf((initial as? com.dpsmpx.dpmeta.notify.DigestSchedule.Every)?.hours ?: 4) }
+    val pending = remember { com.dpsmpx.dpmeta.app.data.PultNotices.pending(context).events.size }
+    var note by remember { mutableStateOf<String?>(null) }
+    Text("Сводка", style = MaterialTheme.typography.titleSmall)
+    Text("Правила «в сводку» копят события; одно уведомление со списком — по расписанию. Пустая сводка не приходит. Ждут сводки: $pending.", style = MaterialTheme.typography.bodySmall)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        FilterChip(selected = kind == "Daily", onClick = { kind = "Daily" }, label = { Text("Раз в день") })
+        FilterChip(selected = kind == "Twice", onClick = { kind = "Twice" }, label = { Text("Утром и вечером") })
+        FilterChip(selected = kind == "Every", onClick = { kind = "Every" }, label = { Text("Каждые N ч") })
+    }
+    when (kind) {
+        "Daily" -> OutlinedTextField(first, { first = it.take(5) }, label = { Text("Время ЧЧ:ММ") }, singleLine = true)
+        "Twice" -> {
+            OutlinedTextField(first, { first = it.take(5) }, label = { Text("Утром ЧЧ:ММ") }, singleLine = true)
+            OutlinedTextField(second, { second = it.take(5) }, label = { Text("Вечером ЧЧ:ММ") }, singleLine = true)
+        }
+        else -> FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (h in com.dpsmpx.dpmeta.notify.DigestSchedule.EVERY) FilterChip(selected = hours == h, onClick = { hours = h }, label = { Text("$h ч") })
+        }
+    }
+    TextButton(onClick = {
+        val a = clockMinute(first)
+        val b = clockMinute(second)
+        val schedule = runCatching {
+            when (kind) {
+                "Daily" -> a?.let { com.dpsmpx.dpmeta.notify.DigestSchedule.Daily(it) }
+                "Twice" -> if (a != null && b != null) com.dpsmpx.dpmeta.notify.DigestSchedule.Twice(a, b) else null
+                else -> com.dpsmpx.dpmeta.notify.DigestSchedule.Every(hours)
+            }
+        }.getOrNull()
+        if (schedule == null) {
+            note = "Время — ЧЧ:ММ, у «утром и вечером» — два разных"
+        } else scope.launch {
+            withContext(Dispatchers.IO) {
+                com.dpsmpx.dpmeta.app.data.PultNotices.setDigest(context, schedule)
+                com.dpsmpx.dpmeta.app.PultNoticeJob.scheduleDigest(context, force = true)
+            }
+            note = "Сводка: ${schedule.title}"
+        }
+    }) { Text("Сохранить сводку") }
+    Text("Кнопки «Отложить»", style = MaterialTheme.typography.titleSmall)
+    val snoozes = remember { com.dpsmpx.dpmeta.app.data.PultNotices.snoozes(context) }
+    for (i in 0..1) SnoozeRow(i, snoozes[i]) { option ->
+        scope.launch {
+            withContext(Dispatchers.IO) { com.dpsmpx.dpmeta.app.data.PultNotices.setSnooze(context, i, option) }
+            note = "Кнопка ${i + 1}: «${option.label}» — у новых уведомлений"
+        }
+    }
+    note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun SnoozeRow(index: Int, initial: com.dpsmpx.dpmeta.notify.SnoozeOption, onSave: (com.dpsmpx.dpmeta.notify.SnoozeOption) -> Unit) {
+    var minutes by remember { mutableStateOf((initial as? com.dpsmpx.dpmeta.notify.SnoozeOption.For)?.minutes) }
+    var until by remember { mutableStateOf(com.dpsmpx.dpmeta.notify.clock((initial as? com.dpsmpx.dpmeta.notify.SnoozeOption.Until)?.minute ?: 540)) }
+    Text("Кнопка ${index + 1}: «${initial.label}»", style = MaterialTheme.typography.bodySmall)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        for (m in com.dpsmpx.dpmeta.notify.SnoozeOption.FOR) {
+            FilterChip(selected = minutes == m, onClick = { minutes = m }, label = { Text(com.dpsmpx.dpmeta.notify.SnoozeOption.For(m).label) })
+        }
+        FilterChip(selected = minutes == null, onClick = { minutes = null }, label = { Text("До времени") })
+    }
+    if (minutes == null) OutlinedTextField(until, { until = it.take(5) }, label = { Text("До ЧЧ:ММ") }, singleLine = true)
+    TextButton(onClick = {
+        val option = minutes?.let { com.dpsmpx.dpmeta.notify.SnoozeOption.For(it) } ?: clockMinute(until)?.let { com.dpsmpx.dpmeta.notify.SnoozeOption.Until(it) }
+        option?.let(onSave)
+    }) { Text("Сохранить кнопку ${index + 1}") }
 }

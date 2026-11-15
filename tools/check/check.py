@@ -46,7 +46,7 @@ ROOT_ALLOW = {
     ".claude", ".github", "docs", "ROADMAP", "tools", "tests",
     "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
     "gradle", "build-logic", "app", "shell", "core", "cli", "config",
-    "dpai", "dppass", "socialmediaimage", "dpvisualisation", "dpmeta", "dpprofile",
+    "dpai", "dppass", "dpvisualisation", "dpmeta",
 }
 # Пакетный файл Windows создан Gradle с CRLF — так и хранится (`.gitattributes`).
 CRLF_ALLOWED = {"gradlew.bat"}
@@ -59,10 +59,8 @@ WRAPPER_SOURCE = "dpai/"
 SUBSYSTEMS = {
     "dpai": "dpai/tools/verify/run.sh",
     "dppass": "dppass/tools/hostcheck/run.sh",
-    "socialmediaimage": ("socialmediaimage/tools/check.sh", "--quick"),
     "dpvisualisation": "dpvisualisation/tools/check/run.sh",
     "dpmeta": ("dpmeta/tools/check.sh",),
-    "dpprofile": ("dpprofile/tools/verify/run.sh", "--quick"),
 }
 # Строка шага в выводе команды подсистемы: «- ✓ шаг» (dpai), «  ✓ id  итог» (DP Verify у dppass, D-30),
 # «✓ id — что проверено» (SocialMediaImage) или «✓ id (0.0 с)» (DPvisualisation, D-43);
@@ -95,8 +93,6 @@ REQUIRED = [
 # Пути, которые документы называют заранее: появятся на своих этапах. Путь появился —
 # убрать отсюда (иначе находка): список не должен прятать опечатки.
 PLANNED = {
-    "tools/release/": "сборка неподписанного APK — этап 8",
-    "tools/notify/": "набор хуков уведомлений Claude Code (F-56) — этап 7",
     # Каталог config/ появился с панелями проектов (D-57); остальные файлы ТЗ — со своими этапами.
     "config/site.toml": "адреса и пробы сайта (F-27…F-30) — этап 6",
     "config/platforms.toml": "каталог возможностей площадок (F-67) — этап 6",
@@ -605,12 +601,12 @@ def check_modules(repo, r):
 
 # Запрещённое по решениям (ТЗ, §6.5; A-06, A-07): признаки в коде приложения — Kotlin и Java
 # основных исходников всего репозитория, подсистемы тоже (второй, независимый поиск).
-# Выгрузку сайта держит только подсистема SocialMediaImage (D-40, D-48) — её каталог
-# правило выгрузки не смотрит. Автоответы и массовые действия (D-21, D-42) признаков в
+# Выгрузку сайта держит только SocialMediaImage в своём репозитории (D-40, D-48, D-154) —
+# здесь её нет нигде. Автоответы и массовые действия (D-21, D-42) признаков в
 # тексте не имеют — их ловят тесты :core:actions (этап 5).
 FORBIDDEN_CODE = (
-    (re.compile(r"\bbeget\b|\brsync\b", re.I), ("socialmediaimage/",),
-     "выгрузка сайта — только подсистемой SocialMediaImage (D-40, A-07)"),
+    (re.compile(r"\bbeget\b|\brsync\b", re.I), (),
+     "выгрузка сайта — только в репозитории SocialMediaImage, не в DPmetaApp (D-40, A-07, D-154)"),
     # Пути чтения — список D-81: аналитика расхода и стоимости, лимиты скорости организации,
     # прежние отчёты Usage и Cost. Остальное (участники, ключи, workspace и их лимиты) — нет.
     (re.compile(r"v1/organizations/(?!analytics/(?:usage|cost)\b|rate_limits\b|usage_report\b|cost_report\b)"), (),
@@ -912,6 +908,40 @@ def check_commands(repo, r):
         seen.add(c.get("id"))
 
 
+PROVENANCE_DOCS = ("docs/PROVENANCE.md", "dpai/docs/PROVENANCE.md")
+APP_BUILD = "app/build.gradle.kts"
+
+
+def check_about(repo, r):
+    """about.licenses — лицензии «О программе» совпадают с происхождением (F-50, A-12): APK несёт
+    оба документа происхождения как есть, и у каждой строки их таблиц с колонкой «Лицензия»
+    (кроме таблиц идей) лицензия указана — экран показывает её, а не пустое место."""
+    build = repo.text(APP_BUILD) if repo.exists(APP_BUILD) else ""
+    for doc in PROVENANCE_DOCS:
+        if f'"{doc}"' not in (build or ""):
+            r.add(APP_BUILD, f"{doc} не попадает в APK — «О программе» не покажет его лицензии (A-12)")
+        if not repo.exists(doc):
+            r.add(doc, "нет документа происхождения")
+            continue
+        header = None
+        for n, raw in enumerate((repo.text(doc) or "").splitlines(), 1):
+            line = raw.strip()
+            if not line.startswith("|"):
+                header = None
+                continue
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            if header is None:
+                header = cells if any(c.startswith("Лицензия") for c in cells) and cells[0] != "Идея" else []
+                continue
+            if not header or all(re.fullmatch(r":?-{3,}:?", c) for c in cells):
+                continue
+            r.scanned += 1
+            i = next(k for k, c in enumerate(header) if c.startswith("Лицензия"))
+            value = cells[i].replace("`", "").replace("*", "").strip() if i < len(cells) else ""
+            if not value or value in {"—", "-", "?"}:
+                r.add(f"{doc}:{n}", f"у «{cells[0][:60]}» не указана лицензия")
+
+
 def check_files(repo, r):
     """process.files — обязательные документы процесса на месте."""
     r.scanned = len(REQUIRED)
@@ -939,6 +969,7 @@ CHECKS = [
     ("build.wrapper", check_wrapper),
     ("build.verification", check_verification),
     ("config.commands", check_commands),
+    ("about.licenses", check_about),
 ]
 
 

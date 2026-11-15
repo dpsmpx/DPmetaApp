@@ -2,8 +2,8 @@
 
 Границы от 11 ноября 2026: D-86…D-90,
 `docs/direction/PROJECT_ROLES.md`. dpai — ядро студии; DPmeta — карта
-основных активных проектов. SocialMediaImage и DPprofile — на вынос с
-историей. Ниже показано физическое дерево до завершения переноса.
+основных активных проектов. SocialMediaImage и DPprofile вынесены с
+историей в `dpsmpx/SocialMediaImage` (D-154).
 DP-Verify — изменяемая общая папка на target; IPC-мост DPpass и
 транспорт до ПК проектируются отдельно.
 
@@ -27,30 +27,25 @@ DPmetaApp/                        сборка Gradle из корня: ./gradlew
 │   ├── android                   оболочка Android — библиотека (DP_AI_Orcestrator:D-103)
 │   └── android-app               отдельная сборка «AI» (D-35)
 ├── dppass/                       подсистема DPpass (D-30): свой процесс, сборка и APK, ядро — пока своё
-├── socialmediaimage/             подсистема SocialMediaImage (D-43): контент и сайт, Python, свой процесс
 ├── dpvisualisation/              подсистема DPvisualisation (D-43): модель экосистемы и просмотрщик, свой процесс
 ├── dpmeta/                       подсистема DPmeta (D-43): реестр экосистемы, контракты, очередь, свой процесс
-├── dpprofile/                    подсистема DPprofile (D-43): проверяемая история пути автора, свой процесс
 ├── core/ cli/ app/               модули DPmetaApp на ядре dpai/ (ТЗ, §6.2); app — пульт
 ├── shell/                        приложение DPmetaApp — один APK: пульт и «AI» (D-53)
 ├── config/projects/              панели проектов (F-10, D-57)
 ├── config/briefs/                шаблоны поручений Claude (F-23)
 ├── docs/ ROADMAP/ TODO.md        процесс приложения целиком
 └── tools/check/                  проверки корня; подсистемы — dpai/tools/verify/, dppass/tools/hostcheck/,
-                                  socialmediaimage/tools/check.sh, dpvisualisation/tools/check/,
-                                  dpmeta/tools/check.sh, dpprofile/tools/verify/
+                                  dpvisualisation/tools/check/, dpmeta/tools/check.sh
 ```
 
 Сейчас в сборке корня только `dpai/`: модули DPmetaApp из ТЗ, §6.2
 появятся на этапе 1 и дальше, остальные подсистемы — в фазе B (D-25).
 DPpass в сборку корня не входит: он собирается из `dppass/` (Go и NDK,
 `DPpass:D-25`) отдельным APK с прежней личностью пакета (D-30).
-SocialMediaImage — инструменты на Python и сайт, DPvisualisation — модель
-на Python и просмотрщик на JavaScript, DPmeta — документы и инструменты на
-Python, DPprofile — документы и проверки на Python; в сборку корня и APK
-они не входят, их проверки — шаги `subsystem.socialmediaimage`,
-`subsystem.dpvisualisation`, `subsystem.dpmeta` и `subsystem.dpprofile`
-(D-43).
+DPvisualisation — модель на Python и просмотрщик на JavaScript, DPmeta —
+документы и инструменты на Python; в сборку корня и APK они не входят, их
+проверки — шаги `subsystem.dpvisualisation` и `subsystem.dpmeta` (D-43).
+SocialMediaImage и DPprofile — только в `dpsmpx/SocialMediaImage` (D-154).
 
 ## 2. Ядро одно
 

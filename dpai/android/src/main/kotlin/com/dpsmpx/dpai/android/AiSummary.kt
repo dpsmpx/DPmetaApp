@@ -25,6 +25,8 @@ object AiSummary {
         val request: String?,
         /** Пунктов проверки приложения (DPmetaApp:D-123) по последней проверке. */
         val problems: Int = 0,
+        /** Ручные сборки и проверки (DPmetaApp:D-153); `null` — не прочитаны. */
+        val manual: com.dpsmpx.dpai.ui.ManualCounts? = null,
     )
 
     /**
@@ -35,11 +37,14 @@ object AiSummary {
     fun read(context: Context): Counts {
         val problems = HealthAuto.count(context)
         val model = DemoModel.get(context)
-        if (!model.hasLive()) return Counts(false, NONE, NONE, NONE, null, problems)
+        // Ручные запуски — и без Claude: сборки и проверки идут и на target без каталога Claude.
+        val manual = runCatching { model.manualCounts(com.dpsmpx.dpai.core.clock.Clock.SYSTEM.now()) }.getOrNull()
+        if (!model.hasLive()) return Counts(false, NONE, NONE, NONE, null, problems, manual)
         // Контроллер остановлен (D-39) — снимок замер: числа неизвестны, а не «в работе 2» навсегда (D-13).
-        if (!ControllerService.running) return Counts(true, STOPPED, STOPPED, STOPPED, null, problems)
-        val s = model.published?.takeIf { it.live } ?: return Counts(true, NOT_YET, NOT_YET, NOT_YET, null, problems)
+        if (!ControllerService.running) return Counts(true, STOPPED, STOPPED, STOPPED, null, problems, manual)
+        val s = model.published?.takeIf { it.live } ?: return Counts(true, NOT_YET, NOT_YET, NOT_YET, null, problems, manual)
         return Counts(
+            manual = manual,
             problems = problems,
             configured = true,
             waiting = Measure.observed(s.requests.size.toLong()),

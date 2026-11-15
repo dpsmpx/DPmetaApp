@@ -278,6 +278,10 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     // --- маршруты Claude Code (D-116; ТЗ DPmetaApp, F-18, F-20) ---
     /** Сервис не принял токен маршрута `/fire` (401, 403): токен неверен или отозван — нужен новый. */
     ROUTINE_TOKEN_INVALID(Category.NETWORK, Severity.ERROR, Retryability.NON_RETRYABLE),
+
+    // --- мгновенный канал (DPmetaApp:D-23, D-152; ТЗ DPmetaApp, F-55) ---
+    /** Событие канала без подписи, с неверной, старше 10 минут или повтор — отброшено. */
+    PUSH_SIGNATURE_INVALID(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
     /** Предел запусков маршрута (429): 30 в час на маршрут, 100 — на аккаунт; повтор — позже или другим маршрутом. */
     ROUTINE_LIMIT_REACHED(Category.NETWORK, Severity.ERROR, Retryability.RETRYABLE),
 

@@ -76,8 +76,29 @@ class DemoModel(
 ) {
     private val lock = ReentrantLock()
     private var demo: DemoSystem? = null
+    /** Контур выбранного рабочего проекта — его показывают экраны (D-179). */
     private var live: LiveSystem? = null
+
+    /** Выбранный проект, для которого собран [live]. */
     private var liveFor: Pair<List<TargetEntry>, ProjectEntry?>? = null
+
+    /**
+     * Контуры всех рабочих проектов (`DPmetaApp:D-147`; D-179): ключ — проект, `null` — контур
+     * без проекта (список пуст). Такт идёт всем по очереди под [lock]; места на target —
+     * общие ([neighboursOf]).
+     */
+    private val contours = LinkedHashMap<com.dpsmpx.dpai.core.ids.ProjectId?, LiveSystem>()
+    private var contoursFor: Pair<List<TargetEntry>, List<ProjectEntry>>? = null
+
+    /** Сколько отдано уведомлений каждого фонового контура. */
+    private val drainedBy = HashMap<LiveSystem, Long>()
+
+    /** Незавершённые сессии контуров, кроме контура проекта [self] (D-179). */
+    private fun neighboursOf(self: com.dpsmpx.dpai.core.ids.ProjectId?) = object : com.dpsmpx.dpai.orchestrator.NeighbourLoad {
+        private fun others() = contours.filterKeys { it != self }.values.map { it.orchestrator.sessions.sessions.values.filter { s -> !s.terminal } }
+        override fun sessions(target: com.dpsmpx.dpai.core.ids.ExecutionTargetId): Int = others().sumOf { list -> list.count { it.target == target } }
+        override fun total(): Int = others().sumOf { it.size }
+    }
 
     /** Система, собранная последней: команды кладутся в её очередь без замка. */
     @Volatile
@@ -95,22 +116,31 @@ class DemoModel(
     private fun current(): ControlView {
         val targets = controller.targets()
         if (targets.any { it.configDir != null }) {
-            val key = targets to controller.project()
+            val projects = controller.projects()
+            val all = targets to projects.projects
             // Журнал закрыт после отказа записи (кончилось место, A-4): раз в минуту — контур заново, журнал
             // открывается с проверкой хвоста; места всё ещё нет — следующая запись снова закроет его.
-            val broken = live?.orchestrator?.storageBroken == true && Clock.SYSTEM.monotonicNanos() - builtAt >= REOPEN_NANOS
-            if (live == null || liveFor != key || broken) {
-                // Потоки событий прежней системы (D-76) не переживают её: каналы SSH закрываются.
-                live?.close()
+            val broken = contours.values.any { it.orchestrator.storageBroken } && Clock.SYSTEM.monotonicNanos() - builtAt >= REOPEN_NANOS
+            if (contours.isEmpty() || contoursFor != all || broken) {
+                // Потоки событий прежних систем (D-76) не переживают их: каналы SSH закрываются.
+                contours.values.forEach { it.close() }
+                contours.clear()
+                drainedBy.clear()
                 val started = Clock.SYSTEM.monotonicNanos()
                 builtAt = Clock.SYSTEM.monotonicNanos()
                 // Target «в приложении» (D-75, шаг 5): агент — в процессе, ходы — в Alpine приложения.
-                val inApp = context?.takeIf { key.first.any { it.inApp } }?.let { com.dpsmpx.dpai.android.linux.LinuxSetup.agentHost(it, controller.version) }
+                val inApp = context?.takeIf { targets.any { it.inApp } }?.let { com.dpsmpx.dpai.android.linux.LinuxSetup.agentHost(it, controller.version) }
                 val guest = inApp?.let { context.let(com.dpsmpx.dpai.android.linux.LinuxSetup::guestHost) }
-                live = controller.live(key.first, key.second, onEvents, onProblem, inApp, guest)
-                liveFor = key
-                perf("контроллер построен", started)
+                // Контур на рабочий проект (D-179); список пуст — один контур без проекта, как раньше.
+                for (p in projects.projects.ifEmpty { listOf(null) }) {
+                    contours[p?.project] = controller.live(targets, p, onEvents, onProblem, inApp, guest, neighbours = neighboursOf(p?.project))
+                }
+                contoursFor = all
+                perf("контуры построены: ${contours.size}", started)
             }
+            val selected = projects.current
+            live = contours[selected?.project] ?: contours.values.first()
+            liveFor = targets to selected
             return live!!.also { built = it }
         }
         return (
@@ -135,6 +165,9 @@ class DemoModel(
      * новые и обновлённые (ТЗ, §36), у демо — только проверочные запросы.
      */
     private fun drain(v: ControlView): List<Notification> {
+        // Контур проекта — свой счётчик, общий с фоновым показом (D-179): переключение проекта
+        // не показывает заново уже отданные уведомления.
+        if (v is LiveSystem) return drainBackground(v)
         if (drainedOf !== v) {
             drainedOf = v
             drained = 0
@@ -160,8 +193,20 @@ class DemoModel(
         ).also {
             published = it
             publishedOf = v
+            // Виджет (DPmetaApp:D-153) — только когда его числа «AI» сменились, а не на каждом такте.
+            val counts = listOf(it.requests.size, it.dashboard.active, it.dashboard.limits.count { l -> l.near })
+            if (counts != widgetCounts) {
+                widgetCounts = counts
+                (context?.applicationContext as? DpaiApplication)?.studioChanged()
+            }
         }
     }
+
+    @Volatile private var widgetCounts: List<Int>? = null
+
+    /** Счётчики ручных сборок и проверок для виджета (DPmetaApp:D-153): идущий запуск и итоги за сутки. */
+    fun manualCounts(now: com.dpsmpx.dpai.core.clock.Timestamp): com.dpsmpx.dpai.ui.ManualCounts =
+        com.dpsmpx.dpai.ui.ManualCounts.of(controller.manualProfiles.snapshot().active, projects().projects.map { controller.manualProfiles.history(it) }, now)
 
     /** Такт и снимок; новые уведомления — в снимке, один раз. */
     fun step(selected: String?): Snapshot = lock.withLock {
@@ -178,7 +223,47 @@ class DemoModel(
         v.step()
         perf("такт", started)
         context?.let { SettingIntents.reconcile(it, v.orchestrator) }
-        snapshot(v, selected, drain(v))
+        // Фоновые рабочие проекты (D-179): такт по очереди; сбой одного не останавливает остальные.
+        val background = ArrayList<Notification>()
+        for (b in contours.values.filter { it !== v }) {
+            val t = Clock.SYSTEM.monotonicNanos()
+            runCatching { b.step() }.onFailure { onProblem(Diagnostic.fromThrowable(com.dpsmpx.dpai.core.diagnostics.DiagCode.INTERNAL_ERROR, "такт фонового проекта не прошёл", it)) }
+            perf("такт фонового проекта", t)
+            background += drainBackground(b)
+        }
+        snapshot(v, selected, drain(v) + background)
+    }
+
+    /** Рабочие проекты (D-179): список и выбранный. */
+    fun projects(): com.dpsmpx.dpai.ui.Projects = controller.projects()
+
+    /** Показывать проект [id]: контуры не пересобираются, меняется только выбранный. */
+    fun selectProject(id: com.dpsmpx.dpai.core.ids.ProjectId): Outcome<Unit> = controller.selectProject(id)
+
+    /**
+     * Убрать рабочий проект [id] (D-179) — под замком такта: между проверкой и записью
+     * контур не начнёт новую сессию. Идут сессии — отказ: их ходы остались бы без контура.
+     */
+    fun removeProject(id: com.dpsmpx.dpai.core.ids.ProjectId): Outcome<Unit> = lock.withLock {
+        val active = contours[id]?.orchestrator?.sessions?.sessions?.values?.count { !it.terminal } ?: 0
+        if (active > 0) {
+            Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, "у проекта идут сессии ($active): дождитесь конца или остановите их", id.value)
+        } else {
+            controller.removeProject(id)
+        }
+    }
+
+    /** Новые уведомления контура проекта [b] — выбранного или фонового; счётчик у каждого свой. */
+    private fun drainBackground(b: LiveSystem): List<Notification> {
+        val (fresh, next) = b.orchestrator.postedSince(drainedBy[b] ?: 0L)
+        drainedBy[b] = next
+        return fresh.mapNotNull {
+            when (it) {
+                is NotificationDecision.Post -> it.notification
+                is NotificationDecision.Update -> it.notification
+                is NotificationDecision.Held -> null
+            }
+        }
     }
 
     /** Контур, по которому опубликован последний снимок: новый контур — новый снимок до такта. */
@@ -489,20 +574,42 @@ class DemoModel(
         val app = context ?: return
         val active = controller.manualProfiles.snapshot().active ?: return
         if (!controller.manualProfiles.blocked) return
-        LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST) {
+        LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST,
+            onFinished = { (app.applicationContext as? DpaiApplication)?.studioChanged() }) {
             val client = manualClient(active.target)
                 ?: return@start LongJobs.Done("target недоступен; пауза сохраняется", failed = true)
             watchManual(client)
         }
     }
 
+    /** Последний выбор своих параметров профиля (D-183). */
+    fun manualChoices(p: ProjectEntry, kind: com.dpsmpx.dpai.ui.ManualProfileKind) = controller.manualProfiles.choices(p, kind)
+
+    fun saveManualChoices(p: ProjectEntry, kind: com.dpsmpx.dpai.ui.ManualProfileKind, values: Map<String, String>) =
+        controller.manualProfiles.saveChoices(p, kind, values)
+
+    /**
+     * [choices] — выбранные варианты своих параметров (D-183); `null` — последний сохранённый
+     * выбор (сборка перед запуском, предпросмотр). Профиль раскрывается здесь, до `prepare`.
+     */
     fun startManualProfile(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, profile: com.dpsmpx.dpai.ui.ManualProfile,
+        choices: Map<String, String>? = null,
         onFinished: ((LongJobs.Done, com.dpsmpx.dpai.ui.ManualRunView) -> Unit)? = null): Boolean {
         val app = context ?: return false
         return LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST,
-            onFinished = { done -> onFinished?.invoke(done, controller.manualProfiles.snapshot()) }) {
+            onFinished = { done ->
+                (app.applicationContext as? DpaiApplication)?.studioChanged()
+                onFinished?.invoke(done, controller.manualProfiles.snapshot())
+            }) {
             val target = controller.targets().firstOrNull { it.id == location.target }
                 ?: return@start LongJobs.Done("target удалён", failed = true)
+            // Параметры (D-183): встроенные и выбранные — в шаги и окружение; в якорь — уже раскрытый профиль.
+            val chosen = choices ?: controller.manualProfiles.choices(p, profile.kind)
+            val resolved = when (val r = profile.resolve(com.dpsmpx.dpai.ui.ManualVars.builtIns(p, target, location) + chosen)) {
+                is Outcome.Failure -> return@start LongJobs.Done(r.errors.first().message, failed = true)
+                is Outcome.Success -> r.value
+            }
+            if (choices != null) controller.manualProfiles.saveChoices(p, profile.kind, choices)
             // Сборка в Linux приложения пишет на диск телефона — под защитой места (DPmetaApp:D-113); на ПК-target место — его.
             if (profile.kind == com.dpsmpx.dpai.ui.ManualProfileKind.BUILD && target.inApp) {
                 (StorageSpace.check(app, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.BUILD, null, "ручная сборка проекта") as? Outcome.Failure)
@@ -521,7 +628,7 @@ class DemoModel(
                 }
                 if (!Drafts.recovery.value.ready) return@withLock Outcome.failure(DiagCode.STATE_CONFLICT, "сначала дождитесь восстановления черновиков")
                 if (Drafts.dirtyIn(location, target.inApp)) return@withLock Outcome.failure(DiagCode.STATE_CONFLICT, "сначала сохраните или отмените правки редактора в этом дереве")
-                controller.manualProfiles.prepare(p, target, location, profile)
+                controller.manualProfiles.prepare(p, target, location, resolved)
             }
             if (prepared is Outcome.Failure) return@start LongJobs.Done(prepared.errors.first().message, failed = true)
             manualStop = false

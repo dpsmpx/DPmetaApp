@@ -66,7 +66,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     var form by remember { mutableStateOf(false) }
     // Только что добавленный target — проверить сразу (AI:A-22), без отдельного нажатия.
     var checkNew by remember { mutableStateOf<String?>(null) }
-    var project by remember { mutableStateOf(controller.project()) }
+    var projects by remember { mutableStateOf(controller.projects()) }
     var projectFor by remember { mutableStateOf<TargetEntry?>(null) }
     var guide by rememberSaveable { mutableStateOf(false) }
     var linux by rememberSaveable { mutableStateOf(false) }
@@ -99,7 +99,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
         val close = {
             guide = false
             targets = controller.targets()
-            project = controller.project()
+            projects = controller.projects()
         }
         // Системный «назад» из инструкции — к Targets, а не из «AI» (AI:A-2).
         androidx.activity.compose.BackHandler(onBack = close)
@@ -145,7 +145,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                 // После восстановления карточка остаётся с отчётом, пока её не скроют.
                 RestoreCard(controller, onHide = { restoring = false; restoreHidden = true }) {
                     targets = controller.targets()
-                    project = controller.project()
+                    projects = controller.projects()
                     restoring = true
                 }
             }
@@ -163,7 +163,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                 onChecked = { checkNew = null },
             )
         }
-        item(key = "project") { ProjectCard(controller, targets, project) { project = it } }
+        item(key = "project") { ProjectsCard(controller, model, targets, projects) { projects = controller.projects() } }
     }
 
     removing?.let { t ->
@@ -179,7 +179,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     projectFor?.let { t ->
         ProjectDialog(controller, t, targets.filter { it.configDir != null }) { saved ->
             projectFor = null
-            if (saved != null) project = saved
+            if (saved != null) projects = controller.projects()
         }
     }
 
@@ -314,6 +314,7 @@ private fun TargetCard(
                     if (t.configDir != null) {
                         TargetSwitches(model, t)
                         UsageAutoSwitch(model, t)
+                        SessionsRow(controller, t)
                     }
                     if (posix) TmuxSwitch(controller, t)
                     // Termux на этом телефоне (D-46) — у его target, а не отдельной карточкой (AI:A-3).
@@ -339,48 +340,72 @@ private fun LinuxEntry(onOpen: () -> Unit) {
     }
 }
 
-/** Проект контура (D-50): где репозиторий, кто ходит, какая проверка; убрать — окном (AI:A-4). */
+/**
+ * Рабочие проекты (D-50; `DPmetaApp:D-147`, D-179): где репозиторий, кто ходит, какая
+ * проверка. Работают все одновременно, места на target общие; экраны показывают
+ * выбранный — «Показывать». Убрать — окном (AI:A-4) и только без идущих сессий.
+ */
 @Composable
-private fun ProjectCard(controller: Controller, targets: List<TargetEntry>, project: ProjectEntry?, onChanged: (ProjectEntry?) -> Unit) {
+private fun ProjectsCard(controller: Controller, model: DemoModel, targets: List<TargetEntry>, projects: com.dpsmpx.dpai.ui.Projects, onChanged: () -> Unit) {
     val scope = rememberCoroutineScope()
+    var asking by remember { mutableStateOf<ProjectEntry?>(null) }
+    var failed by remember { mutableStateOf<String?>(null) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
-            Text("Проект", style = MaterialTheme.typography.titleMedium)
-            val p = project
-            if (p == null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Рабочие проекты", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                // Новый проект мастером — без GitHub (DPmetaApp:D-150).
+                TextButton(onClick = { NewProjectRequests.request() }) { Text("Новый…") }
+            }
+            if (projects.projects.isEmpty()) {
                 Text("Нет: задачи идут в каталоге агента, без Git и проверки. Задайте у target с репозиторием: ⋮ → «Проект…».", style = MaterialTheme.typography.bodySmall)
             } else {
+                Text("Работают все сразу; места на target общие. Экраны показывают выбранный. Ещё проект — у target с репозиторием: ⋮ → «Проект…».", style = MaterialTheme.typography.bodySmall)
+            }
+            val current = projects.current
+            for (p in projects.projects) {
                 val place = targets.firstOrNull { it.id == p.target }?.label ?: "target удалён"
-                Text("$place: репозиторий ${p.root}; деревья ${p.worktreeRoot}; ветка ${p.integrationBranch}", style = MaterialTheme.typography.bodySmall)
-                p.claude?.let { c ->
-                    val on = targets.firstOrNull { it.id == c.target }?.label ?: "target удалён"
-                    Text("Claude — на $on (вход его слота), дерево — по SSH ключом ${c.identityFile}", style = MaterialTheme.typography.bodySmall)
-                }
-                Text(p.checks.firstOrNull()?.let { "проверка: ${it.command.joinToString(" ")}" } ?: "без проверки", style = MaterialTheme.typography.bodySmall)
-                // Окном (AI:A-4) и с проверкой итога (аудит удобства, A-18): поля проекта придётся вводить заново.
-                var asking by remember { mutableStateOf(false) }
-                var failed by remember { mutableStateOf<String?>(null) }
-                TextButton(onClick = { asking = true }) { Text("Убрать проект…") }
-                if (asking) {
-                    ConfirmDialog(
-                        "Убрать проект?",
-                        "Задачи пойдут без Git и проверки. Поля проекта — репозиторий, деревья, ветку, проверки — придётся вводить заново.",
-                        "Убрать",
-                        onConfirm = {
-                            asking = false
+                val name = p.root.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\').ifEmpty { p.root }
+                Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Text(if (p == current) "● $name — показывается" else name, style = MaterialTheme.typography.titleSmall)
+                    Text("$place: репозиторий ${p.root}; деревья ${p.worktreeRoot}; ветка ${p.integrationBranch}", style = MaterialTheme.typography.bodySmall)
+                    p.claude?.let { c ->
+                        val on = targets.firstOrNull { it.id == c.target }?.label ?: "target удалён"
+                        Text("Claude — на $on (вход его слота), дерево — по SSH ключом ${c.identityFile}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text(p.checks.firstOrNull()?.let { "проверка: ${it.command.joinToString(" ")}" } ?: "без проверки", style = MaterialTheme.typography.bodySmall)
+                    Row {
+                        if (p != current) TextButton(onClick = {
                             scope.launch {
-                                when (val r = withContext(Dispatchers.IO) { controller.setProject(null) }) {
-                                    is Outcome.Success -> onChanged(null)
-                                    is Outcome.Failure -> failed = "Не убран: ${r.errors.first().message}"
+                                when (val r = withContext(Dispatchers.IO) { controller.selectProject(p.project) }) {
+                                    is Outcome.Success -> { failed = null; onChanged() }
+                                    is Outcome.Failure -> failed = "Не выбран: ${r.errors.first().message}"
                                 }
                             }
-                        },
-                        onDismiss = { asking = false },
-                    )
+                        }) { Text("Показывать") }
+                        TextButton(onClick = { asking = p }) { Text("Убрать проект…") }
+                    }
                 }
-                failed?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
             }
+            failed?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
         }
+    }
+    asking?.let { p ->
+        ConfirmDialog(
+            "Убрать проект?",
+            "Проект уйдёт из рабочих: его задачи остановятся. Поля проекта — репозиторий, деревья, ветку, проверки — придётся вводить заново. С идущими сессиями убрать нельзя.",
+            "Убрать",
+            onConfirm = {
+                asking = null
+                scope.launch {
+                    when (val r = withContext(Dispatchers.IO) { model.removeProject(p.project) }) {
+                        is Outcome.Success -> { failed = null; onChanged() }
+                        is Outcome.Failure -> failed = "Не убран: ${r.errors.first().message}"
+                    }
+                }
+            },
+            onDismiss = { asking = null },
+        )
     }
 }
 
@@ -395,7 +420,8 @@ internal fun AppKeyCard(controller: Controller) {
             Text("Добавьте строку в ~/.ssh/authorized_keys на target.", style = MaterialTheme.typography.bodySmall)
             val key = publicKey
             if (key == null) {
-                TextButton(onClick = { scope.launch { publicKey = withContext(Dispatchers.IO) { controller.publicKeyLine() } } }) {
+                // Испорченный файл ключа — сообщение, а не падение окна (проверка PR #190).
+                TextButton(onClick = { scope.launch { publicKey = withContext(Dispatchers.IO) { runCatching { controller.publicKeyLine() }.getOrElse { "Ключ не читается: ${it.message}. «Резервная копия» → «Новый переносимый ключ SSH…»." } } } }) {
                     Text("Показать открытый ключ")
                 }
             } else {
@@ -963,7 +989,9 @@ internal fun RestoreCard(controller: Controller, framed: Boolean = true, onHide:
     var message by remember { mutableStateOf<String?>(null) }
     var report by remember { mutableStateOf<List<String>>(emptyList()) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
-        command = withContext(Dispatchers.IO) { com.dpsmpx.dpai.ui.TermuxRestore.command(controller.publicKeyLine(), nonce) }
+        val line = withContext(Dispatchers.IO) { runCatching { controller.publicKeyLine() } }
+        line.onSuccess { command = com.dpsmpx.dpai.ui.TermuxRestore.command(it, nonce) }
+            .onFailure { message = "Ключ SSH не читается: ${it.message}. «Резервная копия» → «Новый переносимый ключ SSH…»." }
     }
     suspend fun attempt(quiet: Boolean): Boolean {
         val u = user ?: run { message = "Termux не установлен"; return true }
@@ -1081,6 +1109,37 @@ private fun TmuxSwitch(controller: Controller, t: TargetEntry) {
         }
     }
     note?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
+}
+
+/**
+ * Мест для сессий ИИ на target (`DPmetaApp:D-148`): 1…4, общие для рабочих проектов.
+ * Уменьшение не останавливает идущие сессии — новые ждут.
+ */
+@Composable
+private fun SessionsRow(controller: Controller, t: TargetEntry) {
+    val scope = rememberCoroutineScope()
+    var n by remember(t.id) { mutableStateOf(t.sessions) }
+    var note by remember(t.id) { mutableStateOf<String?>(null) }
+    var saving by remember(t.id) { mutableStateOf(false) }
+    Text("Мест для сессий ИИ — общие для всех рабочих проектов", style = MaterialTheme.typography.bodySmall)
+    Row {
+        for (k in com.dpsmpx.dpai.ui.TargetForm.SESSIONS) {
+            androidx.compose.material3.FilterChip(selected = n == k, enabled = !saving, onClick = {
+                if (k == n) return@FilterChip
+                val before = n
+                saving = true
+                n = k
+                scope.launch {
+                    when (val r = withContext(Dispatchers.IO) { controller.setSessions(t, k) }) {
+                        is Outcome.Success -> note = if (k < before) "Идущие сессии доиграют; новые — когда занятых станет меньше $k" else null
+                        is Outcome.Failure -> { n = before; note = "Не сохранено: ${r.diagnostics.first().message}" }
+                    }
+                    saving = false
+                }
+            }, label = { Text("$k") }, modifier = Modifier.padding(end = 4.dp))
+        }
+    }
+    note?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 }
 
 private const val PROBING = "проверяю вход…"

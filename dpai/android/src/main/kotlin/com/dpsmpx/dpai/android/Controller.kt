@@ -1,7 +1,6 @@
 package com.dpsmpx.dpai.android
 
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
+import android.content.Context
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
@@ -44,35 +43,125 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Ключ входа приложения (D-35): ECDSA P-256 в Android Keystore. Закрытая
- * часть не покидает устройство и не попадает ни в журнал, ни в копию
- * (D-14, T6); на target уходит только строка открытого ключа.
+ * Ключ входа приложения (D-35): ECDSA P-256. С D-184 (`DPmetaApp:D-157`) — переносимый:
+ * закрытый ключ файлом в `noBackupFilesDir`, зашифрованный ключом Keystore без входа
+ * (фоновые подключения к target идут и при запертом телефоне), и попадает в копию под
+ * паролем (`AppSecrets`). Прежний ключ внутри Keystore не извлекается: он работает, пока
+ * его не сменят на переносимый ([renew]). В журнал и на target — только открытая строка.
  */
 object KeystoreKey {
     private const val ALIAS = "dpai-ssh"
+    private const val WRAP = "dpai-ssh-wrap"
+    private const val FILE = "ssh.key"
+    private const val FORMAT = "dpai.ssh-key"
     const val COMMENT = "dpai-android"
+
+    /** Каталог `noBackupFilesDir` приложения — не сам Context (утечка в статическом поле). */
+    @Volatile private var app: java.io.File? = null
+    @Volatile private var cached: java.security.KeyPair? = null
+
+    /** Оболочка — при запуске процесса: где лежит переносимый ключ. */
+    fun install(context: Context) { app = context.applicationContext.noBackupFilesDir }
 
     private fun store(): KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
+    private fun legacy(): Boolean = try { store().containsAlias(ALIAS) } catch (_: Exception) { false }
+
+    /** Переносимый ключ есть (и попадёт в копию под паролем). */
+    fun portable(): Boolean = app?.let { KeyWrap.exists(it, FILE) } == true
+
+    @Synchronized
+    private fun loadPortable(): java.security.KeyPair? {
+        cached?.let { return it }
+        val base = app ?: return null
+        val plain = (KeyWrap.read(base, WRAP, userAuth = false, FILE) as? Outcome.Success)?.value ?: return null
+        return try { decode(String(plain, Charsets.UTF_8)) } finally { plain.fill(0) }?.also { cached = it }
+    }
+
+    private fun decode(text: String): java.security.KeyPair? = runCatching {
+        val o = com.dpsmpx.dpai.core.serialization.JsonParser().parse(text).valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject
+        require((o["format"] as com.dpsmpx.dpai.core.serialization.JsonString).value == FORMAT)
+        val f = java.security.KeyFactory.getInstance("EC")
+        val b64 = java.util.Base64.getDecoder()
+        val priv = f.generatePrivate(java.security.spec.PKCS8EncodedKeySpec(b64.decode((o["private"] as com.dpsmpx.dpai.core.serialization.JsonString).value)))
+        val pub = f.generatePublic(java.security.spec.X509EncodedKeySpec(b64.decode((o["public"] as com.dpsmpx.dpai.core.serialization.JsonString).value))) as ECPublicKey
+        require(pub.params.curve.field.fieldSize == 256)
+        java.security.KeyPair(pub, priv)
+    }.getOrNull()
+
+    private fun encode(pair: java.security.KeyPair): String {
+        val b64 = java.util.Base64.getEncoder()
+        return com.dpsmpx.dpai.core.serialization.CanonicalJson.write(com.dpsmpx.dpai.core.serialization.JsonObject.of(
+            "format" to com.dpsmpx.dpai.core.serialization.JsonString(FORMAT),
+            "version" to com.dpsmpx.dpai.core.serialization.JsonNumber.of(1),
+            "private" to com.dpsmpx.dpai.core.serialization.JsonString(b64.encodeToString(pair.private.encoded)),
+            "public" to com.dpsmpx.dpai.core.serialization.JsonString(b64.encodeToString(pair.public.encoded)),
+        ))
+    }
+
+    @Synchronized
+    private fun createPortable(): java.security.KeyPair {
+        val base = checkNotNull(app) { "KeystoreKey.install не вызван" }
+        val pair = KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec("secp256r1")) }.generateKeyPair()
+        val w = KeyWrap.write(base, WRAP, userAuth = false, FILE, encode(pair).toByteArray(Charsets.UTF_8))
+        check(w is Outcome.Success) { "ключ SSH не записан" }
+        cached = pair
+        return pair
+    }
+
     @Synchronized
     fun publicKey(): ECPublicKey {
-        val ks = store()
-        if (!ks.containsAlias(ALIAS)) {
-            KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore").apply {
-                initialize(
-                    KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_SIGN)
-                        .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
-                        .setDigests(KeyProperties.DIGEST_SHA256)
-                        .build(),
-                )
-            }.generateKeyPair()
+        loadPortable()?.let { return it.public as ECPublicKey }
+        // Файл есть, но не читается — не подменять ключ молча: строка на target перестала бы подходить
+        // (проверка PR #190). Новый — только явно, «Новый переносимый ключ SSH…».
+        check(!portable()) { "ключ SSH не читается — восстановите копию или создайте новый ключ явно" }
+        if (legacy()) return store().getCertificate(ALIAS).publicKey as ECPublicKey
+        return createPortable().public as ECPublicKey
+    }
+
+    /** Есть ли ключ — для аварийного отзыва; проверка не создаёт новый. */
+    fun exists(): Boolean = portable() || legacy()
+
+    /**
+     * Стереть ключ (аварийный отзыв, `DPmetaApp:D-151`): следующее подключение создаст
+     * новый — его открытую строку надо снова добавить на target.
+     */
+    @Synchronized
+    fun erase(): Outcome<Unit> = try {
+        cached = null
+        app?.let { KeyWrap.delete(it, FILE) }
+        if (legacy()) store().deleteEntry(ALIAS)
+        Outcome.success(Unit)
+    } catch (e: Exception) {
+        Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "ключ SSH не стёрт", e))
+    }
+
+    /** Сменить ключ на новый переносимый (D-184): прежняя строка на target перестаёт подходить. */
+    @Synchronized
+    fun renew(): Outcome<String> = when (val e = erase()) {
+        is Outcome.Failure -> e
+        is Outcome.Success -> runCatching { createPortable() }.fold({ Outcome.success(authorizedKey()) },
+            { Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "новый ключ SSH не создан", it)) })
+    }
+
+    /** Значение для копии под паролем: переносимый ключ; прежний неизвлекаемый — `null`. */
+    fun exportValue(): com.dpsmpx.dpai.core.diagnostics.Secret? = loadPortable()?.let { com.dpsmpx.dpai.core.diagnostics.Secret(encode(it)) }
+
+    /** Ключ из копии (D-184): заменяет и прежний неизвлекаемый, и переносимый. */
+    @Synchronized
+    fun importValue(text: String): Outcome<Unit> {
+        val pair = decode(text) ?: return Outcome.failure(DiagCode.VALUE_INVALID, "ключ SSH в копии не читается")
+        val base = app ?: return Outcome.failure(DiagCode.STATE_CONFLICT, "приложение не готово")
+        if (legacy()) runCatching { store().deleteEntry(ALIAS) }
+        return when (val w = KeyWrap.write(base, WRAP, userAuth = false, FILE, encode(pair).toByteArray(Charsets.UTF_8))) {
+            is Outcome.Failure -> w
+            is Outcome.Success -> { cached = pair; Outcome.success(Unit) }
         }
-        return ks.getCertificate(ALIAS).publicKey as ECPublicKey
     }
 
     fun identity(): EcdsaSignerIdentity = EcdsaSignerIdentity(COMMENT, publicKey()) { data ->
         Signature.getInstance("SHA256withECDSA").run {
-            initSign(store().getKey(ALIAS, null) as PrivateKey)
+            initSign(loadPortable()?.private ?: store().getKey(ALIAS, null) as PrivateKey)
             update(data)
             sign()
         }
@@ -188,10 +277,7 @@ class Controller(private val root: File, val version: String?) {
     private var targetsCache: List<TargetEntry>? = null
 
     @Volatile
-    private var projectCache: ProjectEntry? = null
-
-    @Volatile
-    private var projectKnown = false
+    private var projectsCache: com.dpsmpx.dpai.ui.Projects? = null
 
     @Synchronized
     fun targets(): List<TargetEntry> {
@@ -208,17 +294,53 @@ class Controller(private val root: File, val version: String?) {
     fun form(label: String, host: String, port: String, user: String, windows: Boolean, agent: String, configDir: String): Outcome<TargetEntry> =
         TargetForm.validate(ids.next(IdKinds.TARGET), label, host, port, user, windows, agent, configDir)
 
-    /** Проект контроллера (один): репозиторий на target, деревья задач, проверка. */
+    /**
+     * Рабочие проекты (`DPmetaApp:D-147`; D-179): документ `dpai.app-projects`, а до первой
+     * записи — прежний одиночный `dpai.app-project` как список из одного. Неудачное чтение
+     * не запоминается.
+     */
     @Synchronized
-    fun project(): ProjectEntry? {
-        if (projectKnown) return projectCache
-        val (ok, value) = bookDocument(PROJECT) { ProjectBook.fromJson(it) }
-        if (ok) {
-            projectCache = value
-            projectKnown = true
-        }
-        return value
+    fun projects(): com.dpsmpx.dpai.ui.Projects {
+        projectsCache?.let { return it }
+        val (ok, value) = bookDocument(PROJECTS) { com.dpsmpx.dpai.ui.Projects.fromJson(it) }
+        if (!ok) return com.dpsmpx.dpai.ui.Projects.EMPTY
+        if (value != null) return value.also { projectsCache = it }
+        val (legacyOk, legacy) = bookDocument(PROJECT) { com.dpsmpx.dpai.ui.Projects.fromJson(it) }
+        val v = legacy ?: com.dpsmpx.dpai.ui.Projects.EMPTY
+        if (legacyOk) projectsCache = v
+        return v
     }
+
+    /** Выбранный рабочий проект — его показывают экраны (D-179); остальные работают в фоне. */
+    fun project(): ProjectEntry? = projects().current
+
+    /** Записать список; прежний одиночный документ после этого не нужен. Отказ — кэш сброшен до чтения с диска. */
+    private fun writeProjects(p: com.dpsmpx.dpai.ui.Projects): Outcome<Unit> = manualProfiles.edit {
+        when (val w = docs.write(PROJECTS, com.dpsmpx.dpai.ui.Projects.toJson(p))) {
+            is Outcome.Failure -> { projectsCache = null; w }
+            is Outcome.Success -> {
+                projectsCache = p
+                if ((docs.read(PROJECT) as? Outcome.Success)?.value != null) docs.delete(PROJECT)
+                Outcome.success(Unit)
+            }
+        }
+    }
+
+    /** Добавить или заменить рабочий проект и выбрать его. */
+    @Synchronized
+    fun putProject(p: ProjectEntry): Outcome<Unit> = when (val n = projects().put(p)) {
+        is Outcome.Failure -> n
+        is Outcome.Success -> writeProjects(n.value)
+    }
+
+    @Synchronized
+    fun selectProject(id: com.dpsmpx.dpai.core.ids.ProjectId): Outcome<Unit> = when (val n = projects().select(id)) {
+        is Outcome.Failure -> n
+        is Outcome.Success -> if (n.value == projects()) Outcome.success(Unit) else writeProjects(n.value)
+    }
+
+    @Synchronized
+    fun removeProject(id: com.dpsmpx.dpai.core.ids.ProjectId): Outcome<Unit> = writeProjects(projects().remove(id))
 
     /** [claudeOn] — где идёт ход Claude, если не на [target] (D-50); ключ и known_hosts — пути на нём. */
     fun projectForm(
@@ -232,13 +354,10 @@ class Controller(private val root: File, val version: String?) {
         knownHostsFile: String = "",
     ): Outcome<ProjectEntry> = ProjectForm.validate(ids, target, root, worktreeRoot, branch, check, claudeOn, identityFile, knownHostsFile)
 
+    /** Прежний вход экранов: [p] — добавить или заменить и выбрать; `null` — убрать выбранный. */
     @Synchronized
-    fun setProject(p: ProjectEntry?): Outcome<Unit> = manualProfiles.edit {
-        val r = if (p == null) docs.delete(PROJECT) else docs.write(PROJECT, ProjectBook.toJson(p)).let { w -> if (w is Outcome.Failure) w else Outcome.success(Unit) }
-        projectCache = p
-        projectKnown = r is Outcome.Success
-        r
-    }
+    fun setProject(p: ProjectEntry?): Outcome<Unit> =
+        if (p != null) putProject(p) else projects().current?.let { removeProject(it.project) } ?: Outcome.success(Unit)
 
     /** Настоящий контроллер над [targets]: SSH — JSch с ключом Keystore, журнал — в каталоге контроллера. */
     /** Разрешены ли уведомления приложения (D-36) — сигнал самодиагностики; задаёт экран. */
@@ -254,8 +373,11 @@ class Controller(private val root: File, val version: String?) {
         inAppHost: com.dpsmpx.dpai.execution.process.ProcessHost? = null,
         /** Процессы гостя — Git проекта на target «в приложении». */
         inAppGuest: com.dpsmpx.dpai.execution.process.ProcessHost? = null,
+        /** Сессии контуров других рабочих проектов (D-179). */
+        neighbours: com.dpsmpx.dpai.orchestrator.NeighbourLoad = com.dpsmpx.dpai.orchestrator.NeighbourLoad.NONE,
     ): LiveSystem {
-        val dir = NioVfs(File(root, "live").apply { mkdirs() }.toPath())
+        // Журнал контура — свой у каждого рабочего проекта; первый (прежний) — в `live/` (D-179).
+        val dir = NioVfs(File(root, project?.let { projects().journalDir(it.project) } ?: "live").apply { mkdirs() }.toPath())
         // Карантин хвоста журнала — только после «да» человека и только на одну сборку (D-24).
         val confirmed = dir.exists(QUARANTINE_CONFIRMED)
         return LiveSystem(
@@ -270,6 +392,7 @@ class Controller(private val root: File, val version: String?) {
             inAppHost = inAppHost,
             inAppGuest = inAppGuest,
             externalPause = { manualProfiles.blocked },
+            neighbours = neighbours,
         ).also { if (confirmed) runCatching { dir.delete(QUARANTINE_CONFIRMED) } }
     }
 
@@ -337,6 +460,19 @@ class Controller(private val root: File, val version: String?) {
             is Outcome.Failure -> w
             is Outcome.Success -> Outcome.success(Unit)
         }
+
+    /**
+     * Мест для сессий ИИ на target (`DPmetaApp:D-148`; D-180): 1…4; запись списка targets
+     * пересобирает контуры, идущие сессии продолжаются.
+     */
+    @Synchronized
+    fun setSessions(entry: TargetEntry, n: Int): Outcome<Unit> {
+        if (n !in com.dpsmpx.dpai.ui.TargetForm.SESSIONS) return Outcome.failure(DiagCode.VALUE_INVALID, "мест — от 1 до 4", "sessions")
+        return when (val w = writeTargets(targets().map { if (it.id == entry.id) it.copy(sessions = n) else it })) {
+            is Outcome.Failure -> w
+            is Outcome.Success -> Outcome.success(Unit)
+        }
+    }
 
     /** Переименовать target (слот): имя — от 1 до 60 знаков, как в форме; остальное не меняется. */
     @Synchronized
@@ -522,6 +658,7 @@ class Controller(private val root: File, val version: String?) {
         private const val QUARANTINE_CONFIRMED = "quarantine-confirmed"
         private const val BOOK = "targets"
         private const val PROJECT = "project"
+        private const val PROJECTS = "projects"
         private const val KNOWN_HOSTS = "known_hosts"
         private const val APP_KEY = "app_key.pub"
 

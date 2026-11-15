@@ -12,4 +12,12 @@
     <issue id="TrustAllX509TrustManager">
         <ignore path="**/org.eclipse.jgit-*.jar" />
     </issue>
+    <!--
+      Коммит сборки (F-50): resValue dpmeta_build_commit задаёт эта сборка, а читает «О программе»
+      модуля :app по R.string; Lint модуля приложения зависимости не смотрит (checkDependencies =
+      false) и считает ресурс неиспользуемым. Использование проверяет Lint модуля :app.
+    -->
+    <issue id="UnusedResources">
+        <ignore regexp="dpmeta_build_commit" />
+    </issue>
 </lint>

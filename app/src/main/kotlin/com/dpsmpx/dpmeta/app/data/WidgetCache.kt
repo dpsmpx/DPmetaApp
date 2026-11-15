@@ -10,6 +10,15 @@ import com.dpsmpx.dpmeta.metrics.Store
 
 /** Только существующий вычисленный срез пульта; без аккаунта, синхронизации и построения индекса. */
 object WidgetCache {
+    /** Обновить виджет (D-153): задаёт оболочка — пульт от неё не зависит. */
+    @Volatile
+    var onChanged: ((android.content.Context) -> Unit)? = null
+
+    /** Срез пульта сменился (синхронизация) — виджету перечитать. */
+    fun changed(context: Context) {
+        runCatching { onChanged?.invoke(context.applicationContext) }
+    }
+
     fun projects(context: Context) = Store(
         NioVfs(context.filesDir.toPath().resolve("dpmeta")), Clock.SYSTEM, RandomSource.secure(),
     ).readState().map { state -> state?.let(Screens::summary) }

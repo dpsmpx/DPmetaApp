@@ -54,7 +54,9 @@ class HealthTest {
         assertEquals(emptyList(), Health.items(ok.copy(termux = TermuxState.STARTING)))
         // Токен не сохранён — не пункт проверки, а шаг мастера.
         assertEquals(emptyList(), Health.items(ok.copy(githubToken = false, githubForAi = false)))
-        assertFalse(Health.setupDone(ok.copy(githubToken = false)))
+        // GitHub — по желанию (DPmetaApp:D-150): без токена настройка закончена.
+        assertTrue(Health.setupDone(ok.copy(githubToken = false)))
+        assertTrue(Health.setup(ok).single { it.id == "github" }.optional)
     }
 
     @Test

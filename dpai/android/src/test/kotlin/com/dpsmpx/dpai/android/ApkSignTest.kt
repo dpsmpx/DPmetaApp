@@ -161,4 +161,32 @@ class ApkSignTest {
         val signed = ApkSign.sign(unsigned("z.apk"), File(dir, "z-signed.apk"), parsed.key, parsed.chain)
         assertTrue((signed as Outcome.Success).value.verified)
     }
+
+    /** Созданный в приложении ключ (D-178): файл PKCS#12 под паролем, сертификат на 30 лет, подписывает APK. */
+    @Test
+    fun createdKeyFileSignsAndNeedsItsPassword() {
+        val now = java.time.Instant.parse("2026-11-15T10:00:00Z")
+        val password = "long pass-12 \$%".toCharArray()
+        val created = KeyFile.create("Автор Тестов", password, now, com.dpsmpx.dpai.core.clock.RandomSource.seeded(7), bits = 2048)
+        val bytes = assertIs<com.dpsmpx.dpai.core.result.Outcome.Success<ByteArray>>(created, created.toString()).value
+        val parsed = (KeyFile.read(bytes, password, KeyFile.ALIAS) as com.dpsmpx.dpai.core.result.Outcome.Success).value
+        val cert = parsed.chain.single()
+        assertEquals("CN=Автор Тестов", cert.subjectX500Principal.name)
+        assertEquals(cert.subjectX500Principal, cert.issuerX500Principal)
+        cert.verify(cert.publicKey)
+        assertEquals(now.toEpochMilli(), cert.notBefore.time)
+        assertEquals(java.time.Instant.parse("2056-11-15T10:00:00Z").toEpochMilli(), cert.notAfter.time, "30 лет — GeneralizedTime после 2049")
+        assertTrue(cert.serialNumber.signum() > 0)
+        assertEquals(3, cert.version)
+        val input = unsigned("app-release.apk")
+        val out = File(dir, ApkSign.signedName(input.name))
+        val signed = ApkSign.sign(input, out, parsed.key, parsed.chain)
+        assertTrue(signed is com.dpsmpx.dpai.core.result.Outcome.Success && signed.value.verified, signed.toString())
+        assertEquals(ApkSign.sha256(cert.encoded), signed.value.certSha256)
+        assertTrue(KeyFile.read(bytes, "another password".toCharArray(), KeyFile.ALIAS) is com.dpsmpx.dpai.core.result.Outcome.Failure, "чужой пароль — отказ")
+        val cyrillic = KeyFile.create("x", "пароль длинный 12".toCharArray(), now, com.dpsmpx.dpai.core.clock.RandomSource.seeded(1), bits = 2048)
+        assertEquals(KeyFile.PASSWORD_RULE, (cyrillic as com.dpsmpx.dpai.core.result.Outcome.Failure).diagnostics.first().message, "кириллица в пароле — понятный отказ, а не сбой PKCS#12")
+        assertTrue(KeyFile.create("x", "короткий".toCharArray(), now, com.dpsmpx.dpai.core.clock.RandomSource.seeded(1)) is com.dpsmpx.dpai.core.result.Outcome.Failure, "пароль короче 12 — отказ")
+        assertTrue(KeyFile.create(" ", password, now, com.dpsmpx.dpai.core.clock.RandomSource.seeded(1)) is com.dpsmpx.dpai.core.result.Outcome.Failure, "пустое имя — отказ")
+    }
 }

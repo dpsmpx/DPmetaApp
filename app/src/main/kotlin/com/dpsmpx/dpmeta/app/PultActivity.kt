@@ -52,7 +52,16 @@ open class PultActivity : ComponentActivity() {
     /** Раздел, на который просят перейти с левой панели окна «AI» (D-112); экран сбрасывает его, перейдя. */
     private val goTo = mutableStateOf<com.dpsmpx.dpai.ui.AppSection?>(null)
 
+    private val openPull = mutableStateOf<Pair<String, Int>?>(null)
+
     private fun takeSection(intent: Intent?) {
+        // «Открыть PR» из уведомления (D-152): проект и номер — только из своего PendingIntent.
+        val pullProject = intent?.getStringExtra(EXTRA_PULL_PROJECT)
+        val pullNumber = intent?.getIntExtra(EXTRA_PULL_NUMBER, -1) ?: -1
+        if (pullProject != null && pullNumber > 0) {
+            intent.removeExtra(EXTRA_PULL_PROJECT)
+            openPull.value = pullProject to pullNumber
+        }
         val name = intent?.getStringExtra(EXTRA_SECTION) ?: return
         goTo.value = com.dpsmpx.dpai.ui.AppSection.entries.firstOrNull { it.name == name }
     }
@@ -92,6 +101,8 @@ open class PultActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         coldStart = savedInstanceState == null
+        // Окно знакомства (D-150) — само только до первого закрытия.
+        if (!com.dpsmpx.dpmeta.app.ui.Intro.seen(this)) view.value = view.value.copy(intro = true)
         savedInstanceState?.getString(PENDING_PERIOD)?.let { p ->
             Stats.Period.entries.firstOrNull { it.name == p }?.let {
                 pending = Pending(savedInstanceState.getBoolean(PENDING_JSON), it, savedInstanceState.getLong(PENDING_AS_OF))
@@ -174,6 +185,25 @@ open class PultActivity : ComponentActivity() {
      */
     protected open fun aiCounts(): com.dpsmpx.dpmeta.app.screens.Screens.AiCounts? = null
 
+    /** Рабочие проекты на устройстве (D-150) от оболочки; `null` — подсистемы нет. Не на главном потоке. */
+    protected open fun localProjects(): List<com.dpsmpx.dpmeta.app.screens.Screens.LocalProject>? = null
+
+    /** Мастер нового проекта (D-150); `null` — подсистемы нет. */
+    protected open fun newProjectIntent(): Intent? = null
+
+    /** Выбрать рабочий проект [id] и открыть его в IDE; не на главном потоке. */
+    protected open fun openProjectIntent(id: String): Intent? = null
+
+    /**
+     * Отправить ветку рабочего проекта [projectId] в новый репозиторий [url] (D-150): Git
+     * проекта на его target; не на главном потоке. Нет подсистемы — отказ.
+     */
+    protected open fun publishPush(projectId: String, url: String, token: Secret): Outcome<String> =
+        Outcome.failure(DiagCode.UNSUPPORTED, "отправки ветки здесь нет", projectId)
+
+    /** «Linux приложения» в «Настройках AI» (окно знакомства, D-150); `null` — подсистемы нет. */
+    protected open fun linuxIntent(): Intent? = null
+
     /** Версия подсистемы «AI» для «О программе» (UX-23, D-54); `null` — подсистемы нет. */
     protected open fun aiVersion(): String? = null
 
@@ -253,10 +283,30 @@ open class PultActivity : ComponentActivity() {
         }
     }
 
-    /** «О программе» (UX-23, D-54): версия DPmetaApp из пакета и версия «AI» от оболочки. */
+    /**
+     * «О программе» (UX-23, D-54; F-50): версия DPmetaApp из пакета и «AI» от оболочки, коммит
+     * сборки, отпечаток SHA-256 сертификата, которым подписан установленный APK.
+     */
     private fun about(): String {
         val app = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "?"
-        return "DPmetaApp $app" + (aiVersion()?.let { " · AI $it" } ?: "")
+        val signer = runCatching {
+            packageManager.getPackageInfo(packageName, android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES).signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray()
+        }.getOrNull()?.let { cert -> java.security.MessageDigest.getInstance("SHA-256").digest(cert).joinToString(":") { "%02X".format(it) } }
+        return "DPmetaApp $app" + (aiVersion()?.let { " · AI $it" } ?: "") +
+            "\nКоммит сборки: ${getString(R.string.dpmeta_build_commit)}" +
+            "\nПодпись APK, SHA-256: ${signer ?: "не прочитана"}"
+    }
+
+    /** Лицензии компонентов (F-50, A-12): документы происхождения из APK; не на главном потоке. */
+    private fun licenses(): List<com.dpsmpx.dpmeta.app.data.Licenses.Row> =
+        listOf("about/PROVENANCE.md" to "DPmetaApp", "about/PROVENANCE-ai.md" to "AI").flatMap { (path, name) ->
+            runCatching { assets.open(path).bufferedReader().use { it.readText() } }.getOrNull()?.let { com.dpsmpx.dpmeta.app.data.Licenses.parse(name, it) }.orEmpty()
+        }
+
+    /** Интервал фонового обновления выбран в «Ещё» (D-149): задача ставится или снимается сразу. */
+    private fun backgroundChosen(minutes: Int) {
+        runCatching { PultSyncJob.setInterval(this, minutes) }
+        view.value = view.value.copy(backgroundMinutes = PultSyncJob.interval(this), backgroundLine = PultSyncJob.lastLine(this))
     }
 
     /** Пояс показа выбран в «Ещё» (UX-22): сохраняется, действует сразу и для «AI». */
@@ -274,7 +324,8 @@ open class PultActivity : ComponentActivity() {
                 pool.execute {
                     // Сбой чтения — прежние числа, а не пропавшая строка.
                     val c = runCatching { aiCounts() }.getOrElse { view.value.ai }
-                    runOnUiThread { if (view.value.ai != c) view.value = view.value.copy(ai = c) }
+                    val l = runCatching { localProjects() }.getOrElse { view.value.local }
+                    runOnUiThread { if (view.value.ai != c || view.value.local != l) view.value = view.value.copy(ai = c, local = l) }
                 }
             }
             ui.postDelayed(this, AI_REFRESH_MS)
@@ -407,11 +458,19 @@ open class PultActivity : ComponentActivity() {
 
     private fun open() {
         val hasToken = secrets.exists()
-        view.value = PultView(null, "", hasToken, busy = false, clones = clonesLine(), loading = true, zone = zoneMinutes(this), about = about())
+        view.value = PultView(null, "", hasToken, busy = false, clones = clonesLine(), loading = true, zone = zoneMinutes(this), about = about(),
+            backgroundMinutes = PultSyncJob.interval(this), backgroundLine = PultSyncJob.lastLine(this))
         // Срез и лента — в фоне, как история (UX-20, N-02): окно не ждёт диска; вход синхронизирует после чтения.
         loadState()
         // История растёт с каждой синхронизацией — читается в фоне, холодный старт её не ждёт (N-02).
         loadHistory()
+        // Фоновое обновление (D-149): задача по настройке «Ещё»; стоит с тем же интервалом — не трогается.
+        runCatching { PultSyncJob.schedule(this) }
+        // Лицензии компонентов (F-50) — в фоне: документы происхождения читаются из APK.
+        pool.execute {
+            val rows = licenses()
+            runOnUiThread { view.value = view.value.copy(licenses = rows) }
+        }
         // Файлы прежних «Поделиться» (D-67) живут до следующего входа в пульт — не до поворота.
         if (coldStart) pool.execute { File(cacheDir, EXPORT_DIR).deleteRecursively() }
         // Клоны 0.4.0-dev.8 — плоскими каталогами «владелец_2fимя», без работы ИИ (Linux их не видел): место — назад (D-72).
@@ -435,6 +494,7 @@ open class PultActivity : ComponentActivity() {
                     view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken,
                     onAi = ai, onIde = ideIntent()?.let { i -> { startActivity(i) } }, onExport = ::export,
                     goTo = goTo.value, onGoTo = { goTo.value = null }, settingsDocument = settingsDocument,
+                    openPull = openPull.value, onPullOpened = { openPull.value = null },
                     onClones = { withToken { token -> if (token != null) askClones(token, first = false) } }, onClonesChosen = ::clonesChosen,
                     onCancelSync = {
                         repo.cancelClones()
@@ -443,6 +503,14 @@ open class PultActivity : ComponentActivity() {
                     },
                     onDeleteClone = ::deleteClone,
                     onZone = ::zoneChosen,
+                    onBackground = ::backgroundChosen,
+                    onNewProject = newProjectIntent()?.let { i -> { startActivity(i) } },
+                    onOpenProject = { id -> pool.execute { openProjectIntent(id)?.let { i -> runOnUiThread { startActivity(i) } } } },
+                    onIntroSeen = {
+                        com.dpsmpx.dpmeta.app.ui.Intro.markSeen(this)
+                        view.value = view.value.copy(intro = false)
+                    },
+                    onLinux = linuxIntent()?.let { i -> { startActivity(i) } },
                 )
             }
         }
@@ -641,6 +709,38 @@ open class PultActivity : ComponentActivity() {
         }
 
         override fun repo(project: String, done: (Outcome<com.dpsmpx.dpmeta.model.RepoRef>) -> Unit) = run({ repo.repoFor(it, project) }, done)
+
+        override fun viewer(done: (Outcome<String>) -> Unit) = run({ repo.viewer(it) }, done)
+
+        /**
+         * «Опубликовать» (D-150): окно экрана — подтверждение уровня 1; репозиторий — через
+         * политику и журнал действий (D-07), затем ветка — Git проекта. Репозиторий уже есть
+         * (повтор после неудачной отправки) — создаётся не второй раз, а только отправка.
+         */
+        override fun publish(project: com.dpsmpx.dpmeta.app.screens.Screens.LocalProject, name: String, done: (Outcome<com.dpsmpx.dpmeta.app.screens.PublishActions.Published>) -> Unit) =
+            run({ token ->
+                val login = when (val v = repo.viewer(token)) {
+                    is Outcome.Failure -> return@run v
+                    is Outcome.Success -> v.value
+                }
+                val ref = when (val r = com.dpsmpx.dpmeta.model.RepoRef.of(login, name)) {
+                    is Outcome.Failure -> return@run r
+                    is Outcome.Success -> r.value
+                }
+                val c = com.dpsmpx.dpmeta.app.screens.PublishActions.command(ref, project)
+                val link = when (val r = repo.act(token, c, { it.shown(c) })) {
+                    is Outcome.Success -> r.value.link.also { debugLog("действия", "${c.kind.code} ${c.target.display} ур.${c.level.code}: готово") }
+                    // Повтор после неудачной отправки: репозиторий пуст — только отправка; иначе — отказ создания как есть.
+                    is Outcome.Failure -> if (repo.awaitsFirstPush(token, ref, "main")) "https://github.com/$ref" else {
+                        debugLog("действия", "${c.kind.code} ${c.target.display} ур.${c.level.code}: ${r.errors.first().code}")
+                        return@run r
+                    }
+                }
+                when (val p = publishPush(project.id, com.dpsmpx.dpmeta.app.screens.PublishActions.url(ref), token)) {
+                    is Outcome.Failure -> Outcome.failure(p.errors.first().code, "репозиторий $ref есть; " + p.errors.first().message, "$ref")
+                    is Outcome.Success -> Outcome.success(com.dpsmpx.dpmeta.app.screens.PublishActions.Published(link, "Опубликовано: $ref, ${p.value}."))
+                }
+            }, done)
 
         override fun editable(project: String, path: String, done: (Outcome<com.dpsmpx.dpmeta.app.screens.EditActions.Edit>) -> Unit) =
             run({ repo.editable(it, project, path) }, done)
@@ -943,6 +1043,8 @@ open class PultActivity : ComponentActivity() {
                 val line = runCatching { com.dpsmpx.dpmeta.app.data.PultAlerts.post(app, r.value.events, Clock.SYSTEM.now()) }.getOrElse { "сбой: ${it.javaClass.simpleName}" }
                 debugLog("тревоги", line)
             }
+            // Виджет (D-153): новый срез — перечитать сразу, а не через полчаса.
+            if (r is Outcome.Success) com.dpsmpx.dpmeta.app.data.WidgetCache.changed(app)
             val state = (repo.state() as? Outcome.Success)?.value
             val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
             runOnUiThread {
@@ -972,6 +1074,10 @@ open class PultActivity : ComponentActivity() {
         /** Раздел пульта по имени `AppSection` — для перехода с левой панели окна «AI» (D-112). */
         const val EXTRA_SECTION = "com.dpsmpx.dpmeta.SECTION"
 
+        /** «Открыть PR» из уведомления (D-152). */
+        const val EXTRA_PULL_PROJECT = "com.dpsmpx.dpmeta.PULL_PROJECT"
+        const val EXTRA_PULL_NUMBER = "com.dpsmpx.dpmeta.PULL_NUMBER"
+
         /** Как часто строка «AI» сводки перечитывает числа, пока пульт на экране (D-76). */
         private const val AI_REFRESH_MS = 5_000L
 
@@ -987,6 +1093,10 @@ open class PultActivity : ComponentActivity() {
         /** Есть ли токен GitHub в хранилище пульта — для карты хранилища (D-111): только признак, без значения. */
         fun hasGithubToken(context: android.content.Context): Boolean =
             com.dpsmpx.dpmeta.app.data.SecretStore(NioVfs(context.noBackupFilesDir.toPath().resolve("dpmeta"))).exists()
+
+        /** Отмеченные клоны (D-70) — для фонового обновления (D-149). */
+        fun selectedClones(context: android.content.Context): Set<String> =
+            context.applicationContext.getSharedPreferences(CLONES_PREFS, MODE_PRIVATE).getStringSet(CLONES_SELECTED, null).orEmpty().toSet()
 
         /** Прежнее место клонов (до D-111, D-113): переезжает в `~/projects`, на старом месте — ссылка. */
         const val LEGACY_CLONES_DIR = "clones"

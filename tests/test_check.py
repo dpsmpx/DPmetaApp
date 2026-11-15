@@ -55,7 +55,9 @@ CLEAN = {
     check.ROADMAP: ROADMAP_TEXT,
     "docs/direction/REQUEST.md": "# Постановка\n\nСм. [решения](DECISIONS.md#d-01--образец-решения).\n",
     "docs/PROCESS.md": "# Процесс\n",
-    "docs/PROVENANCE.md": "# Происхождение\n",
+    "docs/PROVENANCE.md": "# Происхождение\n\n| Компонент | Версия | Лицензия |\n|---|---|---|\n| RE2/J | 1.8 | BSD-3-Clause |\n",
+    "dpai/docs/PROVENANCE.md": "# Происхождение\n\n| Файл | Лицензия |\n|---|---|\n| proot | GPL-2.0 |\n\n| Идея | Откуда | Лицензия, дата |\n|---|---|---|\n| очередь | DP-Verify | |\n",
+    "app/build.gradle.kts": 'from(file("docs/PROVENANCE.md"))\nfrom(file("dpai/docs/PROVENANCE.md"))\n',
     ".claude/settings.json": "{}\n",
     ".claude/hooks/session-start.sh": "#!/bin/sh\necho start\n",
     ".github/pull_request_template.md": "## Что\n",
@@ -229,12 +231,11 @@ class SubsystemScopeTest(CheckCase):
             with self.subTest(cid):
                 self.assertClean(s.run(cid))
 
-    def test_socialmediaimage_is_a_subsystem_too(self):
-        # SocialMediaImage — подсистема со своим процессом (D-43): номера Д без имени проекта — её проверкам.
-        s = self.sample({"socialmediaimage/docs/X.md": "# X\r\nСм. Д35, `docs/NOPE.md`.\n"})
-        for cid in ("repo.layout", "format.text", "docs.links", "docs.refs"):
-            with self.subTest(cid):
-                self.assertClean(s.run(cid))
+    def test_moved_out_projects_are_not_subsystems(self):
+        # SocialMediaImage и DPprofile живут только в своём репозитории (D-154): каталог в корне — находка.
+        for d in ("socialmediaimage", "dpprofile"):
+            with self.subTest(d):
+                self.assertCatches(self.sample({f"{d}/docs/X.md": "# X\n"}).run("repo.layout"), d)
 
     def test_dpvisualisation_is_a_subsystem_too(self):
         # DPvisualisation — подсистема со своим процессом (D-43): её номера без имени проекта — её проверкам.
@@ -246,13 +247,6 @@ class SubsystemScopeTest(CheckCase):
     def test_dpmeta_is_a_subsystem_too(self):
         # DPmeta — подсистема со своим процессом (D-43): её номера M-NN без имени проекта — её проверкам.
         s = self.sample({"dpmeta/docs/X.md": "# X\r\nСм. M-14, `docs/NOPE.md`.\n"})
-        for cid in ("repo.layout", "format.text", "docs.links", "docs.refs"):
-            with self.subTest(cid):
-                self.assertClean(s.run(cid))
-
-    def test_dpprofile_is_a_subsystem_too(self):
-        # DPprofile — подсистема со своим процессом (D-43): её номера без имени проекта — её проверкам.
-        s = self.sample({"dpprofile/docs/X.md": "# X\r\nСм. D-16, `docs/NOPE.md`.\n"})
         for cid in ("repo.layout", "format.text", "docs.links", "docs.refs"):
             with self.subTest(cid):
                 self.assertClean(s.run(cid))
@@ -321,6 +315,25 @@ class WrapperTest(CheckCase):
         found = s.run("format.text").findings
         self.assertFalse(any("gradlew.bat" in f for f in found))
         self.assertTrue(any("docs/PROCESS.md" in f for f in found))
+
+
+class AboutLicensesTest(CheckCase):
+    """about.licenses (F-50, A-12): у строк таблиц происхождения — лицензия; оба документа — в APK."""
+
+    def test_clean(self):
+        self.assertClean(self.sample().run("about.licenses"))
+
+    def test_row_without_license(self):
+        s = self.sample({"docs/PROVENANCE.md": "# П\n\n| Компонент | Версия | Лицензия |\n|---|---|---|\n| JGit | 5.13 | — |\n"})
+        self.assertCatches(s.run("about.licenses"), "не указана лицензия")
+
+    def test_document_not_in_apk(self):
+        s = self.sample({"app/build.gradle.kts": 'from(file("docs/PROVENANCE.md"))\n'})
+        self.assertCatches(s.run("about.licenses"), "dpai/docs/PROVENANCE.md не попадает в APK")
+
+    def test_ideas_table_is_not_components(self):
+        s = self.sample()
+        self.assertEqual(s.run("about.licenses").findings, [], "пустая лицензия в таблице идей — не находка")
 
 
 def quiet_report(results, strict=False):
@@ -791,8 +804,7 @@ class ForbiddenTest(CheckCase):
 
     def test_allowed_places_and_reports_pass(self):
         s = self.sample({
-            # Выгрузка — у подсистемы сайта (D-40, D-48); отчёты Usage и Cost — только чтение (D-08).
-            "socialmediaimage/app/src/main/kotlin/Deploy.kt": 'val cmd = listOf("rsync", "-a")\n',
+            # Отчёты Usage и Cost — только чтение (D-08).
             "dpai/providers/src/main/kotlin/Usage.kt": 'val u = "https://api.anthropic.com/v1/organizations/usage_report/messages"\n',
             # Список чтения D-81: аналитика расхода и стоимости, лимиты скорости организации.
             "dpai/providers/src/main/kotlin/Admin.kt": 'val a = "/v1/organizations/analytics/usage"\nval c = "/v1/organizations/analytics/cost"\nval l = "/v1/organizations/rate_limits"\n',

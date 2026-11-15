@@ -106,6 +106,7 @@ import com.dpsmpx.dpmeta.actions.ActionStatus
 import com.dpsmpx.dpmeta.app.screens.PullActions
 import com.dpsmpx.dpmeta.app.screens.BranchActions
 import com.dpsmpx.dpmeta.app.screens.IssueActions
+import com.dpsmpx.dpmeta.app.screens.PublishActions
 import com.dpsmpx.dpmeta.app.screens.EditActions
 import com.dpsmpx.dpmeta.app.screens.LineDiff
 import com.dpsmpx.dpmeta.app.screens.RouteActions
@@ -246,8 +247,18 @@ data class PultView(
     val loading: Boolean = false,
     /** Пояс показа, минуты от UTC (UX-22): ключ перерисовки строк со временем. */
     val zone: Int = 180,
-    /** «О программе» (UX-23): версии DPmetaApp и «AI». */
+    /** «О программе» (UX-23; F-50): версии DPmetaApp и «AI», коммит сборки, отпечаток подписи. */
     val about: String = "",
+    /** Лицензии компонентов из документов происхождения (F-50, A-12). */
+    val licenses: List<com.dpsmpx.dpmeta.app.data.Licenses.Row> = emptyList(),
+    /** Интервал фонового обновления, минуты (D-149): 0 — выключено. */
+    val backgroundMinutes: Int = com.dpsmpx.dpmeta.app.data.BackgroundSync.DEFAULT,
+    /** Итог последнего фонового запуска; не было — `null`. */
+    val backgroundLine: String? = null,
+    /** Рабочие проекты на устройстве (D-150) от оболочки; `null` — подсистемы «AI» нет. */
+    val local: List<Screens.LocalProject>? = null,
+    /** Окно знакомства — само, при первом запуске (D-150). */
+    val intro: Boolean = false,
 )
 
 /**
@@ -294,6 +305,14 @@ interface Loader {
     /** Действие (F-12): подтверждение способом [PullActions.Request.way] создаёт активность — после PIN, если нужен. */
     fun act(request: PullActions.Request, done: (Outcome<ActionResult>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "действий здесь нет", request.command.target.display))
+
+    /** Владелец токена — для окна «Опубликовать» (D-150). */
+    fun viewer(done: (Outcome<String>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "публикации здесь нет", "github"))
+
+    /** «Опубликовать на GitHub» (D-150): репозиторий — действием уровня 1, затем отправка ветки проекта. */
+    fun publish(project: Screens.LocalProject, name: String, done: (Outcome<PublishActions.Published>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "публикации здесь нет", project.name))
 
     /** Репозиторий проекта — для действий над ним (issue, F-26). */
     fun repo(project: String, done: (Outcome<com.dpsmpx.dpmeta.model.RepoRef>) -> Unit) =
@@ -503,6 +522,9 @@ fun PultApp(
     settingsDocument: (@Composable (query: String, projects: @Composable () -> Unit) -> Unit)? = null,
     /** Раздел с левой панели окна «AI» (D-112): перейти и сбросить [onGoTo]. */
     goTo: com.dpsmpx.dpai.ui.AppSection? = null,
+    /** «Открыть PR» из уведомления (D-152): проект и номер — карточка PR; [onPullOpened] — сбросить. */
+    openPull: Pair<String, Int>? = null,
+    onPullOpened: () -> Unit = {},
     onGoTo: () -> Unit = {},
     onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null,
     /** «Клоны…» в настройках (D-70). */
@@ -513,8 +535,18 @@ fun PultApp(
     onDeleteClone: (String) -> Unit = {},
     /** Пояс показа выбран (UX-22): минуты от UTC. */
     onZone: (Int) -> Unit = {},
+    /** Интервал фонового обновления выбран (D-149): минуты, 0 — выключено. */
+    onBackground: (Int) -> Unit = {},
     /** Итог окна клонов: отмеченные или `null` — «Позже» / «Отмена». */
     onClonesChosen: (Set<String>?) -> Unit = {},
+    /** Мастер нового проекта (D-150); `null` — подсистемы «AI» нет. */
+    onNewProject: (() -> Unit)? = null,
+    /** Открыть рабочий проект в IDE (D-150). */
+    onOpenProject: (String) -> Unit = {},
+    /** Окно знакомства закрыто — больше само не открывается (D-150). */
+    onIntroSeen: () -> Unit = {},
+    /** Linux приложения в «Настройках AI»; `null` — подсистемы нет. */
+    onLinux: (() -> Unit)? = null,
 ) {
     // Пункт и стеки — rememberSaveable: поворот, тема и шрифт больше не сбрасывают место (UX-3).
     val context = LocalContext.current.applicationContext
@@ -528,6 +560,8 @@ fun PultApp(
     val stacks = rememberSaveable(saver = StacksSaver) { mutableStateMapOf() }
     // Поиск документа настроек по ссылке из справки («Настройки → тема»); пункт панели открывает его пустым.
     var settingsQuery by rememberSaveable { mutableStateOf("") }
+    var introOpen by rememberSaveable { mutableStateOf(false) }
+    var publishing by remember { mutableStateOf<Screens.LocalProject?>(null) }
     LaunchedEffect(goTo) {
         val to = goTo ?: return@LaunchedEffect
         tab = when (to) {
@@ -537,6 +571,13 @@ fun PultApp(
             com.dpsmpx.dpai.ui.AppSection.HELP -> Section.HELP
         }
         onGoTo()
+    }
+    LaunchedEffect(openPull) {
+        val (project, number) = openPull ?: return@LaunchedEffect
+        tab = Section.DEV
+        devTab = DevTab.PULLS
+        stacks[Section.DEV] = listOf(Nav.Pull(project, number))
+        onPullOpened()
     }
     val stack = stacks[tab].orEmpty()
     val open: (Nav) -> Unit = { stacks[tab] = stacks[tab].orEmpty() + it }
@@ -618,6 +659,7 @@ fun PultApp(
                 twoPane -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
                     val chosen = top?.project
                     Column(Modifier.weight(2f).fillMaxSize()) {
+                        LocalProjects(view.local, onNewProject, onOpenProject, compact = true, onPublish = { publishing = it })
                         // Другой проект — вместо открытой карточки, а не поверх неё: «Назад» — к списку.
                         Projects(remember(s) { Screens.projects(s) }, chosen) { stacks[tab] = listOf(Nav.Card(it)) }
                     }
@@ -648,9 +690,9 @@ fun PultApp(
                     val doc = settingsDocument
                     if (doc != null) {
                         // Один документ на приложение (D-112): блок пульта — без своей прокрутки, внутри документа.
-                        doc(settingsQuery) { Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, scroll = false, onFeed = { open(Nav.Feed) }) }
+                        doc(settingsQuery) { Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, scroll = false, onFeed = { open(Nav.Feed) }, onBackground = onBackground) }
                     } else {
-                        Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, onFeed = { open(Nav.Feed) })
+                        Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, onFeed = { open(Nav.Feed) }, onBackground = onBackground)
                     }
                 }
                 // Справка — и без токена и среза (D-112): с неё начинают.
@@ -662,16 +704,25 @@ fun PultApp(
                         HelpLinks.IDE -> onIde?.invoke()
                         HelpLinks.AI -> onAi?.invoke(false)
                         HelpLinks.SETTINGS -> { settingsQuery = HelpLinks.query(url); tab = Section.MORE }
+                        HelpLinks.INTRO -> introOpen = true
+                        HelpLinks.NEW_PROJECT -> onNewProject?.invoke()
                     }
                 }
                 s == null && view.loading -> Text("Читаю срез…", style = MaterialTheme.typography.bodySmall)
                 // Пустое состояние ведёт дальше (UX-11): кнопкой, а не словами «где-то в настройках».
-                s == null -> Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
-                    Text(if (view.hasToken) "Среза ещё нет." else "Нужен токен GitHub — только для чтения.")
+                // Без GitHub — проекты на устройстве (D-150): токен нужен только карточкам GitHub, клонам и PR.
+                s == null -> Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                    LocalProjects(view.local, onNewProject, onOpenProject, compact = false, onPublish = { publishing = it })
                     if (view.hasToken) {
+                        Text("Среза GitHub ещё нет.")
                         Button(onClick = onSync, enabled = !view.busy) { Text("Обновить") }
                     } else {
-                        Button(onClick = { tab = Section.MORE }) { Text("Ввести токен") }
+                        Text(
+                            if (view.local != null) "GitHub — по желанию: токен (только чтение) нужен для карточек репозиториев, клонов и PR."
+                            else "Нужен токен GitHub — только для чтения.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        OutlinedButton(onClick = { tab = Section.MORE }) { Text("Подключить GitHub") }
                     }
                 }
                 tab == Section.SUMMARY -> Summary(
@@ -689,7 +740,10 @@ fun PultApp(
                 ) { open(Nav.Feed) }
                 tab == Section.DEV -> Column(Modifier.fillMaxSize()) {
                     when (devTab) {
-                        DevTab.PROJECTS -> Projects(remember(s) { Screens.projects(s) }) { open(Nav.Card(it)) }
+                        DevTab.PROJECTS -> {
+                            LocalProjects(view.local, onNewProject, onOpenProject, compact = true, onPublish = { publishing = it })
+                            Projects(remember(s) { Screens.projects(s) }) { open(Nav.Card(it)) }
+                        }
                         DevTab.PULLS -> Pulls(remember(s) { Screens.pulls(s) }, s.asOf, pullFilter, pullProject, { pullFilter = it }, { pullProject = it }) { r -> open(Nav.Pull(r.project, r.number.toInt())) }
                         DevTab.QUESTIONS -> Questions(remember(s) { Screens.questions(s) }, remember(s) { Screens.pulls(s) }, loader, open)
                     }
@@ -700,6 +754,21 @@ fun PultApp(
     }
     }
     view.clonePrompt?.let { ClonesDialog(it, onClonesChosen, onDeleteClone, busy = view.busy) }
+    publishing?.let { p ->
+        PublishDialog(p, view.hasToken, loader, onToken = { publishing = null; settingsQuery = "токен"; tab = Section.MORE }) { publishing = null }
+    }
+    // Окно знакомства (D-150): само — при первом запуске, затем — из справки (app:intro).
+    if (view.intro || introOpen) {
+        val actions = buildMap<Intro.Action, () -> Unit> {
+            onNewProject?.let { put(Intro.Action.NEW_PROJECT, it) }
+            onLinux?.let { put(Intro.Action.LINUX, it) }
+            put(Intro.Action.GITHUB) { settingsQuery = "токен"; tab = Section.MORE }
+        }
+        IntroDialog(actions) {
+            introOpen = false
+            if (view.intro) onIntroSeen()
+        }
+    }
 }
 
 /**
@@ -740,6 +809,97 @@ private fun Header(title: String, view: PultView, onSync: () -> Unit, onCancel: 
             if (view.busy) LinearProgressIndicator(Modifier.fillMaxWidth()) else Spacer(Modifier.height(4.dp))
         }
     }
+}
+
+/**
+ * Рабочие проекты на устройстве и target (D-150): GitHub им не нужен. Касание —
+ * проект в IDE; «Создать проект…» — мастер. [compact] — над списком GitHub: без
+ * пояснений. Нет подсистемы «AI» — ничего.
+ */
+@Composable
+private fun LocalProjects(list: List<Screens.LocalProject>?, onNew: (() -> Unit)?, onOpen: (String) -> Unit, compact: Boolean, onPublish: ((Screens.LocalProject) -> Unit)? = null) {
+    if (list == null || onNew == null) return
+    if (compact && list.isEmpty()) {
+        TextButton(onClick = onNew) { Text("Создать проект на устройстве…") }
+        return
+    }
+    Card(Modifier.fillMaxWidth().padding(bottom = Tokens.gap)) {
+        Column(Modifier.padding(Tokens.gap), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("На устройстве", style = MaterialTheme.typography.titleMedium)
+            if (list.isEmpty() && !compact) {
+                Text("Проектов пока нет. Создайте C++, Kotlin или Python — локальный Git, без GitHub; опубликовать можно позже.", style = MaterialTheme.typography.bodySmall)
+            }
+            for (p in list) {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).clickable { onOpen(p.id) }.padding(vertical = 4.dp)) {
+                        Text(p.name + if (p.selected) " · открыт" else "", style = MaterialTheme.typography.bodyLarge)
+                        Text("${p.place} · ${p.root}", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }
+                    onPublish?.let { pub -> TextButton(onClick = { pub(p) }) { Text("На GitHub…") } }
+                }
+            }
+            Button(onClick = onNew) { Text("Создать проект…") }
+        }
+    }
+}
+
+/**
+ * «Опубликовать на GitHub» (D-150): окно уровня 1 — что уйдёт и куда; «Опубликовать» —
+ * подтверждение. Без токена — переход к нему. Неудачная отправка ветки — «Повторить»:
+ * созданный репозиторий не создаётся второй раз.
+ */
+@Composable
+private fun PublishDialog(project: Screens.LocalProject, hasToken: Boolean, loader: Loader, onToken: () -> Unit, onClose: () -> Unit) {
+    var name by rememberSaveable(project.id) { mutableStateOf(project.name) }
+    var owner by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var result by remember { mutableStateOf<PublishActions.Published?>(null) }
+    LaunchedEffect(project.id, hasToken) {
+        if (hasToken) loader.viewer { r -> when (r) { is Outcome.Success -> owner = r.value; is Outcome.Failure -> error = r.errors.first().message } }
+    }
+    val invalid = PublishActions.invalid(name)
+    AlertDialog(
+        onDismissRequest = { if (!busy) onClose() },
+        title = { Text("Опубликовать на GitHub") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val done = result
+                when {
+                    !hasToken -> Text("Нужен токен GitHub с правом создавать репозитории (Administration: write) и записывать содержимое (Contents: write).")
+                    done != null -> {
+                        Text(done.note)
+                        done.link?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    }
+                    else -> {
+                        OutlinedTextField(name, { name = it.take(110); error = null }, label = { Text("Имя репозитория") }, singleLine = true,
+                            isError = invalid != null, supportingText = { Text(invalid ?: "закрытый, у владельца токена") }, modifier = Modifier.fillMaxWidth())
+                        for (line in PublishActions.preview(project, owner, name)) Text(line, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            when {
+                !hasToken -> TextButton(onClick = onToken) { Text("К токену") }
+                result != null -> TextButton(onClick = onClose) { Text("Готово") }
+                else -> TextButton(enabled = !busy && invalid == null && owner != null, onClick = {
+                    busy = true
+                    error = null
+                    loader.publish(project, name.trim()) { r ->
+                        busy = false
+                        when (r) {
+                            is Outcome.Success -> result = r.value
+                            is Outcome.Failure -> error = r.errors.first().message
+                        }
+                    }
+                }) { Text(if (error != null) "Повторить" else "Опубликовать") }
+            }
+        },
+        dismissButton = { if (result == null) TextButton(enabled = !busy, onClick = onClose) { Text("Отмена") } },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1327,7 +1487,7 @@ private fun QuestionsList(q: List<Screens.Question>, open: (Nav) -> Unit, below:
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 // Листается (UX-15): при шрифте 200 % и в альбомной ориентации «Клоны…» не уходят за край.
-private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}, onJournal: () -> Unit = {}, onAsk: () -> Unit = {}, onCommands: () -> Unit = {}, onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null, scroll: Boolean = true, onFeed: () -> Unit = {}) = Column(if (scroll) Modifier.verticalScroll(rememberScrollState()) else Modifier, verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}, onJournal: () -> Unit = {}, onAsk: () -> Unit = {}, onCommands: () -> Unit = {}, onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null, scroll: Boolean = true, onFeed: () -> Unit = {}, onBackground: (Int) -> Unit = {}) = Column(if (scroll) Modifier.verticalScroll(rememberScrollState()) else Modifier, verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     var token by remember { mutableStateOf("") }
     // Пока токен сохранён — одна строка, поле — по «Заменить» (UX-12): пустое поле при сохранённом токене путало.
     var replacing by rememberSaveable { mutableStateOf(false) }
@@ -1424,10 +1584,31 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
             }
         }
     }
-    // «О программе» (UX-23, D-54): версия приложения и подсистемы «AI».
+    // Фоновое обновление (D-149): интервал и итог последнего запуска; токен — только открытый.
+    Text("Фоновое обновление", style = MaterialTheme.typography.titleMedium)
+    Text("Пульт обновляется сам, если телефон недавно разблокировали: токен GitHub открыт только после входа.", style = MaterialTheme.typography.bodySmall)
+    Row {
+        for (m in com.dpsmpx.dpmeta.app.data.BackgroundSync.INTERVALS) {
+            androidx.compose.material3.FilterChip(selected = view.backgroundMinutes == m, onClick = { onBackground(m) },
+                label = { Text(com.dpsmpx.dpmeta.app.data.BackgroundSync.title(m)) }, modifier = Modifier.padding(end = 4.dp))
+        }
+    }
+    view.backgroundLine?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+    // «О программе» (UX-23, D-54; F-50): версии, коммит, подпись, лицензии компонентов.
     if (view.about.isNotEmpty()) {
         Text("О программе", style = MaterialTheme.typography.titleMedium)
         Text(view.about, style = MaterialTheme.typography.bodySmall)
+        if (view.licenses.isNotEmpty()) {
+            var open by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+            TextButton(onClick = { open = !open }) { Text(if (open) "Скрыть лицензии" else "Лицензии компонентов (${view.licenses.size})") }
+            if (open) {
+                // По разделам документов происхождения — так же, как в docs/PROVENANCE.md (A-12).
+                for ((section, rows) in view.licenses.groupBy { it.section }) {
+                    Text(section, style = MaterialTheme.typography.labelLarge)
+                    for (r in rows) Text("${r.component}${r.version?.let { " $it" }.orEmpty()} — ${r.license.ifEmpty { "лицензия не указана" }}", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
     }
 }
 

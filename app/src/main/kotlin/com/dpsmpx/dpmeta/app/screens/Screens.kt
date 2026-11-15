@@ -164,6 +164,12 @@ object Screens {
     data class AiCounts(val configured: Boolean, val waiting: Measure<Long>, val running: Measure<Long>, val nearLimit: Measure<Long>, val problems: Int = 0)
 
     /**
+     * Рабочий проект на устройстве или target (D-150): GitHub ему не нужен. Список
+     * даёт оболочка `:shell`; [selected] — его показывают экраны «AI» и IDE.
+     */
+    data class LocalProject(val id: String, val name: String, val place: String, val root: String, val selected: Boolean)
+
+    /**
      * Строка «AI» сводки; неизвестное — словом, не нулём. Проблемы проверки приложения
      * (D-123) — числом в конце, пока они есть: и когда «AI» ещё не настроен.
      */

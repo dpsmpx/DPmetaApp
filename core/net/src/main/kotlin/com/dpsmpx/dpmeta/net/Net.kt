@@ -59,6 +59,12 @@ class AllowList(val hosts: Set<String>, val plainHttp: Set<String> = emptySet())
             hosts = setOf("api.github.com", "github.com", "api.anthropic.com", "dpsmpx.com", "www.dpsmpx.com"),
             plainHttp = setOf("dpsmpx.com"),
         )
+
+        /** Сервер ntfy по умолчанию для мгновенного канала (D-152). */
+        const val NTFY = "ntfy.sh"
+
+        /** Мгновенный канал (D-152, уточняет D-10): `ntfy.sh` и сервер, который задал автор (только https). */
+        fun push(customHost: String?): AllowList = AllowList(setOfNotNull(NTFY, customHost?.lowercase()))
     }
 }
 

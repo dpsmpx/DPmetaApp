@@ -64,6 +64,7 @@ AGP 9.4.1 берёт по умолчанию; Apache-2.0 и другие сво�
 | Версия | 9.8.0 |
 | Дистрибутив | `gradle-9.8.0-bin.zip`, SHA-256 `bafd5ce9cfaea0fbccfdc8439a1ac42fbd4cd9c89dc9a988228d8a2639a58e6c` (по `services.gradle.org`; совпадает с `DPpass:gradle/wrapper/gradle-wrapper.properties`) |
 | `gradle/wrapper/gradle-wrapper.jar` | SHA-256 `238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5` (по `gradle-9.8.0-wrapper.jar.sha256`) |
+| Мастер нового проекта (D-181) | `gradlew`, `gradlew.bat`, `gradle-wrapper.jar` и `gradle-wrapper.properties` этой сборки (Apache-2.0) копируются задачей `newProjectAssets` в assets `newproject/` APK и оттуда — в Gradle-шаблоны; второй копии в репозитории нет |
 
 ## 4. Двоичные файлы
 
@@ -125,6 +126,17 @@ Sysroot сборки proot — пакеты Alpine 3.24 `main` (в APK из ни
 | `SECCOMP_BLOCKLIST_COMMON.TXT` | `41861b21a4471444a9987386726f93bac546921dd1b3ec912f20cdc53b2ac761` | Apache-2.0 | там же |
 | `SECCOMP_BLOCKLIST_APP.TXT` | `e263498e629301339a121703960458bf305ec6e559907bf6ae12d4b56c275d96` | Apache-2.0 | там же |
 | `SECCOMP_PRIORITY.TXT` | `69719591740fe41a2d9662579d93a7874364fea9d341f348d0cba71ade5411da` | Apache-2.0 | там же |
+
+### Android SDK в Linux приложения по кнопке (D-185)
+
+В APK и репозиторий не входит: загружается в госте по согласию автора с
+лицензией Android SDK (`developer.android.com/studio/terms`).
+
+| Что | Версия | SHA-256 | Откуда и как проверено |
+|---|---|---|---|
+| `commandlinetools-linux-16111833_latest.zip` | cmdline-tools 23.0 | `0877a1d048fe4a24efe2eff536ca4223f7adeb58648bb81909d33c446918cfa8` | `dl.google.com/android/repository`; SHA-1 `e025545c62a8e64c7559119566a569fb1dec5f60` совпал с манифестом `repository2-3.xml`, 15 ноября 2026 |
+| `platforms;android-36`, `build-tools;36.1.0`, `ndk;29.0.14206865` (x86_64) | — | суммы сверяет `sdkmanager` по манифесту Google | `dl.google.com` |
+| aapt2 и NDK для linux-arm64 | по выбору автора | вводит автор вместе с адресом | сборки сообщества; сессия их не закрепляет и не проверяет содержимое — только сумму |
 
 ## 5. Идеи из экосистемы
 

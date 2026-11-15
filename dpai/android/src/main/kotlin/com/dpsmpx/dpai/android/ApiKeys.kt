@@ -92,6 +92,9 @@ object ApiKeys {
 
     fun has(context: Context, id: AccountId): Boolean = prefs(context).contains(id.value)
 
+    /** Имена всех секретов хранилища — для копии и аварийного отзыва (`DPmetaApp:D-151`). */
+    fun names(context: Context): List<String> = prefs(context).all.keys.sorted()
+
     fun hasNamed(context: Context, name: String): Boolean = prefs(context).contains(name)
 
     fun remove(context: Context, id: AccountId) = removeNamed(context, id.value)

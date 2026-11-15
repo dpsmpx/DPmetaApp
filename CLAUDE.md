@@ -15,10 +15,10 @@ DPmetaApp — мобильная студия разработки с ИИ на 
 DPpass пока в `dppass/` с отдельной сборкой; предпочтителен надёжный
 мост приложений. DPvisualisation — полезные данные и простые графики.
 DP-Verify — самостоятельный upstream и общая изменяемая папка на target.
-SocialMediaImage и DPprofile выходят из состава студии (D-87): пока
-перенос не проверен, актуальный код в `socialmediaimage/`, `dpprofile/`.
-Сейчас разрешены документация и сохранение накопленного отдельно;
-новую функциональность этого продукта не разрабатывать. Сайт на паузе.
+SocialMediaImage и DPprofile вне студии (D-87, D-154): их код — только в
+`dpsmpx/SocialMediaImage` (DPprofile — его компонент), здесь копий и
+связей нет; новую функциональность этого продукта не разрабатывать.
+Сайт на паузе.
 
 ## Источник истины
 
@@ -39,12 +39,6 @@ SocialMediaImage и DPprofile выходят из состава студии (D
   `dppass/docs/direction/DECISIONS.md` (извне — `DPpass:D-NN`), правила —
   `dppass/CLAUDE.md`, проверки — `dppass/tools/hostcheck/run.sh`.
   Решения этого журнала старше там, где речь о приложении целиком.
-- Подсистема `socialmediaimage/` — свой процесс (`SocialMediaImage:Д45`):
-  решения — `socialmediaimage/docs/direction/DECISIONS.md` (извне —
-  `SocialMediaImage:ДNN`), правила — `socialmediaimage/CLAUDE.md`, начало
-  работы — `socialmediaimage/docs/session/HANDOFF.md`, проверки —
-  `socialmediaimage/tools/check.sh`. Решения этого журнала старше там, где
-  речь о приложении целиком.
 - Подсистема `dpvisualisation/` — свой процесс (`DPvisualisation:D-25`):
   решения — `dpvisualisation/docs/direction/DECISIONS.md` (извне —
   `DPvisualisation:D-NN`), правила — `dpvisualisation/CLAUDE.md`, проверки
@@ -55,10 +49,6 @@ SocialMediaImage и DPprofile выходят из состава студии (D
   `dpmeta/CLAUDE.md`, проверки — `dpmeta/tools/check.sh` (клоны экосистемы
   — `CLONES=<каталог клонов>`). Решения этого журнала старше там, где
   речь о приложении целиком.
-- Подсистема `dpprofile/` — свой процесс (`DPprofile:D-16`): решения —
-  `dpprofile/docs/direction/DECISIONS.md` (извне — `DPprofile:D-NN`),
-  правила — `dpprofile/CLAUDE.md`, проверки — `dpprofile/tools/verify/run.sh`.
-  Решения этого журнала старше там, где речь о приложении целиком.
 - `README.md` — не источник истины и меняется только по запросу автора;
   его блок состояния пишет `tools/check/run.sh --write-status`.
 
@@ -103,11 +93,13 @@ D-87 разрешает свои ветки документации ролей 
   `dpai/`, а сам он заморожен (D-28); в нём не работать, туда не пушить.
 - DPpass — тоже: его код в `dppass/`, репозиторий архивирован (D-30); в
   нём не работать, туда не пушить.
-- SocialMediaImage, DPvisualisation, DPmeta и DPprofile — тоже: их код в
-  `socialmediaimage/`, `dpvisualisation/`, `dpmeta/` и `dpprofile/`,
-  репозитории заморожены (D-43); в них не работать. Исключение — надпись
-  об архиве в их `CLAUDE.md` и `README.md` после переезда (слово автора,
-  D-43).
+- DPvisualisation и DPmeta — тоже: их код в `dpvisualisation/` и
+  `dpmeta/`, репозитории заморожены (D-43); в них не работать. Исключение —
+  надпись об архиве в их `CLAUDE.md` и `README.md` после переезда (слово
+  автора, D-43).
+- SocialMediaImage — снова самостоятельный репозиторий (D-154), DPprofile
+  — его компонент: здесь только чтение клона, как у других проектов;
+  `dpsmpx/DPprofile` заморожен — в нём только надпись о переезде.
 - Только чтение: клоны — чтобы сверить форматы, которые читает
   приложение (ТЗ, §10). Их не править, в их ветки не пушить; находка —
   в PR и `TODO.md` здесь, правка там — сессией того репозитория по его
@@ -200,18 +192,12 @@ D-87 разрешает свои ветки документации ролей 
 - Правка в `dppass/` — ещё `dppass/tools/hostcheck/run.sh --quick` (после
   правки) и `--full` (перед вливанием, только на закоммиченном
   `dppass/`), итог для PR — `run.sh report` (`dppass/CLAUDE.md`).
-- Правка в `socialmediaimage/` — ещё `socialmediaimage/tools/check.sh
-  --affected` (после куска) и он же без ключа — полный (перед
-  вливанием), по `socialmediaimage/CLAUDE.md`.
 - Правка в `dpvisualisation/` — ещё `dpvisualisation/tools/check/run.sh`
   (после правки) и `full` с независимой проверкой (перед вливанием), по
   `dpvisualisation/CLAUDE.md`.
 - Правка в `dpmeta/` — ещё `dpmeta/tools/check.sh` (перед каждым
   коммитом), по `dpmeta/CLAUDE.md`; ветка прохода — с проверкой отдельным
   проходом (`DPmeta:M-13`).
-- Правка в `dpprofile/` — ещё `dpprofile/tools/verify/run.sh --quick`
-  (перед каждым коммитом) и `--full` с клонами источников (перед
-  вливанием), по `dpprofile/CLAUDE.md`.
 - `main` всегда зелёный: не вливать без зелёного `full --strict` — только
   он доказывает, что сборка и проверки подсистем выполнены, а не пропущены
   (`DPmetaApp:D-51`). Исключение — правка только Linux-оболочки DPpass:
@@ -234,13 +220,10 @@ D-87 разрешает свои ветки документации ролей 
   `tools/` и `TODO.md` (D-28).
 - `dppass/` — подсистема DPpass со своими `docs/`, `tools/`, `TODO.md` и
   сборкой (D-30).
-- `socialmediaimage/` — подсистема SocialMediaImage со своими `docs/`,
-  `tools/`, `TODO.md` и сайтом (D-43).
 - `dpvisualisation/` — подсистема DPvisualisation со своими `docs/`,
   `tools/`, моделью и просмотрщиком (D-43).
 - `dpmeta/` — подсистема DPmeta со своими `docs/`, `tools/` и реестром
   экосистемы (D-43).
-- `dpprofile/` — подсистема DPprofile со своими `docs/` и `tools/` (D-43).
 - `docs/direction/` — постановка, ТЗ, решения; `docs/` — как устроено;
   `docs/audits/` — срезы на дату, задним числом не правятся;
   `ROADMAP/` — этапы; `tools/` — проверки и инструменты; `tests/` —

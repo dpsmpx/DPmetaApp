@@ -191,6 +191,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 withContext(Dispatchers.IO) {
                     // Копия настроек — после изменения и раз в час (D-51); служба делает то же в своём такте.
                     runCatching { SettingsBackups.tick(context.applicationContext, Controller.get(context.filesDir)) }
+                    runCatching { AppBackups.tick(context.applicationContext, BuildConfig.DPAI_VERSION) }
                     // Оформление оболочки читает правила и сохраняет историю (D-176): тоже вне UI.
                     (if (background) model.view(s) else model.step(s))?.also { fresh -> fresh.notifications.forEach(notifier::show) }
                 }
@@ -244,6 +245,8 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         // Пункт левой панели приложения (DPmetaApp:D-112): вкладка — сверху, без открытой сессии и настроек.
         incoming.tab?.let { name -> AiTab.entries.firstOrNull { it.name == name }?.let { t -> selectedId = null; settings = false; openTab(t) } }
         if (incoming.settings) { selectedId = null; settings = true; settingsSub = incoming.settingsSub }
+        if (incoming.newProject) NewProjectRequests.request()
+        if (incoming.workspace) IdeState.workspaceRequest.value = true
         if (incoming != Incoming()) onIncoming()
     }
     confirmUri?.let { uri -> ConfirmDialog(model, snapshot?.requests.orEmpty(), uri) { confirmUri = null } }
@@ -273,6 +276,19 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
             if (!com.dpsmpx.dpai.ui.Health.setupDone(f)) SetupWizardPrefs.setLater(context)
             wizard = null
         })
+    }
+    // Мастер нового проекта (DPmetaApp:D-150): из «Файлов», рабочего проекта, Targets и пульта.
+    val newProject by NewProjectRequests.open.collectAsState()
+    if (newProject) {
+        NewProjectWizard(
+            onLinux = { NewProjectRequests.open.value = false; selectedId = null; settings = true; settingsSub = SETTINGS_LINUX },
+            onOpen = {
+                NewProjectRequests.open.value = false
+                IdeState.workspaceRequest.value = true
+                openTab(AiTab.FILES)
+            },
+            onClose = { NewProjectRequests.open.value = false },
+        )
     }
     if (confirmStop) {
         AlertDialog(

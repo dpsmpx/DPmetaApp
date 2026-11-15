@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Коммит сборки для «О программе» (F-50): значение задаёт сборка APK (:shell, resValue); здесь — на случай сборки без неё. -->
+    <string name="dpmeta_build_commit" translatable="false">неизвестен</string>
+</resources>

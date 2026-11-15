@@ -60,10 +60,16 @@ RULES = [
          "android/src/main/kotlin/com/dpsmpx/dpai/android/ApiKeys.kt",
          # Пароль файла ключа подписи APK (D-157): только в разбор PKCS#12 при импорте в Keystore.
          "android/src/main/kotlin/com/dpsmpx/dpai/android/SigningKeys.kt",
+         # Ключ SSH из копии под паролем (D-184): только в разбор ключа перед шифром Keystore.
+         "android/src/main/kotlin/com/dpsmpx/dpai/android/PortableKeys.kt",
          # Подключённый GitHub — только stdin контроллера общих инструментов (D-125).
          "execution/src/main/kotlin/com/dpsmpx/dpai/execution/tools/SharedToolsSync.kt",
          # Пароль облачной копии (D-107): только в вывод ключа шифра.
          "sync/src/main/kotlin/com/dpsmpx/dpai/sync/CloudCrypto.kt",
+         # Резервная копия с секретами (DPmetaApp:D-151, D-182): значение — только в архив перед шифром паролем.
+         "ui/src/main/kotlin/com/dpsmpx/dpai/ui/AppBackup.kt",
+         # Пароль ключа выпуска (DPmetaApp:D-158): только в команду keytool для буфера обмена автора.
+         "ui/src/main/kotlin/com/dpsmpx/dpai/ui/ReleaseKeyCommand.kt",
          # Секрет, выданный ИИ автором (DPmetaApp:D-114, D-144): только в окружение процесса гостя, и его тест.
          "orchestrator/src/main/kotlin/com/dpsmpx/dpai/orchestrator/linux/GuestSecrets.kt",
          "orchestrator/src/test/kotlin/com/dpsmpx/dpai/orchestrator/linux/GuestSecretsTest.kt",

@@ -111,6 +111,14 @@ action = "notify"
 importance = "high"
 quiet = false
 
+# Слушатель уведомлений (F-57; D-155): сам выключен по умолчанию; включили — уведомления Claude идут сюда.
+[[rule]]
+id = "app.claude"
+title = "Уведомление приложения Claude"
+on = "app.notification"
+contains = "com.anthropic.claude"
+action = "notify"
+
 [[rule]]
 id = "social.comment"
 title = "Новый комментарий в соцсети"

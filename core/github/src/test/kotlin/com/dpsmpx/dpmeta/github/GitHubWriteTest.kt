@@ -159,6 +159,22 @@ class GitHubWriteTest {
         assertEquals("from-dpmetaapp", ((b["labels"] as com.dpsmpx.dpai.core.serialization.JsonArray).items.single() as JsonString).value)
     }
 
+    /** «Опубликовать» (D-150): владелец — из токена, репозиторий — закрытый и пустой; чужой владелец в ответе — отказ. */
+    @Test
+    fun publishCreatesPrivateEmptyRepository() {
+        val (_, me) = gh("GET /user" to (200 to """{"login":"example"}"""))
+        assertEquals("example", me.viewer().valueOrNull())
+        val (fake, w) = gh("POST /user/repos" to (201 to """{"full_name":"example/Alpha","html_url":"https://github.com/example/Alpha"}"""))
+        assertEquals("https://github.com/example/Alpha", w.createRepository(repo, "С телефона").valueOrNull()?.link)
+        val b = body(fake.seen.single())
+        assertEquals(listOf("Alpha", "true", "false"), listOf((b["name"] as JsonString).value, "${(b["private"] as com.dpsmpx.dpai.core.serialization.JsonBool).value}",
+            "${(b["auto_init"] as com.dpsmpx.dpai.core.serialization.JsonBool).value}"))
+        val (_, other) = gh("POST /user/repos" to (201 to """{"full_name":"someone/Alpha"}"""))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, code(other.createRepository(repo, "")))
+        val (_, taken) = gh("POST /user/repos" to (422 to """{"message":"Repository creation failed."}"""))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, code(taken.createRepository(repo, "")))
+    }
+
     @Test
     fun defaultBranchAndBranchHead() {
         val (_, w) = gh(

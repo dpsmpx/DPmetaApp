@@ -62,6 +62,10 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
     val rows = rememberSaveable(view.project.project.value, kind.name, saver = StepRowsSaver) { mutableStateListOf(StepRow("", "", "1800")) }
     // Шаблоны артефактов (D-157) — у «Сборки»: через пробел, от корня дерева.
     var artifactsText by rememberSaveable(view.project.project.value, kind.name) { mutableStateOf("") }
+    // Параметры и окружение (D-183): текстом, по строке; выбор вариантов — к запуску, помнится по проекту.
+    var paramsText by rememberSaveable(view.project.project.value, kind.name) { mutableStateOf("") }
+    var envText by rememberSaveable(view.project.project.value, kind.name) { mutableStateOf("") }
+    var choices by remember(view.project, kind) { mutableStateOf<Map<String, String>>(emptyMap()) }
     var loaded by remember(view.project, kind) { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -77,9 +81,12 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
                     rows.clear()
                     rows.addAll(p.steps.map { StepRow(it.name, ManualProfile.quote(it.command), it.timeoutSeconds.toString()) })
                     if (artifactsText.isBlank()) artifactsText = p.artifacts.joinToString(" ")
+                    if (paramsText.isBlank()) paramsText = com.dpsmpx.dpai.ui.ManualVars.paramsText(p.params)
+                    if (envText.isBlank()) envText = com.dpsmpx.dpai.ui.ManualVars.envText(p.env)
                 }
             }
         }
+        choices = withContext(Dispatchers.IO) { model.manualChoices(view.project, kind) }
         loaded = true
     }
     val editable = loaded && !run.blocked && !busy
@@ -88,7 +95,7 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
             is Outcome.Failure -> return g
             is Outcome.Success -> g.value
         }
-        return ManualProfile.form(kind, rows.map { Triple(it.name, it.command, it.timeout) }, globs)
+        return ManualProfile.form(kind, rows.map { Triple(it.name, it.command, it.timeout) }, globs, paramsText, envText)
     }
     Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
         Text(if (kind == ManualProfileKind.CHECK) "Ручная проверка" else "Ручная сборка", style = MaterialTheme.typography.titleSmall)
@@ -118,6 +125,22 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
         TextButton(enabled = editable && rows.size < ManualProfile.MAX_STEPS, onClick = { rows.add(StepRow("", "", "1800")) }) { Text("+ Шаг") }
         if (kind == ManualProfileKind.BUILD) OutlinedTextField(value = artifactsText, onValueChange = { artifactsText = it.take(4000) }, enabled = editable,
             label = { Text("Артефакты: шаблоны через пробел (пусто — **/*.apk **/*.aab)") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = paramsText, onValueChange = { paramsText = it.take(4000) }, enabled = editable,
+            label = { Text("Параметры: по строке ИМЯ | подпись | вариант, вариант") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = envText, onValueChange = { envText = it.take(8000) }, enabled = editable,
+            label = { Text("Окружение шагов: по строке ИМЯ=значение, без секретов") }, modifier = Modifier.fillMaxWidth())
+        Text("В командах и окружении: \${PROJECT}, \${ROOT}, \${TREE}, \${BRANCH}, \${TARGET} и свои \${ИМЯ}; сам знак \${ — \$\${.",
+            style = MaterialTheme.typography.bodySmall)
+        // Выбор вариантов к запуску (D-183): первый — по умолчанию, последний выбор помнится.
+        val declared = remember(paramsText) { (com.dpsmpx.dpai.ui.ManualVars.parseParams(paramsText) as? Outcome.Success)?.value.orEmpty() }
+        for (prm in declared) {
+            val current = choices[prm.name]?.takeIf { it in prm.choices } ?: prm.choices.first()
+            Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                Text("${prm.title}:", style = MaterialTheme.typography.bodySmall)
+                for (c in prm.choices) androidx.compose.material3.FilterChip(selected = c == current, onClick = { choices = choices + (prm.name to c) },
+                    label = { Text(c) }, modifier = Modifier.padding(start = 4.dp))
+            }
+        }
         TextButton(enabled = editable, onClick = {
             busy = true
             scope.launch {
@@ -133,7 +156,8 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
             when (val p = form()) {
                 is Outcome.Failure -> note = p.errors.first().message
                 is Outcome.Success -> {
-                    if (model.startManualProfile(view.project, location!!, p.value)) {
+                    val picked = p.value.params.associate { prm -> prm.name to (choices[prm.name]?.takeIf { it in prm.choices } ?: prm.choices.first()) }
+                    if (model.startManualProfile(view.project, location!!, p.value, picked)) {
                         ControllerService.resume(context)
                         note = "Запрос запуска принят; результат появится ниже"
                     } else note = "Сначала завершите другую операцию Linux/DP-Verify"
@@ -183,12 +207,23 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
         if (run.output.isNotEmpty()) SelectionContainer { Text(run.output, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
         if (kind == ManualProfileKind.BUILD) {
             val saved = remember(artifactsText) { (com.dpsmpx.dpai.files.TreeArtifacts.patterns(artifactsText) as? Outcome.Success)?.value.orEmpty() }
-            ArtifactsSection(model, view, location, saved, refresh = run.finished)
+            // Последняя успешная сборка не старше суток — её новые APK подписываются сами (D-178).
+            var built by remember(view.project.project) { mutableStateOf<BuildDone?>(null) }
+            LaunchedEffect(view.project.project, run.finished) {
+                val last = withContext(Dispatchers.IO) { model.manualHistory(view.project) }.valueOrNull()?.firstOrNull { it.kind == ManualProfileKind.BUILD }
+                val now = com.dpsmpx.dpai.core.clock.Clock.SYSTEM.now().epochMillis
+                built = last?.takeIf { it.outcome == com.dpsmpx.dpai.ui.ManualOutcome.OK && now - it.finishedAt.epochMillis < SIGN_AFTER_BUILD_MS }
+                    ?.let { BuildDone(it.run.value, it.startedAt?.epochMillis, it.finishedAt.epochMillis) }
+            }
+            ArtifactsSection(model, view, location, saved, refresh = run.finished, built = built)
         }
         ManualHistorySection(model, view.project, kind, location, refresh = run.finished, onProblem = onProblem)
         Text("Ручной итог не завершает задачу ИИ. Перед запуском сохраните или отмените правки; контур должен быть свободен.", style = MaterialTheme.typography.bodySmall)
     }
 }
+
+/** Подписывать сами APK сборки не старше суток (D-178): старые — только по кнопке. */
+private const val SIGN_AFTER_BUILD_MS = 24L * 60 * 60 * 1000
 
 /** Сколько мест показывать под выводом: дальше — шум от первой ошибки. */
 private const val PROBLEMS_SHOWN = 100

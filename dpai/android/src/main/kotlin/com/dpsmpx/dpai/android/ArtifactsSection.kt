@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Secret
+import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.result.then
 import com.dpsmpx.dpai.files.FileTree
@@ -62,7 +63,7 @@ import java.time.format.DateTimeFormatter
  * [patterns] — шаблоны профиля, [refresh] — признак нового итога сборки.
  */
 @Composable
-internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, location: WorkspaceLocation?, patterns: List<String>, refresh: Any?) {
+internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, location: WorkspaceLocation?, patterns: List<String>, refresh: Any?, built: BuildDone? = null) {
     val context = LocalContext.current
     val app = context.applicationContext
     val scope = rememberCoroutineScope()
@@ -101,8 +102,13 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
         var pending by remember { mutableStateOf<Pair<ApkReview.Review, ApkAction>?>(null) }
         DisposableEffect(Unit) { onDispose { pending?.let { ApkReview.discard(it.first) } } }
         var logcatFor by remember { mutableStateOf<String?>(null) }
-        var key by remember { mutableStateOf<SigningKeys.Info?>(null) }
-        LaunchedEffect(Unit) { key = withContext(Dispatchers.IO) { SigningKeys.info() } }
+        // Ключ сборок проекта (D-178): свой, иначе глобальный, иначе нет.
+        val projectId = view.project.project.value
+        var keysVersion by remember { mutableIntStateOf(0) }
+        var keys by remember { mutableStateOf<Pair<SigningKeys.Choice, SigningKeys.Info?>>(SigningKeys.Choice.NONE to null) }
+        LaunchedEffect(projectId, keysVersion) { keys = withContext(Dispatchers.IO) { SigningKeys.forProject(projectId) } }
+        val key = keys.second
+        var listedAt by remember { mutableStateOf(0L) }
         LaunchedEffect(location, patterns, refresh, version) {
             val r = withContext(Dispatchers.IO) {
                 if (tree != null) TreeArtifacts.find(tree, patterns, cancelled = { !isActive })
@@ -112,6 +118,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                 is Outcome.Failure -> note = r.diagnostics.first().message
                 is Outcome.Success -> {
                     found = r.value
+                    listedAt = Clock.SYSTEM.now().epochMillis
                     if (pc) downloaded = r.value.items.mapNotNull { a -> PcArtifacts.local(app, target.id.value, a.path.substringAfterLast('/'), a.size, a.modified)?.let { a.path to it } }.toMap()
                 }
             }
@@ -152,32 +159,64 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
             }
         }
 
-        fun sign(r: ApkReview.Review) {
-            val what = r.meta?.let { "${it.packageName} ${it.versionName ?: ""}".trim() } ?: r.source.name
-            DeviceConfirm.ask(context, "Подписать своим ключом: $what", onOk = {
+        /**
+         * Подписать проверенные копии [reviews] ключом сборок проекта (D-178): одно
+         * подтверждение входа на все; ключа нет — предупреждение, APK остаётся как собран.
+         */
+        fun signAll(reviews: List<ApkReview.Review>, why: String) {
+            val (choice, info) = keys
+            if (info == null) { reviews.forEach(ApkReview::discard); note = SignAfterBuild.NO_KEY; return }
+            val what = reviews.joinToString { r -> r.meta?.let { "${it.packageName} ${it.versionName ?: ""}".trim() } ?: r.source.name }
+            DeviceConfirm.ask(context, "$why ${choice.title}: $what", onOk = {
                 work("Подписываю") {
                     try {
-                        val pair = withContext(Dispatchers.IO) { SigningKeys.key() } ?: return@work "ключа подписи нет"
-                        // Копия с ПК — в свою папку подписанных (не рядом со скачанными: их чистит очистка до трёх).
-                        val outDir = if (pc) PcArtifacts.signedDir(app, target.id.value).apply { mkdirs() } else r.source.parentFile
-                        val out = File(outDir, ApkSign.signedName(r.source.name))
-                        // Подписывается копия, сведения которой видел человек, а не файл дерева.
-                        when (val s = withContext(Dispatchers.IO) { ApkSign.sign(r.copy, out, pair.first, pair.second) }) {
-                            is Outcome.Failure -> s.diagnostics.first().message
-                            is Outcome.Success -> {
-                                AppLogs.info(app, "подпись", "подписан ${r.source.name} (${r.log}) → ${out.name}: ${s.value.schemes.joinToString()}, SHA-256 сертификата ${s.value.certSha256}")
-                                "Подписан: ${out.name} (${s.value.schemes.joinToString()})"
+                        val level = if (choice == SigningKeys.Choice.PROJECT) projectId else null
+                        val pair = withContext(Dispatchers.IO) { SigningKeys.key(level) } ?: return@work "ключа подписи нет"
+                        val lines = ArrayList<String>()
+                        for (r in reviews) {
+                            // Копия с ПК — в свою папку подписанных (не рядом со скачанными: их чистит очистка до трёх).
+                            val outDir = if (pc) PcArtifacts.signedDir(app, target.id.value).apply { mkdirs() } else r.source.parentFile
+                            val out = File(outDir, ApkSign.signedName(r.source.name))
+                            // Подписывается копия, сведения которой видел человек, а не файл дерева.
+                            lines += when (val sig = withContext(Dispatchers.IO) { ApkSign.sign(r.copy, out, pair.first, pair.second) }) {
+                                is Outcome.Failure -> "${r.source.name}: ${sig.diagnostics.first().message}"
+                                is Outcome.Success -> {
+                                    AppLogs.info(app, "подпись", "подписан ${choice.title} ${r.source.name} (${r.log}) → ${out.name}: ${sig.value.schemes.joinToString()}, SHA-256 сертификата ${sig.value.certSha256}")
+                                    "Подписан: ${out.name} (${sig.value.schemes.joinToString()})"
+                                }
                             }
                         }
+                        lines.joinToString("\n")
                     } finally {
-                        ApkReview.discard(r)
+                        reviews.forEach(ApkReview::discard)
                     }
                 }
-            }, onDenied = { ApkReview.discard(r); note = it })
+            }, onDenied = { reviews.forEach(ApkReview::discard); note = "Не подписано ($it): APK остаётся как собран" })
+        }
+
+        fun sign(r: ApkReview.Review) = signAll(listOf(r), "Подписать")
+
+        /** Копии [files] для подписи (D-157, T22); нечитаемый APK — мимо. */
+        suspend fun prepareAll(files: List<File>): List<ApkReview.Review> = withContext(Dispatchers.IO) {
+            files.mapNotNull { f -> (ApkReview.prepare(app, f, key?.certSha256) as? Outcome.Success)?.value }
+        }
+
+        // Подпись после сборки (D-178): новые APK последней успешной сборки, если список уже после неё.
+        var autoDone by androidx.compose.runtime.saveable.rememberSaveable(location.key) { mutableStateOf<String?>(null) }
+        LaunchedEffect(built, found, listedAt, keys) {
+            val b = built ?: return@LaunchedEffect
+            val list = found ?: return@LaunchedEffect
+            if (pc || autoDone == b.run || listedAt < b.finishedAt || busy != null) return@LaunchedEffect
+            val fresh = SignAfterBuild.candidates(list.items, b.startedAt)
+            autoDone = b.run
+            if (fresh.isEmpty()) return@LaunchedEffect
+            if (key == null) { note = SignAfterBuild.NO_KEY; return@LaunchedEffect }
+            val reviews = prepareAll(fresh.mapNotNull { host(it.path) })
+            if (reviews.isNotEmpty()) signAll(reviews, "Подписать после сборки")
         }
 
         Text("Шаблоны: ${patterns.ifEmpty { TreeArtifacts.DEFAULT }.joinToString(" ")} — меняются в профиле выше.", style = MaterialTheme.typography.bodySmall)
-        SigningKeyRow(key, busy == null, onChanged = { key = it }, onNote = { note = it })
+        SigningKeysPanel(projectId, projectId, busy == null, keysVersion, onChanged = { keysVersion++ }, onNote = { note = it })
         busy?.let { Text("$it…", style = MaterialTheme.typography.bodySmall) }
         note?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         val list = found
@@ -197,6 +236,14 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                                 is Outcome.Success -> {
                                     downloaded = downloaded + (a.path to r.value)
                                     AppLogs.info(app, "артефакты", "с ПК ${target.label}: ${a.path} — на телефон, ${r.value.length()} байт")
+                                    // APK с ПК подписывается сразу после «На телефон» (D-178); без ключа — предупреждение.
+                                    if (apk) {
+                                        val file = r.value
+                                        scope.launch {
+                                            if (key == null) note = "На телефоне: ${file.name}. ${SignAfterBuild.NO_KEY}"
+                                            else prepareAll(listOf(file)).takeIf { it.isNotEmpty() }?.let { signAll(it, "Подписать скачанный с ПК") }
+                                        }
+                                    }
                                     "На телефоне: ${r.value.name}"
                                 }
                             }
@@ -345,115 +392,15 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
     }
 }
 
+/**
+ * Последняя успешная сборка проекта для подписи после неё (D-178): [run] — id
+ * запуска, [startedAt] и [finishedAt] — мс по часам приложения.
+ */
+internal data class BuildDone(val run: String, val startedAt: Long?, val finishedAt: Long)
+
 /** Что делается с APK после окна сведений. */
 private enum class ApkAction { INSTALL, SIGN }
 
-/** Ключ подписи: нет — «Импортировать…»; есть — субъект, отпечаток и «Удалить…». */
-@Composable
-private fun SigningKeyRow(key: SigningKeys.Info?, enabled: Boolean, onChanged: (SigningKeys.Info?) -> Unit, onNote: (String?) -> Unit) {
-    val context = LocalContext.current
-    val app = context.applicationContext
-    val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf<ByteArray?>(null) }
-    var deleting by remember { mutableStateOf(false) }
-    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            val bytes = withContext(Dispatchers.IO) {
-                runCatching { app.contentResolver.openInputStream(uri)?.use { readAtMost(it, MAX_KEY_FILE + 1) } }.getOrNull()
-            }
-            when {
-                bytes == null -> onNote("файл ключа не прочитан")
-                bytes.size > MAX_KEY_FILE -> onNote("файл больше 1 МБ — это не хранилище ключей")
-                else -> picked = bytes
-            }
-        }
-    }
-    if (key == null) {
-        Row {
-            Text("Ключ подписи не задан.", Modifier.padding(vertical = 12.dp), style = MaterialTheme.typography.bodySmall)
-            TextButton(enabled = enabled, onClick = { pick.launch(arrayOf("application/x-pkcs12", "application/octet-stream", "*/*")) }) { Text("Импортировать…") }
-        }
-    } else {
-        Text("Ключ подписи: ${key.subject} (${key.algorithm})\nSHA-256: ${key.certSha256}", style = MaterialTheme.typography.bodySmall)
-        TextButton(enabled = enabled, onClick = { deleting = true }) { Text("Удалить ключ…") }
-    }
-    picked?.let { bytes ->
-        KeyPasswordDialog(onCancel = { bytes.fill(0); picked = null }) { password, alias ->
-            scope.launch {
-                val r = withContext(Dispatchers.IO) { SigningKeys.import(app, bytes, password, alias) }
-                when (r) {
-                    is Outcome.Success -> { bytes.fill(0); picked = null; onChanged(r.value); onNote("Ключ импортирован. Файл ключа приложение не хранит.") }
-                    is Outcome.Failure -> {
-                        val d = r.diagnostics.first()
-                        onNote(d.message)
-                        // Несколько ключей в файле — окно остаётся, чтобы ввести имя ключа.
-                        if (d.code != DiagCode.FIELD_MISSING && d.code != DiagCode.VALUE_INVALID) { bytes.fill(0); picked = null }
-                    }
-                }
-            }
-        }
-    }
-    if (deleting) AlertDialog(
-        onDismissRequest = { deleting = false },
-        title = { Text("Удалить ключ подписи?") },
-        text = { Text("Ключ сотрётся из Keystore телефона — извлечь его оттуда нельзя, восстановить — только импортом из вашего файла. Подписанные им APK останутся.", color = MaterialTheme.colorScheme.error) },
-        confirmButton = { TextButton(onClick = {
-            deleting = false
-            scope.launch {
-                when (val r = withContext(Dispatchers.IO) { SigningKeys.delete(app) }) {
-                    is Outcome.Success -> { onChanged(null); onNote("Ключ подписи удалён") }
-                    is Outcome.Failure -> onNote(r.diagnostics.first().message)
-                }
-            }
-        }) { Text("Удалить") } },
-        dismissButton = { TextButton(onClick = { deleting = false }) { Text("Отмена") } },
-    )
-}
-
-/** Пароль файла ключа и, если нужно, имя ключа. Окно — без снимков экрана; пароль не сохраняется. */
-@Composable
-private fun KeyPasswordDialog(onCancel: () -> Unit, onImport: (Secret, String?) -> Unit) {
-    var password by remember { mutableStateOf("") }
-    var alias by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onCancel,
-        title = { Text("Пароль хранилища ключей") },
-        text = {
-            val view = LocalView.current
-            DisposableEffect(view) {
-                (view.parent as? DialogWindowProvider)?.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
-                onDispose { }
-            }
-            Column {
-                Text("Ключ попадёт в Keystore телефона; подписывать можно будет только после PIN или отпечатка.", style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(password, { password = it.take(256) }, label = { Text("Пароль") }, singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
-                OutlinedTextField(alias, { alias = it.take(128) }, label = { Text("Имя ключа (если в файле их несколько)") }, singleLine = true)
-            }
-        },
-        confirmButton = { TextButton(onClick = {
-            val secret = Secret(password)
-            password = ""
-            onImport(secret, alias.trim().ifEmpty { null })
-        }) { Text("Импортировать") } },
-        dismissButton = { TextButton(onClick = { password = ""; onCancel() }) { Text("Отмена") } },
-    )
-}
-
-private const val MAX_KEY_FILE = 1 shl 20
-
-/** Не больше [limit] байт потока (`readNBytes` — только с API 33). */
-private fun readAtMost(input: java.io.InputStream, limit: Int): ByteArray {
-    val out = java.io.ByteArrayOutputStream()
-    val buf = ByteArray(8192)
-    while (out.size() < limit) {
-        val n = input.read(buf, 0, minOf(buf.size, limit - out.size()))
-        if (n < 0) break
-        out.write(buf, 0, n)
-    }
-    return out.toByteArray()
-}
 private const val MAX_DOWNLOAD = 256L shl 20
 
 private val TIME = DateTimeFormatter.ofPattern("dd.MM HH:mm")

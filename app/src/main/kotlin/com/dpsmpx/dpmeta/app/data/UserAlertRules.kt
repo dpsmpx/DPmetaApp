@@ -78,11 +78,8 @@ class UserAlertRules(private val documents: DocumentStore) {
 
         fun validate(text: String, catalog: EventCatalog): Outcome<AlertRules> {
             if (text.length > MAX_TEXT) return Outcome.failure(DiagCode.VALUE_INVALID, "правила — не больше $MAX_TEXT знаков")
-            return AlertFormat.parse(text, catalog, "локальные правила").then { rules ->
-                if (rules.rules.any { it.enabled && it.action == AlertAction.DIGEST }) {
-                    Outcome.failure(DiagCode.UNSUPPORTED, "дайджест по расписанию ещё не поддерживается; выберите уведомление, ленту или тишину")
-                } else Outcome.success(rules)
-            }
+            // «В сводку» — по расписанию D-152: отказа больше нет.
+            return AlertFormat.parse(text, catalog, "локальные правила")
         }
 
         /** Импорт ограничен до разбора, размер файла не определяет расход памяти. */

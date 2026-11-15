@@ -22,30 +22,43 @@ import javax.crypto.spec.GCMParameterSpec
  * ТЗ, §6.6): AES-256-GCM, ключ не покидает Keystore, на диске — шифротекст
  * в `noBackupFilesDir` (в резервную копию не попадает, T-02). Ключ требует
  * входа пользователя (T-01): после биометрии или PIN — [AUTH_SECONDS] секунд,
- * дальше расшифровка отказывает до нового входа. Сейчас один секрет — токен
+ * дальше расшифровка отказывает до нового входа. Секрет по умолчанию — токен
  * GitHub (PAT, запасной путь D-17).
+ *
+ * Ключ подписи мгновенного канала (D-152) — свой ключ Keystore [alias] без входа
+ * ([userAuth] = `false`): служба проверяет подписи при запертом телефоне. Он даёт
+ * только подписать уведомление, читать им нечего (T30, `docs/SECURITY_MODEL.md`).
  */
-class SecretStore(private val vfs: Vfs, private val path: String = "github.token") {
+class SecretStore(
+    private val vfs: Vfs,
+    private val path: String = "github.token",
+    private val alias: String = ALIAS,
+    private val userAuth: Boolean = true,
+    private val onChange: () -> Unit = { ConnectedGitHub.close(); AiGitHub.close() },
+) {
     private fun key(): SecretKey {
         val ks = KeyStore.getInstance(KEYSTORE).apply { load(null) }
-        (ks.getEntry(ALIAS, null) as? KeyStore.SecretKeyEntry)?.let { return it.secretKey }
+        (ks.getEntry(alias, null) as? KeyStore.SecretKeyEntry)?.let { return it.secretKey }
         val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE)
         gen.init(
-            KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+            KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)
-                // T-01: ключ работает только после входа — биометрией или PIN (Lock, F-45).
-                .setUserAuthenticationRequired(true)
-                .setUserAuthenticationParameters(AUTH_SECONDS, KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL)
+                .apply {
+                    // T-01: ключ работает только после входа — биометрией или PIN (Lock, F-45).
+                    if (userAuth) {
+                        setUserAuthenticationRequired(true)
+                        setUserAuthenticationParameters(AUTH_SECONDS, KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL)
+                    }
+                }
                 .build(),
         )
         return gen.generateKey()
     }
 
     fun save(secret: Secret): Outcome<Unit> = try {
-        ConnectedGitHub.close()
-        AiGitHub.close()
+        onChange()
         val c = Cipher.getInstance(TRANSFORMATION).apply {
             try {
                 init(Cipher.ENCRYPT_MODE, key())
@@ -67,8 +80,7 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
         Outcome.failure(DiagCode.STORAGE_IO_FAILED, "секрет не записан: ${e.javaClass.simpleName}", path)
     } finally {
         // Отозвать и вход, начатый во время замены файла/ключа.
-        ConnectedGitHub.close()
-        AiGitHub.close()
+        onChange()
     }
 
     fun load(): Outcome<Secret?> {
@@ -95,13 +107,11 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
     fun exists(): Boolean = vfs.exists(path)
 
     fun clear() {
-        ConnectedGitHub.close()
-        AiGitHub.close()
+        onChange()
         try {
             if (vfs.exists(path)) vfs.delete(path)
         } finally {
-            ConnectedGitHub.close()
-            AiGitHub.close()
+            onChange()
         }
     }
 
@@ -113,7 +123,7 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
 
     private fun dropKey() {
         try {
-            KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(ALIAS)
+            KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(alias)
         } catch (e: GeneralSecurityException) {
             // Нет ключа или Keystore недоступен — новый ключ создастся при сохранении.
         } catch (e: IOException) {
@@ -129,5 +139,11 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
 
         /** Сколько ключ работает после входа: хватает на синхронизацию по кнопке. */
         const val AUTH_SECONDS = 300
+
+        /** Ключ подписи мгновенного канала (D-152): без входа, в `noBackupFilesDir`. */
+        fun push(context: android.content.Context): SecretStore = SecretStore(
+            com.dpsmpx.dpai.storage.vfs.NioVfs(context.noBackupFilesDir.toPath().resolve("dpmeta")),
+            path = "push.key", alias = "dpmeta.push", userAuth = false, onChange = {},
+        )
     }
 }
