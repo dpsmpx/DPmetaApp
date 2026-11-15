@@ -234,8 +234,33 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
             if (askAi) androidx.compose.material3.AlertDialog(
                 onDismissRequest = { askAi = false },
                 title = { Text("Поручить ИИ?") },
-                text = { Text("Новая задача ИИ с выжимкой ошибки: шаг, команда, до 5 мест и 40 последних строк вывода. Это расход токенов.", style = MaterialTheme.typography.bodySmall) },
+                text = { Text("Новая задача ИИ с выжимкой ошибки: шаг, команда, до 5 мест и 40 последних строк вывода. Это расход токенов. " +
+                    "«Сначала снова без ИИ» запустит тот же профиль: прошло — задача не нужна, упало — задача со свежей выжимкой.", style = MaterialTheme.typography.bodySmall) },
                 confirmButton = {
+                    // Предполёт (D-190; DPmetaApp:D-168): тот же профиль без ИИ; ИИ — только если снова упало.
+                    val profileNow = (form() as? Outcome.Success)?.value
+                    if (profileNow != null && location != null) TextButton(onClick = {
+                        askAi = false
+                        val loc = location
+                        note = "Предполёт: запускаю профиль снова, без ИИ…"
+                        model.startManualProfile(view.project, loc, profileNow, null) { _, v ->
+                            when (com.dpsmpx.dpai.ui.FailureOptions.preflight(v.complete, v.results)) {
+                                com.dpsmpx.dpai.ui.FailureOptions.Preflight.PASSED -> scope.launch { note = "Прошло без ИИ — задача ИИ не нужна" }
+                                com.dpsmpx.dpai.ui.FailureOptions.Preflight.UNCLEAR -> scope.launch { note = "Предполёт не дал итога (остановлен или не подтверждён) — решите сами" }
+                                com.dpsmpx.dpai.ui.FailureOptions.Preflight.FAILED -> {
+                                    val fresh = com.dpsmpx.dpai.ui.BuildProblems.parse(v.output)
+                                    val (t, o) = com.dpsmpx.dpai.ui.FailureOptions.aiTask(kind, profileNow.steps, v.results, v.output, fresh, loc.branch)
+                                    val key = com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure())
+                                        .next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
+                                    val r = when (val f = com.dpsmpx.dpai.ui.NewTaskForm.command(t, o, key)) {
+                                        is Outcome.Failure -> f
+                                        is Outcome.Success -> model.addTask(f.value)
+                                    }
+                                    scope.launch { note = if (r is Outcome.Success) "Снова упало — задача ИИ создана: «$t»" else (r as Outcome.Failure).diagnostics.first().message }
+                                }
+                            }
+                        }.let { started -> if (!started) note = "Предполёт не запустился: занято другим долгим делом" }
+                    }) { Text("Сначала снова без ИИ") }
                     TextButton(onClick = {
                         askAi = false
                         val (title, objective) = com.dpsmpx.dpai.ui.FailureOptions.aiTask(kind, steps, run.results, run.output, problems, location?.branch.orEmpty())
@@ -253,7 +278,7 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
                                 is Outcome.Failure -> r.diagnostics.first().message
                             }
                         }
-                    }) { Text("Поручить") }
+                    }) { Text("Поручить сразу") }
                 },
                 dismissButton = { TextButton(onClick = { askAi = false }) { Text("Отмена") } },
             )

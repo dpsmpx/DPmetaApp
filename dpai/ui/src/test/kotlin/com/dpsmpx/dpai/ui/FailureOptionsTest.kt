@@ -53,6 +53,18 @@ class FailureOptionsTest {
     }
 
     @Test
+    fun preflightDecidesWithoutAi() {
+        val ok = listOf(ManualStepResult(1, 0, "код выхода 0"), ManualStepResult(2, 0, "код выхода 0"))
+        assertEquals(FailureOptions.Preflight.PASSED, FailureOptions.preflight(true, ok))
+        assertEquals(FailureOptions.Preflight.FAILED, FailureOptions.preflight(false, listOf(ManualStepResult(1, 2, "код выхода 2"))))
+        assertEquals(FailureOptions.Preflight.FAILED, FailureOptions.preflight(false, listOf(ManualStepResult(1, null, "истёк таймаут"))))
+        // Остановлен человеком или не подтверждён — не «прошло» и не «упало»: решает человек.
+        assertEquals(FailureOptions.Preflight.UNCLEAR, FailureOptions.preflight(false, listOf(ManualStepResult(1, null, "остановлено"))))
+        assertEquals(FailureOptions.Preflight.UNCLEAR, FailureOptions.preflight(false, emptyList()))
+        assertEquals(FailureOptions.Preflight.UNCLEAR, FailureOptions.preflight(true, emptyList()))
+    }
+
+    @Test
     fun aiTaskCarriesOnlyExcerpt() {
         val output = (1..500).joinToString("\n") { "line $it" }
         val problems = BuildProblemList(listOf(BuildProblem("src/a.kt", 4, null, ProblemSeverity.ERROR, "Unresolved reference: foo")), false)

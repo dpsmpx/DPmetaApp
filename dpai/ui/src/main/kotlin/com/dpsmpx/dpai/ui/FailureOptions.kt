@@ -76,5 +76,19 @@ object FailureOptions {
         return title to objective
     }
 
+    /** Итог предполёта перед ходом ИИ (D-190): прошло — ИИ не нужен; не прошло — поручить; иначе — решает человек. */
+    enum class Preflight { PASSED, FAILED, UNCLEAR }
+
+    /**
+     * Предполёт (D-190; `DPmetaApp:D-168`, шаг 4): тот же профиль снова, без ИИ. Все шаги с
+     * кодом 0 — [Preflight.PASSED]; шаг не прошёл — [Preflight.FAILED]; остановлен, не
+     * подтверждён или шагов нет — [Preflight.UNCLEAR]: задачу ИИ сам не создаёт.
+     */
+    fun preflight(complete: Boolean, results: List<ManualStepResult>): Preflight = when {
+        complete && results.isNotEmpty() && results.all { it.ok } -> Preflight.PASSED
+        results.any { !it.ok && it.exitCode != null || it.reason.contains("таймаут") } -> Preflight.FAILED
+        else -> Preflight.UNCLEAR
+    }
+
     private const val MAX_OUTPUT = 64 * 1024
 }
