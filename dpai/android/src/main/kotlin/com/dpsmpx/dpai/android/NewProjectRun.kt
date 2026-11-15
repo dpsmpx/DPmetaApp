@@ -23,6 +23,12 @@ import com.dpsmpx.dpai.ui.TargetEntry
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.time.Duration.Companion.minutes
 
+/** Мост пульта к рабочим проектам (`DPmetaApp:D-150`): отправка ветки после «Опубликовать». */
+object PultProjects {
+    fun publish(context: Context, projectId: String, url: String, token: com.dpsmpx.dpai.core.diagnostics.Secret): Outcome<String> =
+        NewProjectRun.publish(context, DemoModel.get(context), projectId, url, token)
+}
+
 /** Запрос открыть мастер нового проекта — из любой вкладки, пульта и окна знакомства (`DPmetaApp:D-150`). */
 internal object NewProjectRequests {
     val open = MutableStateFlow(false)
@@ -217,6 +223,36 @@ internal object NewProjectRun {
             (profiles.saveRun(entry, r) as? Outcome.Failure)?.let { return Outcome.failure(DiagCode.STORAGE_IO_FAILED, "проект добавлен, но профиль запуска не сохранён: ${it.errors.first().message}") }
         }
         return Outcome.success(Created(entry, root))
+    }
+
+    /**
+     * «Опубликовать на GitHub» (`DPmetaApp:D-150`): после того как пульт создал репозиторий —
+     * remote `origin` = [url] и отправка ветки проекта [projectId]. В Linux приложения токен
+     * [token] получает только этот процесс Git (окружение гостя, как у выданных секретов,
+     * D-144); на Termux и ПК — вход Git самого target. Итог — строка для экрана.
+     */
+    fun publish(context: Context, model: DemoModel, projectId: String, url: String, token: com.dpsmpx.dpai.core.diagnostics.Secret): Outcome<String> {
+        val controller = Controller.get(context.filesDir)
+        val project = controller.projects().projects.firstOrNull { it.project.value == projectId }
+            ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "рабочий проект не найден", projectId)
+        val target = controller.targets().firstOrNull { it.id == project.target }
+            ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "target проекта удалён", project.root)
+        val argv = NewProject.publish(target.platform, project.root, url)
+            ?: return Outcome.failure(DiagCode.VALUE_INVALID, "адрес репозитория — не GitHub", url)
+        val place: Place = if (target.inApp) Place.Phone(target) else Place.Remote(target)
+        val host = when (val h = host(context, model, place)) {
+            is Outcome.Failure -> return h
+            is Outcome.Success -> h.value
+        }
+        val env = if (target.inApp) {
+            com.dpsmpx.dpai.execution.linux.ProotHost.GUEST_ENVIRONMENT +
+                com.dpsmpx.dpai.orchestrator.linux.GuestSecrets.environment(listOf(com.dpsmpx.dpai.orchestrator.linux.GuestSecrets.Issued("GH_TOKEN", token)))
+        } else null
+        return when (val r = host.run(ProcessSpec(argv, environment = env), 10.minutes, maxStdoutChars = OUTPUT)) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> NewProject.publishProblem(r.value.stdout + r.value.stderr)?.let { Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, it, project.root) }
+                ?: Outcome.success("ветка ${NewProject.BRANCH} отправлена в $url")
+        }
     }
 
     /** Записать файлы в [rel]; непустая папка — отказ до записи. */

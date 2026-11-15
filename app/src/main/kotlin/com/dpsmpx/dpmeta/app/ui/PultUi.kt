@@ -106,6 +106,7 @@ import com.dpsmpx.dpmeta.actions.ActionStatus
 import com.dpsmpx.dpmeta.app.screens.PullActions
 import com.dpsmpx.dpmeta.app.screens.BranchActions
 import com.dpsmpx.dpmeta.app.screens.IssueActions
+import com.dpsmpx.dpmeta.app.screens.PublishActions
 import com.dpsmpx.dpmeta.app.screens.EditActions
 import com.dpsmpx.dpmeta.app.screens.LineDiff
 import com.dpsmpx.dpmeta.app.screens.RouteActions
@@ -304,6 +305,14 @@ interface Loader {
     /** Действие (F-12): подтверждение способом [PullActions.Request.way] создаёт активность — после PIN, если нужен. */
     fun act(request: PullActions.Request, done: (Outcome<ActionResult>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "действий здесь нет", request.command.target.display))
+
+    /** Владелец токена — для окна «Опубликовать» (D-150). */
+    fun viewer(done: (Outcome<String>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "публикации здесь нет", "github"))
+
+    /** «Опубликовать на GitHub» (D-150): репозиторий — действием уровня 1, затем отправка ветки проекта. */
+    fun publish(project: Screens.LocalProject, name: String, done: (Outcome<PublishActions.Published>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "публикации здесь нет", project.name))
 
     /** Репозиторий проекта — для действий над ним (issue, F-26). */
     fun repo(project: String, done: (Outcome<com.dpsmpx.dpmeta.model.RepoRef>) -> Unit) =
@@ -549,6 +558,7 @@ fun PultApp(
     // Поиск документа настроек по ссылке из справки («Настройки → тема»); пункт панели открывает его пустым.
     var settingsQuery by rememberSaveable { mutableStateOf("") }
     var introOpen by rememberSaveable { mutableStateOf(false) }
+    var publishing by remember { mutableStateOf<Screens.LocalProject?>(null) }
     LaunchedEffect(goTo) {
         val to = goTo ?: return@LaunchedEffect
         tab = when (to) {
@@ -639,7 +649,7 @@ fun PultApp(
                 twoPane -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
                     val chosen = top?.project
                     Column(Modifier.weight(2f).fillMaxSize()) {
-                        LocalProjects(view.local, onNewProject, onOpenProject, compact = true)
+                        LocalProjects(view.local, onNewProject, onOpenProject, compact = true, onPublish = { publishing = it })
                         // Другой проект — вместо открытой карточки, а не поверх неё: «Назад» — к списку.
                         Projects(remember(s) { Screens.projects(s) }, chosen) { stacks[tab] = listOf(Nav.Card(it)) }
                     }
@@ -692,7 +702,7 @@ fun PultApp(
                 // Пустое состояние ведёт дальше (UX-11): кнопкой, а не словами «где-то в настройках».
                 // Без GitHub — проекты на устройстве (D-150): токен нужен только карточкам GitHub, клонам и PR.
                 s == null -> Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
-                    LocalProjects(view.local, onNewProject, onOpenProject, compact = false)
+                    LocalProjects(view.local, onNewProject, onOpenProject, compact = false, onPublish = { publishing = it })
                     if (view.hasToken) {
                         Text("Среза GitHub ещё нет.")
                         Button(onClick = onSync, enabled = !view.busy) { Text("Обновить") }
@@ -721,7 +731,7 @@ fun PultApp(
                 tab == Section.DEV -> Column(Modifier.fillMaxSize()) {
                     when (devTab) {
                         DevTab.PROJECTS -> {
-                            LocalProjects(view.local, onNewProject, onOpenProject, compact = true)
+                            LocalProjects(view.local, onNewProject, onOpenProject, compact = true, onPublish = { publishing = it })
                             Projects(remember(s) { Screens.projects(s) }) { open(Nav.Card(it)) }
                         }
                         DevTab.PULLS -> Pulls(remember(s) { Screens.pulls(s) }, s.asOf, pullFilter, pullProject, { pullFilter = it }, { pullProject = it }) { r -> open(Nav.Pull(r.project, r.number.toInt())) }
@@ -734,6 +744,9 @@ fun PultApp(
     }
     }
     view.clonePrompt?.let { ClonesDialog(it, onClonesChosen, onDeleteClone, busy = view.busy) }
+    publishing?.let { p ->
+        PublishDialog(p, view.hasToken, loader, onToken = { publishing = null; settingsQuery = "токен"; tab = Section.MORE }) { publishing = null }
+    }
     // Окно знакомства (D-150): само — при первом запуске, затем — из справки (app:intro).
     if (view.intro || introOpen) {
         val actions = buildMap<Intro.Action, () -> Unit> {
@@ -794,7 +807,7 @@ private fun Header(title: String, view: PultView, onSync: () -> Unit, onCancel: 
  * пояснений. Нет подсистемы «AI» — ничего.
  */
 @Composable
-private fun LocalProjects(list: List<Screens.LocalProject>?, onNew: (() -> Unit)?, onOpen: (String) -> Unit, compact: Boolean) {
+private fun LocalProjects(list: List<Screens.LocalProject>?, onNew: (() -> Unit)?, onOpen: (String) -> Unit, compact: Boolean, onPublish: ((Screens.LocalProject) -> Unit)? = null) {
     if (list == null || onNew == null) return
     if (compact && list.isEmpty()) {
         TextButton(onClick = onNew) { Text("Создать проект на устройстве…") }
@@ -807,14 +820,76 @@ private fun LocalProjects(list: List<Screens.LocalProject>?, onNew: (() -> Unit)
                 Text("Проектов пока нет. Создайте C++, Kotlin или Python — локальный Git, без GitHub; опубликовать можно позже.", style = MaterialTheme.typography.bodySmall)
             }
             for (p in list) {
-                Column(Modifier.fillMaxWidth().clickable { onOpen(p.id) }.padding(vertical = 4.dp)) {
-                    Text(p.name + if (p.selected) " · открыт" else "", style = MaterialTheme.typography.bodyLarge)
-                    Text("${p.place} · ${p.root}", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).clickable { onOpen(p.id) }.padding(vertical = 4.dp)) {
+                        Text(p.name + if (p.selected) " · открыт" else "", style = MaterialTheme.typography.bodyLarge)
+                        Text("${p.place} · ${p.root}", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }
+                    onPublish?.let { pub -> TextButton(onClick = { pub(p) }) { Text("На GitHub…") } }
                 }
             }
             Button(onClick = onNew) { Text("Создать проект…") }
         }
     }
+}
+
+/**
+ * «Опубликовать на GitHub» (D-150): окно уровня 1 — что уйдёт и куда; «Опубликовать» —
+ * подтверждение. Без токена — переход к нему. Неудачная отправка ветки — «Повторить»:
+ * созданный репозиторий не создаётся второй раз.
+ */
+@Composable
+private fun PublishDialog(project: Screens.LocalProject, hasToken: Boolean, loader: Loader, onToken: () -> Unit, onClose: () -> Unit) {
+    var name by rememberSaveable(project.id) { mutableStateOf(project.name) }
+    var owner by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var result by remember { mutableStateOf<PublishActions.Published?>(null) }
+    LaunchedEffect(project.id, hasToken) {
+        if (hasToken) loader.viewer { r -> when (r) { is Outcome.Success -> owner = r.value; is Outcome.Failure -> error = r.errors.first().message } }
+    }
+    val invalid = PublishActions.invalid(name)
+    AlertDialog(
+        onDismissRequest = { if (!busy) onClose() },
+        title = { Text("Опубликовать на GitHub") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val done = result
+                when {
+                    !hasToken -> Text("Нужен токен GitHub с правом создавать репозитории (Administration: write) и записывать содержимое (Contents: write).")
+                    done != null -> {
+                        Text(done.note)
+                        done.link?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    }
+                    else -> {
+                        OutlinedTextField(name, { name = it.take(110); error = null }, label = { Text("Имя репозитория") }, singleLine = true,
+                            isError = invalid != null, supportingText = { Text(invalid ?: "закрытый, у владельца токена") }, modifier = Modifier.fillMaxWidth())
+                        for (line in PublishActions.preview(project, owner, name)) Text(line, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            when {
+                !hasToken -> TextButton(onClick = onToken) { Text("К токену") }
+                result != null -> TextButton(onClick = onClose) { Text("Готово") }
+                else -> TextButton(enabled = !busy && invalid == null && owner != null, onClick = {
+                    busy = true
+                    error = null
+                    loader.publish(project, name.trim()) { r ->
+                        busy = false
+                        when (r) {
+                            is Outcome.Success -> result = r.value
+                            is Outcome.Failure -> error = r.errors.first().message
+                        }
+                    }
+                }) { Text(if (error != null) "Повторить" else "Опубликовать") }
+            }
+        },
+        dismissButton = { if (result == null) TextButton(enabled = !busy, onClick = onClose) { Text("Отмена") } },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

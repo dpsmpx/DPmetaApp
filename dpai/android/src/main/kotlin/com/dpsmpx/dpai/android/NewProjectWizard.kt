@@ -115,7 +115,7 @@ internal fun NewProjectWizard(onLinux: () -> Unit, onOpen: () -> Unit, onClose: 
                     when {
                         done != null -> {
                             Text("Проект «${done.entry.root.substringAfterLast('/')}» создан: ${done.root}.")
-                            Text("Git — локальный, ветка ${NewProject.BRANCH} с первым коммитом; GitHub не нужен — опубликовать проект можно позже из «Проектов».", style = MaterialTheme.typography.bodySmall)
+                            Text("Git — локальный, ветка ${NewProject.BRANCH} с первым коммитом; GitHub не нужен — опубликовать проект можно позже: «На GitHub…» в карточке «На устройстве».", style = MaterialTheme.typography.bodySmall)
                             Text("Сборка, проверки и запуск — вкладки рабочего проекта в IDE; ИИ получает задачи этого проекта.", style = MaterialTheme.typography.bodySmall)
                         }
                         page == 0 -> {

@@ -217,6 +217,20 @@ class PultRepository(
     ): Outcome<com.dpsmpx.dpmeta.actions.ActionResult> =
         actions.run(command, confirm(actions)) { ActionExecutor.execute(com.dpsmpx.dpmeta.github.GitHubWrite(Net(UrlTransport()), token), command, text) }
 
+    /** Владелец токена (D-150): он же владелец публикуемого репозитория. */
+    fun viewer(token: Secret): Outcome<String> = com.dpsmpx.dpmeta.github.GitHubWrite(Net(UrlTransport()), token).viewer()
+
+    /**
+     * Повтор «Опубликовать» после неудачной отправки ветки (D-150): репозиторий [repo] есть,
+     * а ветки [branch] в нём ещё нет. Есть ветка — это уже опубликованный или чужой проект.
+     */
+    fun awaitsFirstPush(token: Secret, repo: com.dpsmpx.dpmeta.model.RepoRef, branch: String): Boolean {
+        val w = com.dpsmpx.dpmeta.github.GitHubWrite(Net(UrlTransport()), token)
+        if (w.defaultBranch(repo) !is Outcome.Success) return false
+        val b = w.branch(repo, branch)
+        return b is Outcome.Failure && b.errors.first().code == com.dpsmpx.dpai.core.diagnostics.DiagCode.GITHUB_NOT_FOUND
+    }
+
     /**
      * Запуск маршрута (F-22): та же политика и журнал (D-07), исполнитель — [fire] оболочки,
      * мост к подсистеме «AI»; токен GitHub не нужен. [text] — поручение; в журнал не идёт.

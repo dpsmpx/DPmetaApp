@@ -774,6 +774,64 @@ object NewProject {
         return listOf("/bin/sh", "-c", script, "dpai-new-project", root, identity?.name.orEmpty(), identity?.email.orEmpty(), FIRST_COMMIT)
     }
 
+    const val PUSHED_MARKER = "DPAI_PUBLISH_OK"
+    const val OTHER_ORIGIN_MARKER = "DPAI_OTHER_ORIGIN"
+
+    private val REMOTE = Regex("https://github\\.com/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?/[A-Za-z0-9._-]{1,100}\\.git")
+
+    /**
+     * «Опубликовать» (`DPmetaApp:D-150`): в [root] — remote `origin` = [url] (если его нет;
+     * тот же адрес — повтор) и отправка [BRANCH] с привязкой. Другой `origin` — отказ с
+     * [OTHER_ORIGIN_MARKER]. Вход Git не спрашивается в терминале: без входа — отказ
+     * словами. Адрес — только `https://github.com/<владелец>/<имя>.git`, иначе `null`.
+     */
+    fun publish(platform: TargetPlatform, root: String, url: String): List<String>? {
+        if (!REMOTE.matches(url)) return null
+        if (platform == TargetPlatform.WINDOWS) {
+            fun q(v: String) = "'" + v.replace("'", "''") + "'"
+            val script = buildString {
+                appendLine("\$ErrorActionPreference = 'Stop'")
+                appendLine("\$env:GIT_TERMINAL_PROMPT = '0'; \$env:GCM_INTERACTIVE = 'never'")
+                appendLine("Set-Location -LiteralPath ${q(root)}")
+                // Адрес — как записан, без подмен insteadOf: иначе повтор выглядел бы чужим origin.
+                appendLine("\$o = & git config --get remote.origin.url 2>\$null")
+                appendLine("if (\$LASTEXITCODE -eq 0) { if (\$o -ne ${q(url)}) { Write-Output \"$OTHER_ORIGIN_MARKER \$o\"; exit 3 } } else { & git remote add origin ${q(url)}; if (\$LASTEXITCODE -ne 0) { exit 1 } }")
+                appendLine("& git push -u origin $BRANCH 2>&1 | Write-Output; if (\$LASTEXITCODE -ne 0) { exit \$LASTEXITCODE }")
+                appendLine("Write-Output '$PUSHED_MARKER'")
+            }
+            return powershell(script)
+        }
+        val script = """
+            set -e
+            export GIT_TERMINAL_PROMPT=0
+            cd "${'$'}1"
+            if o=${'$'}(git config --get remote.origin.url); then
+                test "${'$'}o" = "${'$'}2" || { printf '$OTHER_ORIGIN_MARKER %s\n' "${'$'}o"; exit 3; }
+            else
+                git remote add origin "${'$'}2"
+            fi
+            git push -u origin $BRANCH 2>&1
+            printf '$PUSHED_MARKER\n'
+        """.trimIndent()
+        return listOf("/bin/sh", "-c", script, "dpai-publish", root, url)
+    }
+
+    /** Итог отправки словами: [null] — отправлено. */
+    fun publishProblem(output: List<String>): String? {
+        if (output.any { it.trim() == PUSHED_MARKER }) return null
+        output.firstOrNull { it.startsWith(OTHER_ORIGIN_MARKER) }?.let {
+            return "у проекта уже есть remote origin (${it.removePrefix(OTHER_ORIGIN_MARKER).trim().take(200)}): отправьте ветку сами или уберите его"
+        }
+        val text = output.joinToString("\n")
+        return when {
+            "could not read Username" in text || "Authentication failed" in text || "terminal prompts disabled" in text ->
+                "Git на target не вошёл в GitHub: репозиторий создан, отправьте ветку $BRANCH там (git push -u origin $BRANCH) или настройте вход"
+            "Permission" in text && "denied" in text || "403" in text ->
+                "GitHub не принял отправку: токену нужна запись содержимого (Contents: write)"
+            else -> "ветка не отправлена: " + output.filter { it.isNotBlank() }.takeLast(4).joinToString(" ").take(400)
+        }
+    }
+
     /** Отказ Git словами: автор не задан — подсказка вписать его в мастере. */
     fun gitProblem(output: String): String =
         if ("Please tell me who you are" in output || "Author identity unknown" in output || "empty ident" in output) {

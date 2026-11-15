@@ -68,6 +68,9 @@ class DpmetaActivity : PultActivity() {
 
     override fun linuxIntent(): Intent = MainActivity.settings(this, "linux")
 
+    override fun publishPush(projectId: String, url: String, token: com.dpsmpx.dpai.core.diagnostics.Secret): Outcome<String> =
+        com.dpsmpx.dpai.android.PultProjects.publish(applicationContext, projectId, url, token)
+
     override fun openProjectIntent(id: String): Intent? {
         val pid = com.dpsmpx.dpai.core.ids.IdKinds.PROJECT.parse(id).valueOrNull() ?: return null
         if (com.dpsmpx.dpai.android.Controller.get(filesDir).selectProject(pid) is Outcome.Failure) return null

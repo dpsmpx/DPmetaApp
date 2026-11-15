@@ -161,3 +161,27 @@ class NewProjectTest {
 private object FileTreePaths {
     fun valid(path: String): Boolean = com.dpsmpx.dpai.files.FileNames.pathValid(path)
 }
+
+class NewProjectPublishTest {
+    @Test
+    fun publishTakesOnlyGitHubAddressesAsArguments() {
+        val url = "https://github.com/example/hello-app.git"
+        val argv = assertNotNull(NewProject.publish(TargetPlatform.POSIX, "/root/projects/local/hello-app", url))
+        assertEquals(listOf("dpai-publish", "/root/projects/local/hello-app", url), argv.drop(3))
+        assertTrue("GIT_TERMINAL_PROMPT=0" in argv[2] && "push -u origin main" in argv[2])
+        for (bad in listOf("http://github.com/a/b.git", "https://github.com/a/b", "https://evil.example/a/b.git", "https://github.com/a/b.git; rm -rf /", "https://github.com/-a/b.git")) {
+            assertNull(NewProject.publish(TargetPlatform.POSIX, "/r", bad), bad)
+        }
+        val win = assertNotNull(NewProject.publish(TargetPlatform.WINDOWS, "C:/p/it's", url))
+        val script = Base64.getDecoder().decode(win.last()).toString(Charsets.UTF_16LE)
+        assertTrue("'C:/p/it''s'" in script && "GCM_INTERACTIVE = 'never'" in script, script)
+    }
+
+    @Test
+    fun publishOutcomeInWords() {
+        assertNull(NewProject.publishProblem(listOf("To https://github.com/x/y.git", NewProject.PUSHED_MARKER)))
+        assertTrue("уже есть remote" in NewProject.publishProblem(listOf("${NewProject.OTHER_ORIGIN_MARKER} https://gitlab.example/x.git"))!!)
+        assertTrue("не вошёл" in NewProject.publishProblem(listOf("fatal: could not read Username for 'https://github.com': terminal prompts disabled"))!!)
+        assertTrue("Contents: write" in NewProject.publishProblem(listOf("remote: Permission to x/y.git denied to bot."))!!)
+    }
+}

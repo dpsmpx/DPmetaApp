@@ -185,6 +185,13 @@ open class PultActivity : ComponentActivity() {
     /** Выбрать рабочий проект [id] и открыть его в IDE; не на главном потоке. */
     protected open fun openProjectIntent(id: String): Intent? = null
 
+    /**
+     * Отправить ветку рабочего проекта [projectId] в новый репозиторий [url] (D-150): Git
+     * проекта на его target; не на главном потоке. Нет подсистемы — отказ.
+     */
+    protected open fun publishPush(projectId: String, url: String, token: Secret): Outcome<String> =
+        Outcome.failure(DiagCode.UNSUPPORTED, "отправки ветки здесь нет", projectId)
+
     /** «Linux приложения» в «Настройках AI» (окно знакомства, D-150); `null` — подсистемы нет. */
     protected open fun linuxIntent(): Intent? = null
 
@@ -692,6 +699,38 @@ open class PultActivity : ComponentActivity() {
         }
 
         override fun repo(project: String, done: (Outcome<com.dpsmpx.dpmeta.model.RepoRef>) -> Unit) = run({ repo.repoFor(it, project) }, done)
+
+        override fun viewer(done: (Outcome<String>) -> Unit) = run({ repo.viewer(it) }, done)
+
+        /**
+         * «Опубликовать» (D-150): окно экрана — подтверждение уровня 1; репозиторий — через
+         * политику и журнал действий (D-07), затем ветка — Git проекта. Репозиторий уже есть
+         * (повтор после неудачной отправки) — создаётся не второй раз, а только отправка.
+         */
+        override fun publish(project: com.dpsmpx.dpmeta.app.screens.Screens.LocalProject, name: String, done: (Outcome<com.dpsmpx.dpmeta.app.screens.PublishActions.Published>) -> Unit) =
+            run({ token ->
+                val login = when (val v = repo.viewer(token)) {
+                    is Outcome.Failure -> return@run v
+                    is Outcome.Success -> v.value
+                }
+                val ref = when (val r = com.dpsmpx.dpmeta.model.RepoRef.of(login, name)) {
+                    is Outcome.Failure -> return@run r
+                    is Outcome.Success -> r.value
+                }
+                val c = com.dpsmpx.dpmeta.app.screens.PublishActions.command(ref, project)
+                val link = when (val r = repo.act(token, c, { it.shown(c) })) {
+                    is Outcome.Success -> r.value.link.also { debugLog("действия", "${c.kind.code} ${c.target.display} ур.${c.level.code}: готово") }
+                    // Повтор после неудачной отправки: репозиторий пуст — только отправка; иначе — отказ создания как есть.
+                    is Outcome.Failure -> if (repo.awaitsFirstPush(token, ref, "main")) "https://github.com/$ref" else {
+                        debugLog("действия", "${c.kind.code} ${c.target.display} ур.${c.level.code}: ${r.errors.first().code}")
+                        return@run r
+                    }
+                }
+                when (val p = publishPush(project.id, com.dpsmpx.dpmeta.app.screens.PublishActions.url(ref), token)) {
+                    is Outcome.Failure -> Outcome.failure(p.errors.first().code, "репозиторий $ref есть; " + p.errors.first().message, "$ref")
+                    is Outcome.Success -> Outcome.success(com.dpsmpx.dpmeta.app.screens.PublishActions.Published(link, "Опубликовано: $ref, ${p.value}."))
+                }
+            }, done)
 
         override fun editable(project: String, path: String, done: (Outcome<com.dpsmpx.dpmeta.app.screens.EditActions.Edit>) -> Unit) =
             run({ repo.editable(it, project, path) }, done)

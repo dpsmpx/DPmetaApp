@@ -185,6 +185,32 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
         return call("POST", "repos/$repo/issues", payload, "$repo").then { link(it) }
     }
 
+    /** Логин владельца токена — владелец репозитория, который создаст [createRepository] (D-150). */
+    fun viewer(): Outcome<String> = call("GET", "user", null, "github").then { v ->
+        (v as? JsonObject)?.let { str(it, "login") }?.let { Outcome.success(it) }
+            ?: Outcome.failure(DiagCode.CONNECTOR_REPLY_INVALID, "GitHub не назвал владельца токена", "github")
+    }
+
+    /**
+     * Закрытый репозиторий [repo] от имени владельца токена (D-150, «Опубликовать»): пустой,
+     * без README — ветку отправит Git проекта. Владелец в ответе не тот, что в [repo], —
+     * отказ: репозиторий создан не там, где показывали.
+     */
+    fun createRepository(repo: RepoRef, description: String): Outcome<Written> {
+        val payload = JsonObject.of(
+            "name" to JsonString(repo.name), "private" to JsonBool(true), "auto_init" to JsonBool(false),
+            "description" to JsonString(description.take(300)),
+        )
+        return call("POST", "user/repos", payload, "$repo").then { v ->
+            val full = (v as? JsonObject)?.let { str(it, "full_name") }
+            if (full != null && !full.equals(repo.toString(), ignoreCase = true)) {
+                Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "GitHub создал $full, а не $repo", "$repo")
+            } else {
+                link(v)
+            }
+        }
+    }
+
     /**
      * Файл для правки (F-69): текст UTF-8 и SHA блоба на ветке [ref]. Каталог, двоичный
      * файл или больше [MAX_EDIT_BYTES] — отказ: правка с телефона — для текстов процесса.

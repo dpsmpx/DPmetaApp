@@ -34,6 +34,9 @@ enum class ActionKind(val code: String, val level: ActionLevel, val what: String
     /** Команда реестра уровня 1 (F-40, D-82): правка рабочего дерева клона в Linux-среде. */
     COMMAND_RUN("command.run", ActionLevel.REVERSIBLE, "команда реестра — правка рабочего дерева клона", Named.REPOSITORY),
 
+    /** «Опубликовать на GitHub» (D-150): закрытый репозиторий для проекта с устройства. */
+    REPO_CREATE("repo.create", ActionLevel.REVERSIBLE, "новый закрытый репозиторий для проекта с устройства", Named.REPOSITORY),
+
     // --- уровень 2: значимое (D-07, D-36) ---
     PR_MERGE("pr.merge", ActionLevel.SIGNIFICANT, "влить PR без перезаписи истории", Named.REPOSITORY),
     PR_CLOSE("pr.close", ActionLevel.SIGNIFICANT, "закрыть PR", Named.REPOSITORY),

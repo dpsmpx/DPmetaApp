@@ -5165,7 +5165,13 @@ wrapper из APK), команды (`commands`: профили BUILD и CHECK, `R
 `gitInit` на target, рабочий проект через `ProjectForm` и
 `Controller.putProject`, профили — `ManualProfiles`. У проекта есть
 слот ИИ (`ProjectForm`: каталог Claude на target): в Linux приложения
-мастер добавляет слот, если его нет (`addInApp`).
+мастер добавляет слот, если его нет (`addInApp`). «Опубликовать»:
+`NewProject.publish` — remote `origin` (только
+`https://github.com/<владелец>/<имя>.git`, аргументом; адрес сверяется
+как записан, без подмен `insteadOf`) и `git push -u origin main` без
+вопросов в терминале; токен — в окружение одного процесса гостя через
+`GuestSecrets` (новых мест `reveal()` нет); мост пульта —
+`PultProjects.publish`.
 **Почему.** DPmetaApp:D-150.
 **Проверка.** `NewProjectTest`; шаблоны C++, Python и kotlinc собраны
 своими командами (описание PR); на телефоне — DPmetaApp:TODO.md.
