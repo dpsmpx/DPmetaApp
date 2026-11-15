@@ -122,6 +122,8 @@ fun FilesPane(onLinux: () -> Unit = {}, model: DemoModel? = null, onSession: (St
     val uiReady by IdeState.ready.collectAsState()
     if (!uiReady) { CircularProgressIndicator(Modifier.padding(12.dp)); return }
     var projectOpen by rememberSaveable { mutableStateOf(IdeState.state.value.lastPlace?.startsWith("workspace\u0001") == true) }
+    val workspaceRequest by IdeState.workspaceRequest.collectAsState()
+    LaunchedEffect(workspaceRequest) { if (workspaceRequest) { projectOpen = true; IdeState.workspaceRequest.value = false } }
     var draftsOpen by remember { mutableStateOf(false) }
     if (draftsOpen) FileDraftsDialog { draftsOpen = false }
     val workspaceState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
@@ -187,6 +189,10 @@ fun FilesPane(onLinux: () -> Unit = {}, model: DemoModel? = null, onSession: (St
     LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (model != null) item {
             androidx.compose.material3.OutlinedButton(onClick = { projectOpen = true }, Modifier.fillMaxWidth()) { Text("Рабочий проект") }
+        }
+        // Новый проект — C++, Kotlin или Python, локальный Git без GitHub (DPmetaApp:D-150).
+        if (model != null) item {
+            androidx.compose.material3.OutlinedButton(onClick = { NewProjectRequests.request() }, Modifier.fillMaxWidth()) { Text("Новый проект…") }
         }
         item { TextButton(onClick = { draftsOpen = true }) { Text("Черновики файлов в памяти") } }
         item {

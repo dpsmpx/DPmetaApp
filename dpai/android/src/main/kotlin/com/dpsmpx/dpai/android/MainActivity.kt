@@ -17,7 +17,7 @@ import androidx.activity.enableEdgeToEdge
  * подтверждения на экране (D-44). Экран забирает и очищает.
  */
 /** Что пришло в окно «AI»: ссылка, подтверждение, остановка или вкладка ([tab] — имя `AiTab`, пункт панели приложения, D-112). */
-data class Incoming(val link: String? = null, val confirm: String? = null, val stop: Boolean = false, val tab: String? = null, val settings: Boolean = false, val settingsSub: String? = null)
+data class Incoming(val link: String? = null, val confirm: String? = null, val stop: Boolean = false, val tab: String? = null, val settings: Boolean = false, val settingsSub: String? = null, val newProject: Boolean = false)
 
 /** Единственная activity: экраны — Compose (D-34), данные — контроллер или демо (D-35). */
 class MainActivity : ComponentActivity() {
@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
             OPEN_TAB -> intent.getStringExtra(EXTRA_TAB)?.let { incoming.value = Incoming(tab = it) }
             // Подэкран — только из известного списка: чужая строка открывает корень настроек.
             OPEN_SETTINGS -> incoming.value = Incoming(settings = true, settingsSub = intent.getStringExtra(EXTRA_SUB)?.takeIf { it in SETTINGS_SUBS })
+            NEW_PROJECT -> incoming.value = Incoming(tab = com.dpsmpx.dpai.ui.AiTab.FILES.name, newProject = true)
         }
     }
 
@@ -109,6 +110,11 @@ class MainActivity : ComponentActivity() {
         /** [sub] — подэкран («Linux в приложении», «Журнал»…): `null` — корень настроек. */
         fun settings(context: Context, sub: String? = null): Intent =
             internal(context).setAction(OPEN_SETTINGS).putExtra(EXTRA_SUB, sub).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+
+        /** Мастер нового проекта (DPmetaApp:D-150): из пульта и окна знакомства — поверх IDE. */
+        const val NEW_PROJECT = "com.dpsmpx.dpai.NEW_PROJECT"
+
+        fun newProject(context: Context): Intent = internal(context).setAction(NEW_PROJECT).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
 
         /** Пункт «IDE» левой панели приложения: «Файлы» — дерево, редактор и терминал проекта. */
         fun ide(context: Context): Intent = tab(context, com.dpsmpx.dpai.ui.AiTab.FILES)

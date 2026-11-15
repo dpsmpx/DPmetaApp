@@ -352,7 +352,11 @@ private fun ProjectsCard(controller: Controller, model: DemoModel, targets: List
     var failed by remember { mutableStateOf<String?>(null) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
-            Text("Рабочие проекты", style = MaterialTheme.typography.titleMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Рабочие проекты", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                // Новый проект мастером — без GitHub (DPmetaApp:D-150).
+                TextButton(onClick = { NewProjectRequests.request() }) { Text("Новый…") }
+            }
             if (projects.projects.isEmpty()) {
                 Text("Нет: задачи идут в каталоге агента, без Git и проверки. Задайте у target с репозиторием: ⋮ → «Проект…».", style = MaterialTheme.typography.bodySmall)
             } else {

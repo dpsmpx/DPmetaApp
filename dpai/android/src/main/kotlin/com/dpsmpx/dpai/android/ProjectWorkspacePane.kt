@@ -61,7 +61,9 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
             TextButton(onClick = onClose) { Text("← Файлы") }
             if (!loaded) CircularProgressIndicator() else {
                 Text("Рабочий проект не настроен")
-                TextButton(onClick = onTargets) { Text("Настроить проект в Targets") }
+                // Новый — мастером, без GitHub (DPmetaApp:D-150); существующий репозиторий — в Targets.
+                androidx.compose.material3.Button(onClick = { NewProjectRequests.request() }) { Text("Создать проект…") }
+                TextButton(onClick = onTargets) { Text("Подключить существующий в Targets") }
             }
         }
         return

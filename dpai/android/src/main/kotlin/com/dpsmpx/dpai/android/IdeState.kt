@@ -76,6 +76,9 @@ internal object IdeState {
 
     val jump = MutableStateFlow<Jump?>(null)
 
+    /** Открыть «Рабочий проект» во вкладке «Файлы» (мастер нового проекта, DPmetaApp:D-150). */
+    val workspaceRequest = MutableStateFlow(false)
+
     fun jumpTo(root: String, path: String, line: Int) { jump.value = Jump(root, path, line.coerceAtLeast(1)) }
 
     /** Забрать запрос своего корня; чужой остаётся ждать свою панель. */

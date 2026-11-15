@@ -141,24 +141,34 @@ val linuxFiles = tasks.register("linuxFiles") {
     }
 }
 
+// Мастер нового проекта (DPmetaApp:D-150; D-181): Gradle wrapper шаблонов — тот же, что у этой сборки,
+// копией в assets/newproject; в репозиторий второй копии не кладётся.
+val newProjectAssets = tasks.register<Sync>("newProjectAssets") {
+    from(rootProject.file("gradlew"))
+    from(rootProject.file("gradlew.bat"))
+    from(rootProject.file("gradle/wrapper")) { include("gradle-wrapper.jar", "gradle-wrapper.properties") }
+    into(layout.buildDirectory.dir("generated/new-project-assets/newproject"))
+}
+
 // addGeneratedSourceDirectory у ресурсов assets задачу в граф не включал (AGP, 9 октября 2026) — каталоги и
 // зависимость слияния заданы явно.
 androidComponents {
     onVariants { v ->
         v.sources.assets?.addStaticSourceDirectory(layout.buildDirectory.dir("generated/dpai-setup-assets").get().asFile.path)
         v.sources.assets?.addStaticSourceDirectory(layout.buildDirectory.dir("generated/linux-assets").get().asFile.path)
+        v.sources.assets?.addStaticSourceDirectory(layout.buildDirectory.dir("generated/new-project-assets").get().asFile.path)
         v.sources.jniLibs?.addStaticSourceDirectory(layout.buildDirectory.dir("generated/linux-jni").get().asFile.path)
     }
 }
 // Каталоги читают слияние и упаковка ресурсов и библиотек и lint (generate…LintReportModel и др.) — все
 // зависят от задач явно; у библиотеки ресурсы упаковывает package…Assets, библиотеки — copy…JniLibs….
 tasks.matching {
-    it.name != packAgent.name && it.name != linuxFiles.name && (
+    it.name != packAgent.name && it.name != linuxFiles.name && it.name != newProjectAssets.name && (
         (it.name.startsWith("merge") || it.name.startsWith("package") || it.name.startsWith("copy")) &&
             (it.name.endsWith("Assets") || it.name.contains("JniLib") || it.name.endsWith("NativeLibs")) ||
             it.name.contains("lint", ignoreCase = true)
         )
-}.configureEach { dependsOn(packAgent, linuxFiles) }
+}.configureEach { dependsOn(packAgent, linuxFiles, newProjectAssets) }
 
 // Тот же код C — для машины сборки: JniProcessesTest гоняет его на JVM. Нет Linux или компилятора C —
 // задача пропускается, а тест — с пометкой «пропущен» (на телефоне — docs/DEVICE_CHECK.md).
