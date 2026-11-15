@@ -525,6 +525,9 @@ fun PultApp(
     /** «Открыть PR» из уведомления (D-152): проект и номер — карточка PR; [onPullOpened] — сбросить. */
     openPull: Pair<String, Int>? = null,
     onPullOpened: () -> Unit = {},
+    /** «Ответ готов» из уведомления (F-58; D-161): открыть чат «Спросить Claude»; [onAskOpened] — сбросить. */
+    openAsk: Boolean = false,
+    onAskOpened: () -> Unit = {},
     onGoTo: () -> Unit = {},
     onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null,
     /** «Клоны…» в настройках (D-70). */
@@ -578,6 +581,12 @@ fun PultApp(
         devTab = DevTab.PULLS
         stacks[Section.DEV] = listOf(Nav.Pull(project, number))
         onPullOpened()
+    }
+    LaunchedEffect(openAsk) {
+        if (!openAsk) return@LaunchedEffect
+        tab = Section.MORE
+        stacks[Section.MORE] = listOf(Nav.Ask(null, null))
+        onAskOpened()
     }
     val stack = stacks[tab].orEmpty()
     val open: (Nav) -> Unit = { stacks[tab] = stacks[tab].orEmpty() + it }

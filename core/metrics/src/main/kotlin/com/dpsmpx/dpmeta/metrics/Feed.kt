@@ -38,6 +38,7 @@ object Feed {
         "pr.closed" to "PR закрыт",
         "decision" to "новое решение",
         "roadmap" to "шаг ROADMAP",
+        "routine" to "запуск маршрута",
     )
 
     /** Типы каталога событий (§8.1; D-85) для видов ленты: вид ленты — хранимый код, тип — для правил тревог. */
@@ -48,6 +49,7 @@ object Feed {
         "pr.closed" to "pr.closed",
         "decision" to "decision.new",
         "roadmap" to "roadmap.step.done",
+        "routine" to "claude.routine.fired",
     )
 
     /** Событие ленты — событием каталога для движка тревог; вид без типа — `null`. Предмет — текст события. */
@@ -61,7 +63,11 @@ object Feed {
 
     private fun long(o: JsonObject?, k: String) = (o?.get(k) as? JsonNumber)?.toLongExact()
 
-    fun diff(previous: EcosystemState?, next: EcosystemState): List<FeedEvent> {
+    /**
+     * [routes] — сессии запусков маршрутов из пульта (id `session_…` → имя маршрута, F-58;
+     * D-161): новый PR, в описании которого ссылка на такую сессию, — «PR #N от маршрута».
+     */
+    fun diff(previous: EcosystemState?, next: EcosystemState, routes: Map<String, String> = emptyMap()): List<FeedEvent> {
         if (previous == null) return emptyList()
         val out = mutableListOf<FeedEvent>()
         for (p in next.projects) {
@@ -78,7 +84,12 @@ object Feed {
                 val was = objects(payload(before, "pulls"), "pulls").associateBy { long(it, "number") }
                 val now = objects(payload(p, "pulls"), "pulls").associateBy { long(it, "number") }
                 val merged = objects(payload(p, "merged"), "pulls").associateBy { long(it, "number") }
-                for ((n, o) in now) if (n !in was) out += FeedEvent(long(o, "updatedAt")?.let(::Timestamp) ?: at("pulls"), p.name, "pr.opened", "PR #$n открыт: ${str(o, "title").orEmpty()}")
+                for ((n, o) in now) {
+                    if (n in was) continue
+                    val route = str(o, "session")?.let(routes::get)
+                    val head = if (route != null) "PR #$n от маршрута «$route»" else "PR #$n открыт"
+                    out += FeedEvent(long(o, "updatedAt")?.let(::Timestamp) ?: at("pulls"), p.name, "pr.opened", "$head: ${str(o, "title").orEmpty()}")
+                }
                 for ((n, o) in was) {
                     if (n in now) continue
                     val m = merged[n]

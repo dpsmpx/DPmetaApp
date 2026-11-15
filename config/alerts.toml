@@ -111,6 +111,21 @@ action = "notify"
 importance = "high"
 quiet = false
 
+# Ответ чата «Спросить Claude» дописан, пока приложение в фоне (F-58; D-161): только «Ответ готов».
+[[rule]]
+id = "chat.done"
+title = "Ответ чата готов"
+on = "chat.answer.done"
+action = "notify"
+
+# PR, который открыла сессия запуска маршрута из пульта (F-58; D-161); сам запуск — только в ленте.
+[[rule]]
+id = "routine.pr"
+title = "PR от запуска маршрута"
+on = "pr.opened"
+regex = "^PR #[0-9]+ от маршрута"
+action = "notify"
+
 # Слушатель уведомлений (F-57; D-155): сам выключен по умолчанию; включили — уведомления Claude идут сюда.
 [[rule]]
 id = "app.claude"

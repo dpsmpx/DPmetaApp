@@ -58,6 +58,9 @@ import kotlinx.coroutines.flow.StateFlow
 object PultAlerts {
     const val EVENTS_ASSET = "events.toml"
     const val ALERTS_ASSET = "alerts.toml"
+
+    /** Ответ чата дописан, пока приложение в фоне (F-58; D-161): касание уведомления — в чат. */
+    const val CHAT_DONE = "chat.answer.done"
     const val SHOWN_FORMAT = "dpmeta.alerts-shown"
     private const val SHOWN = "alerts-shown.json"
     private const val PREFS = "dpmeta.settings"
@@ -302,6 +305,7 @@ object PultAlerts {
             d.tag, channel(manager, d.channel, d.importance), listOfNotNull(d.event.project, typeTitle).joinToString(": "), d.event.text, typeTitle,
             d.event.at.epochMillis, "dpmeta.alert.${d.rule.id}", d.event.project.takeIf { pull != null }, pull,
             url = com.dpsmpx.dpmeta.notify.PushEvents.sessionUrl(d.event),
+            ask = d.event.type == CHAT_DONE,
         )
         return present(context, card, d.silent)
     }
@@ -316,7 +320,14 @@ object PultAlerts {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return@synchronized false
         val open = context.packageManager.getLaunchIntentForPackage(context.packageName)
             ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-        val pending = open?.let { PendingIntent.getActivity(context, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT) }
+        // «Ответ готов» (F-58): касание — сразу в чат; свой код запроса, чтобы не подменить общий.
+        val pending = open?.let {
+            if (card.ask) {
+                PendingIntent.getActivity(context, 1, Intent(it).putExtra(com.dpsmpx.dpmeta.app.PultActivity.EXTRA_ASK, true), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            } else {
+                PendingIntent.getActivity(context, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            }
+        }
         // Экран блокировки (T-08): только вид события — без проекта и текста.
         val public = NotificationCompat.Builder(context, card.channel)
             .setSmallIcon(R.drawable.ic_pult_summary)

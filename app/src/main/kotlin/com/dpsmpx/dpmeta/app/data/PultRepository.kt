@@ -244,6 +244,25 @@ class PultRepository(
         actions.run(command, confirm(actions)) { com.dpsmpx.dpmeta.app.screens.RouteActions.execute(command, text, fire) }
 
     /**
+     * Запуск маршрута состоялся (F-58; D-161): строка «запуск маршрута» — в ленту, событие
+     * `claude.routine.fired` — вызывающему для правил тревог. Запуски за час — по журналу,
+     * уже с этим. Лента не записалась — событие всё равно отдаётся: запуск был.
+     */
+    fun routineFired(
+        command: com.dpsmpx.dpmeta.actions.ActionCommand,
+        link: String?,
+        routes: List<com.dpsmpx.dpmeta.app.screens.RouteActions.Route>,
+    ): com.dpsmpx.dpmeta.model.Event {
+        val now = clock.now()
+        val route = routes.firstOrNull { it.id == command.params["route_id"] }
+        val count = route?.let { com.dpsmpx.dpmeta.app.screens.RouteActions.firedLastHour(actionLog.entries().valueOrNull().orEmpty(), routes, it, now) }
+            ?: com.dpsmpx.dpmeta.app.screens.RouteActions.HourCount(1, null)
+        val (feed, event) = com.dpsmpx.dpmeta.app.screens.RouteActions.fired(command, route, link, count, now)
+        store.appendFeed(listOf(feed))
+        return event
+    }
+
+    /**
      * Реестр проектов для команд (D-82): прочитанный при синхронизации, иначе — из клона
      * DPmetaApp, без сети и токена.
      */
@@ -568,7 +587,8 @@ class PultRepository(
         val state = EcosystemState.derive(reg, result.observations, result.failures + cloned.failures + carried, previous, clock.now())
         store.writeState(state).let { if (it is Outcome.Failure) return it }
         store.appendHistory(state.points()).let { if (it is Outcome.Failure) return it }
-        val fresh = Feed.diff(previous, state)
+        // PR от запусков маршрутов из пульта (F-58; D-161) — по сессиям в журнале действий.
+        val fresh = Feed.diff(previous, state, com.dpsmpx.dpmeta.app.screens.RouteActions.sessions(actionLog.entries().valueOrNull().orEmpty()))
         store.appendFeed(fresh).let { if (it is Outcome.Failure) return it }
         etags.save()
         val s = net.stats

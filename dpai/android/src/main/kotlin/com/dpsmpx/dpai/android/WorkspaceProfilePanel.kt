@@ -65,6 +65,9 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
     // Параметры и окружение (D-183): текстом, по строке; выбор вариантов — к запуску, помнится по проекту.
     var paramsText by rememberSaveable(view.project.project.value, kind.name) { mutableStateOf("") }
     var envText by rememberSaveable(view.project.project.value, kind.name) { mutableStateOf("") }
+    // Что профилю нужно на target (D-186): коды через запятую — переживают поворот.
+    var needsText by rememberSaveable(view.project.project.value, kind.name) { mutableStateOf("") }
+    val needs = needsText.split(',').mapNotNull { com.dpsmpx.dpai.ui.ManualNeed.of(it) }.toSet()
     var choices by remember(view.project, kind) { mutableStateOf<Map<String, String>>(emptyMap()) }
     var loaded by remember(view.project, kind) { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
@@ -83,6 +86,7 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
                     if (artifactsText.isBlank()) artifactsText = p.artifacts.joinToString(" ")
                     if (paramsText.isBlank()) paramsText = com.dpsmpx.dpai.ui.ManualVars.paramsText(p.params)
                     if (envText.isBlank()) envText = com.dpsmpx.dpai.ui.ManualVars.envText(p.env)
+                    if (needsText.isBlank()) needsText = p.needs.joinToString(",") { it.code }
                 }
             }
         }
@@ -95,7 +99,7 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
             is Outcome.Failure -> return g
             is Outcome.Success -> g.value
         }
-        return ManualProfile.form(kind, rows.map { Triple(it.name, it.command, it.timeout) }, globs, paramsText, envText)
+        return ManualProfile.form(kind, rows.map { Triple(it.name, it.command, it.timeout) }, globs, paramsText, envText, needs)
     }
     Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
         Text(if (kind == ManualProfileKind.CHECK) "Ручная проверка" else "Ручная сборка", style = MaterialTheme.typography.titleSmall)
@@ -129,6 +133,15 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
             label = { Text("Параметры: по строке ИМЯ | подпись | вариант, вариант") }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = envText, onValueChange = { envText = it.take(8000) }, enabled = editable,
             label = { Text("Окружение шагов: по строке ИМЯ=значение, без секретов") }, modifier = Modifier.fillMaxWidth())
+        Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+            Text("Нужно на target:", style = MaterialTheme.typography.bodySmall)
+            for (n in com.dpsmpx.dpai.ui.ManualNeed.entries) androidx.compose.material3.FilterChip(
+                selected = n in needs, enabled = editable,
+                onClick = { needsText = (if (n in needs) needs - n else needs + n).joinToString(",") { it.code } },
+                label = { Text(n.title) },
+            )
+        }
+        Text("В Linux приложения нужное проверяется до запуска, ANDROID_HOME подставляется сам; на ПК — его SDK.", style = MaterialTheme.typography.bodySmall)
         Text("В командах и окружении: \${PROJECT}, \${ROOT}, \${TREE}, \${BRANCH}, \${TARGET} и свои \${ИМЯ}; сам знак \${ — \$\${.",
             style = MaterialTheme.typography.bodySmall)
         // Выбор вариантов к запуску (D-183): первый — по умолчанию, последний выбор помнится.

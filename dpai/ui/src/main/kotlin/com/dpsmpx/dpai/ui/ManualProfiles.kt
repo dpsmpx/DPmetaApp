@@ -38,14 +38,27 @@ data class ManualStep(val name: String, val command: List<String>, val timeoutSe
  * Ручной профиль CHECK/BUILD (D-134, D-154): шаги выполняются по порядку в одном
  * дереве, следующий — только после кода 0 предыдущего. Формат
  * `dpai.manual-profile` v2; v1 (одна команда) читается как один шаг; v3 — ещё
- * свои параметры [params] и окружение шагов [env] (D-183), пишется только с ними.
+ * свои параметры [params] и окружение шагов [env] (D-183), пишется только с ними; v4 — ещё
+ * [needs]: что профилю нужно на target (Android SDK, NDK; D-186), пишется только с ним.
  */
+/** Что профилю нужно на target (D-186): проверяется перед запуском в Linux приложения. */
+enum class ManualNeed(val code: String, val title: String) {
+    ANDROID_SDK("android-sdk", "Android SDK"),
+    ANDROID_NDK("android-ndk", "Android NDK"),
+    ;
+
+    companion object {
+        fun of(code: String?): ManualNeed? = entries.firstOrNull { it.code == code }
+    }
+}
+
 data class ManualProfile(
     val kind: ManualProfileKind,
     val steps: List<ManualStep>,
     val artifacts: List<String> = emptyList(),
     val params: List<ManualParam> = emptyList(),
     val env: List<Pair<String, String>> = emptyList(),
+    val needs: Set<ManualNeed> = emptySet(),
 ) {
     /** [artifacts] — шаблоны путей артефактов от корня дерева (D-157); их смысл проверяет `files.TreeArtifacts`, здесь — только пределы. */
     val valid: Boolean get() = steps.size in 1..MAX_STEPS && steps.all { it.valid } &&
@@ -68,18 +81,20 @@ data class ManualProfile(
             s.copy(command = s.command.map { a -> when (val r = ManualVars.substitute(a, all)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value } })
         }
         val env = env.map { (n, v) -> n to when (val r = ManualVars.substitute(v, all)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value } }
-        val out = ManualProfile(kind, steps, artifacts, emptyList(), env)
+        val out = ManualProfile(kind, steps, artifacts, emptyList(), env, needs)
         return if (out.valid) Outcome.success(out) else Outcome.failure(DiagCode.VALUE_INVALID, "после подстановки профиль выходит за пределы: длина команды или значения")
     }
 
     fun toJson(): JsonObject {
         val v3 = params.isNotEmpty() || env.isNotEmpty()
-        val m = linkedMapOf<String, com.dpsmpx.dpai.core.serialization.JsonValue>("format" to JsonString(FORMAT), "version" to JsonNumber.of(if (v3) 3 else 2),
+        val version = when { needs.isNotEmpty() -> 4; v3 -> 3; else -> 2 }
+        val m = linkedMapOf<String, com.dpsmpx.dpai.core.serialization.JsonValue>("format" to JsonString(FORMAT), "version" to JsonNumber.of(version),
             "kind" to JsonString(kind.name),
             "steps" to JsonArray(steps.map { JsonObject.of("name" to JsonString(it.name), "command" to JsonArray(it.command.map(::JsonString)), "timeout" to JsonNumber.of(it.timeoutSeconds)) }))
         if (artifacts.isNotEmpty()) m["artifacts"] = JsonArray(artifacts.map(::JsonString))
         if (params.isNotEmpty()) m["params"] = JsonArray(params.map { JsonObject.of("name" to JsonString(it.name), "title" to JsonString(it.title), "choices" to JsonArray(it.choices.map(::JsonString))) })
         if (env.isNotEmpty()) m["env"] = JsonArray(env.map { JsonObject.of("name" to JsonString(it.first), "value" to JsonString(it.second)) })
+        if (needs.isNotEmpty()) m["needs"] = JsonArray(ManualNeed.entries.filter { it in needs }.map { JsonString(it.code) })
         return JsonObject(m)
     }
 
@@ -101,6 +116,7 @@ data class ManualProfile(
             artifacts: List<String> = emptyList(),
             paramsText: String = "",
             envText: String = "",
+            needs: Set<ManualNeed> = emptySet(),
         ): Outcome<ManualProfile> {
             val params = when (val r = ManualVars.parseParams(paramsText)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
             val env = when (val r = ManualVars.parseEnv(envText)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
@@ -115,7 +131,7 @@ data class ManualProfile(
                 }
                 step
             }
-            val profile = ManualProfile(kind, steps, artifacts, params, env)
+            val profile = ManualProfile(kind, steps, artifacts, params, env, needs)
             if (!profile.valid) return Outcome.failure(DiagCode.VALUE_INVALID, "шаблонов артефактов — не больше $MAX_ARTIFACTS, каждый — без пробелов, до 300 знаков")
             profile.unknownNames.takeIf { it.isNotEmpty() }?.let { names ->
                 return Outcome.failure(DiagCode.VALUE_INVALID, "нет параметров ${names.sorted().joinToString { "\${$it}" }}: встроенные — ${ManualVars.BUILT_IN.joinToString()}, свои — в поле «Параметры»")
@@ -132,7 +148,7 @@ data class ManualProfile(
                     val argv = (o["command"] as? JsonArray)?.items?.map { (it as? JsonString)?.value ?: return null } ?: return null
                     listOf(ManualStep(ManualStep.DEFAULT_NAME, argv, o.number("timeout") ?: return null))
                 }
-                2L, 3L -> ((o["steps"] as? JsonArray)?.items ?: return null).map { v ->
+                2L, 3L, 4L -> ((o["steps"] as? JsonArray)?.items ?: return null).map { v ->
                     val so = v as? JsonObject ?: return null
                     val argv = (so["command"] as? JsonArray)?.items?.map { (it as? JsonString)?.value ?: return null } ?: return null
                     ManualStep(so.text("name") ?: return null, argv, so.number("timeout") ?: return null)
@@ -148,8 +164,11 @@ data class ManualProfile(
                 val eo = v as? JsonObject ?: return null
                 (eo.text("name") ?: return null) to (eo.text("value") ?: return null)
             }.orEmpty()
-            if (o.number("version") != 3L && (params.isNotEmpty() || env.isNotEmpty())) return null
-            return ManualProfile(kind, steps, artifacts, params, env).takeIf { it.valid }
+            val needs = (o["needs"] as? JsonArray)?.items?.map { v -> ManualNeed.of((v as? JsonString)?.value) ?: return null }?.toSet().orEmpty()
+            val version = o.number("version")
+            if (version != 3L && version != 4L && (params.isNotEmpty() || env.isNotEmpty())) return null
+            if (version != 4L && needs.isNotEmpty() || version == 4L && needs.isEmpty()) return null
+            return ManualProfile(kind, steps, artifacts, params, env, needs).takeIf { it.valid }
         }
 
         /** argv обратно в строку для поля: каждое слово в одинарных кавычках, если в нём есть что экранировать. */

@@ -22,6 +22,10 @@ extensions.configure<ApplicationExtension> {
             storePassword = releaseKey.getValue("storePassword")
             keyAlias = releaseKey.getValue("keyAlias")
             keyPassword = releaseKey.getValue("keyPassword")
+            // Схема v3 (ТЗ, T-10; обзор угроз 15 ноября 2026): с ней ключ можно сменить ротацией, не теряя
+            // обновлений; v2 — для проверки установщиком. Ручная подпись (apksigner) и ApkSign — тоже v3.
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 
