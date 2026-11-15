@@ -68,6 +68,16 @@ android {
         resValue("string", "dpmeta_build_commit", buildCommit.get())
     }
 
+    // R8 (D-156): release — сжатие кода и ресурсов и оптимизация, без обфускации
+    // (proguard-rules.pro); debug для apk_debug — без R8, как был.
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
     // Предупреждения Lint — ошибки (CLAUDE.md, «Правила кода»). Код библиотек проверяет Lint своих
     // модулей по правилам их подсистем (пульт — :app, «AI» — dpai/android); здесь — модуль и
     // слитый манифест.
