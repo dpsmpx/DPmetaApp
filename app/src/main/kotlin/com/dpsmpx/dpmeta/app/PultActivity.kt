@@ -92,6 +92,8 @@ open class PultActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         coldStart = savedInstanceState == null
+        // Окно знакомства (D-150) — само только до первого закрытия.
+        if (!com.dpsmpx.dpmeta.app.ui.Intro.seen(this)) view.value = view.value.copy(intro = true)
         savedInstanceState?.getString(PENDING_PERIOD)?.let { p ->
             Stats.Period.entries.firstOrNull { it.name == p }?.let {
                 pending = Pending(savedInstanceState.getBoolean(PENDING_JSON), it, savedInstanceState.getLong(PENDING_AS_OF))
@@ -182,6 +184,9 @@ open class PultActivity : ComponentActivity() {
 
     /** Выбрать рабочий проект [id] и открыть его в IDE; не на главном потоке. */
     protected open fun openProjectIntent(id: String): Intent? = null
+
+    /** «Linux приложения» в «Настройках AI» (окно знакомства, D-150); `null` — подсистемы нет. */
+    protected open fun linuxIntent(): Intent? = null
 
     /** Версия подсистемы «AI» для «О программе» (UX-23, D-54); `null` — подсистемы нет. */
     protected open fun aiVersion(): String? = null
@@ -484,6 +489,11 @@ open class PultActivity : ComponentActivity() {
                     onBackground = ::backgroundChosen,
                     onNewProject = newProjectIntent()?.let { i -> { startActivity(i) } },
                     onOpenProject = { id -> pool.execute { openProjectIntent(id)?.let { i -> runOnUiThread { startActivity(i) } } } },
+                    onIntroSeen = {
+                        com.dpsmpx.dpmeta.app.ui.Intro.markSeen(this)
+                        view.value = view.value.copy(intro = false)
+                    },
+                    onLinux = linuxIntent()?.let { i -> { startActivity(i) } },
                 )
             }
         }

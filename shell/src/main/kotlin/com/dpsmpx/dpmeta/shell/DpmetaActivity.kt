@@ -66,6 +66,8 @@ class DpmetaActivity : PultActivity() {
 
     override fun newProjectIntent(): Intent = MainActivity.newProject(this)
 
+    override fun linuxIntent(): Intent = MainActivity.settings(this, "linux")
+
     override fun openProjectIntent(id: String): Intent? {
         val pid = com.dpsmpx.dpai.core.ids.IdKinds.PROJECT.parse(id).valueOrNull() ?: return null
         if (com.dpsmpx.dpai.android.Controller.get(filesDir).selectProject(pid) is Outcome.Failure) return null

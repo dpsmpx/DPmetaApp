@@ -256,6 +256,8 @@ data class PultView(
     val backgroundLine: String? = null,
     /** Рабочие проекты на устройстве (D-150) от оболочки; `null` — подсистемы «AI» нет. */
     val local: List<Screens.LocalProject>? = null,
+    /** Окно знакомства — само, при первом запуске (D-150). */
+    val intro: Boolean = false,
 )
 
 /**
@@ -529,6 +531,10 @@ fun PultApp(
     onNewProject: (() -> Unit)? = null,
     /** Открыть рабочий проект в IDE (D-150). */
     onOpenProject: (String) -> Unit = {},
+    /** Окно знакомства закрыто — больше само не открывается (D-150). */
+    onIntroSeen: () -> Unit = {},
+    /** Linux приложения в «Настройках AI»; `null` — подсистемы нет. */
+    onLinux: (() -> Unit)? = null,
 ) {
     // Пункт и стеки — rememberSaveable: поворот, тема и шрифт больше не сбрасывают место (UX-3).
     val context = LocalContext.current.applicationContext
@@ -542,6 +548,7 @@ fun PultApp(
     val stacks = rememberSaveable(saver = StacksSaver) { mutableStateMapOf() }
     // Поиск документа настроек по ссылке из справки («Настройки → тема»); пункт панели открывает его пустым.
     var settingsQuery by rememberSaveable { mutableStateOf("") }
+    var introOpen by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(goTo) {
         val to = goTo ?: return@LaunchedEffect
         tab = when (to) {
@@ -677,6 +684,8 @@ fun PultApp(
                         HelpLinks.IDE -> onIde?.invoke()
                         HelpLinks.AI -> onAi?.invoke(false)
                         HelpLinks.SETTINGS -> { settingsQuery = HelpLinks.query(url); tab = Section.MORE }
+                        HelpLinks.INTRO -> introOpen = true
+                        HelpLinks.NEW_PROJECT -> onNewProject?.invoke()
                     }
                 }
                 s == null && view.loading -> Text("Читаю срез…", style = MaterialTheme.typography.bodySmall)
@@ -725,6 +734,18 @@ fun PultApp(
     }
     }
     view.clonePrompt?.let { ClonesDialog(it, onClonesChosen, onDeleteClone, busy = view.busy) }
+    // Окно знакомства (D-150): само — при первом запуске, затем — из справки (app:intro).
+    if (view.intro || introOpen) {
+        val actions = buildMap<Intro.Action, () -> Unit> {
+            onNewProject?.let { put(Intro.Action.NEW_PROJECT, it) }
+            onLinux?.let { put(Intro.Action.LINUX, it) }
+            put(Intro.Action.GITHUB) { settingsQuery = "токен"; tab = Section.MORE }
+        }
+        IntroDialog(actions) {
+            introOpen = false
+            if (view.intro) onIntroSeen()
+        }
+    }
 }
 
 /**

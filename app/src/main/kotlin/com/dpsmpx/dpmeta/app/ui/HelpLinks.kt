@@ -13,7 +13,13 @@ object HelpLinks {
     const val AI = "ai"
     const val SETTINGS = "settings"
 
-    val SECTIONS: Set<String> = setOf(SUMMARY, PROJECTS, IDE, AI, SETTINGS)
+    /** Окно знакомства (D-150). */
+    const val INTRO = "intro"
+
+    /** Мастер нового проекта (D-150). */
+    const val NEW_PROJECT = "new-project"
+
+    val SECTIONS: Set<String> = setOf(SUMMARY, PROJECTS, IDE, AI, SETTINGS, INTRO, NEW_PROJECT)
 
     /** Раздел ссылки; не `app:` или неизвестный раздел — `null`. */
     fun section(url: String): String? = url.takeIf { it.startsWith(SCHEME) }?.removePrefix(SCHEME)?.substringBefore('?')?.takeIf { it in SECTIONS }
