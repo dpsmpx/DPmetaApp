@@ -52,7 +52,16 @@ open class PultActivity : ComponentActivity() {
     /** Раздел, на который просят перейти с левой панели окна «AI» (D-112); экран сбрасывает его, перейдя. */
     private val goTo = mutableStateOf<com.dpsmpx.dpai.ui.AppSection?>(null)
 
+    private val openPull = mutableStateOf<Pair<String, Int>?>(null)
+
     private fun takeSection(intent: Intent?) {
+        // «Открыть PR» из уведомления (D-152): проект и номер — только из своего PendingIntent.
+        val pullProject = intent?.getStringExtra(EXTRA_PULL_PROJECT)
+        val pullNumber = intent?.getIntExtra(EXTRA_PULL_NUMBER, -1) ?: -1
+        if (pullProject != null && pullNumber > 0) {
+            intent.removeExtra(EXTRA_PULL_PROJECT)
+            openPull.value = pullProject to pullNumber
+        }
         val name = intent?.getStringExtra(EXTRA_SECTION) ?: return
         goTo.value = com.dpsmpx.dpai.ui.AppSection.entries.firstOrNull { it.name == name }
     }
@@ -485,6 +494,7 @@ open class PultActivity : ComponentActivity() {
                     view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken,
                     onAi = ai, onIde = ideIntent()?.let { i -> { startActivity(i) } }, onExport = ::export,
                     goTo = goTo.value, onGoTo = { goTo.value = null }, settingsDocument = settingsDocument,
+                    openPull = openPull.value, onPullOpened = { openPull.value = null },
                     onClones = { withToken { token -> if (token != null) askClones(token, first = false) } }, onClonesChosen = ::clonesChosen,
                     onCancelSync = {
                         repo.cancelClones()
@@ -1061,6 +1071,10 @@ open class PultActivity : ComponentActivity() {
     companion object {
         /** Раздел пульта по имени `AppSection` — для перехода с левой панели окна «AI» (D-112). */
         const val EXTRA_SECTION = "com.dpsmpx.dpmeta.SECTION"
+
+        /** «Открыть PR» из уведомления (D-152). */
+        const val EXTRA_PULL_PROJECT = "com.dpsmpx.dpmeta.PULL_PROJECT"
+        const val EXTRA_PULL_NUMBER = "com.dpsmpx.dpmeta.PULL_NUMBER"
 
         /** Как часто строка «AI» сводки перечитывает числа, пока пульт на экране (D-76). */
         private const val AI_REFRESH_MS = 5_000L

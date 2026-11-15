@@ -522,6 +522,9 @@ fun PultApp(
     settingsDocument: (@Composable (query: String, projects: @Composable () -> Unit) -> Unit)? = null,
     /** Раздел с левой панели окна «AI» (D-112): перейти и сбросить [onGoTo]. */
     goTo: com.dpsmpx.dpai.ui.AppSection? = null,
+    /** «Открыть PR» из уведомления (D-152): проект и номер — карточка PR; [onPullOpened] — сбросить. */
+    openPull: Pair<String, Int>? = null,
+    onPullOpened: () -> Unit = {},
     onGoTo: () -> Unit = {},
     onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null,
     /** «Клоны…» в настройках (D-70). */
@@ -568,6 +571,13 @@ fun PultApp(
             com.dpsmpx.dpai.ui.AppSection.HELP -> Section.HELP
         }
         onGoTo()
+    }
+    LaunchedEffect(openPull) {
+        val (project, number) = openPull ?: return@LaunchedEffect
+        tab = Section.DEV
+        devTab = DevTab.PULLS
+        stacks[Section.DEV] = listOf(Nav.Pull(project, number))
+        onPullOpened()
     }
     val stack = stacks[tab].orEmpty()
     val open: (Nav) -> Unit = { stacks[tab] = stacks[tab].orEmpty() + it }

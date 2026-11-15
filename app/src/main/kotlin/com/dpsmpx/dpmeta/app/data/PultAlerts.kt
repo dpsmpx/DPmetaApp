@@ -174,6 +174,11 @@ object PultAlerts {
             is Outcome.Failure -> policyIssue.value = "История уведомлений не сохранена: ${saved.diagnostics.first().code}"
         }
         if (decision is Decision.Dropped) { policyIssue.value = decision.diagnostic.message; return }
+        if (decision is Decision.Digest) {
+            PultNotices.add(context, listOf(decision.event))
+            com.dpsmpx.dpmeta.app.PultNoticeJob.scheduleDigest(context)
+            return
+        }
         if (decision !is Decision.Notify) return
         synchronized(presentationLock) {
             val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -238,6 +243,12 @@ object PultAlerts {
         val decided = Alerts.decide(events.mapNotNull(Feed::event), cfg.catalog, cfg.rules, now, DisplayZone.current, s.quiet, readShown(app))
         writeShown(app, decided.shown)
         val notify = decided.decisions.filterIsInstance<Decision.Notify>()
+        // «В сводку» (D-152): копятся до срока расписания.
+        val digest = decided.decisions.filterIsInstance<Decision.Digest>().map { it.event }
+        if (digest.isNotEmpty()) {
+            PultNotices.add(app, digest)
+            com.dpsmpx.dpmeta.app.PultNoticeJob.scheduleDigest(app)
+        }
         val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             app.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         var posted = 0
@@ -273,41 +284,112 @@ object PultAlerts {
         return id
     }
 
-    private fun show(context: Context, d: Decision.Notify, catalog: EventCatalog): Boolean = synchronized(presentationLock) {
+    private fun show(context: Context, d: Decision.Notify, catalog: EventCatalog): Boolean {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return false
+        val typeTitle = catalog.type(d.event.type)?.title ?: d.event.type
+        val pull = com.dpsmpx.dpmeta.notify.Digest.pullNumber(d.event)
+        val card = NoticeCard(
+            d.tag, channel(manager, d.channel, d.importance), listOfNotNull(d.event.project, typeTitle).joinToString(": "), d.event.text, typeTitle,
+            d.event.at.epochMillis, "dpmeta.alert.${d.rule.id}", d.event.project.takeIf { pull != null }, pull,
+        )
+        return present(context, card, d.silent)
+    }
+
+    /**
+     * Показать карточку (и снова — после «Отложить», D-152): «Открыть» — касание, две кнопки
+     * «Отложить» из настроек, «Открыть PR» — если это событие PR.
+     */
+    fun present(context: Context, card: NoticeCard, silent: Boolean): Boolean = synchronized(presentationLock) {
         // Последнее значение читается под тем же guard, что и смена приватности.
         val privacy = settings(context).privacy
         val manager = context.getSystemService(NotificationManager::class.java) ?: return@synchronized false
-        val id = channel(manager, d.channel, d.importance)
-        val typeTitle = catalog.type(d.event.type)?.title ?: d.event.type
-        val title = listOfNotNull(d.event.project, typeTitle).joinToString(": ")
         val open = context.packageManager.getLaunchIntentForPackage(context.packageName)
             ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
         val pending = open?.let { PendingIntent.getActivity(context, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT) }
         // Экран блокировки (T-08): только вид события — без проекта и текста.
-        val public = NotificationCompat.Builder(context, id)
+        val public = NotificationCompat.Builder(context, card.channel)
             .setSmallIcon(R.drawable.ic_pult_summary)
             .setContentTitle("DPmetaApp")
-            .setContentText(typeTitle)
+            .setContentText(card.typeTitle)
             .build()
-        val n = NotificationCompat.Builder(context, id)
+        val b = NotificationCompat.Builder(context, card.channel)
             .setSmallIcon(R.drawable.ic_pult_summary)
-            .setContentTitle(title)
-            .setContentText(d.event.text)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(d.event.text))
-            .setWhen(d.event.at.epochMillis)
+            .setContentTitle(card.title)
+            .setContentText(card.text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(card.text))
+            .setWhen(card.whenMs)
             .setShowWhen(true)
             .setAutoCancel(true)
-            .setGroup("dpmeta.alert.${d.rule.id}")
-            .setSilent(d.silent)
+            .setGroup(card.group)
+            .setSilent(silent)
             .setVisibility(if (privacy) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_PUBLIC)
             .setPublicVersion(public)
             .apply { pending?.let(::setContentIntent) }
-            .build()
+        // Код запроса — свой у каждой кнопки каждой карточки: иначе система подменит extras чужой.
+        val base = card.tag.hashCode() * 8
+        for ((i, o) in PultNotices.snoozes(context).withIndex()) {
+            val intent = Intent(context, com.dpsmpx.dpmeta.app.PultNoticeReceiver::class.java)
+                .setAction(com.dpsmpx.dpmeta.app.PultNoticeReceiver.SNOOZE)
+                .putExtras(NoticeCard.toBundle(card))
+                .putExtra(com.dpsmpx.dpmeta.app.PultNoticeReceiver.INDEX, i)
+            b.addAction(0, o.label, PendingIntent.getBroadcast(context, base + i, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+        }
+        if (card.pullProject != null && card.pullNumber != null && open != null) {
+            val pr = Intent(open)
+                .putExtra(com.dpsmpx.dpmeta.app.PultActivity.EXTRA_PULL_PROJECT, card.pullProject)
+                .putExtra(com.dpsmpx.dpmeta.app.PultActivity.EXTRA_PULL_NUMBER, card.pullNumber)
+            b.addAction(0, "Открыть PR", PendingIntent.getActivity(context, base + 4, pr, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+        }
         try {
-            manager.notify(d.tag, d.tag.hashCode(), n)
+            manager.notify(card.tag, card.tag.hashCode(), b.build())
             true
         } catch (_: SecurityException) {
             false
         }
     }
+
+    /** Сейчас тихие часы — сводку и отложенное показывать без звука. */
+    fun quietNow(context: Context): Boolean = settings(context).quiet?.covers(Clock.SYSTEM.now(), DisplayZone.current) == true
+
+    /**
+     * Сводка (D-152): накопленные события «в сводку» — одним уведомлением; пусто — ничего.
+     * Итог — сколько событий показано.
+     */
+    fun postDigest(context: Context): Int = synchronized(presentationLock) {
+        val app = context.applicationContext
+        val catalog = (catalog(app) as? Outcome.Success)?.value ?: return@synchronized 0
+        val taken = PultNotices.take(app)
+        val text = com.dpsmpx.dpmeta.notify.Digest.text(taken.events, catalog, taken.dropped) ?: return@synchronized 0
+        val manager = app.getSystemService(NotificationManager::class.java) ?: return@synchronized 0
+        if (manager.getNotificationChannel(DIGEST_CHANNEL) == null) {
+            manager.createNotificationChannel(NotificationChannel(DIGEST_CHANNEL, "Пульт: сводка", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Сводка событий по расписанию — правила «в сводку»."
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
+            })
+        }
+        val open = app.packageManager.getLaunchIntentForPackage(app.packageName)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        val style = NotificationCompat.InboxStyle().also { st ->
+            text.lines.forEach { st.addLine(it) }
+            if (text.more > 0) st.setSummaryText("и ещё ${text.more}")
+        }
+        val n = NotificationCompat.Builder(app, DIGEST_CHANNEL)
+            .setSmallIcon(R.drawable.ic_pult_summary)
+            .setContentTitle(text.title)
+            .setContentText(text.lines.firstOrNull().orEmpty())
+            .setStyle(style)
+            .setAutoCancel(true)
+            .setSilent(quietNow(app))
+            .setVisibility(if (settings(app).privacy) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_PUBLIC)
+            .setPublicVersion(NotificationCompat.Builder(app, DIGEST_CHANNEL).setSmallIcon(R.drawable.ic_pult_summary).setContentTitle("DPmetaApp").setContentText("Сводка").build())
+            .apply { open?.let { setContentIntent(PendingIntent.getActivity(app, 1, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)) } }
+            .build()
+        try {
+            manager.notify(DIGEST_CHANNEL, 1, n)
+            taken.events.size
+        } catch (_: SecurityException) {
+            0
+        }
+    }
+
+    private const val DIGEST_CHANNEL = "dpmeta.digest"
 }

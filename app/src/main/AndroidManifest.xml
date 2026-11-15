@@ -43,6 +43,15 @@
             android:name="com.dpsmpx.dpmeta.app.PultSyncJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- Повтор отложенного и сводка по расписанию (D-152): запускает только система. -->
+        <service
+            android:name="com.dpsmpx.dpmeta.app.PultNoticeJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- Кнопка «Отложить» (D-152): только через свой PendingIntent; снаружи не виден. -->
+        <receiver
+            android:name="com.dpsmpx.dpmeta.app.PultNoticeReceiver"
+            android:exported="false" />
         <!-- Итог Termux (D-84): только через PendingIntent, отданный Termux с вызовом; снаружи не виден. -->
         <receiver
             android:name="com.dpsmpx.dpmeta.app.data.TermuxResultReceiver"
