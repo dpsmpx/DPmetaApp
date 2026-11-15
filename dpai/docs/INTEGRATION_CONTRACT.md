@@ -237,7 +237,7 @@ API не включён. Граница — этот раздел и реест�
 | `dpai.cloud-archive` | 1 | `CloudArchive` | внутри `dpai.cloud-copy`, после расшифровки (D-107) |
 | `dpai.backup-manifest` | 1 | `BackupService` | `manifest.json` копии |
 | `dpai.restore-marker` | 1 | `BackupService` | `restore.pending` — начатое восстановление |
-| `dpai.app-targets` | 5 (1–5) | `TargetBook` | документ `targets` приложения; v1 — без `configDir`; v3 — target «в приложении» (`kind`); v4 — `executor`; v5 — `tmux` (только `false`) |
+| `dpai.app-targets` | 6 (1–6) | `TargetBook` | документ `targets` приложения; v1 — без `configDir`; v3 — target «в приложении» (`kind`); v4 — `executor`; v5 — `tmux` (только `false`); v6 — `sessions` (только не 1, D-180) |
 | `dpai.app-projects` | 1 | `Projects` | документ `projects` приложения — рабочие проекты (D-179) |
 | `dpai.app-project` | 2 (1–2) | `ProjectBook` | элемент `dpai.app-projects`; прежний документ `project` приложения читается как список из одного; v1 — без маршрута `claude` (D-50) |
 | `dpai.agent-reply` | 2 | `AgentReply` | стандартный вывод агента; не хранится |

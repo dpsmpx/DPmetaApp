@@ -5133,6 +5133,21 @@ Keystore и системное окно — только на телефоне: 
 чтение прежнего формата), `LiveSystemTest` (два контура над одним
 target); на телефоне — DPmetaApp:TODO.md.
 
+### D-180 — Места target: `dpai.app-targets` v6
+
+**Статус.** Принято 15 ноября 2026 при исполнении DPmetaApp:D-148.
+**Решение.** `TargetEntry.sessions` — мест для сессий ИИ на target,
+1…4 (`TargetForm.SESSIONS`); формат `dpai.app-targets` v6 пишет поле
+`sessions` только если оно не 1, v1…v5 читаются как 1; число вне 1…4 —
+находка с путём, target не читается. `LiveSystem` даёт target столько
+мест (`TargetSlot.maxSessions`), сколько задано; соседние контуры
+считаются (D-179). Смена числа — запись списка targets: контуры
+пересобираются, идущие сессии продолжаются; при уменьшении новые ждут.
+**Почему.** DPmetaApp:D-148.
+**Проверка.** `TargetsTest` (v6 туда и обратно, v5 — 1, вне 1…4 —
+отказ), `LiveSystemTest.twoProjectContoursShareOneTargetPlace` (одно
+место) и `twoPlacesRunTwoProjectsAtOnce`; на телефоне — DPmetaApp:TODO.md.
+
 ## Отложено
 
 Решения, которые принимаются в начале своего этапа и до этого не

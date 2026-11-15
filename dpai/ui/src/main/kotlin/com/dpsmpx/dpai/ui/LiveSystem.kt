@@ -269,7 +269,8 @@ class LiveSystem(
         }
         o = Orchestrator(
             clock, ids, random, journal, router, config,
-            working.map { TargetSlot(it.id, emptySet(), maxSessions = 1, label = it.label) }, git, verifier,
+            // Места target (D-180): заданные у target, общие для рабочих проектов (D-179).
+            working.map { TargetSlot(it.id, emptySet(), maxSessions = it.sessions.coerceIn(TargetForm.SESSIONS), label = it.label) }, git, verifier,
             snapshots = snapshots, snapshotEvery = SEGMENT.toLong(), documents = DocumentStore(vfs, "docs"),
             onEvents = onEvents, onProblem = onProblem, externalPause = externalPause, neighbours = neighbours,
         )

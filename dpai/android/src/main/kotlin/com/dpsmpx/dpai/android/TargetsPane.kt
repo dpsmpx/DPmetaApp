@@ -314,6 +314,7 @@ private fun TargetCard(
                     if (t.configDir != null) {
                         TargetSwitches(model, t)
                         UsageAutoSwitch(model, t)
+                        SessionsRow(controller, t)
                     }
                     if (posix) TmuxSwitch(controller, t)
                     // Termux на этом телефоне (D-46) — у его target, а не отдельной карточкой (AI:A-3).
@@ -1101,6 +1102,37 @@ private fun TmuxSwitch(controller: Controller, t: TargetEntry) {
         }
     }
     note?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
+}
+
+/**
+ * Мест для сессий ИИ на target (`DPmetaApp:D-148`): 1…4, общие для рабочих проектов.
+ * Уменьшение не останавливает идущие сессии — новые ждут.
+ */
+@Composable
+private fun SessionsRow(controller: Controller, t: TargetEntry) {
+    val scope = rememberCoroutineScope()
+    var n by remember(t.id) { mutableStateOf(t.sessions) }
+    var note by remember(t.id) { mutableStateOf<String?>(null) }
+    var saving by remember(t.id) { mutableStateOf(false) }
+    Text("Мест для сессий ИИ — общие для всех рабочих проектов", style = MaterialTheme.typography.bodySmall)
+    Row {
+        for (k in com.dpsmpx.dpai.ui.TargetForm.SESSIONS) {
+            androidx.compose.material3.FilterChip(selected = n == k, enabled = !saving, onClick = {
+                if (k == n) return@FilterChip
+                val before = n
+                saving = true
+                n = k
+                scope.launch {
+                    when (val r = withContext(Dispatchers.IO) { controller.setSessions(t, k) }) {
+                        is Outcome.Success -> note = if (k < before) "Идущие сессии доиграют; новые — когда занятых станет меньше $k" else null
+                        is Outcome.Failure -> { n = before; note = "Не сохранено: ${r.diagnostics.first().message}" }
+                    }
+                    saving = false
+                }
+            }, label = { Text("$k") }, modifier = Modifier.padding(end = 4.dp))
+        }
+    }
+    note?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 }
 
 private const val PROBING = "проверяю вход…"

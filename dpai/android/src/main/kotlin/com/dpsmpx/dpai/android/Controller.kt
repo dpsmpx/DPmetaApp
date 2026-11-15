@@ -372,6 +372,19 @@ class Controller(private val root: File, val version: String?) {
             is Outcome.Success -> Outcome.success(Unit)
         }
 
+    /**
+     * Мест для сессий ИИ на target (`DPmetaApp:D-148`; D-180): 1…4; запись списка targets
+     * пересобирает контуры, идущие сессии продолжаются.
+     */
+    @Synchronized
+    fun setSessions(entry: TargetEntry, n: Int): Outcome<Unit> {
+        if (n !in com.dpsmpx.dpai.ui.TargetForm.SESSIONS) return Outcome.failure(DiagCode.VALUE_INVALID, "мест — от 1 до 4", "sessions")
+        return when (val w = writeTargets(targets().map { if (it.id == entry.id) it.copy(sessions = n) else it })) {
+            is Outcome.Failure -> w
+            is Outcome.Success -> Outcome.success(Unit)
+        }
+    }
+
     /** Переименовать target (слот): имя — от 1 до 60 знаков, как в форме; остальное не меняется. */
     @Synchronized
     fun rename(entry: TargetEntry, label: String): Outcome<Unit> {

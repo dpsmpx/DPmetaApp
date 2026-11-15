@@ -156,10 +156,32 @@ class TargetsTest {
         assertTrue("\"tmux\":true" !in json)
         assertEquals(listOf(on, off, inApp), TargetBook.fromJson(JsonParser().parse(json).valueOrNull()!!).valueOrNull())
         // Документ v4 (до D-111): поля нет — включено и у старых targets.
-        val v4 = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(TargetBook.toJson(listOf(on))).replace("\"version\":5", "\"version\":4")
+        val v4 = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(TargetBook.toJson(listOf(on))).replace("\"version\":${TargetBook.VERSION}", "\"version\":4")
         assertTrue(TargetBook.fromJson(JsonParser().parse(v4).valueOrNull()!!).valueOrNull()!!.single().tmux)
         // В v4 поля tmux не было: оно там — неизвестное поле (D-09).
-        val v4off = json.replace("\"version\":5", "\"version\":4")
+        val v4off = json.replace("\"version\":${TargetBook.VERSION}", "\"version\":4")
         assertTrue(TargetBook.fromJson(JsonParser().parse(v4off).valueOrNull()!!) is com.dpsmpx.dpai.core.result.Outcome.Failure)
+    }
+
+    /** D-180: места для сессий — в v6 пишется только не 1; до v6 и без поля — 1; вне 1…4 — отказ. */
+    @Test
+    fun sessionsPerTargetRoundTripAndBounds() {
+        val ids = com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.ManualClock(), com.dpsmpx.dpai.core.clock.RandomSource.seeded(35))
+        val one = TargetForm.validate(ids.next(IdKinds.TARGET), "ПК", "10.0.0.2", "22", "u", false, "/home/u/dpai/bin/dpai").valueOrNull()!!
+        assertEquals(1, one.sessions, "по умолчанию — одно место")
+        val two = one.copy(id = ids.next(IdKinds.TARGET), sessions = 2)
+        val slot = TargetForm.inApp(ids.next(IdKinds.TARGET), "Слот", "/root/.claude-slot-1").valueOrNull()!!.copy(sessions = 3)
+        val json = CanonicalJson.write(TargetBook.toJson(listOf(one, two, slot)))
+        assertEquals(2, Regex("\"sessions\":").findAll(json).count(), "пишется только не 1")
+        assertEquals(listOf(one, two, slot), TargetBook.fromJson(JsonParser().parse(json).valueOrNull()!!).valueOrNull())
+        // Документ v5 (до D-180): поля нет — одно место; поле в v5 — неизвестное (D-09).
+        val v5 = CanonicalJson.write(TargetBook.toJson(listOf(one))).replace("\"version\":${TargetBook.VERSION}", "\"version\":5")
+        assertEquals(1, TargetBook.fromJson(JsonParser().parse(v5).valueOrNull()!!).valueOrNull()!!.single().sessions)
+        assertTrue(TargetBook.fromJson(JsonParser().parse(json.replace("\"version\":${TargetBook.VERSION}", "\"version\":5")).valueOrNull()!!) is Outcome.Failure)
+        for (bad in listOf(0, 5)) {
+            val broken = CanonicalJson.write(TargetBook.toJson(listOf(one.copy(sessions = 2)))).replace("\"sessions\":2", "\"sessions\":$bad")
+            val r = TargetBook.fromJson(JsonParser().parse(broken).valueOrNull()!!)
+            assertTrue(r is Outcome.Failure && r.diagnostics.any { it.code == DiagCode.VALUE_INVALID }, "$bad мест — отказ")
+        }
     }
 }
