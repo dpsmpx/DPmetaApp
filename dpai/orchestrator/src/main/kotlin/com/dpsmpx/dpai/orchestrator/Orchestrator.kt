@@ -212,8 +212,16 @@ class Orchestrator(
     /** Новая проблема контура — наружу (D-43: строка журнала приложения с причинами); сбой получателя контур не трогает. */
     private val onProblem: (Diagnostic) -> Unit = {},
     private val externalPause: () -> Boolean = { false },
+    /** Сессии соседних контуров на общих target (D-179): места делятся между проектами. */
+    private val neighbours: NeighbourLoad = NeighbourLoad.NONE,
 ) {
     private val recorder = EventRecorder(ids, clock)
+
+    /** Занято на [target]: свои незавершённые сессии и соседей (D-179). */
+    private fun activeOn(target: ExecutionTargetId): Int = sessions.sessions.values.count { !it.terminal && it.target == target } + neighbours.sessions(target)
+
+    /** Занято всего: свои незавершённые сессии и соседей — для предела контура (D-42, п. 6; D-179). */
+    private fun activeTotal(): Int = sessions.sessions.values.count { !it.terminal } + neighbours.total()
     private var lastSnapshotAt = 0L
     private val accountsLogic = Accounts()
     private val sessionsLogic = Sessions()
@@ -663,12 +671,11 @@ class Orchestrator(
         }
         // Выключенный target новых сессий не получает; идущие на нём доигрывают (D-42, п. 5).
         val offers = targets.map { t ->
-            val active = sessions.sessions.values.count { !it.terminal && it.target == t.id }
-            val free = if (t.id in control.disabledTargets) 0 else (t.maxSessions - active).coerceAtLeast(0)
+            val free = if (t.id in control.disabledTargets) 0 else (t.maxSessions - activeOn(t.id)).coerceAtLeast(0)
             Tasks.TargetOffer(t.id, t.capabilities, free)
         }
         // Общий предел сессий контура (D-42, п. 6) — поверх предела каждого target.
-        val room = control.maxSessions?.let { (it - sessions.sessions.values.count { s -> !s.terminal }).coerceAtLeast(0) } ?: Int.MAX_VALUE
+        val room = control.maxSessions?.let { (it - activeTotal()).coerceAtLeast(0) } ?: Int.MAX_VALUE
         // Перенесённая задача (D-77) — только на target, где есть слот, кроме исключённого: иначе план ставил бы
         // её на тот же target, и она ждала бы там, хотя на другом место есть.
         val elsewhere = { t: com.dpsmpx.dpai.tasks.TaskRecord, target: ExecutionTargetId ->
@@ -782,7 +789,7 @@ class Orchestrator(
         val open = targets.filter { t ->
             t.id == planned || (
                 t.id !in control.disabledTargets && t.capabilities.containsAll(need) &&
-                    sessions.sessions.values.count { !it.terminal && it.target == t.id } < t.maxSessions
+                    activeOn(t.id) < t.maxSessions
                 )
         }.map { it.id }
         val own = accounts.taskSubscription[task]?.get(tasks.tasks[task]?.policy?.executor ?: Executor.CLAUDE)
@@ -801,7 +808,7 @@ class Orchestrator(
         // Перенос человеком (D-66): только выбранный слот; занят или недоступен — задача ждёт его.
         val pin = pinned(task)
         val order = if (pin != null) {
-            listOf(pin).filter { p -> p !in control.disabledTargets && targets.any { it.id == p } && sessions.sessions.values.count { !it.terminal && it.target == p } < (targets.first { it.id == p }.maxSessions) }
+            listOf(pin).filter { p -> p !in control.disabledTargets && targets.any { it.id == p } && activeOn(p) < (targets.first { it.id == p }.maxSessions) }
         } else {
             launchOrder(task, planned)
         }
@@ -1328,9 +1335,8 @@ class Orchestrator(
         val work = lastWork(task) ?: return recordReviewFailure(task, role, attempt, null, "у задачи нет рабочей сессии — неизвестно, где её дерево")
         val target = work.target
         if (target in control.disabledTargets) return waiting(task, "${Review.label(role)} ждёт: ${targetName(target)} не принимает новые задачи")
-        val active = sessions.sessions.values.count { !it.terminal && it.target == target }
-        if (active >= (targets.firstOrNull { it.id == target }?.maxSessions ?: 0)) return waiting(task, "${Review.label(role)} ждёт места на ${targetName(target)}")
-        control.maxSessions?.let { max -> if (sessions.sessions.values.count { !it.terminal } >= max) return waiting(task, "${Review.label(role)} ждёт: предел сессий контура $max") }
+        if (activeOn(target) >= (targets.firstOrNull { it.id == target }?.maxSessions ?: 0)) return waiting(task, "${Review.label(role)} ждёт места на ${targetName(target)}")
+        control.maxSessions?.let { max -> if (activeTotal() >= max) return waiting(task, "${Review.label(role)} ждёт: предел сессий контура $max") }
         val reviewer = t.policy.reviewer
         if (config.remote != null && reviewer != Executor.CLAUDE) return waiting(task, "${Review.label(role)} с деревом на другом target ведёт только Claude Code")
         if (reviewer == Executor.CLAUDE && "--json-schema" in unsupportedFlags[target].orEmpty()) return recordReviewFailure(task, role, attempt, null, "Claude Code на target $target не знает --json-schema: ответ ревью по схеме невозможен")
