@@ -256,7 +256,8 @@ private fun PasswordDialog(onCancel: () -> Unit, onOpen: (Secret, (String?) -> U
 private fun RestoreDialog(a: AppBackup.Archive, onCancel: () -> Unit, onRestore: (Set<String>) -> Unit) {
     val known = remember { AppBackups.sections().associateBy { it.id } }
     val present = a.sections.filter { !it.empty }
-    var chosen by remember(a) { mutableStateOf(present.map { it.id }.toSet()) }
+    // Неизвестный этой версии раздел не выбирается: его некуда разложить.
+    var chosen by remember(a) { mutableStateOf(present.map { it.id }.filter { it == AppBackup.SECRETS || it in known }.toSet()) }
     AlertDialog(
         onDismissRequest = onCancel,
         title = { Text("Что восстановить") },
