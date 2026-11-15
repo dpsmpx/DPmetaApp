@@ -48,8 +48,15 @@ class UrlTransport(private val timeoutMillis: Int = 20_000) : Transport {
      * Поток строк ответа (мгновенный канал, D-152): GET с долгим [readTimeoutMillis]
      * (сервер шлёт keepalive), строки — в [onLine], пока она возвращает `true`. Только
      * код 200; строка длиннее [maxLine] — отказ. Список адресов проверяет вызывающий.
+     * [onConnected] получает «закрыть»: из другого потока оно обрывает ожидание строки.
      */
-    fun lines(request: HttpRequest, readTimeoutMillis: Int, maxLine: Int = 16 * 1024, onLine: (String) -> Boolean): Outcome<Unit> {
+    fun lines(
+        request: HttpRequest,
+        readTimeoutMillis: Int,
+        maxLine: Int = 16 * 1024,
+        onConnected: (close: () -> Unit) -> Unit = {},
+        onLine: (String) -> Boolean,
+    ): Outcome<Unit> {
         return try {
             val c = request.url.toURL().openConnection() as HttpURLConnection
             try {
@@ -58,6 +65,7 @@ class UrlTransport(private val timeoutMillis: Int = 20_000) : Transport {
                 c.readTimeout = readTimeoutMillis
                 c.requestMethod = "GET"
                 for ((k, v) in request.headers) c.setRequestProperty(k, v)
+                onConnected { c.disconnect() }
                 val status = c.responseCode
                 if (status != 200) return Outcome.failure(DiagCode.NETWORK_UNREACHABLE, "сервер ответил $status", request.url.host)
                 c.inputStream.bufferedReader(Charsets.UTF_8).use { r ->

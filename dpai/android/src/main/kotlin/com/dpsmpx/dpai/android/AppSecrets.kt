@@ -28,6 +28,7 @@ object AppSecrets {
         val write: (Context, Secret) -> Outcome<Unit>,
         val erase: (Context) -> Outcome<Unit>,
         val unlock: ((Activity, (Outcome<Unit>) -> Unit) -> Unit)? = null,
+        val hint: String = "отзовите на странице и создайте новый",
     )
 
     /** Строка списка: [revoke] — страница отзыва; [hint] — что ещё сделать; [exportable] — уходит ли в копию. */
@@ -53,7 +54,7 @@ object AppSecrets {
         val profiles = ModelsStore.profiles.value.associateBy { it.id.value }
         val routines = ModelsStore.routines.value.associateBy { it.id.value }
         val out = ArrayList<Row>()
-        for (e in externals) if (runCatching { e.present(app) }.getOrDefault(false)) out += Row(EXT + e.id, e.name, e.revoke, "отзовите на странице и создайте новый", true)
+        for (e in externals) if (runCatching { e.present(app) }.getOrDefault(false)) out += Row(EXT + e.id, e.name, e.revoke, e.hint, true)
         for (name in ApiKeys.names(app)) {
             val admin = name.removeSuffix(":admin").takeIf { it != name }
             out += when {

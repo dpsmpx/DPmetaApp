@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.content.edit
+import androidx.core.net.toUri
 import com.dpsmpx.dpai.core.clock.DisplayZone
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.clock.Timestamp
@@ -37,6 +38,7 @@ import com.dpsmpx.dpmeta.metrics.FeedEvent
 import com.dpsmpx.dpmeta.model.AlertChannel
 import com.dpsmpx.dpmeta.model.AlertImportance
 import com.dpsmpx.dpmeta.model.AlertRules
+import com.dpsmpx.dpmeta.model.Event
 import com.dpsmpx.dpmeta.model.EventCatalog
 import com.dpsmpx.dpmeta.notify.Alerts
 import com.dpsmpx.dpmeta.notify.Decision
@@ -232,7 +234,15 @@ object PultAlerts {
      * событий в ней нет (D-39).
      */
     @Synchronized
-    fun post(context: Context, events: List<FeedEvent>, now: Timestamp): String {
+    fun post(context: Context, events: List<FeedEvent>, now: Timestamp): String =
+        if (events.isEmpty()) "событий нет" else postEvents(context, events.mapNotNull(Feed::event), now, events.size)
+
+    /**
+     * То же для готовых событий — и мгновенного канала (D-152): правила, сводка,
+     * уведомления. [total] — сколько событий пришло (для строки журнала).
+     */
+    @Synchronized
+    fun postEvents(context: Context, events: List<Event>, now: Timestamp, total: Int = events.size): String {
         if (events.isEmpty()) return "событий нет"
         val app = context.applicationContext
         val cfg = when (val c = config(app)) {
@@ -240,7 +250,7 @@ object PultAlerts {
             is Outcome.Success -> c.value
         }
         val s = settings(app)
-        val decided = Alerts.decide(events.mapNotNull(Feed::event), cfg.catalog, cfg.rules, now, DisplayZone.current, s.quiet, readShown(app))
+        val decided = Alerts.decide(events, cfg.catalog, cfg.rules, now, DisplayZone.current, s.quiet, readShown(app))
         writeShown(app, decided.shown)
         val notify = decided.decisions.filterIsInstance<Decision.Notify>()
         // «В сводку» (D-152): копятся до срока расписания.
@@ -256,7 +266,7 @@ object PultAlerts {
             for (d in notify) if (show(app, d, cfg.catalog)) posted++
         }
         val dropped = decided.decisions.count { it is Decision.Dropped }
-        return "событий ${events.size}, к показу ${notify.size}, показано $posted" +
+        return "событий $total, к показу ${notify.size}, показано $posted" +
             (if (!allowed) " (нет разрешения на уведомления)" else "") + (if (dropped > 0) ", отброшено $dropped" else "")
     }
 
@@ -291,6 +301,7 @@ object PultAlerts {
         val card = NoticeCard(
             d.tag, channel(manager, d.channel, d.importance), listOfNotNull(d.event.project, typeTitle).joinToString(": "), d.event.text, typeTitle,
             d.event.at.epochMillis, "dpmeta.alert.${d.rule.id}", d.event.project.takeIf { pull != null }, pull,
+            url = com.dpsmpx.dpmeta.notify.PushEvents.sessionUrl(d.event),
         )
         return present(context, card, d.silent)
     }
@@ -339,6 +350,11 @@ object PultAlerts {
                 .putExtra(com.dpsmpx.dpmeta.app.PultActivity.EXTRA_PULL_PROJECT, card.pullProject)
                 .putExtra(com.dpsmpx.dpmeta.app.PultActivity.EXTRA_PULL_NUMBER, card.pullNumber)
             b.addAction(0, "Открыть PR", PendingIntent.getActivity(context, base + 4, pr, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+        }
+        // Мгновенный канал (D-152): сессия claude.ai — в браузере; адрес собран из id, не из текста события.
+        card.url?.let { url ->
+            val view = Intent(Intent.ACTION_VIEW, url.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            b.addAction(0, "Открыть сессию", PendingIntent.getActivity(context, base + 5, view, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
         }
         try {
             manager.notify(card.tag, card.tag.hashCode(), b.build())

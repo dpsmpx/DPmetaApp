@@ -5,9 +5,13 @@ import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Secret
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpmeta.net.PushSignature
+import com.dpsmpx.dpai.core.clock.RandomSource
+import com.dpsmpx.dpmeta.notify.PushChannel
 import com.dpsmpx.dpmeta.notify.PushEvents
+import com.dpsmpx.dpmeta.notify.SeenIds
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -50,5 +54,57 @@ class PushEventTest {
         assertNull(PushEvents.message("""{"id":"b","time":2,"event":"keepalive","topic":"t"}"""))
         assertEquals("x", PushEvents.message("""{"id":"c","time":3,"event":"message","topic":"t","message":"x"}"""))
         assertNull(PushEvents.message("мусор"))
+    }
+
+    @Test
+    fun serverTopicAndUrls() {
+        fun ok(t: String) = (PushChannel.server(t) as Outcome.Success).value
+        fun bad(t: String) = assertTrue(PushChannel.server(t) is Outcome.Failure, t)
+        assertEquals("https://ntfy.sh", ok(""))
+        assertEquals("https://ntfy.example.org", ok("ntfy.example.org/"))
+        assertEquals("https://push.example.org:8443", ok("https://Push.Example.org:8443"))
+        assertEquals("https://ntfy.sh", ok("https://ntfy.sh:443"))
+        bad("http://ntfy.sh")
+        bad("https://user:pass@ntfy.sh")
+        bad("https://ntfy.sh/topic")
+        bad("https://localhost")
+        bad("https://ntfy.sh?x=1")
+        val topic = PushChannel.newTopic(RandomSource.seeded(7))
+        assertTrue(topic.startsWith("dpmeta-") && topic.length == 31 && PushChannel.topicValid(topic), topic)
+        assertFalse(PushChannel.topicValid("short"))
+        assertEquals(64, PushChannel.newKeyText(RandomSource.seeded(7)).length)
+        assertEquals("https://ntfy.sh/$topic/json?since=AbC123xyz", PushChannel.streamUrl("https://ntfy.sh", topic, "AbC123xyz").toString())
+        assertEquals("https://ntfy.sh/$topic/json", PushChannel.streamUrl("https://ntfy.sh", topic, "../x").toString(), "чужой id — без since")
+        assertEquals("https://ntfy.sh/$topic", PushChannel.publishUrl("https://ntfy.sh", topic))
+        assertEquals("ntfy.example.org", PushChannel.host("https://ntfy.example.org"))
+    }
+
+    @Test
+    fun backoffFramesAndSeen() {
+        assertEquals(listOf(5L, 10, 30, 60, 120, 300, 300), (1..7).map(PushChannel::backoffSeconds))
+        assertEquals(PushChannel.Frame("AbC123xyz", "x"), PushChannel.frame("""{"id":"AbC123xyz","event":"message","message":"x"}"""))
+        assertEquals(PushChannel.Frame(null, "x"), PushChannel.frame("""{"id":"a/b","event":"message","message":"x"}"""))
+        val seen = SeenIds(limit = 2)
+        seen.add("a"); seen.add("b"); seen.add("c")
+        assertEquals(setOf("b", "c"), seen.snapshot())
+    }
+
+    @Test
+    fun needsInputKeepsKindField() {
+        val e = com.dpsmpx.dpmeta.notify.PushEvent("claude.needs_input", "DPlang", "", 1, "session_01ABCdef234", "permission", id)
+        val event = PushEvents.event(e)
+        assertEquals("permission", event.fields["kind"])
+        assertEquals("Claude ждёт разрешения", event.text)
+    }
+
+    @Test
+    fun testEventRoundTrip() {
+        val e = PushEvents.test(1_763_200_000, id)
+        val text = PushEvents.json(e, PushSignature.hex(key, e.canonical))
+        val back = (PushEvents.verify(text, now, emptySet(), mac) as Outcome.Success).value
+        assertEquals(e, back)
+        assertEquals("Проверка мгновенного канала", PushEvents.event(back).text)
+        assertNull(PushEvents.sessionUrl(PushEvents.event(back)))
+        assertEquals("DPMETA_PUSH_URL=https://ntfy.sh/t\nDPMETA_PUSH_KEY=test-key-0123456789abcdef", PushSignature.hookEnv("https://ntfy.sh/t", key))
     }
 }

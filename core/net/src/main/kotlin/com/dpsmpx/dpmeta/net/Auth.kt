@@ -45,6 +45,12 @@ object PushSignature {
         mac.init(javax.crypto.spec.SecretKeySpec(key.reveal().toByteArray(Charsets.UTF_8), "HmacSHA256"))
         return mac.doFinal(data.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
     }
+
+    /**
+     * Строки окружения для хука (`tools/notify/`): адрес темы и ключ. Ключ раскрывается
+     * только здесь — для «Скопировать для хука» после входа по PIN (D-152).
+     */
+    fun hookEnv(url: String, key: Secret): String = "DPMETA_PUSH_URL=$url\nDPMETA_PUSH_KEY=${key.reveal()}"
 }
 
 /** Байты секрета для шифрования на устройстве (`:app`, Keystore): раскрытие — здесь, в `:core:net`. */

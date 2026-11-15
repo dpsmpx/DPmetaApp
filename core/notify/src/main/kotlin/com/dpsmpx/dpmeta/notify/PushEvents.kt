@@ -3,6 +3,7 @@ package com.dpsmpx.dpmeta.notify
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonNumber
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
@@ -48,11 +49,7 @@ object PushEvents {
      * Сообщение темы ntfy (строка потока `/json`): `event` = `message` — текст события
      * в `message`; служебные (`open`, `keepalive`) — `null` без отказа.
      */
-    fun message(line: String): String? {
-        val o = JsonParser().parse(line).valueOrNull() as? JsonObject ?: return null
-        if ((o["event"] as? JsonString)?.value != "message") return null
-        return (o["message"] as? JsonString)?.value
-    }
+    fun message(line: String): String? = PushChannel.frame(line)?.text
 
     /**
      * Проверить событие [text]: формат, тип канала, подпись [mac], срок 10 минут от [now]
@@ -92,7 +89,7 @@ object PushEvents {
 
     /** Событие для движка правил: текст — словами, без содержимого ответа. */
     fun event(e: PushEvent): Event {
-        val what = when (e.type) {
+        val what = if (e.reason == TEST_REASON) "Проверка мгновенного канала" else when (e.type) {
             "claude.turn.done" -> "Claude закончил ответ"
             "claude.needs_input" -> if (e.reason == "permission") "Claude ждёт разрешения" else "Claude ждёт ввода"
             "claude.turn.failed" -> "Ход Claude прервался" + if (e.reason.isNotEmpty()) " (${e.reason})" else ""
@@ -100,9 +97,31 @@ object PushEvents {
         }
         val text = what + if (e.branch.isNotEmpty()) " · ветка ${e.branch}" else ""
         return Event(e.type, Timestamp(e.atSeconds * 1000), e.project.ifEmpty { null }, text,
-            fields = buildMap { if (e.branch.isNotEmpty()) put("branch", e.branch); if (e.session.isNotEmpty()) put("session", e.session) },
+            // Поля — как в каталоге (`config/events.toml`): у «ждёт ввода» причина — `kind`.
+            fields = buildMap {
+                if (e.branch.isNotEmpty()) put("branch", e.branch)
+                if (e.session.isNotEmpty()) put("session", e.session)
+                if (e.reason.isNotEmpty()) put(if (e.type == "claude.needs_input") "kind" else "reason", e.reason)
+            },
             key = e.session.ifEmpty { e.id })
     }
+
+    /** Причина проверочного события «Проверить канал». */
+    const val TEST_REASON = "test"
+
+    /** Проверочное событие (кнопка «Проверить канал»): тот же путь, что у хука. */
+    fun test(atSeconds: Long, id: String): PushEvent = PushEvent("claude.turn.done", "", "", atSeconds, "", TEST_REASON, id)
+
+    /** Текст события для отправки в тему: поля и подпись [sig] — как у хука. */
+    fun json(e: PushEvent, sig: String): String = CanonicalJson.write(
+        JsonObject(
+            linkedMapOf(
+                "v" to JsonNumber.of(1), "type" to JsonString(e.type), "project" to JsonString(e.project), "branch" to JsonString(e.branch),
+                "at" to JsonNumber.of(e.atSeconds), "session" to JsonString(e.session), "reason" to JsonString(e.reason), "id" to JsonString(e.id),
+                "sig" to JsonString(sig),
+            ),
+        ),
+    )
 
     /** Ссылка «Открыть сессию»: только облачные сессии claude.ai (`session_…`). */
     fun sessionUrl(e: Event): String? = e.fields["session"]?.takeIf { Regex("session_[A-Za-z0-9]{8,80}").matches(it) }?.let { "https://claude.ai/code/$it" }
