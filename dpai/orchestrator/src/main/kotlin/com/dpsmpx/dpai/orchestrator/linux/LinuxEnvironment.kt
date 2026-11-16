@@ -189,6 +189,9 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
 
         /** Обновить всё установленное — и саму Alpine. */
         UPGRADE(listOf("upgrade", "-U", "--no-progress"), false),
+
+        /** Обновить только названные пакеты (D-191, экран «Окружение»); индекс — тем же вызовом. */
+        UPGRADE_SOME(listOf("upgrade", "-U", "--no-progress"), true),
     }
 
     companion object {

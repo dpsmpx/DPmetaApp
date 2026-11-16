@@ -417,6 +417,13 @@ TerminalHub.EditorRun принадлежит своей PTY-вкладке; Edit
 AlpinePackageState учитывает виртуальные provides. Api FIX требует
 конкретные пакеты, ProotHost запускает apk без /proc для add и fix.
 
+Окружение (D-191): `orchestrator.linux.AlpinePackages` читает базу apk,
+`world`, репозитории и выпуск гостя с хоста (ссылки на пути — отказ) и
+считает без сети и процессов: для кого нужен пакет, проблемы совместимости,
+что уйдёт при удалении; `AlpineVersion` сравнивает версии как apk-tools 3.
+`ui.AlpineView` — строки, подробности и починка; экран `EnvironmentScreen`
+оболочки зовёт apk через `LongJobs.LINUX_APK`, как «Linux в приложении».
+
 Языки запуска (D-141): EditorRunOutput возвращает RunDiagnosis по пути
 файла, C++ использует прежний CppDependencies. PythonRuntime/KotlinRuntime
 формируют команды/диагнозы без Android, ProjectRuntime определяет приватный

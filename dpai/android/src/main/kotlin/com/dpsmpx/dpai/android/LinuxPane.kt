@@ -77,6 +77,12 @@ fun LinuxScreen(onBack: () -> Unit) {
     var howto by rememberSaveable { mutableStateOf(false) }
     var slotMenu by remember { mutableStateOf(false) }
     var sdkOpen by remember { mutableStateOf(false) }
+    var envOpen by rememberSaveable { mutableStateOf(false) }
+    if (envOpen) {
+        androidx.activity.compose.BackHandler { envOpen = false }
+        EnvironmentScreen(onBack = { envOpen = false })
+        return
+    }
 
     fun run(label: String, job: () -> Outcome<com.dpsmpx.dpai.execution.process.Completed>, done: (com.dpsmpx.dpai.execution.process.Completed) -> String) {
         allOutput = false
@@ -105,7 +111,10 @@ fun LinuxScreen(onBack: () -> Unit) {
             else -> {
                 Text("Установлено: $installed", style = MaterialTheme.typography.bodySmall)
                 // Терминал — первым и заметным (терминал §4, п. 9).
-                Button(onClick = { TerminalActivity.startLinux(context) }) { Text("Терминал") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { TerminalActivity.startLinux(context) }) { Text("Терминал") }
+                    OutlinedButton(onClick = { envOpen = true }) { Text("Окружение: пакеты…") }
+                }
                 OutlinedTextField(packages, { packages = it }, label = { Text("Пакеты, например: git nodejs npm") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(enabled = !running && packages.isNotBlank(), onClick = { apk(LinuxEnvironment.Apk.ADD, "Поставить") }) { Text("Поставить") }
