@@ -22,7 +22,7 @@
 | Анализатор знаний | [Запись в изолированной линии](https://github.com/dpsmpx/MAIN_OBSIDIAN_PC_works/blob/dpmeta/knowledge-mobile-role/KNOWLEDGE_SYSTEM/docs/PROJECT_ROLE_2026_11_11.md), `676aea9`; линия PR #1 и личный vault не сливались |
 | DP_Backup_Tool | [Роль](https://github.com/dpsmpx/DP_Backup_Tool/blob/dpmeta/mobile-studio-roles/docs/direction/DP_META_APP.md), `3567bbf` |
 | dpcalls | [Роль](https://github.com/dpsmpx/dpcalls/blob/dpmeta/mobile-studio-roles/docs/direction/DP_META_APP.md), `41704bc` |
-| DPpass | DPpass:D-109 в актуальном `dppass/`; архивированный прежний репозиторий не менялся |
+| DPpass | DPpass:D-109; с 16 ноября 2026 — снова свой репозиторий `dpsmpx/DPpass` с историей (D-174, DPpass:D-112) |
 | DPvisualisation | DPvisualisation:D-30 в актуальном `dpvisualisation/` |
 | pascalabcnet, TrueJointTileMaker | Роли сохранены в общей карте; сами репозитории не менялись по поручению автора |
 

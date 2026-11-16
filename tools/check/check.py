@@ -14,7 +14,7 @@
 
 Подсистема со своими проверками (SUBSYSTEMS) — каталог со своим процессом: её текст, ссылки
 и номера проверяет её команда; здесь — секреты (второй, независимый поиск), раскладка корня
-и единое ядро (кроме подсистемы со своим ядром по решению — CORE_OWN, D-30).
+и единое ядро (D-28).
 Ключ --write-status переписывает блок состояния README.md из ROADMAP и выходит.
 
 Коды возврата: 0 — пройдено; 1 — есть находки; 2 — неверный вызов;
@@ -46,7 +46,7 @@ ROOT_ALLOW = {
     ".claude", ".github", "docs", "ROADMAP", "tools", "tests",
     "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
     "gradle", "build-logic", "app", "shell", "core", "cli", "config",
-    "dpai", "dppass", "dpvisualisation", "dpmeta",
+    "dpai", "dpvisualisation", "dpmeta",
 }
 # Пакетный файл Windows создан Gradle с CRLF — так и хранится (`.gitattributes`).
 CRLF_ALLOWED = {"gradlew.bat"}
@@ -58,11 +58,10 @@ WRAPPER_SOURCE = "dpai/"
 # строка — команда с аргументом `static`, кортеж — команда со своими аргументами.
 SUBSYSTEMS = {
     "dpai": "dpai/tools/verify/run.sh",
-    "dppass": "dppass/tools/hostcheck/run.sh",
     "dpvisualisation": "dpvisualisation/tools/check/run.sh",
     "dpmeta": ("dpmeta/tools/check.sh",),
 }
-# Строка шага в выводе команды подсистемы: «- ✓ шаг» (dpai), «  ✓ id  итог» (DP Verify у dppass, D-30),
+# Строка шага в выводе команды подсистемы: «- ✓ шаг» (dpai), «  ✓ id  итог» (DP Verify),
 # «✓ id — что проверено» (SocialMediaImage) или «✓ id (0.0 с)» (DPvisualisation, D-43);
 # итог прогона («✓ static пройден», «✓ tools/check.sh: всё зелёное») — не шаг.
 SUBSYSTEM_STEP = re.compile(r"^(?:(?:- |  )([✓✗]) (.+)|([✓✗]) (\S+ (?:— |\().+))$", re.M)
@@ -71,8 +70,6 @@ SUBSYSTEM_STEP_OWN = {"dpmeta": re.compile(r"^([✓✗]) (?!DPmeta: )(.+)$", re.
 # Единое ядро (D-28): эти типы объявлены один раз — в ядре подсистемы dpai.
 CORE_TYPES = ("Outcome", "OperationResult", "Diagnostic", "DiagCode", "Secret", "Clock")
 CORE_HOME = "dpai/core/src/main/"
-# Своё ядро подсистемы — по решению, с причиной: каталог → решение.
-CORE_OWN = {"dppass/": "D-30: ядро DPpass пока своё, сведение с ядром dpai — отдельной задачей с паритетом"}
 CORE_DECL = re.compile(r"^[ \t]*(?:(?:public|internal|private|sealed|data|value|enum|abstract|open|fun|inline)\s+)*"
                        r"(?:class|interface|object|typealias)\s+(" + "|".join(CORE_TYPES) + r")\b", re.M)
 # Имена в обратных кавычках, похожие на путь, но не пути: с переездом подсистемы её каталог
@@ -505,12 +502,10 @@ def check_status(repo, r):
 
 
 def check_core_single(repo, r):
-    """core.single — типы ядра объявлены один раз и только в ядре dpai (D-28): второго ядра нет.
-
-    Исключение — подсистема со своим ядром по решению (CORE_OWN, D-30)."""
+    """core.single — типы ядра объявлены один раз и только в ядре dpai (D-28): второго ядра нет."""
     seen = {}
     for rel in repo.files:
-        if not rel.endswith(".kt") or rel.startswith(tuple(CORE_OWN)):
+        if not rel.endswith(".kt"):
             continue
         r.scanned += 1
         text = repo.text(rel) or ""

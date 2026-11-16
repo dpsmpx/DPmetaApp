@@ -1,2 +1,0 @@
-hysteria2://test-password-8@192.0.2.62:8443/?fm=%7B%22quicParams%22%3A%7B%22congestion%22%3A%22bbr%22%2C%22debug%22%3Atrue%7D%7D&sni=hy2.example.com#HY2%20bbr%20debug
-vless://00000000-0000-4000-8000-000000000064@203.0.113.64:443?encryption=none&flow=xtls-rprx-vision&fp=randomizednoalpn&pbk=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&security=reality&sni=www.example.com&type=tcp#Reality%20randomizednoalpn

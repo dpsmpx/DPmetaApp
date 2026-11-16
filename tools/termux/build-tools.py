@@ -16,13 +16,14 @@ build_tools; с --push коммитит и пушит по частям. Сес�
 Репозиторий build_tools — только приватный: лицензия Android SDK не разрешает его раздавать.
 
 Что и откуда (версии — из файлов сборки этого клона DPmetaApp, не из скрипта):
-  sdk/      пакеты Android SDK для dpai/android и dppass/ — zip с dl.google.com/android/repository;
+  sdk/      пакеты Android SDK для dpai/android — zip с dl.google.com/android/repository;
             размер и SHA-1 — по манифесту Google repository2-3.xml (он лежит рядом: по нему ставит
             sdkmanager); command-line tools — по SHA-256 из хука начала сессии;
   maven2/   Google Maven — группы, которые сборки берут из google() (как google { content } в
-            dpai/settings.gradle.kts): весь список dppass/gradle/verification-metadata.xml — по
-            SHA-256 оттуда; для dpai/android — обход графа плагина Android, Compose BOM, material3 и
-            activity-compose по POM и Gradle module metadata (суммы из .module, где они есть);
+            dpai/settings.gradle.kts): обход графа плагина Android, Compose BOM, material3 и
+            activity-compose для dpai/android по POM и Gradle module metadata (суммы из .module,
+            где они есть). Чужих проектов здесь нет: что нужно их сборкам, ставит окружение
+            проекта (D-174).
   files/    закреплённые загрузки самих сборок — пары «адрес to SHA-256» в *.gradle.kts dpai/ (как
             linuxFiles dpai/android: Alpine minirootfs и proot-static с dl-cdn.alpinelinux.org) — по
             закреплённой сумме;
@@ -55,7 +56,6 @@ GOOGLE_GROUP = re.compile(r"com\.android(\..*)?|androidx\..*|com\.google\.(andro
 PART = 45 * 1024 * 1024
 SCHEMA = "build-tools/1"
 UA = "dpmetaapp-build-tools"
-VERIFY_NS = "{https://schema.gradle.org/dependency-verification}"
 
 
 class Mismatch(Exception):
@@ -86,11 +86,6 @@ def sdk_wanted(root: Path) -> list[list[str]]:
     api = re.search(r"^\s*compileSdk\s*=\s*(\d+)", app, re.M).group(1)
     ndk = re.search(r'^\s*ndkVersion\s*=\s*"([^"]+)"', app, re.M).group(1)
     cmake = re.search(r'^\s*version\s*=\s*"(3\.[0-9.]+)"', app, re.M).group(1)
-    cat = (root / "dppass/gradle/libs.versions.toml").read_text(encoding="utf-8")
-    p_api = re.search(r'^android-compileSdk\s*=\s*"(\d+)"', cat, re.M).group(1)
-    p_ndk = re.search(r'^android-ndk\s*=\s*"([^"]+)"', cat, re.M).group(1)
-    p_hook = (root / "dppass/.claude/hooks/session-start.sh").read_text(encoding="utf-8")
-    p_bt = re.search(r'^BUILD_TOOLS="([^"]+)"', p_hook, re.M).group(1)
     want = [
         [f"platforms;android-{api}.0", f"platforms;android-{api}"],
         ["platforms;android-30"],  # minSdk dpai/android — для check_android_api.py (как хук)
@@ -98,9 +93,6 @@ def sdk_wanted(root: Path) -> list[list[str]]:
         ["platform-tools"],
         [f"ndk;{ndk}"],
         [f"cmake;{cmake}"],
-        [f"platforms;android-{p_api}", f"platforms;android-{p_api}.0"],
-        [f"build-tools;{p_bt}"],
-        [f"ndk;{p_ndk}"],
     ]
     out, seen = [], set()
     for alts in want:
@@ -150,18 +142,6 @@ def pinned(root: Path) -> list[tuple[str, str]]:
             continue
         out += [(u, h) for u, h in PIN.findall(f.read_text(encoding="utf-8")) if (u, h) not in out]
     return out
-
-
-def dppass_artifacts(root: Path):
-    """Артефакты Google Maven из сверки DPpass: (группа, имя, версия, файл, SHA-256)."""
-    tree = ET.parse(root / "dppass/gradle/verification-metadata.xml").getroot()
-    for c in tree.iter(VERIFY_NS + "component"):
-        g, a, v = c.get("group"), c.get("name"), c.get("version")
-        if not GOOGLE_GROUP.fullmatch(g):
-            continue
-        for art in c.findall(VERIFY_NS + "artifact"):
-            sha = art.find(VERIFY_NS + "sha256")
-            yield g, a, v, art.get("name"), sha.get("value") if sha is not None else None
 
 
 # ---------------------------------------------------------------- загрузка и хранилище
@@ -613,19 +593,6 @@ def main(argv=None) -> int:
 
         if a.only in (None, "maven"):
             crawler = Crawler(store, a.google_maven, a.central)
-            n = 0
-            for g, art, v, name, sha256 in dppass_artifacts(root):
-                crawler.seen.add((g, art, v))  # граф этих — уже в сверке DPpass
-                rel = "maven2/" + gav_dir(g, art, v) + name
-                if not store.have(rel):
-                    got = fetch(a.google_maven + gav_dir(g, art, v) + name, out / rel, sha256=sha256)
-                    if got is None:
-                        raise SystemExit(f"✗ нет в Google Maven: {g}:{art}:{v} {name}")
-                    store.add(rel, got, (out / rel).stat().st_size, "SHA-256 из dppass/gradle/verification-metadata.xml")
-                    n += 1
-            print(f"Maven: сверка DPpass — новых файлов {n}", flush=True)
-            publish(out, store, "Maven: Google Maven из сверки DPpass", a.push)
-
             agp, bom, act = catalog_version(root, "agp"), catalog_version(root, "compose-bom"), catalog_version(root, "activity-compose")
             crawler.bom("androidx.compose", "compose-bom", bom)
             m3 = sorted(crawler.forced.get(("androidx.compose.material3", "material3"), ()))

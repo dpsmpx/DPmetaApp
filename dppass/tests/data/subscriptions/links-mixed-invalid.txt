@@ -1,8 +1,0 @@
-vless://00000000-0000-4000-8000-000000000011@203.0.113.11:443?type=tcp&security=reality&sni=www.example.com&pbk=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&sid=01234567&fp=chrome&flow=xtls-rprx-vision&encryption=none#Reality%20NL
-vless://00000000-0000-4000-8000-000000000012@cdn.example.net:443?type=xhttp&security=tls&sni=cdn.example.net&path=%2Fx&host=cdn.example.net&mode=packet-up#XHTTP%20CDN
-trojan://test-password-3@198.51.100.13:443?security=tls&sni=t.example.org&type=ws&path=%2Fws#Trojan
-vless://00000000-0000-4000-8000-000000000014@203.0.113.14:443?type=tcp&security=tls&sni=a.example.com&allowInsecure=1#Insecure
-vless://00000000-0000-4000-8000-000000000015@203.0.113.15:443?type=kcp&security=none#KCP
-vmess://eyJ2IjoiMiJ9
-vless://00000000-0000-4000-8000-000000000016@203.0.113.16:443?type=tcp&security=tls&sni=b.example.com&encryption=mlkem768x25519plus.native.0rtt.AAAA#PQ
-vless://not-a-uuid@203.0.113.17:443?type=tcp&security=tls&sni=c.example.com#BadUUID

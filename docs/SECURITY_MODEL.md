@@ -3,7 +3,7 @@
 Угрозы и защита DPmetaApp 1.0 — ТЗ, §11 (T-01…T-18); здесь — что из этого
 уже есть в коде, где и чем проверяется. Пункты проходятся целиком на
 выпуске (этап 8). Подсистемы — по своим документам (`dpai/docs/SECURITY_MODEL.md`,
-`dppass/docs/SECURITY_MODEL.md`).
+`DPpass:docs/SECURITY_MODEL.md`).
 
 ## Сделано (обзор T-01…T-11 — `docs/audits/2026-11-15-threats.md`)
 
