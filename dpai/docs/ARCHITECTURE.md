@@ -434,6 +434,9 @@ AlpinePackageState учитывает виртуальные provides. Api FIX �
 Откат (D-194): `ui.EnvSnapshots` — снимок, план и итог; `EnvSnapshotStore`
 оболочки снимает его в `LinuxSetup.apk`/`runSteps` и ведёт откат через
 `writeWorld`, кеш apk (`enableCache`, `cachedPackages`) и `apkAddCached`/`apkPin`.
+Проекты (D-195): `ui.ProjectNeeds` — команды по стеку и профилям против `cmd:`
+базы apk, пакеты — свой выбор и `orchestrator.linux.ApkIndex` (индексы зеркала
+из кеша); `EnvironmentProjects` оболочки берёт проекты и профили у контроллера.
 
 Языки запуска (D-141): EditorRunOutput возвращает RunDiagnosis по пути
 файла, C++ использует прежний CppDependencies. PythonRuntime/KotlinRuntime

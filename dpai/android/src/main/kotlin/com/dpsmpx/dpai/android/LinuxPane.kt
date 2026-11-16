@@ -50,7 +50,7 @@ import kotlinx.coroutines.withContext
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun LinuxScreen(onBack: () -> Unit) {
+fun LinuxScreen(onBack: () -> Unit, controller: Controller? = null, model: DemoModel? = null) {
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     val available = remember { LinuxSetup.available(context) }
@@ -80,7 +80,7 @@ fun LinuxScreen(onBack: () -> Unit) {
     var envOpen by rememberSaveable { mutableStateOf(false) }
     if (envOpen) {
         androidx.activity.compose.BackHandler { envOpen = false }
-        EnvironmentScreen(onBack = { envOpen = false })
+        EnvironmentScreen(onBack = { envOpen = false }, controller = controller, model = model)
         return
     }
 

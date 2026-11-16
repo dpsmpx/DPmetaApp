@@ -112,7 +112,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
             targets = controller.targets()
         }
         androidx.activity.compose.BackHandler(onBack = close)
-        LinuxScreen(onBack = close)
+        LinuxScreen(onBack = close, controller = controller, model = model)
         return
     }
 

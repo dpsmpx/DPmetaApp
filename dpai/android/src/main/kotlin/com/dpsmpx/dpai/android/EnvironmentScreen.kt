@@ -42,13 +42,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Экран «Окружение» (D-191…D-194; `DPmetaApp:D-171`, шаги 1–4): пакеты Alpine гостя — что стоит,
+ * Экран «Окружение» (D-191…D-195; `DPmetaApp:D-171`, шаги 1–5): пакеты Alpine гостя — что стоит,
  * версия, размер, сумма, для кого нужен, совместимость между собой; обновить, убрать,
  * починить без ИИ. База читается с хоста без процесса гостя; команды `apk` — та же
  * долгая работа `LINUX_APK`, что и на экране «Linux в приложении», по одной (AI:A-14).
  */
 @Composable
-fun EnvironmentScreen(onBack: () -> Unit) {
+fun EnvironmentScreen(onBack: () -> Unit, controller: Controller? = null, model: DemoModel? = null) {
     val context = LocalContext.current.applicationContext
     val jobs = remember { LongJobs.get(context) }
     val state by jobs.state.collectAsState()
@@ -67,6 +67,7 @@ fun EnvironmentScreen(onBack: () -> Unit) {
     var section by rememberSaveable { mutableStateOf(EnvSection.ALPINE) }
     var components by remember { mutableStateOf<List<AppComponents.Component>>(emptyList()) }
     var removingComponent by remember { mutableStateOf<AppComponents.Component?>(null) }
+    var projectChecks by remember { mutableStateOf<List<com.dpsmpx.dpai.ui.ProjectNeeds.Check>>(emptyList()) }
 
     // Список перечитывается, когда команда гостя закончилась: база — после неё.
     LaunchedEffect(running) {
@@ -83,6 +84,7 @@ fun EnvironmentScreen(onBack: () -> Unit) {
             }
             val arch = inv?.byName?.get("musl")?.arch
             components = runCatching { AppComponents.scan(EnvironmentComponents.rootfs(context).toPath(), arch) }.getOrDefault(emptyList())
+            projectChecks = runCatching { EnvironmentProjects.checks(context, controller, model, inv) }.getOrDefault(emptyList())
         }
         loaded = true
     }
@@ -105,7 +107,11 @@ fun EnvironmentScreen(onBack: () -> Unit) {
         AlertDialog(
             onDismissRequest = { removing = null },
             title = { Text("Убрать «${r.name}»?") },
-            text = { Text(AlpineView.removalText(r)) },
+            text = {
+                // Что уйдёт из нужного проектам (D-195) — до команды.
+                val warn = com.dpsmpx.dpai.ui.ProjectNeeds.removalWarnings(r.gone, projectChecks)
+                Text(AlpineView.removalText(r) + if (warn.isEmpty()) "" else "\nНужно проектам: ${warn.joinToString()}.")
+            },
             confirmButton = {
                 if (r.allowed) {
                     TextButton(onClick = {
@@ -180,6 +186,11 @@ fun EnvironmentScreen(onBack: () -> Unit) {
                 }
             }
         }
+        if (section == EnvSection.PROJECTS) {
+            item {
+                EnvironmentProjectsSection(projectChecks, running) { packages, label -> apk(LinuxEnvironment.Apk.ADD, packages, label) }
+            }
+        }
         if (section == EnvSection.SNAPSHOTS) {
             item {
                 EnvironmentSnapshotsSection(running) { s ->
@@ -231,7 +242,7 @@ fun EnvironmentScreen(onBack: () -> Unit) {
 }
 
 /** Разделы экрана. */
-private enum class EnvSection(val title: String) { ALPINE("Пакеты Alpine"), COMPONENTS("Компоненты"), SETTINGS("Настройки"), SNAPSHOTS("Снимки") }
+private enum class EnvSection(val title: String) { ALPINE("Пакеты Alpine"), COMPONENTS("Компоненты"), PROJECTS("Проекты"), SETTINGS("Настройки"), SNAPSHOTS("Снимки") }
 
 /** Строк вывода `apk` на экране: хвост, где итог и ошибка. */
 private const val MAX_OUTPUT = 20
