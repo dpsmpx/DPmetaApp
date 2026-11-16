@@ -1,9 +1,0 @@
-{
-  "load": {
-    "outcome": "rejected",
-    "codes": [
-      "FLOW_REQUIRES_TCP_TLS",
-      "TRANSPORT_PROTOCOL_MISMATCH"
-    ]
-  }
-}

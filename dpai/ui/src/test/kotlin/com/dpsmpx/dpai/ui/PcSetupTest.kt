@@ -101,7 +101,7 @@ class PcSetupTest {
         assertEquals(listOf("ssh-ed25519 AAAAother me@pc", "from=\"${PcSetup.PRIVATE_NETS}\" $key"), keys, "чужой ключ цел, прежний ключ DP AI заменён")
         assertTrue("agent ok: agent doctor LANG=C.UTF-8" in out, out)
         assertTrue("Хост: 192.168.1.20 100.101.102.103 " in out && "203.0.113.5" !in out, "адреса ПК — только частные: $out")
-        assertTrue("Команда агента dpai: ${home.path}/dpai-agent" in out && "SHA256:stub" in out && "раздачу DPpass" in out, out)
+        assertTrue("Команда агента dpai: ${home.path}/dpai-agent" in out && "SHA256:stub" in out && "точке доступа телефона" in out, out)
         val sudo = log.readText()
         assertTrue("apt-get install" in sudo && "sshd -t" in sudo && "sudo -v" in sudo, sudo)
         // Ключи хоста — до проверки sshd -t: на свежей системе без них проверка падает.

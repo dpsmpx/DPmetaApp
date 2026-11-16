@@ -1,5 +1,0 @@
-trojan://test-password-1@198.51.100.41:443?security=tls&sni=t.example.org&type=ws&path=%2Fws&host=t.example.org#Valid
-trojan://test-password-2@198.51.100.42:443?security=tls&sni=t.example.org&type=ws&path=no-slash#Bad%20WS%20path
-trojan://test-password-3@198.51.100.43:443?security=tls&sni=t.example.org&type=httpupgrade&path=%2Fa%20b#Bad%20HTTPUpgrade%20path
-vless://00000000-0000-4000-8000-000000000044@cdn.example.net:443?type=xhttp&security=tls&sni=cdn.example.net&path=x&mode=packet-up#Bad%20XHTTP%20path
-trojan://test-password-5@198.51.100.45:443?security=tls&sni=t.example.org&type=grpc&serviceName=bad%20name#Bad%20gRPC%20serviceName

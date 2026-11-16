@@ -106,8 +106,6 @@ fi
     echo "Правила — CLAUDE.md; этап и шаги — ROADMAP/ROADMAP.md; хвосты — TODO.md."
     echo "Подсистема «AI» и ядро — dpai/ (D-28): правила dpai/CLAUDE.md, хвосты dpai/TODO.md,"
     echo "  проверки — cd dpai && tools/verify/run.sh static|affected|full."
-    echo "Подсистема DPpass — dppass/ (D-30): правила dppass/CLAUDE.md, хвосты dppass/TODO.md,"
-    echo "  проверки — cd dppass && tools/hostcheck/run.sh --quick|--full, итог для PR — run.sh report."
     echo "Подсистема DPvisualisation — dpvisualisation/ (D-43): правила dpvisualisation/CLAUDE.md;"
     echo "  проверки — cd dpvisualisation && tools/check/run.sh [full] (Python 3.11+; full — Node.js и Chromium)."
     echo "Подсистема DPmeta — dpmeta/ (D-43): правила dpmeta/CLAUDE.md; проверки — cd dpmeta && tools/check.sh"

@@ -1,8 +1,0 @@
-{
-  "load": {
-    "outcome": "rejected",
-    "codes": [
-      "DNS_SERVER_INVALID"
-    ]
-  }
-}

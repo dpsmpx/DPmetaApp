@@ -1,8 +1,0 @@
-{
-  "load": {
-    "outcome": "rejected",
-    "codes": [
-      "FORMAT_NOT_DPPASS"
-    ]
-  }
-}

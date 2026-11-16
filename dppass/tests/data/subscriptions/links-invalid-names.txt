@@ -1,5 +1,0 @@
-trojan://test-password-1@198.51.100.21:443?security=tls&sni=OK.Example.ORG.&type=ws&path=%2Fws&host=OK.Example.ORG#Valid
-trojan://test-password-2@198.51.100.22:443?security=tls&sni=bad%20name.example.org#Bad%20SNI
-vless://00000000-0000-4000-8000-000000000023@203.0.113.23:443?type=tcp&security=reality&sni=bad_name.example.com&pbk=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&sid=01234567&fp=chrome&encryption=none#Bad%20Reality%20SNI
-trojan://test-password-4@198.51.100.24:443?security=tls&sni=t.example.org&type=ws&path=%2Fws&host=bad%20host.example.org#Bad%20WS%20host
-vless://00000000-0000-4000-8000-000000000025@cdn.example.net:443?type=xhttp&security=tls&sni=cdn.example.net&path=%2Fx&host=-bad-.example.net&mode=packet-up#Bad%20XHTTP%20host

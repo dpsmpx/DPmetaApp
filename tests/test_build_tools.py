@@ -1,5 +1,5 @@
 """Самотест tools/termux/build-tools.py на синтетических репозиториях (file://): манифест SDK с архивами,
-Google Maven с POM и Gradle module metadata (BOM, available-at, ограничения, свойства), сверка DPpass.
+Google Maven с POM и Gradle module metadata (BOM, available-at, ограничения, свойства).
 Настоящий dl.google.com облачной сессии закрыт — здесь проверяется логика, а не сеть."""
 import hashlib
 import importlib.util
@@ -72,8 +72,6 @@ class BuildTools(unittest.TestCase):
             f'val minirootfs = "{(self.tmp / "cdn" / "alpine-minirootfs.tar.gz").as_uri()}" to\n'
             f'    "{hashlib.sha256(self.rootfs).hexdigest()}"\n')
         put(self.root, "dpai/gradle/libs.versions.toml", 'agp = "9.4.1"\ncompose-bom = "2026.09.00"\nactivity-compose = "1.13.0"\n')
-        put(self.root, "dppass/gradle/libs.versions.toml", 'android-compileSdk = "36"\nandroid-ndk = "30.0.1"\n')
-        put(self.root, "dppass/.claude/hooks/session-start.sh", 'BUILD_TOOLS="36.0.0"\n')
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as z:
             z.writestr("cmdline-tools/bin/sdkmanager", FAKE_SDKMANAGER)
@@ -100,13 +98,9 @@ class BuildTools(unittest.TestCase):
         # Google Maven
         M = self.maven
         self.gradle_jar = put(M, "com/android/tools/build/gradle/9.4.1/gradle-9.4.1.jar", b"agp")
-        put(M, "com/android/tools/build/gradle/9.4.1/gradle-9.4.1.module", "{}")
-        put(self.root, "dppass/gradle/verification-metadata.xml",
-            '<verification-metadata xmlns="https://schema.gradle.org/dependency-verification"><components>'
-            '<component group="com.android.tools.build" name="gradle" version="9.4.1">'
-            f'<artifact name="gradle-9.4.1.jar"><sha256 value="{hashlib.sha256(self.gradle_jar).hexdigest()}"/></artifact></component>'
-            '<component group="org.jetbrains.kotlin" name="kotlin-stdlib" version="2.0"><artifact name="kotlin-stdlib-2.0.jar">'
-            '<sha256 value="00"/></artifact></component></components></verification-metadata>')
+        put(M, "com/android/tools/build/gradle/9.4.1/gradle-9.4.1.module", json.dumps({"variants": [
+            {"name": "runtimeElements", "attributes": {"org.gradle.usage": "java-runtime"},
+             "files": [{"url": "gradle-9.4.1.jar", "sha256": hashlib.sha256(self.gradle_jar).hexdigest()}]}]}))
         put(M, "com/android/application/com.android.application.gradle.plugin/9.4.1/com.android.application.gradle.plugin-9.4.1.pom",
             pom("com.android.application", "com.android.application.gradle.plugin", "9.4.1",
                 deps=[("com.android.tools.build", "gradle", "9.4.1", None)], packaging="pom"))
@@ -175,17 +169,17 @@ class BuildTools(unittest.TestCase):
         self.assertEqual(rc, 0, log)
         m = json.loads((self.out / "MANIFEST.json").read_text())
         self.assertEqual(m["schema"], "build-tools/1")
-        # SDK: все пакеты обеих сборок, без лишнего (emulator), Linux-архив NDK; большой — частями
+        # SDK: пакеты сборки dpai/android, без лишнего (emulator, пакеты чужих проектов), Linux-архив NDK;
+        # большой — частями
         self.assertEqual(sorted(m["sdk"]), sorted(["cmdline-tools", "platforms;android-37.0", "platforms;android-30",
-                                                   "build-tools;37.0.0", "platform-tools", "ndk;28.2.1", "cmake;3.22.1",
-                                                   "platforms;android-36", "build-tools;36.0.0", "ndk;30.0.1"]))
+                                                   "build-tools;37.0.0", "platform-tools", "ndk;28.2.1", "cmake;3.22.1"]))
         ndk = m["files"]["sdk/ndk-28.2.1.zip"]
         self.assertTrue(ndk["parts"] and not (self.out / "sdk/ndk-28.2.1.zip").exists())
         whole = b"".join((self.out / p["path"]).read_bytes() for p in ndk["parts"])
         self.assertEqual(hashlib.sha256(whole).hexdigest(), ndk["sha256"])
         self.assertTrue((self.out / "sdk/repository2-3.xml").is_file())
         self.assertIn("SHA-256 из хука", m["files"]["sdk/clt.zip"]["verified"])
-        # Maven: сверка DPpass, граф Compose и плагина; чужие группы, документация, metadata и тесты — нет
+        # Maven: граф Compose и плагина; чужие группы, документация, metadata и тесты — нет
         files = set(m["files"])
         for rel in ("com/android/tools/build/gradle/9.4.1/gradle-9.4.1.jar",
                     "com/android/application/com.android.application.gradle.plugin/9.4.1/com.android.application.gradle.plugin-9.4.1.pom",
@@ -201,7 +195,7 @@ class BuildTools(unittest.TestCase):
             self.assertIn("maven2/" + rel, files)
         self.assertFalse(any("kotlin-stdlib" in f or "material3-metadata" in f or "sources.jar" in f
                              or "ui-test" in f or "runner" in f or "material3-window" in f for f in files), files)
-        self.assertIn("dppass", m["files"]["maven2/com/android/tools/build/gradle/9.4.1/gradle-9.4.1.jar"]["verified"])
+        self.assertIn(".module", m["files"]["maven2/com/android/tools/build/gradle/9.4.1/gradle-9.4.1.jar"]["verified"])
         # закреплённая загрузка сборки — по закреплённой сумме
         self.assertEqual(list(m["pins"].values()), ["files/alpine-minirootfs.tar.gz"])
         self.assertEqual((self.out / "files/alpine-minirootfs.tar.gz").read_bytes(), self.rootfs)
@@ -235,9 +229,9 @@ class BuildTools(unittest.TestCase):
         self.assertEqual(rc, 0, log)
         msgs = subprocess.run(["git", "--git-dir", str(origin), "log", "--format=%s", "--all"],
                               capture_output=True, text=True, check=True).stdout.splitlines()
-        self.assertIn("SDK: ndk;30.0.1", msgs)
+        self.assertIn("SDK: ndk;28.2.1", msgs)
         self.assertIn("Maven: граф dpai/android (Compose, плагин Android)", msgs)
-        self.assertEqual(len(msgs), 13)  # 10 пакетов SDK, файлы сборки, сверка DPpass, граф dpai/android
+        self.assertEqual(len(msgs), 9)  # 7 пакетов SDK, файлы сборки, граф dpai/android
         tracked = subprocess.run(["git", "-C", str(self.out), "ls-files"], capture_output=True, text=True).stdout
         self.assertNotIn(".download", tracked)
 
@@ -339,7 +333,8 @@ class BuildTools(unittest.TestCase):
     def test_list_names_packages_without_download(self):
         rc, log = self.run_tool("--list")
         self.assertEqual(rc, 0, log)
-        self.assertIn("ndk;30.0.1", log)
+        self.assertIn("ndk;28.2.1", log)
+        self.assertNotIn("ndk;30.0.1", log)  # пакеты чужих проектов сборщик не знает (D-174)
         self.assertFalse(self.out.exists())
 
 

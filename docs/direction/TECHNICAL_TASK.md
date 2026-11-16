@@ -112,9 +112,9 @@ R-06 там). Чужой номер пишется с именем проект�
 | DP_game_market_analytic_system | анализ рынка игр | 0.1.0, CLI нет | `python3 -m pytest` | журнал `ADR-\d+`, `DP_game_market_analytic_system:docs/HANDOFF.md` |
 | DPmeta | мета-уровень: карта, контракты, риски | три прохода 5.10.2026 | `DPmeta:tools/check.sh` | реестр `DPmeta:tools/ecosystem.toml` (schema 1), заголовки `C-`, `RISK-`, `SQ-` |
 
-С 16 октября 2026 DPpass — подсистема DPmetaApp в `dppass/` (D-30): его
-проверки — `dppass/tools/hostcheck/run.sh`, блок «Прогресс» —
-`dppass/README.md`; репозиторий DPpass заморожен.
+С 16 октября по 16 ноября 2026 DPpass был подсистемой DPmetaApp в `dppass/`
+(D-30); теперь снова самостоятельный репозиторий (D-174), в DP_IDE не
+входит.
 
 Периферия и новые (на 5 октября 2026; места определены 9 октября —
 `DPmeta:M-10`, D-26): DPmonetization (теперь — поддерживающий слой),

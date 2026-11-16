@@ -11,7 +11,6 @@ works from the code, data or documents in this repository without the prior
 written permission of the copyright holder.
 
 Не относится к стороннему: компоненты — по своим лицензиям
-(docs/PROVENANCE.md и PROVENANCE.md подсистем), копия DP Verify в
-dppass/tools/dpv/ — по лицензии DP Verify.
+(docs/PROVENANCE.md и PROVENANCE.md подсистем).
 
 Решение — docs/direction/DECISIONS.md, D-47.

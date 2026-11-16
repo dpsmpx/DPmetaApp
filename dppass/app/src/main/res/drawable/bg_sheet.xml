@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Нижний лист: поверхность со скруглённым верхом (D-34). -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="@color/surface" />
-    <corners
-        android:topLeftRadius="@dimen/radius_card"
-        android:topRightRadius="@dimen/radius_card" />
-</shape>

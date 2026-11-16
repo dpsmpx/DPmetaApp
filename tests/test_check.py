@@ -224,16 +224,10 @@ class SubsystemScopeTest(CheckCase):
             with self.subTest(cid):
                 self.assertClean(s.run(cid))
 
-    def test_dppass_is_a_subsystem_too(self):
-        # DPpass — подсистема со своим процессом (D-30): каталог разрешён в корне, текст — её проверкам.
-        s = self.sample({"dppass/docs/X.md": "# X\r\nСм. D-52, `docs/NOPE.md`.\n"})
-        for cid in ("repo.layout", "format.text", "docs.links", "docs.refs"):
-            with self.subTest(cid):
-                self.assertClean(s.run(cid))
-
     def test_moved_out_projects_are_not_subsystems(self):
-        # SocialMediaImage и DPprofile живут только в своём репозитории (D-154): каталог в корне — находка.
-        for d in ("socialmediaimage", "dpprofile"):
+        # SocialMediaImage и DPprofile (D-154), DPpass (D-174) живут только в своём репозитории:
+        # каталог в корне — находка.
+        for d in ("socialmediaimage", "dpprofile", "dppass"):
             with self.subTest(d):
                 self.assertCatches(self.sample({f"{d}/docs/X.md": "# X\n"}).run("repo.layout"), d)
 
@@ -274,12 +268,10 @@ class CoreSingleTest(CheckCase):
         self.assertCatches(self.sample({"dpai/core/src/main/kotlin/Core.kt": core}).run("core.single"),
                            "нет объявления Clock")
 
-    def test_own_core_of_dppass_is_allowed(self):
-        # Ядро DPpass пока своё (D-30): его типы — не находка, а в остальном коде — по-прежнему.
-        s = self.sample({"dppass/diagnostics/src/main/kotlin/Outcome.kt": "package d\n\nsealed interface Outcome\nclass Secret\n"})
-        self.assertClean(s.run("core.single"))
-        s = self.sample({"dppass/x/Outcome.kt": "sealed interface Outcome\n", "core/m/A.kt": "class Secret\n"})
-        self.assertCatches(s.run("core.single"), "Secret объявлен вне")
+    def test_no_own_core_exception(self):
+        # Исключения CORE_OWN больше нет (D-174): ядро только одно — и в каталоге, где жил DPpass.
+        s = self.sample({"dppass/diagnostics/src/main/kotlin/Outcome.kt": "package d\n\nsealed interface Outcome\n"})
+        self.assertCatches(s.run("core.single"), "Outcome объявлен вне")
 
     def test_similar_names_pass(self):
         s = self.sample({"core/model/src/main/kotlin/M.kt": "class OutcomeView\nclass TestClock\nfun Secret() = 1\n"})
@@ -446,7 +438,7 @@ class SubsystemChecksTest(CheckCase):
         self.assertCatches(self.run_sub(None), "нет команды проверок")
 
     def test_dp_verify_lines_are_steps(self):
-        # Вывод DP Verify (dppass, D-30): «  ✓ id  итог»; строки подробностей и итог прогона — не шаги.
+        # Вывод DP Verify: «  ✓ id  итог»; строки подробностей и итог прогона — не шаги.
         out = "printf 'dpv · static\\n  ✓ docs.links    ссылок 10\\n  ✓ docs.refs     ссылок 3\\n✓ static пройден\\n'"
         r = self.run_sub(f"#!/bin/sh\n{out}\n")
         self.assertClean(r)
