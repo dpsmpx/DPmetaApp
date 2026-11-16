@@ -53,7 +53,7 @@ Termux, на Linux- или Windows-хосте
 | 19 | Финальный аудит стабильности и устойчивости | — | 1 из 3 |
 | 20 | Заморозка V1 | — | 1 из 5 |
 
-- **Решения** (`docs/direction/DECISIONS.md`): принято 200, из них заменено 0; отложенных вопросов — 2.
+- **Решения** (`docs/direction/DECISIONS.md`): принято 201, из них заменено 0; отложенных вопросов — 2.
 - **Задачи и долги** (`TODO.md`): открыто 46: следующее — 21, известные долги — 13, окружение — 4, открытые вопросы автору — 1, на устройстве (redmi note 13) — 7.
 <!-- progress:end -->
 
@@ -87,7 +87,7 @@ Termux, на Linux- или Windows-хосте
              ui/ ─ orchestrator/
                        │
  tasks · sessions · contexts · verification · monitoring · notifications
- accounts · execution · git · security · storage · ecosystem · connectors · analytics
+ accounts · execution · git · security · storage · connectors · analytics
                        │
                      core/   Outcome · Diagnostic · ID · Clock · хеши · JSON · автоматы · события
 ```

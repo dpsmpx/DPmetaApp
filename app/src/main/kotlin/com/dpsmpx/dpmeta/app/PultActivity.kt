@@ -1337,19 +1337,6 @@ open class PultActivity : ComponentActivity() {
         /** Проекты, для которых «Сделать рабочим проектом IDE?» получило «Нет» (D-177): имена репозиториев в нижнем регистре. */
         private const val IDE_DECLINED = "ide-declined"
 
-        /**
-         * Манифест экосистемы для «AI» (`DP_AI_Orcestrator:D-114`) — из реестра
-         * и отмеченных клонов пульта, без сети и токена; вызывает оболочка
-         * `:shell` (D-53), с фонового потока.
-         */
-        fun ecosystemManifest(context: android.content.Context): Outcome<String> {
-            val app = context.applicationContext
-            val selected = app.getSharedPreferences(CLONES_PREFS, MODE_PRIVATE).getStringSet(CLONES_SELECTED, null).orEmpty().toSet()
-            val repo = PultRepository(NioVfs(app.filesDir.toPath().resolve("dpmeta")), Clock.SYSTEM, com.dpsmpx.dpmeta.app.data.PultPool.work, File(app.filesDir, CLONES_DIR))
-            // Испорченный клон или сбой JGit — отказ словами, а не падение окна «Экосистема».
-            return runCatching { repo.ecosystemManifest(selected) }
-                .getOrElse { Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.ECOSYSTEM_UNAVAILABLE, "манифест из реестра не собран: ${it.javaClass.simpleName}") }
-        }
         private const val CLONES_FLAT_GONE = "flat-removed"
     }
 }

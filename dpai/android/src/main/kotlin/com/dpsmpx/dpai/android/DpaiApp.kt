@@ -343,9 +343,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         }
     }
     var creating by rememberSaveable { mutableStateOf(false) }
-    var ecosystem by rememberSaveable { mutableStateOf(false) }
-    if (creating) NewTaskDialog(model, onEcosystem = { creating = false; ecosystem = true }) { creating = false }
-    if (ecosystem) EcosystemDialog(model) { ecosystem = false }
+    if (creating) NewTaskDialog(model) { creating = false }
     // Обратимое — сразу и со снэкбаром «Отменить» (AI:A-4): хост — у оболочки, действия — во вкладках.
     val tabStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     // Пульт под «AI» есть в приложении DPmetaApp (D-73); в отдельной сборке «AI» — нет.
@@ -568,7 +566,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                                     QuickRow(s.quick, model)
                                     Box(Modifier.weight(1f)) { DashboardPane(s.dashboard, s.quick, model, onTargets = { openTab(AiTab.TARGETS) }) { foundTask = it } }
                                 }
-                                else -> BoardPane(s.board, model, s.archived, onEcosystem = if (s.live) ({ ecosystem = true }) else null) { selectedId = it }
+                                else -> BoardPane(s.board, model, s.archived) { selectedId = it }
                             }
                         }
                     }
@@ -1018,14 +1016,13 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel, maxHeight: androi
 }
 
 @Composable
-private fun BoardPane(board: TaskBoard, model: DemoModel, archived: Int, onEcosystem: (() -> Unit)?, onSession: (String) -> Unit) {
+private fun BoardPane(board: TaskBoard, model: DemoModel, archived: Int, onSession: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     var showArchived by remember { mutableStateOf(model.showArchived) }
     var opened by remember { mutableStateOf<com.dpsmpx.dpai.core.ids.TaskId?>(null) }
     // Снизу — место плавающей «Новой задаче» (AI:A-6): последняя карточка не прячется под ней.
     LazyColumn(contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = FAB_ROOM), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         // Экосистема (ТЗ, §43–§46; политика авто-задач — D-106) — здесь и в окне «Новой задачи» (AI:A-6).
-        onEcosystem?.let { open -> item(key = "ecosystem") { TextButton(onClick = open) { Text("Экосистема…") } } }
         // Архив (D-42): завершённые — с доски, история в журнале остаётся.
         item(key = "archive") {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1147,7 +1144,7 @@ private fun SearchDialog(model: DemoModel, onDone: () -> Unit, onOpen: (com.dpsm
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun NewTaskDialog(model: DemoModel, onEcosystem: (() -> Unit)? = null, onDone: () -> Unit) {
+internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
     var title by remember { mutableStateOf("") }
     var objective by remember { mutableStateOf("") }
@@ -1208,8 +1205,6 @@ internal fun NewTaskDialog(model: DemoModel, onEcosystem: (() -> Unit)? = null, 
         action = { TextButton(enabled = !busy, onClick = { submit() }) { Text(if (busy) "Ставлю…" else "Поставить") } },
     ) {
             Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                // Задачи из манифеста экосистемы (ТЗ, §43–§46) — отсюда и с «Задач» (AI:A-6).
-                onEcosystem?.let { TextButton(onClick = it) { Text("Из экосистемы…") } }
                 OutlinedTextField(title, { title = it }, label = { Text("Название") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(objective, { objective = it }, label = { Text("Что сделать") }, minLines = 3)
                 TextButton(onClick = { more = !more }) { Text(if (more) "Дополнительно ▾" else "Дополнительно ▸") }

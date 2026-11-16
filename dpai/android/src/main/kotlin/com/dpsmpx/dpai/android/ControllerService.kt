@@ -185,14 +185,6 @@ class ControllerService : Service() {
                             // Копия приложения без секретов — раз в сутки (DPmetaApp:D-151).
                             runCatching { AppBackups.tick(app, BuildConfig.DPAI_VERSION) }
                             meter.part("копия настроек", at)
-                            // Задачи из экосистемы по политике прогона — раз в час (D-106); сбой — в журнал, такт идёт.
-                            at = Clock.SYSTEM.monotonicNanos()
-                            try {
-                                EcosystemAuto.tick(app, model, notifier, log)
-                            } catch (e: Exception) {
-                                log.error("экосистема", AppLogs.describe(e))
-                            }
-                            meter.part("экосистема", at)
                             // Облачная копия — раз в сутки, если включена (D-107); после шага такта контур стоит.
                             at = Clock.SYSTEM.monotonicNanos()
                             try {
