@@ -77,6 +77,19 @@ class DpmetaActivity : PultActivity() {
         return MainActivity.workspace(this)
     }
 
+    // Работа студии по рабочим проектам (DPmetaApp:D-176): числа подсистемы «AI», без текстов задач.
+    override fun studioWork(): List<Screens.StudioWork> = com.dpsmpx.dpai.android.PultProjects.work(applicationContext).map { w ->
+        Screens.StudioWork(
+            w.root, w.tasksOpen?.toLong(), w.requests?.toLong(), w.running?.toLong(), w.turns?.toLong(), w.costUsd, w.costEstimated,
+            w.manual?.ok?.toLong(), w.manual?.failed?.toLong(),
+            when (w.manual?.running) {
+                com.dpsmpx.dpai.ui.ManualProfileKind.BUILD -> "сборка"
+                com.dpsmpx.dpai.ui.ManualProfileKind.CHECK -> "проверка"
+                else -> null
+            },
+        )
+    }
+
     // Документ проекта пульта в IDE (DPmetaApp:D-177): клон пульта — рабочий проект подсистемы «AI».
     override fun workingProjectAt(guestRoot: String): String? = com.dpsmpx.dpai.android.PultProjects.find(applicationContext, guestRoot)
 

@@ -84,6 +84,10 @@ object Screens {
         val gatesReady: String,
         /** Доля удачных источников последней синхронизации (ТЗ, §8, `app.sync.health`). */
         val syncHealth: String,
+        /** Открытых PR во всех проектах (D-176). */
+        val pullsOpen: String = UNKNOWN,
+        /** Красный CI (D-176): голов основных веток и открытых PR. */
+        val ciRed: String = UNKNOWN,
     )
 
     fun summary(s: EcosystemState): Summary = Summary(
@@ -102,7 +106,27 @@ object Screens {
             if (known.isEmpty()) UNKNOWN else "${known.count { it }} из ${known.size}" + if (unknown > 0) " (неизвестно — $unknown)" else ""
         },
         syncHealth = s.syncHealth.orNull()?.let { "$it % источников" } ?: UNKNOWN,
+        pullsOpen = s.projects.map { it.openPulls }.let { ms -> if (ms.all { it is Measure.Unknown }) UNKNOWN else ms.sumOf { it.orNull() ?: 0L }.toString() },
+        ciRed = ciRed(s),
     )
+
+    /** Красный CI во всех проектах (D-176): головы основных веток и открытые PR; CI нигде не известен — неизвестно. */
+    private fun ciRed(s: EcosystemState): String {
+        var known = false
+        var red = 0
+        for (p in s.projects) {
+            (payload(p, "commits")?.get("ci") as? JsonObject)?.let { c ->
+                known = true
+                if (str(c, "verdict") == "red") red++
+            }
+            for (o in objects(payload(p, "pulls"), "pulls")) {
+                val c = o["ci"] as? JsonObject ?: continue
+                known = true
+                if (str(c, "verdict") == "red") red++
+            }
+        }
+        return if (known) red.toString() else UNKNOWN
+    }
 
     // --- Левая панель приложения (D-112; прежде — нижняя панель D-73) ---
 
@@ -149,6 +173,8 @@ object Screens {
         Tile("Работают", if (s.active == UNKNOWN) UNKNOWN else "${s.active} из ${s.projects}", Goes.PROJECTS, "eco.active_projects"),
         Tile("Вопросов автору", s.questions, Goes.QUESTIONS, "eco.questions_open"),
         Tile("PR ждут автора", s.pullsWaiting, Goes.PULLS),
+        Tile("PR открыто", s.pullsOpen, Goes.PULLS),
+        Tile("Красный CI", s.ciRed, Goes.PROJECTS),
         Tile("Ошибок источников", s.sourceErrors.toString(), Goes.PROJECTS),
         Tile("Шлюз готов", s.gatesReady, Goes.PROJECTS),
         Tile("Синхронизация", s.syncHealth, Goes.SYNC, "app.sync.health"),
@@ -162,6 +188,55 @@ object Screens {
      * или не настроено.
      */
     data class AiCounts(val configured: Boolean, val waiting: Measure<Long>, val running: Measure<Long>, val nearLimit: Measure<Long>, val problems: Int = 0)
+
+    /**
+     * Работа студии по рабочему проекту (D-176) — от оболочки `:shell` из подсистемы «AI»: задачи,
+     * запросы, идущие сессии, ходы и расход ИИ, ручные сборки и проверки за сутки. `null` — неизвестно.
+     */
+    data class StudioWork(
+        val root: String,
+        val tasksOpen: Long?,
+        val requests: Long?,
+        val running: Long?,
+        val turns: Long?,
+        val costUsd: java.math.BigDecimal?,
+        val costEstimated: Boolean,
+        val buildsOk: Long?,
+        val buildsFailed: Long?,
+        /** Что идёт сейчас вручную: «сборка», «проверка» или `null`. */
+        val manualRunning: String? = null,
+    )
+
+    private fun n(v: Long?) = v?.toString() ?: UNKNOWN
+
+    private fun usd(v: java.math.BigDecimal, estimated: Boolean) =
+        "$" + v.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString() + if (estimated) " (оценка)" else ""
+
+    /**
+     * Работа студии в карточке (D-176): `null` — подсистемы IDE нет; [w] `null` — проект ещё не
+     * рабочий проект IDE (D-177: он станет им при открытии документа в IDE).
+     */
+    fun studioSection(w: StudioWork?, ide: Boolean): CardSection? {
+        if (!ide) return null
+        if (w == null) return CardSection(CardSection.Kind.STUDIO, "Студия: не рабочий проект IDE", listOf("Откройте документ в IDE — проект станет рабочим: сборка, проверки, задачи ИИ."))
+        return CardSection(
+            CardSection.Kind.STUDIO,
+            "Студия: задач ${n(w.tasksOpen)} · ждут вас ${n(w.requests)} · сессий ИИ ${n(w.running)}",
+            listOf(
+                "Ходы ИИ: ${n(w.turns)}" + (w.costUsd?.let { " · расход ${usd(it, w.costEstimated)}" } ?: ""),
+                "Сборки и проверки за сутки: успешно ${n(w.buildsOk)}, с ошибкой ${n(w.buildsFailed)}" + (w.manualRunning?.let { " · идёт $it" } ?: ""),
+            ),
+        )
+    }
+
+    /** Строка студии на сводке (D-176): сумма по рабочим проектам; неизвестное у всех — словом. */
+    fun studioLine(list: List<StudioWork>): String {
+        if (list.isEmpty()) return "Студия: рабочих проектов нет"
+        fun sum(f: (StudioWork) -> Long?): String = list.mapNotNull(f).let { if (it.isEmpty()) UNKNOWN else it.sum().toString() }
+        val cost = list.mapNotNull { it.costUsd }.takeIf { it.isNotEmpty() }?.fold(java.math.BigDecimal.ZERO, java.math.BigDecimal::add)
+        return "Студия: задач ${sum { it.tasksOpen }} · ждут вас ${sum { it.requests }} · сборки за сутки ✓${sum { it.buildsOk }} ✗${sum { it.buildsFailed }}" +
+            (cost?.let { " · расход ${usd(it, list.any { w -> w.costEstimated })}" } ?: "")
+    }
 
     /**
      * Рабочий проект на устройстве или target (D-150): GitHub ему не нужен. Список
@@ -233,7 +308,7 @@ object Screens {
 
     /** Раздел карточки: [title] — строка с итогом, [lines] — что под раскрытием; [kind] — что рисует экран. */
     data class CardSection(val kind: Kind, val title: String, val lines: List<String>) {
-        enum class Kind { READY, ROADMAP, PULLS, BRANCHES, ISSUES, COMMITS, CHECKLISTS, DECISIONS, TODO, ABOUT }
+        enum class Kind { STUDIO, READY, ROADMAP, PULLS, BRANCHES, ISSUES, COMMITS, CHECKLISTS, DECISIONS, TODO, ABOUT }
     }
 
     fun cardView(c: Card): CardView {

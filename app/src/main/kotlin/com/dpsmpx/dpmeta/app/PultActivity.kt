@@ -195,6 +195,9 @@ open class PultActivity : ComponentActivity() {
      */
     protected open fun aiCounts(): com.dpsmpx.dpmeta.app.screens.Screens.AiCounts? = null
 
+    /** Работа студии по рабочим проектам (D-176) от оболочки; `null` — подсистемы нет. Не на главном потоке. */
+    protected open fun studioWork(): List<com.dpsmpx.dpmeta.app.screens.Screens.StudioWork>? = null
+
     /** Рабочие проекты на устройстве (D-150) от оболочки; `null` — подсистемы нет. Не на главном потоке. */
     protected open fun localProjects(): List<com.dpsmpx.dpmeta.app.screens.Screens.LocalProject>? = null
 
@@ -378,7 +381,8 @@ open class PultActivity : ComponentActivity() {
                     // Сбой чтения — прежние числа, а не пропавшая строка.
                     val c = runCatching { aiCounts() }.getOrElse { view.value.ai }
                     val l = runCatching { localProjects() }.getOrElse { view.value.local }
-                    runOnUiThread { if (view.value.ai != c || view.value.local != l) view.value = view.value.copy(ai = c, local = l) }
+                    val w = runCatching { studioWork() }.getOrElse { view.value.studio }
+                    runOnUiThread { if (view.value.ai != c || view.value.local != l || view.value.studio != w) view.value = view.value.copy(ai = c, local = l, studio = w) }
                 }
             }
             ui.postDelayed(this, AI_REFRESH_MS)
@@ -789,6 +793,8 @@ open class PultActivity : ComponentActivity() {
             localFirst({ repo.localDocument(project, path, clonesSelected()) }, { repo.document(it, project, path) }, done)
 
         override fun projectPaths(project: String): com.dpsmpx.dpmeta.model.UserProject? = repo.userProject(project)
+
+        override fun guestRoot(project: String): String? = repo.userProject(project)?.repo?.let(com.dpsmpx.dpmeta.app.screens.IdeOpen::guestRoot)
 
         override fun ideAccess(project: String, done: (com.dpsmpx.dpmeta.app.screens.IdeOpen.Access) -> Unit) =
             background({ runCatching { this@PultActivity.ideAccess(project) }.getOrDefault(com.dpsmpx.dpmeta.app.screens.IdeOpen.Access.Unavailable) }, done)

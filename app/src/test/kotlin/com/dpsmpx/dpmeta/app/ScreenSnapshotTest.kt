@@ -181,6 +181,20 @@ class ScreenSnapshotTest {
     }
 
     @Test
+    fun studioWorkInCardAndSummary() {
+        assertNull(Screens.studioSection(null, ide = false), "без IDE — раздела нет")
+        assertEquals("Студия: не рабочий проект IDE", Screens.studioSection(null, ide = true)!!.title)
+        val w = Screens.StudioWork("/root/projects/alice/app", 2, 1, 1, 5, java.math.BigDecimal("1.754"), true, 3, 1, "сборка")
+        val sec = Screens.studioSection(w, ide = true)!!
+        assertEquals("Студия: задач 2 · ждут вас 1 · сессий ИИ 1", sec.title)
+        assertEquals(listOf("Ходы ИИ: 5 · расход \$1.75 (оценка)", "Сборки и проверки за сутки: успешно 3, с ошибкой 1 · идёт сборка"), sec.lines)
+        val unknown = Screens.StudioWork("/root/projects/bob/lib", null, null, null, null, null, false, null, null)
+        assertEquals("Студия: задач ${Screens.UNKNOWN} · ждут вас ${Screens.UNKNOWN} · сессий ИИ ${Screens.UNKNOWN}", Screens.studioSection(unknown, ide = true)!!.title, "неизвестное — словом, не нулём")
+        assertEquals("Студия: задач 2 · ждут вас 1 · сборки за сутки ✓3 ✗1 · расход \$1.75 (оценка)", Screens.studioLine(listOf(w, unknown)))
+        assertEquals("Студия: рабочих проектов нет", Screens.studioLine(emptyList()))
+    }
+
+    @Test
     fun issuesCommitsAndCiInCard() {
         val alpha = Screens.card(state(), "Alpha")!!
         val plain = Screens.cardView(alpha)
