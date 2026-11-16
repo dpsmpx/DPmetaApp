@@ -45,7 +45,7 @@ DP_AI_Orcestrator — control plane для множества сессий Claud
 | Архитектура и границы модулей | `docs/ARCHITECTURE.md` |
 | Модели: данные, исполнение, аккаунты, сессии, контекст | `docs/DATA_MODEL.md`, `docs/EXECUTION_MODEL.md`, `docs/ACCOUNT_MODEL.md`, `docs/SESSION_MODEL.md`, `docs/CONTEXT_MODEL.md` |
 | Планировщик, восстановление | `docs/SCHEDULER.md`, `docs/RECOVERY.md` |
-| Экосистема и глобальный прогон | `docs/ECOSYSTEM.md` |
+| GitHub через `gh` (экосистема убрана, D-200) | `docs/ECOSYSTEM.md` |
 | Модель безопасности (угрозы T1…) | `docs/SECURITY_MODEL.md` |
 | Тесты, производительность | `docs/TESTING.md`, `docs/PERFORMANCE.md` |
 | Экономия контекста и токенов | `docs/EFFICIENCY.md` |

@@ -26,8 +26,8 @@
    │        │
    └──── security/ ── одобрения, хеш предложения, границы секретности
             │
-   storage/ ── журнал событий, снимки, миграции, копии    ecosystem/ connectors/ analytics/
-            │                                              DPmeta     GitHub      учёт
+   storage/ ── журнал событий, снимки, миграции, копии    connectors/ analytics/
+            │                                              GitHub      учёт
           core/ ── Outcome, Diagnostic, Secret, ID, Clock, хеши, строгий JSON,
                    автоматы состояний, события, Measure
 ```
@@ -48,9 +48,9 @@
 5. **Провайдер — за интерфейсом** (`ClaudeRunner`, `AIProvider`, ТЗ,
    §12, §52): ядро не зашивает Claude; V1 оптимизируется под Claude, и
    только через официальные интерфейсы (D-04).
-6. **Экосистема — необязательна** (ТЗ, §5.3, §148): `ecosystem` —
-   интерфейс и адаптеры; без DPmeta, GitHub и сети оркестратор работает
-   настолько, насколько позволяют ресурсы.
+6. **Внешнее — необязательно**: без GitHub и сети оркестратор работает
+   настолько, насколько позволяют ресурсы. Экосистема и глобальный прогон
+   убраны (D-200).
 
 ## 2. Модули и границы
 
@@ -78,7 +78,6 @@
 | `verification` | профили FAST/NORMAL/FULL, доказательства, адаптер DP-Verify | `core`, `execution`, `git` | 10 |
 | `monitoring` | сводки, временная шкала, свежесть, устаревание, ресурсы, самодиагностика | `core`, `accounts`, `execution`, `sessions`, `tasks` | 11 |
 | `notifications` | категории, дедупликация, агрегация, cooldown, deep links, запросы человеку (D-44) | `core` | 12 |
-| `ecosystem` | `EcosystemProvider`, адаптер DPmeta | `core` | 15 |
 | `connectors` | GitHub и другие внешние сервисы | `core`, `security` | 15 |
 | `files` | файлы пользователя (D-99): поиск по именам и тексту обходом дерева (D-149); дерево файлов без символьных ссылок, копия папки с двусторонней синхронизацией по базе, текст для правки, вложения в чат | `core`, `storage` | — |
 | `providers` | `AIProvider` (ТЗ, §52): провайдеры моделей по ключу — Anthropic, OpenAI-совместимые, Gemini; сеть со списком адресов `ProviderHosts`; переписка чата (D-98); модели GGUF с Hugging Face — список и скачивание с докачкой и сверкой суммы в приёмник вызывающего, хосты `HuggingFaceHosts` (D-110, D-119) | `core`, `accounts` | — |
@@ -86,7 +85,7 @@
 | `lsp` | клиент языковых служб редактора (D-137): кадры и JSON-RPC протокола LSP поверх потоков, документы с версиями, диагностика, дополнение, переходы, переименование, форматирование, правки текста в UTF-16; команда clangd; процессов не запускает, execution — только для живого теста с настоящим clangd | `core`, `execution` | — |
 | `sync` | облачная синхронизация (ТЗ, §4.1; D-107): копия состояния контура, зашифрованная на устройстве (PBKDF2-HMAC-SHA256, AES-256-GCM), архив с оглавлением и разрешёнными корнями, восстановление при запуске с сохранением прежних данных, клиент Git Data API к `api.github.com` для приватного репозитория; ядро без облака работает | `core`, `storage`, `providers` | — |
 | `analytics` | учёт использования провайдера; телеметрия приложения — отдельно | `core` | 11, 17 |
-| `orchestrator` | сборка системы: команды, сверка, восстановление, продолжение, полуавтономный режим | `storage`, `security`, `execution`, `accounts`, `git`, `contexts`, `tasks`, `sessions`, `verification`, `monitoring`, `notifications`, `ecosystem`, `connectors`, `analytics` | 13, 14, 16 |
+| `orchestrator` | сборка системы: команды, сверка, восстановление, продолжение, полуавтономный режим | `storage`, `security`, `execution`, `accounts`, `git`, `contexts`, `tasks`, `sessions`, `verification`, `monitoring`, `notifications`, `connectors`, `analytics` | 13, 14, 16 |
 | `ui` | представление без платформы: состояния экранов, форматирование, разбор `dpai://`, приватные снимки редактора; команды установки и поиска языковых служб Python/Kotlin (D-142); files только для тестов восстановления/сохранения | `orchestrator`, `lsp`, `files` | 11 |
 | `cli` | оболочка JVM: команда `dpai` | `orchestrator` | 0 |
 | `jsch` | SSH-хост на JVM (JSch) для targets там, где нет системного OpenSSH — приложение Android (D-35); интерактивная оболочка с PTY для терминала (D-71); файлы ПК по SFTP только для чтения (D-162); процесс-собеседник без PTY — адаптер отладки на ПК (D-164), lsp — только для живого теста отладки по SSH | `execution`, `files`, `lsp` | 11 |
@@ -341,9 +340,8 @@ D-179): по `LiveSystem` на проект, места на target общие �
 провайдера; упавший — повтор по классу. Сценарии V1 1–4 —
 `tests/integration`, `V1ScenariosTest`.
 
-Экосистема (этапы 15, 16; `docs/ECOSYSTEM.md`): `ecosystem` —
-`EcosystemProvider`, `ManifestEcosystem`; `connectors` — `GitHubCommands`;
-`orchestrator.ecosystem.EcosystemRun` — глобальный прогон с ограничителями.
+GitHub (`docs/ECOSYSTEM.md`, §3): `connectors` — `GitHubCommands`.
+Экосистема и глобальный прогон (этапы 15, 16) убраны (D-200).
 
 ## 8. Модели подсистем
 

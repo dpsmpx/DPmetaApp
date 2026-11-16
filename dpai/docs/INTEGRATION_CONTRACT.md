@@ -100,7 +100,6 @@ API не включён. Граница — этот раздел и реест�
 | Автоматы состояний | `core.state`: `SessionLifecycle`, `TaskLifecycle`, `AccountLifecycle`, `TargetLifecycle`, `CircuitLifecycle`; оценка `HeartbeatFreshness` | только новым решением (D-11, D-23) |
 | Протокол агента target | команда `dpai agent` (раздел 11.2); `dpai.agent-reply` v2, `dpai.run-spec` v1, `dpai.agent-run` v2 | новая версия формата; версии агента и контроллера сверяет `TargetDoctor` (расхождение — `WARN`) |
 | Ссылки | `dpai://<вид>/<id>`: `task`, `session`, `project`, `account`, `subscription`, `event` (`notifications.DeepLink`); `dpai://approve\|deny/<apr_…>?hash=sha256:…` (`notifications.ApprovalAction`) | вход из уведомлений (ТЗ, §76); изменение — новым решением |
-| Манифест экосистемы | `dpai.ecosystem` v1 (`docs/ECOSYSTEM.md`, §2) | внешний контракт с DPmeta; чтение строгое |
 
 ### 6.2. API библиотеки — стабилен по смыслу
 
@@ -113,7 +112,7 @@ API не включён. Граница — этот раздел и реест�
 | Результат и диагностика | `Outcome`, `OperationResult`, `Provenance`, `Actor`, `Diagnostic`, `DiagCode`, `Severity`, `Category`, `Retryability`, `Secret`, `Redactor` |
 | Основа | `TypedId`, `IdKinds`, `Clock`, `ManualClock`, `Timestamp`, `RandomSource`, `ContentHash`, `Hashing`, `JsonValue`, `JsonParser`, `CanonicalJson`, `FormatHeader`, `DiagnosticJson`, `TransitionTable`, `Measure` |
 | События | `EventEnvelope`, `EventType`, `StreamRef`, `StreamKind`, `SequenceTracker` |
-| Точки расширения (интерфейсы) | `ProcessHost` и `RunningProcess` (`execution.process`), `ClaudeRunner` (`execution.claude`), `EcosystemProvider` (`ecosystem`), `Vfs` (`storage.vfs`), `Projection` (`storage.snapshot`), `StepRunner` (`verification`), `ControlView` (`ui`) |
+| Точки расширения (интерфейсы) | `ProcessHost` и `RunningProcess` (`execution.process`), `ClaudeRunner` (`execution.claude`), `Vfs` (`storage.vfs`), `Projection` (`storage.snapshot`), `StepRunner` (`verification`), `ControlView` (`ui`) |
 | Решения подсистем | чистые функции над состоянием, итог — события: `Accounts`, `Sessions`, `Tasks`, `Worktrees`; события `AccountEvent`, `SessionEvent`, `TaskEvent`, `WorktreeEvent`, `MergeEvent`; кодеки `AccountCodec`, `SessionCodec`, `TaskCodec`, `WorktreeCodec`, `ContextCodec` |
 | Модели | `ExecutionTarget` (данные, не интерфейс), `SshEndpoint`, `ClaudeRequest`, `ClaudeTurn`, `RunnerUpdate`, `ContextBundle`, `Handoff`, `Proposal`, `Approval`, `VerificationProfile`, `VerificationReport` |
 | Хранилище | `EventJournal`, `DocumentStore`, `SnapshotStore`, `StateRecovery`, `Migration`, `Migrator`, `BackupService`, `NioVfs` |
@@ -154,7 +153,6 @@ API не включён. Граница — этот раздел и реест�
 | Одобрение (`apr`) | разрешение на хеш предложения: одноразовое, со сроком (D-10) | `docs/SECURITY_MODEL.md`, §3 |
 | Проверка | профиль `FAST`/`NORMAL`/`FULL` задаёт пользователь; вердикт `PASSED`/`FAILED`/`INCOMPLETE` | `docs/SCHEDULER.md`, §8 |
 | `Measure` | значение с источником (`OBSERVED`, `DERIVED`, `ESTIMATED`) или `Unknown` с причиной (D-13) | `core.measure` |
-| Экосистема | необязательный `EcosystemProvider` (ТЗ, §148) | `docs/ECOSYSTEM.md` |
 
 ## 8. Вход (Input)
 
@@ -165,7 +163,6 @@ API не включён. Граница — этот раздел и реест�
 | Claude Code | stream-json хода (`system`, `assistant`, `rate_limit_event`, `result`); `claude auth status --json` | `ClaudeStreamParser` → `ClaudeTurn`: состояние — из машинных полей, не из текста (D-23, D-32); вход — `AuthStatus` |
 | Git на target | `git status --porcelain=v2`, коды выхода | `GitStatus`; команды строит только `GitCommands` |
 | Шаги проверки | код выхода, хеш вывода, длительность | `Verifier` → `VerificationReport` |
-| DPmeta | манифест `dpai.ecosystem` v1 | `ManifestEcosystem`, строго; недоступен — `ECOSYSTEM_UNAVAILABLE` |
 | GitHub | вывод `gh` | `GitHubCommands`; непонятный ответ — `CONNECTOR_REPLY_INVALID` |
 | Время, случайность | `Clock`, `RandomSource` | только через них (D-07) |
 
@@ -182,7 +179,6 @@ API не включён. Граница — этот раздел и реест�
 | Действия на target | ход Claude (`dpai.run-spec` агенту), команды `git -C`, шаги проверки; команды `gh` (`gh pr create`, `gh pr view`) строит `GitHubCommands` — контур их пока не вызывает | target, репозиторий, GitHub |
 | Результат задачи | коммит в ветке задачи, `DONE`; слияние в ветку интеграции — после одобрения | репозиторий пользователя |
 | Отчёт проверки | `VerificationReport` (`dpai.verification-report` v1, текст — `render`); в журнале — вердикт и хеш отчёта | задача, аудит |
-| Итог глобального прогона | документ `dpai.ecosystem-results` v1 | пользователь (DPmeta его не читает — раздел 20) |
 | Уведомления | `NotificationDecision` (`Post`, `Update`, `Held`), сводка — `flush`; категория и ссылка `dpai://` | оболочка (`Notifier`) |
 | Экраны | `DashboardScreen`, `TaskBoard`, `SessionScreen` через `ControlView`; текстом — `DashboardText` | оболочка |
 | Диагностика | `Diagnostic` с кодом и причинами; `SelfDiagnosis` | пользователь, журнал |
@@ -229,10 +225,6 @@ API не включён. Граница — этот раздел и реест�
 | `dpai.context` | 2 (только 2) | `ContextBundle`, `ContextCodec` | документ `context-<задача>` контура |
 | `dpai.handoff` | 1 | `Handoff`, `ContextCodec` | документ `handoff-<задача>` контура |
 | `dpai.verification-report` | 1 | `VerificationReport` | только пишется; контур хранит вердикт и хеш |
-| `dpai.ecosystem` | 1 | `ManifestEcosystem` | файл DPmeta или пользователя; только читается |
-| `dpai.ecosystem-results` | 1 | `EcosystemRun` | документ `ecosystem-results` |
-| `dpai.auto-policy` | 1 | `AutoPolicy`, `AutoEcosystem` | документ `auto-policy` контроллера приложения (D-106) |
-| `dpai.ecosystem-auto` | 1 | `AutoEcosystem` | документ `ecosystem-auto` контроллера приложения (D-106) |
 | `dpai.cloud-copy` | 1 | `CloudCrypto` | файл `dpai-cloud/<устройство>.bin` приватного репозитория GitHub человека (D-107) |
 | `dpai.cloud-archive` | 1 | `CloudArchive` | внутри `dpai.cloud-copy`, после расшифровки (D-107) |
 | `dpai.backup-manifest` | 1 | `BackupService` | `manifest.json` копии |
@@ -284,7 +276,6 @@ API не включён. Граница — этот раздел и реест�
 | сверка после перезапуска | `Orchestrator.recover(agentFor)` | `Reconciler.Result` по сессиям, затем `OrphanScan` |
 | факты аккаунтов | `Orchestrator.commitAccounts`; проба входа — `LiveSystem.probeSlot` (`SlotAuthProbe`) | события аккаунтов |
 | чтение | `dashboard`, `invariants`, `lastContext`, `eventCount`; поиск по истории — `EventSearch` | без изменений |
-| глобальный прогон | `EcosystemRun.inspect`, `selectNext`, `step`, `run` с `RunPolicy` | `RunRecord`, `dpai.ecosystem-results` |
 | явные операции автоматов | `Tasks.explicit` (`FAILED` → `QUEUED`, `CANCELLED` → `BACKLOG`, `DONE` → `BACKLOG`); продолжение — новая сессия через `Sessions.create` (D-11) | события задачи и сессии |
 
 Решения подсистем (`Accounts.lease`, `Sessions.create`, `Tasks.plan`,
@@ -412,9 +403,6 @@ targetSdk 36, compileSdk 37 (D-28, D-34).
 
 ### 14.3. Прочие ограничители
 
-- Глобальный прогон — `RunPolicy`: `allowedProjects`, `allowedOperations`,
-  `confirm`, `maxConcurrency`, `maxTasks`, `maxTicks`; задача из предложения
-  создаётся только с подтверждения (`docs/ECOSYSTEM.md`, §4).
 - Деградация — `SelfDiagnostics`: какие `Capability` (`VIEW`, `SCHEDULE`,
   `GIT`, `NOTIFY`, `DESTRUCTIVE_WRITES`) разрешены при каком `SystemHealth`
   (ТЗ, §79, §80).
@@ -476,12 +464,11 @@ DP-Verify как шаг профиля проверки (D-16).
 
 | Владелец | Данные | Что делает оркестратор |
 |---|---|---|
-| Оркестратор (контроллер) | журнал, снимки, документы контура (контекст, handoff, итоги прогона), реестры задач, сессий, слотов, деревьев, слияний; настройки приложения (`dpai.app-targets`, `dpai.app-projects`), known_hosts приложения | источник истины (D-01, D-24): переживает смену сессии, аккаунта и перезапуск |
+| Оркестратор (контроллер) | журнал, снимки, документы контура (контекст, handoff), реестры задач, сессий, слотов, деревьев, слияний; настройки приложения (`dpai.app-targets`, `dpai.app-projects`), known_hosts приложения | источник истины (D-01, D-24): переживает смену сессии, аккаунта и перезапуск |
 | Агент на target | `runs/<SessionId>/`: документ запуска, журнал `events.jsonl`, `stop-request` | пишет только супервизор (D-31); контроллер читает события по номерам |
 | Claude Code на target | каталог слота `CLAUDE_CONFIG_DIR`: вход claude.ai, настройки, своя история сессий | не читает, не копирует, не хранит, не передаёт (D-27); знает только итог `claude auth status --json` — способ входа и отпечаток аккаунта (хеш `orgId` и email; сам email не хранится, D-30) |
 | Anthropic | аккаунт, подписка, пределы | наблюдает пределы по ответам Claude Code и не обходит их (D-04) |
 | Пользователь | профили проверки, одобрения, состав подписок и `rotationAllowed`, ключ выпуска | исполняет его политику; ключ выпуска в репозиторий не попадает (`docs/PROCESS.md`, §6) |
-| DPmeta | содержимое манифеста `dpai.ecosystem` | только читает (D-16); без него работает (ТЗ, §148) |
 | Git (репозиторий пользователя) | код, история, ветки | создаёт деревья и ветки `task/<id>`, коммитит в ветку задачи, сливает в ветку интеграции только по одобрению и только когда она выгружена в рабочей копии без изменений, неудавшееся слияние отменяет (`git merge --abort`; ревью A-54, A-68); после слияния или отказа удаляет дерево задачи только `git worktree remove` без `--force` — ветка задачи остаётся, дерево с неотслеживаемым остаётся тоже (ревью A-65); разрушительное — только с одобрением (T10) |
 | GitHub | PR; вход — у `gh` пользователя | строит команды `gh`, токенов не хранит (D-14) |
 | Android | Keystore с закрытым ключом SSH приложения | ключ не покидает устройство; у оркестратора — ссылка (T2) |
@@ -531,35 +518,15 @@ DP-Verify как шаг профиля проверки (D-16).
 | Канал запуска — опрос агента; вывод процессов читается как UTF-8 (кодовая страница OEM на Windows искажается); `SequenceTracker` канала держит id событий запуска в памяти | `TODO.md`, «Известные долги» |
 | Индекс для поиска не выбран (производное от журнала); экспорт секретов (ключей SSH) не сделан | `docs/direction/DECISIONS.md`, «Отложено» |
 | Agent SDK и другие провайдеры не поддерживаются (D-32); интерфейса `AIProvider` (ТЗ, §52) в коде нет — абстракция провайдера сейчас `ClaudeRunner` | `docs/direction/V1_SCOPE.md`, §3 |
-| FUTURE: локальная модель, задачи из состояния экосистемы без подтверждения, полный GitHub, облачная синхронизация, отдельный runner, коммерческая готовность | `docs/direction/V1_SCOPE.md`, §3 |
+| FUTURE: локальная модель, полный GitHub, облачная синхронизация, отдельный runner, коммерческая готовность | `docs/direction/V1_SCOPE.md`, §3 |
 
 ## 20. Интеграция с DPmeta (DPmeta Integration)
 
-- DPmeta → оркестратор: манифест `dpai.ecosystem` v1 (`docs/ECOSYSTEM.md`,
-  §2) — проекты (`key`, `name`, `repository`), `state` (свободные пары
-  строк, поля решает источник), `documents`, `suggestions` (`key`, `title`,
-  `objective`, `priority` — уровень `Priority`, `operation`). Читает
-  `ManifestEcosystem`, строго (D-09); код DPmeta не переносится (D-16).
-  Манифест строит DPmeta (`DPmeta:tools/manifest.py`, `DPmeta:M-11`,
-  `DPmeta:C-13`) — с 25 октября 2026 подсистема `dpmeta/` того же
-  репозитория (`DPmetaApp:D-43`); сюда он не копируется, а читается из
-  клона или файла на устройстве автора (`DPmeta:C-13`, «Границы»).
-- Обратного потока нет: итоги прогона `dpai.ecosystem-results` v1 (проект,
-  предложение, задача, состояние, вердикт, хеш отчёта) и события
-  `dpai.event` — пользователю и экранам; DPmeta их не читает
-  (`DPmeta:C-13`, `DPmeta:M-01`).
-- Необязательность (ТЗ, §5.3, §148): манифеста нет — `EcosystemProvider.None`
-  (`ECOSYSTEM_DISABLED`, не ошибка); недоступен или испорчен —
-  `ECOSYSTEM_UNAVAILABLE`, ручные задачи идут
-  (`EcosystemTest.withoutEcosystemTheOrchestratorStillWorks`).
-- Документы проекта из манифеста попадают в контекст как данные с пометкой
-  происхождения (`EcosystemSources`; T3), а не как указания.
-- Ссылки между репозиториями — `Проект:номер` и `Проект:путь`
-  (`DPmeta:docs/NAMING.md`); принципы DPmeta E-07 и E-10 приняты как D-15 и
-  D-18.
-- Остальное, что ТЗ, §5.3 называет у DPmeta (карта проектов, границы,
-  контракты, риски, очередь синхронизации, решения), в V1 не читается;
-  расширение — новой версией манифеста.
+Убрана (D-200, 16 ноября 2026): манифеста `dpai.ecosystem` и глобального
+прогона нет, обмена с DPmeta тоже. Коды `ECOSYSTEM_DISABLED` и
+`ECOSYSTEM_UNAVAILABLE` остаются в реестре (контракт: только добавлять,
+D-05), их никто не выдаёт. Ссылки между репозиториями — по-прежнему
+`Проект:номер` и `Проект:путь` (`DPmeta:docs/NAMING.md`).
 
 ## 21. Интеграция с DPmetaApp (DPmetaApp Integration)
 
@@ -616,7 +583,7 @@ DP-Verify как шаг профиля проверки (D-16).
   предохранитель (`TargetHealthTracker`, `CircuitLifecycle`), сессии в
   `RECOVERY_PENDING`, сверка при возвращении; слот без входа —
   `AUTH_REQUIRED`, задачи ждут или идут на другой слот.
-  Доказательства: `EcosystemTest.withoutEcosystemTheOrchestratorStillWorks`,
+  Доказательства:
   `MonitoringTest.selfDiagnosisDegradesInsteadOfStopping`,
   `ChaosLoopTest.loopKeepsProgressingThroughRestartsAndTargetLoss`,
   `LiveSystemTest.slotWithoutLoginKeepsTasksWaiting`, `RecoveryTest`.
@@ -718,7 +685,7 @@ DP-Verify как шаг профиля проверки (D-16).
 | Уведомления и одобрения | `NotificationEngineTest`, `UserRequestsFlowTest` | шторм событий | агрегация, эскалация, предел частоты; ответ с чужим хешем ничего не одобряет |
 | Мониторинг и экраны | `MonitoringTest`, `ScreensTest` | — | `STALE` вместо «работает», деградация вместо остановки |
 | Восстановление и инварианты | `RecoveryTest`, `RestartTest`, `ChaosLoopTest`, `InvariantsTest` | хаос с зерном | исходы сверки ТЗ, §55; подъём из снимков и сегментов; инварианты ТЗ, §118 после каждого такта |
-| Сквозные сценарии V1 | `V1ScenariosTest` (сценарии 1–4), `EcosystemTest` (сценарий 5), `IsolationTest`, `LiveSystemTest`, `LiveProjectTest` | `MockRunner`, настоящий `git` | путь `docs/direction/V1_SCOPE.md`, §1 целиком |
+| Сквозные сценарии V1 | `V1ScenariosTest` (сценарии 1–4; сценарий 5 — экосистема — снят D-200), `IsolationTest`, `LiveSystemTest`, `LiveProjectTest` | `MockRunner`, настоящий `git` | путь `docs/direction/V1_SCOPE.md`, §1 целиком |
 | Нагрузка и выносливость | `PerformanceTest`, `EnduranceTest` | ТЗ, §93, §94, §116 | не смысл, а регрессия: пределы `docs/PERFORMANCE.md` не хуже |
 
 Тесты с внешним миром (`AgentCommandTest` по SSH, `JschProcessHostTest`,
