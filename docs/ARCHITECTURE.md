@@ -26,23 +26,21 @@ DPmetaApp/                        сборка Gradle из корня: ./gradlew
 │   ├── ui cli jsch               представление без платформы, команда dpai, SSH на JVM
 │   ├── android                   оболочка Android — библиотека (DP_AI_Orcestrator:D-103)
 │   └── android-app               отдельная сборка «AI» (D-35)
-├── dpvisualisation/              подсистема DPvisualisation (D-43): модель экосистемы и просмотрщик, свой процесс
 ├── dpmeta/                       подсистема DPmeta (D-43): реестр экосистемы, контракты, очередь, свой процесс
 ├── core/ cli/ app/               модули DPmetaApp на ядре dpai/ (ТЗ, §6.2); app — пульт
 ├── shell/                        приложение DPmetaApp — один APK: пульт и «AI» (D-53)
 ├── config/projects/              панели проектов (F-10, D-57)
 ├── config/briefs/                шаблоны поручений Claude (F-23)
 ├── docs/ ROADMAP/ TODO.md        процесс приложения целиком
-└── tools/check/                  проверки корня; подсистемы — dpai/tools/verify/,
-                                  dpvisualisation/tools/check/, dpmeta/tools/check.sh
+└── tools/check/                  проверки корня; подсистемы — dpai/tools/verify/, dpmeta/tools/check.sh
 ```
 
 Сейчас в сборке корня только `dpai/`: модули DPmetaApp из ТЗ, §6.2
 появятся на этапе 1 и дальше, остальные подсистемы — в фазе B (D-25).
-DPvisualisation — модель на Python и просмотрщик на JavaScript, DPmeta —
-документы и инструменты на Python; в сборку корня и APK они не входят, их
-проверки — шаги `subsystem.dpvisualisation` и `subsystem.dpmeta` (D-43).
-SocialMediaImage и DPprofile — только в `dpsmpx/SocialMediaImage` (D-154).
+DPmeta — документы и инструменты на Python; в сборку корня и APK он не
+входит, его проверки — шаг `subsystem.dpmeta` (D-43), до выноса (D-173).
+SocialMediaImage и DPprofile — только в `dpsmpx/SocialMediaImage` (D-154);
+DPpass и DPvisualisation — в своих репозиториях (D-174, D-173).
 
 ## 2. Ядро одно
 
