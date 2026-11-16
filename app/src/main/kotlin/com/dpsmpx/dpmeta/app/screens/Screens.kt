@@ -233,7 +233,7 @@ object Screens {
 
     /** Раздел карточки: [title] — строка с итогом, [lines] — что под раскрытием; [kind] — что рисует экран. */
     data class CardSection(val kind: Kind, val title: String, val lines: List<String>) {
-        enum class Kind { READY, ROADMAP, PULLS, BRANCHES, DECISIONS, TODO, ABOUT }
+        enum class Kind { READY, ROADMAP, PULLS, BRANCHES, CHECKLISTS, DECISIONS, TODO, ABOUT }
     }
 
     fun cardView(c: Card): CardView {
@@ -259,11 +259,31 @@ object Screens {
                 ),
                 // «●» и «○» без легенды не читались (UX-8): свежесть — словом.
                 CardSection(CardSection.Kind.BRANCHES, "Ветки ${c.branches.size}, свежих $fresh", c.branches.map { b -> "${b.name} — ${b.updated}" + if (b.recent) " · свежая" else "" }),
+            ) + listOfNotNull(c.checklists?.let(::checklistsSection)) + listOf(
                 CardSection(CardSection.Kind.DECISIONS, "Решений ${c.decisions}", c.lastDecisions.map { it.text }),
                 CardSection(CardSection.Kind.TODO, "TODO ${c.todo}, за автором ${c.forAuthor}", emptyList()),
                 CardSection(CardSection.Kind.ABOUT, "О себе", c.panel.flatMap { listOf("${it.name}:") + it.text.lines().map { l -> "  $l" } }),
             ),
         )
+    }
+
+    /**
+     * Прогресс по чекбоксам (D-176): итог по найденным файлам — отмечено из всех и доля вниз до
+     * целого; строки — файл с его счётом или «файла нет», под ним — первые открытые пункты.
+     */
+    fun checklistsSection(files: List<ProjectState.ChecklistFile>): CardSection {
+        val found = files.filterNot { it.missing }
+        val done = found.sumOf { it.done }
+        val total = found.sumOf { it.total }
+        val title = when {
+            found.isEmpty() -> "Чек-листы: файлов нет"
+            total == 0L -> "Чек-листы: чекбоксов нет"
+            else -> "Чек-листы: $done из $total (${done * 100 / total} %)"
+        }
+        val lines = files.flatMap { f ->
+            if (f.missing) listOf("${f.path} — файла нет") else listOf("${f.path} — ${f.done}/${f.total}") + f.open.map { (text, _) -> "  ☐ $text" }
+        }
+        return CardSection(CardSection.Kind.CHECKLISTS, title, lines)
     }
 
     /** Итог проверок PR строкой (F-15). */
@@ -339,6 +359,8 @@ object Screens {
         val panel: List<Panel>,
         val files: List<Pair<String, String>>,
         val errors: List<String>,
+        /** Чек-листы пользователя (D-176); `null` — не выбраны или ещё не прочитаны. */
+        val checklists: List<ProjectState.ChecklistFile>? = null,
     )
 
     fun card(s: EcosystemState, name: String): Card? {
@@ -393,6 +415,7 @@ object Screens {
                 payload(p, kind)?.let { o -> str(o, "path")?.let { title to it } }
             },
             errors = p.errors.map { "${it.kind}: ${com.dpsmpx.dpai.core.text.Words.reason(it.code)} — ${it.message} (${it.code}, ${time(it.at)})" },
+            checklists = p.checklists,
         )
     }
 

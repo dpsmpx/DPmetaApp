@@ -72,6 +72,19 @@ class ProjectListTest {
     }
 
     @Test
+    fun withPathsChecksTrimsAndDropsRepeats() {
+        val l = list("alice/app", "bob/lib")
+        val ok = l.withPaths(ref("Alice/App"), listOf(" docs/plan.md ", "", "docs/plan.md"), listOf("TODO.md")).valueOrNull()!!
+        assertEquals(UserProject(ref("alice/app"), listOf("docs/plan.md"), listOf("TODO.md")), ok.projects.first())
+        assertEquals(l.projects[1], ok.projects[1], "другой проект не тронут")
+        assertEquals(listOf("docs/plan.md"), ok.toRegistry().projects.first().docs)
+        assertEquals(listOf("TODO.md"), ok.toRegistry().projects.first().checklists)
+        assertIs<Outcome.Failure>(l.withPaths(ref("alice/app"), listOf("../x.md"), emptyList()))
+        assertIs<Outcome.Failure>(l.withPaths(ref("carol/none"), emptyList(), emptyList()))
+        assertIs<Outcome.Failure>(l.withPaths(ref("alice/app"), emptyList(), (0..ProjectList.MAX_PATHS).map { "f$it.md" }))
+    }
+
+    @Test
     fun pathsAreRelativeInsideTheRepo() {
         for (good in listOf("README.md", "docs/a b.md", "ROADMAP/ROADMAP.md")) assertTrue(ProjectList.validPath(good), good)
         for (bad in listOf("", "/abs", "a/../b", "./a", "a//b", "a\\b", "a\nb")) assertTrue(!ProjectList.validPath(bad), bad)

@@ -152,6 +152,22 @@ data class ProjectState(
         return Measure.observed(mainRecent || branchRecent || prRecent)
     }
 
+    /** Файл чек-листа (D-176): прогресс по чекбоксам или «файла нет»; открытые пункты — текст и строка. */
+    data class ChecklistFile(val path: String, val missing: Boolean, val done: Long, val total: Long, val open: List<Pair<String, Long>>)
+
+    /** Чек-листы проекта (`checklists.v1`); секции нет — `null`: файлы не выбраны или ещё не прочитаны. */
+    val checklists: List<ChecklistFile>?
+        get() = (payload("checklists")?.get("files") as? JsonArray)?.items?.mapNotNull { f ->
+            val o = f as? JsonObject ?: return@mapNotNull null
+            val path = (o["path"] as? JsonString)?.value ?: return@mapNotNull null
+            if ((o["missing"] as? JsonBool)?.value == true) return@mapNotNull ChecklistFile(path, true, 0, 0, emptyList())
+            val open = (o["open"] as? JsonArray)?.items.orEmpty().mapNotNull { i ->
+                val io = i as? JsonObject ?: return@mapNotNull null
+                ((io["text"] as? JsonString)?.value ?: return@mapNotNull null) to ((io["line"] as? JsonNumber)?.toLongExact() ?: 0L)
+            }
+            ChecklistFile(path, false, (o["done"] as? JsonNumber)?.toLongExact() ?: 0L, (o["total"] as? JsonNumber)?.toLongExact() ?: 0L, open)
+        }
+
     /** День истории из клона (D-66): коммиты, из них ИИ и человек, в основной и только в ветках, слияния PR. */
     data class HistoryDay(val date: String, val commits: Long, val ai: Long, val human: Long, val mainline: Long, val branchOnly: Long, val merges: Long)
 
@@ -368,7 +384,9 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                     if (entry.dir != null) addAll(listOf("pulls", "merged", "branches", "history"))
                     if (entry.decisions == null) add("decisions")
                 }
-                ProjectState(entry.name, entry.place.code, (before + fresh).toSortedMap(), errors, skipped)
+                // Чек-листы сняты пользователем (D-176) — прежняя секция не остаётся навсегда.
+                val kept = if (entry.checklists.isEmpty()) (before + fresh) - "checklists" else before + fresh
+                ProjectState(entry.name, entry.place.code, kept.toSortedMap(), errors, skipped)
             }
             val failed = failures.count { it.diagnostic.code !in NOT_FOUND }
             val health = (observations.size + failed).takeIf { it > 0 }?.let { observations.size * 100L / it }

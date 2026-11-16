@@ -5,6 +5,7 @@ import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpmeta.formats.AlertFormat
 import com.dpsmpx.dpmeta.formats.BriefFormat
+import com.dpsmpx.dpmeta.formats.Checklist
 import com.dpsmpx.dpmeta.formats.CommandFormat
 import com.dpsmpx.dpmeta.formats.DecisionLog
 import com.dpsmpx.dpmeta.formats.EventCatalogFormat
@@ -72,6 +73,9 @@ class CorpusTest {
         }
         "todo" -> TodoList.parse(text, "").map { t ->
             "open=${t.open} forAuthor=${t.forAuthor}" + t.sections.joinToString(",") { "${it.title}=${it.items.size}" }.let { if (it.isEmpty()) "" else " $it" }
+        }
+        "checklist" -> Checklist.parse(text).map { c ->
+            "done=${c.done} total=${c.total} open=" + c.open.joinToString("|") { "${it.text}@${it.line}" }.ifEmpty { "-" }
         }
         "roadmap" -> Roadmap.parse(text, "").map { r ->
             "stages=${r.stages.size} done=${r.stagesDone} " +

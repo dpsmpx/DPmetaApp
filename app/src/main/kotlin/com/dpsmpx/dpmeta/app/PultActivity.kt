@@ -745,6 +745,11 @@ open class PultActivity : ComponentActivity() {
         override fun document(project: String, path: String, done: (Outcome<String>) -> Unit) =
             localFirst({ repo.localDocument(project, path, clonesSelected()) }, { repo.document(it, project, path) }, done)
 
+        override fun projectPaths(project: String): com.dpsmpx.dpmeta.model.UserProject? = repo.userProject(project)
+
+        override fun saveProjectPaths(project: String, docs: List<String>, checklists: List<String>): Outcome<Unit> =
+            repo.saveProjectPaths(project, docs, checklists)
+
         /** Панель (F-10) — файл `config/projects/<Проект>.toml`, собранный в APK; нет файла — нет панели. */
         override fun panel(project: String): Outcome<Panel>? {
             val name = "projects/$project.toml"

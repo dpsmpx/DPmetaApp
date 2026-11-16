@@ -164,4 +164,19 @@ class ScreenSnapshotTest {
         assertTrue(beta.pulls.isEmpty())
         assertNull(Screens.card(state(), "Gamma"), "архив не показывается")
     }
+
+    @Test
+    fun checklistsShowProgressAndMissingFiles() {
+        val alpha = Screens.card(state(), "Alpha")!!
+        assertTrue(Screens.cardView(alpha).sections.none { it.kind == Screens.CardSection.Kind.CHECKLISTS }, "не выбраны — раздела нет")
+        val files = listOf(
+            com.dpsmpx.dpmeta.metrics.ProjectState.ChecklistFile("TODO.md", false, 1, 3, listOf("второй" to 2L, "третий" to 3L)),
+            com.dpsmpx.dpmeta.metrics.ProjectState.ChecklistFile("plan.md", true, 0, 0, emptyList()),
+        )
+        val sec = Screens.cardView(alpha.copy(checklists = files)).sections.single { it.kind == Screens.CardSection.Kind.CHECKLISTS }
+        assertEquals("Чек-листы: 1 из 3 (33 %)", sec.title)
+        assertEquals(listOf("TODO.md — 1/3", "  ☐ второй", "  ☐ третий", "plan.md — файла нет"), sec.lines)
+        assertEquals("Чек-листы: файлов нет", Screens.checklistsSection(files.drop(1)).title)
+        assertEquals("Чек-листы: чекбоксов нет", Screens.checklistsSection(listOf(files[0].copy(done = 0, total = 0, open = emptyList()))).title)
+    }
 }

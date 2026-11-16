@@ -299,6 +299,13 @@ interface Loader {
 
     fun document(project: String, path: String, done: (Outcome<String>) -> Unit)
 
+    /** Документы и чек-листы проекта пульта (D-176); `null` — проекта нет в списке пользователя. */
+    fun projectPaths(project: String): com.dpsmpx.dpmeta.model.UserProject? = null
+
+    /** Сохранить документы и чек-листы проекта: пути проверяются; отказ — что не так. */
+    fun saveProjectPaths(project: String, docs: List<String>, checklists: List<String>): Outcome<Unit> =
+        Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "проектов пульта здесь нет", project)
+
     /** Панель проекта (F-10) — `config/projects/<Проект>.toml` в APK; нет файла — `null`. */
     fun panel(project: String): Outcome<Panel>? = null
 
@@ -1047,7 +1054,16 @@ private fun PanelRow(project: String, item: Panel.Item, loader: Loader, open: (N
 private fun CardScreen(c: Screens.Card, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) {
     // Панель (F-10) — один раз на карточку: файл из APK и его разбор не повторяются при перерисовке.
     val panel = remember(c.name) { loader.panel(c.name) }
-    CardList(c, panel, loader, onBack, open)
+    // Пути пользователя (D-176) — из списка проектов; после сохранения перечитываются.
+    var pathsVersion by remember(c.name) { mutableStateOf(0) }
+    val user = remember(c.name, pathsVersion) { loader.projectPaths(c.name) }
+    CardList(c, panel, user, loader, onBack, open) { pathsVersion++ }
+}
+
+/** Название документа на чипе: имя файла, а при повторе имени — путь целиком. */
+private fun docTitle(path: String, all: List<String>): String {
+    val name = path.substringAfterLast('/')
+    return if (all.count { it.substringAfterLast('/') == name } > 1) path else name
 }
 
 /**
@@ -1057,11 +1073,20 @@ private fun CardScreen(c: Screens.Card, loader: Loader, onBack: () -> Unit, open
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) {
+private fun CardList(
+    c: Screens.Card,
+    panel: Outcome<Panel>?,
+    user: com.dpsmpx.dpmeta.model.UserProject?,
+    loader: Loader,
+    onBack: () -> Unit,
+    open: (Nav) -> Unit,
+    onPathsSaved: () -> Unit,
+) {
     val view = remember(c) { Screens.cardView(c) }
     val opened = rememberSaveable(c.name, saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() })) { mutableStateListOf<String>() }
     val decisionsPath = c.files.firstOrNull { it.first == "Решения" }?.second
     var issueOpen by rememberSaveable(c.name) { mutableStateOf(false) }
+    var pathsOpen by rememberSaveable(c.name) { mutableStateOf(false) }
     val todoPath = c.files.firstOrNull { it.first == "TODO" }?.second
     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         item {
@@ -1085,11 +1110,21 @@ private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, on
         item {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 for ((title, path) in c.files) AssistChip(onClick = { open(Nav.Doc(c.name, path, null)) }, label = { Text(title) })
+                // Ключевые документы пользователя (D-176) — после найденных синхронизацией, без повторов.
+                val docs = user?.docs.orEmpty().filter { d -> c.files.none { it.second == d } }
+                for (path in docs) AssistChip(onClick = { open(Nav.Doc(c.name, path, null)) }, label = { Text(docTitle(path, docs)) })
+                if (user != null) AssistChip(onClick = { pathsOpen = true }, label = { Text("Документы и чек-листы…") })
                 AssistChip(onClick = { open(Nav.Dir(c.name, "")) }, label = { Text("Все файлы") })
                 AssistChip(onClick = { issueOpen = true }, label = { Text("Новый issue…") })
                 AssistChip(onClick = { open(Nav.Brief(c.name, null, null, null)) }, label = { Text("Поручить Claude…") })
             }
             if (issueOpen) IssueDialog(c.name, loader) { issueOpen = false }
+            if (pathsOpen && user != null) {
+                PathsDialog(c.name, user, loader, onClose = { pathsOpen = false }) {
+                    pathsOpen = false
+                    onPathsSaved()
+                }
+            }
         }
         for (sec in view.sections) {
             val key = sec.kind.name
@@ -1135,6 +1170,19 @@ private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, on
                         )
                     }
                     items(sec.lines.drop(c.pulls.size)) { Text("  $it", style = MaterialTheme.typography.bodySmall) }
+                } else if (sec.kind == Screens.CardSection.Kind.CHECKLISTS) {
+                    // Файл чек-листа — касанием открывается; открытые пункты — под ним (D-176).
+                    for ((i, f) in c.checklists.orEmpty().withIndex()) {
+                        item(key = "checklist-$i") {
+                            Text(
+                                "  ${f.path} — " + (if (f.missing) "файла нет" else "${f.done}/${f.total} ▸"),
+                                Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = !f.missing, onClickLabel = "открыть файл") { open(Nav.Doc(c.name, f.path, null)) }.padding(vertical = 4.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (f.missing) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified,
+                            )
+                        }
+                        items(f.open) { (text, _) -> Text("      ☐ $text", style = MaterialTheme.typography.bodySmall) }
+                    }
                 } else if (sec.kind == Screens.CardSection.Kind.BRANCHES) {
                     // Ветка — касанием к её экрану: влита ли, удалить (F-14).
                     items(c.branches) { b ->
@@ -2742,6 +2790,40 @@ private fun IssueDialog(project: String, loader: Loader, onClose: () -> Unit) {
             }
         },
         dismissButton = { if (result?.first != true) TextButton(onClick = onClose, enabled = !busy) { Text("Отмена") } },
+    )
+}
+
+/**
+ * Документы и чек-листы проекта (D-176): пути в репозитории — по одному на строке. Документы —
+ * чипами в карточке, чек-листы — прогрессом по чекбоксам со следующей синхронизации.
+ */
+@Composable
+private fun PathsDialog(project: String, user: com.dpsmpx.dpmeta.model.UserProject, loader: Loader, onClose: () -> Unit, onSaved: () -> Unit) {
+    var docs by rememberSaveable(project) { mutableStateOf(user.docs.joinToString("\n")) }
+    var checklists by rememberSaveable(project) { mutableStateOf(user.checklists.joinToString("\n")) }
+    var error by remember { mutableStateOf<String?>(null) }
+    fun lines(text: String) = text.lines().map(String::trim).filter(String::isNotEmpty)
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Документы и чек-листы — $project") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Пути от корня репозитория, по одному на строке, например docs/plan.md.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(value = docs, onValueChange = { docs = it; error = null }, label = { Text("Ключевые документы") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = checklists, onValueChange = { checklists = it; error = null }, label = { Text("Файлы с чекбоксами [ ] / [x]") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                Text("Прогресс по чек-листам появится после следующего обновления.", style = MaterialTheme.typography.bodySmall)
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                when (val r = loader.saveProjectPaths(project, lines(docs), lines(checklists))) {
+                    is Outcome.Success -> onSaved()
+                    is Outcome.Failure -> error = r.errors.first().let { d -> "Не сохранено: ${d.message}" + (d.subject?.let { " — $it" } ?: "") }
+                }
+            }) { Text("Сохранить") }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text("Отмена") } },
     )
 }
 
