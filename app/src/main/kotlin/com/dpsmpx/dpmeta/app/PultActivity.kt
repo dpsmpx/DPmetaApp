@@ -204,6 +204,49 @@ open class PultActivity : ComponentActivity() {
     /** Выбрать рабочий проект [id] и открыть его в IDE; не на главном потоке. */
     protected open fun openProjectIntent(id: String): Intent? = null
 
+    /** Рабочий проект IDE с корнем [guestRoot] в Linux приложения (D-177); `null` — нет или подсистемы нет. Не на главном потоке. */
+    protected open fun workingProjectAt(guestRoot: String): String? = null
+
+    /** Клон [guestRoot] — рабочим проектом IDE с веткой [branch] (D-177); итог — id проекта. Не на главном потоке. */
+    protected open fun adoptClone(guestRoot: String, branch: String): Outcome<String> =
+        Outcome.failure(DiagCode.UNSUPPORTED, "IDE здесь нет", guestRoot)
+
+    /** Выбрать рабочий проект [id] и открыть в редакторе файл [path] (D-177); `null` — не вышло. Не на главном потоке. */
+    protected open fun openFileIntent(id: String, path: String): Intent? = null
+
+    /** Как проект [project] открывает документы в IDE (D-177). Не на главном потоке. */
+    private fun ideAccess(project: String): com.dpsmpx.dpmeta.app.screens.IdeOpen.Access {
+        val slug = repo.userProject(project)?.repo
+        val cloned = slug != null && java.io.File(repo.cloneDir(slug), ".git").isDirectory
+        val working = slug?.takeIf { cloned }?.let { workingProjectAt(com.dpsmpx.dpmeta.app.screens.IdeOpen.guestRoot(it)) }
+        val declined = slug != null && slug.toString().lowercase() in getSharedPreferences(CLONES_PREFS, MODE_PRIVATE).getStringSet(IDE_DECLINED, null).orEmpty()
+        return com.dpsmpx.dpmeta.app.screens.IdeOpen.access(ideIntent() != null, slug, cloned, working, declined)
+    }
+
+    /**
+     * Открыть [path] проекта [project] в редакторе IDE (D-177): рабочий проект — сразу; [adopt] —
+     * согласие сделать клон рабочим проектом. Не на главном потоке.
+     */
+    private fun ideOpen(project: String, path: String, adopt: Boolean): Outcome<Unit> {
+        if (!com.dpsmpx.dpmeta.model.ProjectList.validPath(path)) return Outcome.failure(DiagCode.VALUE_INVALID, "путь документа недопустим", path)
+        val slug = repo.userProject(project)?.repo ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "проекта нет в списке пульта", project)
+        val root = com.dpsmpx.dpmeta.app.screens.IdeOpen.guestRoot(slug)
+        val id = workingProjectAt(root) ?: run {
+            if (!adopt) return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "клон ещё не рабочий проект IDE", project)
+            val tree = repo.worktree(slug) ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "клона на телефоне нет", slug.toString())
+            when (val a = adoptClone(root, com.dpsmpx.dpmeta.app.screens.IdeOpen.branch(tree.branch))) {
+                is Outcome.Failure -> return a
+                is Outcome.Success -> a.value.also { debugLog("пульт", "клон $slug — рабочий проект IDE") }
+            }
+        }
+        val intent = openFileIntent(id, path) ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "рабочий проект IDE не выбрался", project)
+        runOnUiThread { startActivity(intent) }
+        return Outcome.success(Unit)
+    }
+
+    /** «Клонировать и открыть в IDE» (D-177): что открыть после синхронизации, которая делает клон. */
+    private var pendingIdeOpen: Pair<String, String>? = null
+
     /**
      * Отправить ветку рабочего проекта [projectId] в новый репозиторий [url] (D-150): Git
      * проекта на его target; не на главном потоке. Нет подсистемы — отказ.
@@ -745,6 +788,41 @@ open class PultActivity : ComponentActivity() {
         override fun document(project: String, path: String, done: (Outcome<String>) -> Unit) =
             localFirst({ repo.localDocument(project, path, clonesSelected()) }, { repo.document(it, project, path) }, done)
 
+        override fun projectPaths(project: String): com.dpsmpx.dpmeta.model.UserProject? = repo.userProject(project)
+
+        override fun ideAccess(project: String, done: (com.dpsmpx.dpmeta.app.screens.IdeOpen.Access) -> Unit) =
+            background({ runCatching { this@PultActivity.ideAccess(project) }.getOrDefault(com.dpsmpx.dpmeta.app.screens.IdeOpen.Access.Unavailable) }, done)
+
+        override fun openInIde(project: String, path: String, adopt: Boolean, done: (Outcome<Unit>) -> Unit) =
+            background({ runCatching { ideOpen(project, path, adopt) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "IDE: ${it.javaClass.simpleName}", project) } }, done)
+
+        override fun declineIde(project: String) {
+            val slug = repo.userProject(project)?.repo ?: return
+            val prefs = getSharedPreferences(CLONES_PREFS, MODE_PRIVATE)
+            prefs.edit { putStringSet(IDE_DECLINED, prefs.getStringSet(IDE_DECLINED, null).orEmpty() + slug.toString().lowercase()) }
+        }
+
+        /** Клон — в отмеченные (D-70) и синхронизация; файл откроется после неё, согласие на рабочий проект уже дано. */
+        override fun cloneAndOpen(project: String, path: String, done: (Outcome<Unit>) -> Unit) {
+            val slug = repo.userProject(project)?.repo ?: return done(Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "проекта нет в списке пульта", project))
+            if (!com.dpsmpx.dpmeta.model.ProjectList.validPath(path)) return done(Outcome.failure(DiagCode.VALUE_INVALID, "путь документа недопустим", path))
+            val prefs = getSharedPreferences(CLONES_PREFS, MODE_PRIVATE)
+            val selected = prefs.getStringSet(CLONES_SELECTED, null).orEmpty()
+            if (selected.none { it.equals(slug.toString(), ignoreCase = true) }) {
+                prefs.edit {
+                    putBoolean(CLONES_ASKED, true)
+                    putStringSet(CLONES_SELECTED, selected + slug.toString())
+                }
+                view.value = view.value.copy(clones = clonesLine())
+            }
+            pendingIdeOpen = project to path
+            done(Outcome.success(Unit))
+            sync()
+        }
+
+        override fun saveProjectPaths(project: String, docs: List<String>, checklists: List<String>): Outcome<Unit> =
+            repo.saveProjectPaths(project, docs, checklists)
+
         /** Панель (F-10) — файл `config/projects/<Проект>.toml`, собранный в APK; нет файла — нет панели. */
         override fun panel(project: String): Outcome<Panel>? {
             val name = "projects/$project.toml"
@@ -1153,11 +1231,31 @@ open class PultActivity : ComponentActivity() {
                         names = repo.names(),
                     ).also { loadHistory() }
                     is Outcome.Failure -> Screens.failure(r.diagnostics.first()).let { f ->
+                        pendingIdeOpen = null
                         debugLog("пульт", "синхронизация не вышла: ${r.diagnostics.first().code}")
                         view.value.copy(busy = false, status = "Не вышло: ${f.text}." + (note?.let { " $it" } ?: ""), statusDetails = f.details, syncEnded = view.value.syncEnded + 1, syncEnd = SyncEnd.FAILED, progress = null, cancelling = false)
                     }
                 }
+                // Клон для «Клонировать и открыть в IDE» готов — рабочий проект и файл (D-177).
+                if (r is Outcome.Success) openPendingInIde()
             }
+        }
+    }
+
+    /** После синхронизации с новым клоном (D-177): рабочий проект и файл в редакторе; отказ — строкой статуса. */
+    private fun openPendingInIde() {
+        val (project, path) = pendingIdeOpen ?: return
+        if (pool.isShutdown) return
+        // Синхронизация шла раньше, чем репозиторий отметили, — клона ещё нет: ждать следующего «Обновить».
+        val slug = repo.userProject(project)?.repo
+        if (slug != null && !java.io.File(repo.cloneDir(slug), ".git").isDirectory) {
+            view.value = view.value.copy(status = "Клона $slug ещё нет — «Обновить», и файл откроется в IDE.")
+            return
+        }
+        pendingIdeOpen = null
+        pool.execute {
+            val r = runCatching { ideOpen(project, path, adopt = true) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "IDE: ${it.javaClass.simpleName}", project) }
+            if (r is Outcome.Failure) runOnUiThread { view.value = view.value.copy(status = "В IDE не открылось: ${r.errors.first().message}.") }
         }
     }
 
@@ -1226,6 +1324,9 @@ open class PultActivity : ComponentActivity() {
 
         /** Окно «Проекты пульта» (D-176) уже было. */
         private const val PROJECTS_ASKED = "projects-asked"
+
+        /** Проекты, для которых «Сделать рабочим проектом IDE?» получило «Нет» (D-177): имена репозиториев в нижнем регистре. */
+        private const val IDE_DECLINED = "ide-declined"
 
         /**
          * Манифест экосистемы для «AI» (`DP_AI_Orcestrator:D-114`) — из реестра

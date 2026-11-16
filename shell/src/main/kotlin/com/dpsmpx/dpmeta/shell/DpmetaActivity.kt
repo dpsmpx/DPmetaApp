@@ -77,6 +77,18 @@ class DpmetaActivity : PultActivity() {
         return MainActivity.workspace(this)
     }
 
+    // Документ проекта пульта в IDE (DPmetaApp:D-177): клон пульта — рабочий проект подсистемы «AI».
+    override fun workingProjectAt(guestRoot: String): String? = com.dpsmpx.dpai.android.PultProjects.find(applicationContext, guestRoot)
+
+    override fun adoptClone(guestRoot: String, branch: String): Outcome<String> =
+        com.dpsmpx.dpai.android.PultProjects.adopt(applicationContext, guestRoot, branch)
+
+    override fun openFileIntent(id: String, path: String): Intent? {
+        val pid = com.dpsmpx.dpai.core.ids.IdKinds.PROJECT.parse(id).valueOrNull() ?: return null
+        if (com.dpsmpx.dpai.android.Controller.get(filesDir).selectProject(pid) is Outcome.Failure) return null
+        return MainActivity.openFile(this, id, path)
+    }
+
     override fun aiVersion(): String = com.dpsmpx.dpai.android.BuildConfig.DPAI_VERSION
 
     /** Строки пульта — в журнал приложения подсистемы «AI» (D-39: один журнал отладки на приложение; там же Redactor). */

@@ -34,6 +34,22 @@ data class ProjectList(val projects: List<UserProject> = emptyList()) {
 
     fun remove(repo: RepoRef): ProjectList = copy(projects = projects.filterNot { same(it.repo, repo) })
 
+    /**
+     * Документы и чек-листы проекта (D-176): пути проверяются ([validPath]), повторы убираются,
+     * не больше [MAX_PATHS] каждого вида. Проекта нет в списке — отказ.
+     */
+    fun withPaths(repo: RepoRef, docs: List<String>, checklists: List<String>): Outcome<ProjectList> {
+        val i = projects.indexOfFirst { same(it.repo, repo) }
+        if (i < 0) return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "проекта нет в списке пульта", repo.toString())
+        val d = docs.map(String::trim).filter(String::isNotEmpty).distinct()
+        val c = checklists.map(String::trim).filter(String::isNotEmpty).distinct()
+        (d + c).firstOrNull { !validPath(it) }?.let {
+            return Outcome.failure(DiagCode.VALUE_INVALID, "путь — относительный, внутри репозитория, без «..»", it)
+        }
+        if (d.size > MAX_PATHS || c.size > MAX_PATHS) return Outcome.failure(DiagCode.VALUE_INVALID, "путей одного вида — не больше $MAX_PATHS", repo.toString())
+        return Outcome.success(copy(projects = projects.toMutableList().also { it[i] = it[i].copy(docs = d, checklists = c) }))
+    }
+
     /** Сдвинуть на [delta] мест; за краями — к краю. */
     fun move(repo: RepoRef, delta: Int): ProjectList {
         val from = projects.indexOfFirst { same(it.repo, repo) }
@@ -54,7 +70,7 @@ data class ProjectList(val projects: List<UserProject> = emptyList()) {
             schema = 1,
             projects = projects.map { p ->
                 val name = if ((clash[p.repo.name.lowercase()] ?: 0) > 1) p.repo.toString() else p.repo.name
-                ProjectEntry(name, p.repo, clone = null, place = Place.USER, aliases = emptyList(), names = emptyList(), decisions = null, defs = emptyList())
+                ProjectEntry(name, p.repo, clone = null, place = Place.USER, aliases = emptyList(), names = emptyList(), decisions = null, defs = emptyList(), docs = p.docs, checklists = p.checklists)
             },
         )
     }

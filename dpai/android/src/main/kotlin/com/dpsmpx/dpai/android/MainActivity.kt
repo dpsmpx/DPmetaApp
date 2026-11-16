@@ -17,7 +17,7 @@ import androidx.activity.enableEdgeToEdge
  * подтверждения на экране (D-44). Экран забирает и очищает.
  */
 /** Что пришло в окно «AI»: ссылка, подтверждение, остановка или вкладка ([tab] — имя `AiTab`, пункт панели приложения, D-112). */
-data class Incoming(val link: String? = null, val confirm: String? = null, val stop: Boolean = false, val tab: String? = null, val settings: Boolean = false, val settingsSub: String? = null, val newProject: Boolean = false, val workspace: Boolean = false)
+data class Incoming(val link: String? = null, val confirm: String? = null, val stop: Boolean = false, val tab: String? = null, val settings: Boolean = false, val settingsSub: String? = null, val newProject: Boolean = false, val workspace: Boolean = false, val fileProject: String? = null, val filePath: String? = null)
 
 /** Единственная activity: экраны — Compose (D-34), данные — контроллер или демо (D-35). */
 class MainActivity : ComponentActivity() {
@@ -38,6 +38,13 @@ class MainActivity : ComponentActivity() {
             OPEN_SETTINGS -> incoming.value = Incoming(settings = true, settingsSub = intent.getStringExtra(EXTRA_SUB)?.takeIf { it in SETTINGS_SUBS })
             NEW_PROJECT -> incoming.value = Incoming(tab = com.dpsmpx.dpai.ui.AiTab.FILES.name, newProject = true)
             OPEN_WORKSPACE -> incoming.value = Incoming(tab = com.dpsmpx.dpai.ui.AiTab.FILES.name, workspace = true)
+            // Файл из пульта (DPmetaApp:D-177): путь — только годный относительный, иначе — просто рабочий проект.
+            OPEN_FILE -> incoming.value = Incoming(
+                tab = com.dpsmpx.dpai.ui.AiTab.FILES.name,
+                workspace = true,
+                fileProject = intent.getStringExtra(EXTRA_PROJECT),
+                filePath = intent.getStringExtra(EXTRA_PATH)?.takeIf { com.dpsmpx.dpai.files.FileNames.pathValid(it) },
+            )
         }
     }
 
@@ -121,6 +128,14 @@ class MainActivity : ComponentActivity() {
         const val OPEN_WORKSPACE = "com.dpsmpx.dpai.OPEN_WORKSPACE"
 
         fun workspace(context: Context): Intent = internal(context).setAction(OPEN_WORKSPACE).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+
+        /** Файл [path] рабочего проекта [project] в редакторе (DPmetaApp:D-177); проект выбирает вызывающий. */
+        const val OPEN_FILE = "com.dpsmpx.dpai.OPEN_FILE"
+        private const val EXTRA_PROJECT = "project"
+        private const val EXTRA_PATH = "path"
+
+        fun openFile(context: Context, project: String, path: String): Intent =
+            internal(context).setAction(OPEN_FILE).putExtra(EXTRA_PROJECT, project).putExtra(EXTRA_PATH, path).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
 
         /** Пункт «IDE» левой панели приложения: «Файлы» — дерево, редактор и терминал проекта. */
         fun ide(context: Context): Intent = tab(context, com.dpsmpx.dpai.ui.AiTab.FILES)

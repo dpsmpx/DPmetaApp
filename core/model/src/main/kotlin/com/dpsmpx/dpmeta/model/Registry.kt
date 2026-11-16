@@ -91,6 +91,10 @@ data class ProjectEntry(
     val decisions: IdSource?,
     val defs: List<IdSource>,
     val dir: String? = null,
+    /** Ключевые документы карточки (D-176): пути в репозитории, их выбирает пользователь. */
+    val docs: List<String> = emptyList(),
+    /** Файлы с чекбоксами для прогресса (D-176): пути в репозитории. */
+    val checklists: List<String> = emptyList(),
 ) {
     fun toJson(): JsonObject = JsonObject(
         linkedMapOf<String, JsonValue>(
@@ -104,6 +108,8 @@ data class ProjectEntry(
             if (names.isNotEmpty()) put("names", JsonArray(names.map(::JsonString)))
             decisions?.let { put("decisions", it.toJson()) }
             if (defs.isNotEmpty()) put("defs", JsonArray(defs.map { it.toJson() }))
+            if (docs.isNotEmpty()) put("docs", JsonArray(docs.map(::JsonString)))
+            if (checklists.isNotEmpty()) put("checklists", JsonArray(checklists.map(::JsonString)))
         },
     )
 }

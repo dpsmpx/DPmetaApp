@@ -353,6 +353,22 @@ class PultRepository(
         }
     }
 
+    /** Проект пульта по имени карточки (D-176): документы и чек-листы; `null` — проекта в списке нет. */
+    fun userProject(project: String): com.dpsmpx.dpmeta.model.UserProject? {
+        val repo = registry().valueOrNull()?.projects?.firstOrNull { it.name == project }?.slug ?: return null
+        return projectList().valueOrNull()?.projects?.firstOrNull { it.repo.toString().equals(repo.toString(), ignoreCase = true) }
+    }
+
+    /** Сохранить документы и чек-листы проекта (D-176): пути проверяются; чек-листы — со следующей синхронизации. */
+    fun saveProjectPaths(project: String, docs: List<String>, checklists: List<String>): Outcome<Unit> {
+        val p = userProject(project) ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "проекта нет в списке пульта", project)
+        val list = projectList().valueOrNull() ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "списка проектов нет", project)
+        return when (val r = list.withPaths(p.repo, docs, checklists)) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> saveProjectList(r.value)
+        }
+    }
+
     /** Имена, прежние имена и другие написания проектов → имя: ссылки `Проект:путь` (F-09). */
     fun names(): Map<String, String> = registry?.projects.orEmpty().flatMap { p -> (listOf(p.name) + p.aliases + p.names).map { it to p.name } }.toMap()
 

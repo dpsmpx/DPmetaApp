@@ -12,6 +12,7 @@ import com.dpsmpx.dpai.core.serialization.JsonNumber
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
+import com.dpsmpx.dpmeta.formats.Checklist
 import com.dpsmpx.dpmeta.formats.Checks
 import com.dpsmpx.dpmeta.formats.DecisionLog
 import com.dpsmpx.dpmeta.formats.ProcessDocument
@@ -40,6 +41,9 @@ enum class SourceKind(val code: String) {
     TODO("todo"),
     ROADMAP("roadmap"),
     README("readme"),
+
+    /** Чекбоксы файлов, выбранных пользователем (D-176): все пути проекта одним наблюдением. */
+    CHECKLISTS("checklists"),
 
     /** История из клона (D-66): только у читателя клонов, последней — она тяжелее остальных. */
     HISTORY("history"),
@@ -140,6 +144,7 @@ object Sync {
                     SourceKind.TODO -> listOf("TODO.md")
                     SourceKind.ROADMAP -> known[p.name to kind.code]?.let { k -> listOf(k) + (ROADMAP_PATHS - k) } ?: ROADMAP_PATHS
                     SourceKind.README -> listOf("README.md")
+                    SourceKind.CHECKLISTS -> p.checklists.ifEmpty { continue }
                     SourceKind.DPMETA -> if (p.name == DPMETA) listOf(DpmetaDocs.CONTRACTS, DpmetaDocs.RISKS, DpmetaDocs.QUEUE) else continue
                 }
                 if ((p.name to kind.code) !in skip) tasks += SourceTask(p, kind, paths)
@@ -174,6 +179,7 @@ object Sync {
                     h.map { g -> historyJson(g.value) to g.rawSha256 }
                 }
                 SourceKind.DPMETA -> dpmeta(t, reader)
+                SourceKind.CHECKLISTS -> checklists(t, reader)
                 else -> fetch(t, reader, commits, parallel)
             }
             when (r) {
@@ -201,6 +207,7 @@ object Sync {
         SourceKind.BRANCHES -> "github.branches.v1"
         SourceKind.HISTORY -> HISTORY_SCHEMA
         SourceKind.DPMETA -> DPMETA_SCHEMA
+        SourceKind.CHECKLISTS -> CHECKLISTS_SCHEMA
         else -> "unknown"
     }
 
@@ -327,6 +334,35 @@ object Sync {
             }
         }
         return Outcome.success(JsonObject(out) to com.dpsmpx.dpai.core.hashing.Hashing.sha256(raws.toString()))
+    }
+
+    /** Схема чекбоксов файлов пользователя (D-176). */
+    const val CHECKLISTS_SCHEMA = "checklists.v1"
+
+    /**
+     * Чекбоксы всех файлов проекта, которые выбрал пользователь (D-176), — одним наблюдением,
+     * в порядке его списка. Файла нет — запись `missing`: путь мог быть набран с ошибкой, и
+     * карточка это покажет; другой отказ источника — отказ всей задачи.
+     */
+    private fun checklists(t: SourceTask, reader: SourceReader): Outcome<Pair<JsonObject, ContentHash>> {
+        val files = mutableListOf<JsonValue>()
+        val raws = StringBuilder()
+        for (path in t.paths) {
+            when (val r = reader.file(t.project, path)) {
+                is Outcome.Failure -> {
+                    if (r.diagnostics.first().code !in NOT_FOUND) return r
+                    files += JsonObject.of("path" to JsonString(path), "missing" to JsonBool(true))
+                    raws.append(path).append('\u0000').append('-').append('\n')
+                }
+                is Outcome.Success -> {
+                    val c = (Checklist.parse(r.value.value) as Outcome.Success).value
+                    files += JsonObject(linkedMapOf<String, JsonValue>("path" to JsonString(path)).apply { putAll(c.toJson().fields) })
+                    raws.append(path).append('\u0000').append(r.value.rawSha256.toString()).append('\n')
+                }
+            }
+        }
+        val payload = JsonObject.of("schema" to JsonString(CHECKLISTS_SCHEMA), "files" to JsonArray(files))
+        return Outcome.success(payload to com.dpsmpx.dpai.core.hashing.Hashing.sha256(raws.toString()))
     }
 
     /** Схема наблюдения истории из клона (D-66). */

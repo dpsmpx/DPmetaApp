@@ -246,6 +246,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         incoming.tab?.let { name -> AiTab.entries.firstOrNull { it.name == name }?.let { t -> selectedId = null; settings = false; openTab(t) } }
         if (incoming.settings) { selectedId = null; settings = true; settingsSub = incoming.settingsSub }
         if (incoming.newProject) NewProjectRequests.request()
+        if (incoming.fileProject != null && incoming.filePath != null) IdeState.fileRequest.value = IdeState.FileRequest(incoming.fileProject, incoming.filePath)
         if (incoming.workspace) IdeState.workspaceRequest.value = true
         if (incoming != Incoming()) onIncoming()
     }
