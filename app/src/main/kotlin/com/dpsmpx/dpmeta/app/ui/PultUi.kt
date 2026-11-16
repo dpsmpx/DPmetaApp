@@ -105,6 +105,7 @@ import com.dpsmpx.dpmeta.actions.ActionResult
 import com.dpsmpx.dpmeta.actions.ActionStatus
 import com.dpsmpx.dpmeta.app.screens.PullActions
 import com.dpsmpx.dpmeta.app.screens.BranchActions
+import com.dpsmpx.dpmeta.app.screens.IdeOpen
 import com.dpsmpx.dpmeta.app.screens.IssueActions
 import com.dpsmpx.dpmeta.app.screens.PublishActions
 import com.dpsmpx.dpmeta.app.screens.EditActions
@@ -298,6 +299,20 @@ interface Loader {
     fun directory(project: String, dir: String, done: (Outcome<List<GitHub.Entry>>) -> Unit)
 
     fun document(project: String, path: String, done: (Outcome<String>) -> Unit)
+
+    /** Как открыть документы проекта в IDE (D-177); итог — в главном потоке. */
+    fun ideAccess(project: String, done: (IdeOpen.Access) -> Unit) = done(IdeOpen.Access.Unavailable)
+
+    /** Открыть файл [path] в редакторе IDE (D-177): [adopt] — сначала клон рабочим проектом (согласие дано). */
+    fun openInIde(project: String, path: String, adopt: Boolean, done: (Outcome<Unit>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "IDE здесь нет", project))
+
+    /** «Нет» в окне «Сделать рабочим проектом IDE?» — запомнить для проекта (D-177). */
+    fun declineIde(project: String) {}
+
+    /** «Клонировать и открыть в IDE» (D-177): клон — синхронизацией, файл — после неё. */
+    fun cloneAndOpen(project: String, path: String, done: (Outcome<Unit>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "клонов здесь нет", project))
 
     /** Документы и чек-листы проекта пульта (D-176); `null` — проекта нет в списке пользователя. */
     fun projectPaths(project: String): com.dpsmpx.dpmeta.model.UserProject? = null
@@ -1087,6 +1102,31 @@ private fun CardList(
     val decisionsPath = c.files.firstOrNull { it.first == "Решения" }?.second
     var issueOpen by rememberSaveable(c.name) { mutableStateOf(false) }
     var pathsOpen by rememberSaveable(c.name) { mutableStateOf(false) }
+    // Документ — в редакторе IDE, если проект рабочий; иначе спросить или читать в пульте (D-177).
+    var ideVersion by remember(c.name) { mutableStateOf(0) }
+    var access by remember(c.name) { mutableStateOf<IdeOpen.Access>(IdeOpen.Access.Unavailable) }
+    LaunchedEffect(c.name, ideVersion) { loader.ideAccess(c.name) { access = it } }
+    var askPath by rememberSaveable(c.name) { mutableStateOf<String?>(null) }
+    var ideNote by remember(c.name) { mutableStateOf<String?>(null) }
+    val openDoc: (String) -> Unit = { path ->
+        when (IdeOpen.tap(access)) {
+            IdeOpen.Tap.IDE -> loader.openInIde(c.name, path, adopt = false) { r ->
+                if (r is Outcome.Failure) {
+                    ideNote = "IDE: ${r.errors.first().message}"
+                    open(Nav.Doc(c.name, path, null))
+                }
+            }
+            IdeOpen.Tap.ASK -> askPath = path
+            IdeOpen.Tap.READ -> open(Nav.Doc(c.name, path, null))
+        }
+    }
+    askPath?.let { path ->
+        IdeAskDialog(c.name, path, access, loader, onRead = { open(Nav.Doc(c.name, path, null)) }) { note ->
+            askPath = null
+            ideNote = note
+            ideVersion++
+        }
+    }
     val todoPath = c.files.firstOrNull { it.first == "TODO" }?.second
     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         item {
@@ -1109,15 +1149,16 @@ private fun CardList(
         }
         item {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for ((title, path) in c.files) AssistChip(onClick = { open(Nav.Doc(c.name, path, null)) }, label = { Text(title) })
+                for ((title, path) in c.files) AssistChip(onClick = { openDoc(path) }, label = { Text(title) })
                 // Ключевые документы пользователя (D-176) — после найденных синхронизацией, без повторов.
                 val docs = user?.docs.orEmpty().filter { d -> c.files.none { it.second == d } }
-                for (path in docs) AssistChip(onClick = { open(Nav.Doc(c.name, path, null)) }, label = { Text(docTitle(path, docs)) })
+                for (path in docs) AssistChip(onClick = { openDoc(path) }, label = { Text(docTitle(path, docs)) })
                 if (user != null) AssistChip(onClick = { pathsOpen = true }, label = { Text("Документы и чек-листы…") })
                 AssistChip(onClick = { open(Nav.Dir(c.name, "")) }, label = { Text("Все файлы") })
                 AssistChip(onClick = { issueOpen = true }, label = { Text("Новый issue…") })
                 AssistChip(onClick = { open(Nav.Brief(c.name, null, null, null)) }, label = { Text("Поручить Claude…") })
             }
+            ideNote?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             if (issueOpen) IssueDialog(c.name, loader) { issueOpen = false }
             if (pathsOpen && user != null) {
                 PathsDialog(c.name, user, loader, onClose = { pathsOpen = false }) {
@@ -1176,7 +1217,7 @@ private fun CardList(
                         item(key = "checklist-$i") {
                             Text(
                                 "  ${f.path} — " + (if (f.missing) "файла нет" else "${f.done}/${f.total} ▸"),
-                                Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = !f.missing, onClickLabel = "открыть файл") { open(Nav.Doc(c.name, f.path, null)) }.padding(vertical = 4.dp),
+                                Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = !f.missing, onClickLabel = "открыть файл") { openDoc(f.path) }.padding(vertical = 4.dp),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (f.missing) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified,
                             )
@@ -1360,6 +1401,19 @@ private fun DocScreen(nav: Nav.Doc, names: Map<String, String>, loader: Loader, 
     var result by remember(nav) { mutableStateOf<Outcome<String>?>(null) }
     var anchor by remember(nav) { mutableStateOf(nav.anchor) }
     LaunchedEffect(nav) { loader.document(nav.project, nav.path) { result = it } }
+    // «В IDE» (D-177): рабочий проект — сразу в редактор; клон или его нет — окно согласия.
+    var ideVersion by remember(nav.project) { mutableStateOf(0) }
+    var access by remember(nav.project) { mutableStateOf<IdeOpen.Access>(IdeOpen.Access.Unavailable) }
+    LaunchedEffect(nav.project, ideVersion) { loader.ideAccess(nav.project) { access = it } }
+    var asking by remember(nav) { mutableStateOf(false) }
+    var ideNote by remember(nav) { mutableStateOf<String?>(null) }
+    if (asking) {
+        IdeAskDialog(nav.project, nav.path, access, loader, onRead = null) { note ->
+            asking = false
+            ideNote = note
+            ideVersion++
+        }
+    }
     val taps = remember { LinkTaps() }
     val linkColor = MaterialTheme.colorScheme.primary
     val markdown = nav.path.endsWith(".md", ignoreCase = true)
@@ -1400,6 +1454,18 @@ private fun DocScreen(nav: Nav.Doc, names: Map<String, String>, loader: Loader, 
             TextButton(onClick = { searching = !searching }) { Text(if (searching) "Скрыть поиск" else "Найти") }
             TextButton(onClick = { open(Nav.Ask(nav.project, nav.path)) }) { Text("Спросить…") }
             TextButton(onClick = { open(Nav.Edit(nav.project, nav.path)) }) { Text("Править…") }
+        }
+        IdeOpen.readerButton(access)?.let { label ->
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                TextButton(onClick = {
+                    if (access is IdeOpen.Access.Working) {
+                        loader.openInIde(nav.project, nav.path, adopt = false) { r -> if (r is Outcome.Failure) ideNote = "IDE: ${r.errors.first().message}" }
+                    } else {
+                        asking = true
+                    }
+                }) { Text(label) }
+                ideNote?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
         }
         Text("${nav.project}: ${nav.path}", style = MaterialTheme.typography.titleMedium)
         if (searching) {
@@ -2790,6 +2856,57 @@ private fun IssueDialog(project: String, loader: Loader, onClose: () -> Unit) {
             }
         },
         dismissButton = { if (result?.first != true) TextButton(onClick = onClose, enabled = !busy) { Text("Отмена") } },
+    )
+}
+
+/**
+ * Согласие открыть документ в IDE (D-177): клон есть — «Сделать рабочим проектом IDE?» (один
+ * раз: «Нет» запоминается, документ — для чтения в пульте); клона нет — клон и рабочий проект
+ * одним согласием. [onDone] — итог строкой для экрана или `null`.
+ */
+@Composable
+private fun IdeAskDialog(project: String, path: String, access: IdeOpen.Access, loader: Loader, onRead: (() -> Unit)?, onDone: (String?) -> Unit) {
+    val text = IdeOpen.askText(access) ?: run {
+        // Доступ сменился, пока окно открывалось (проект уже рабочий): закрыть без вопроса.
+        LaunchedEffect(Unit) { onDone(null) }
+        return
+    }
+    var busy by remember { mutableStateOf(false) }
+    val clone = access is IdeOpen.Access.NoClone
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDone(null) },
+        title = { Text(if (clone) "Клонировать и открыть в IDE?" else "Сделать рабочим проектом IDE?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(text)
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !busy, onClick = {
+                busy = true
+                val done: (Outcome<Unit>) -> Unit = { r ->
+                    busy = false
+                    onDone(
+                        when (r) {
+                            is Outcome.Success -> if (clone) "Клонирую — файл откроется в IDE после «Обновить»." else null
+                            is Outcome.Failure -> "Не вышло: ${r.errors.first().message}"
+                        },
+                    )
+                }
+                if (clone) loader.cloneAndOpen(project, path, done) else loader.openInIde(project, path, adopt = true, done)
+            }) { Text(if (clone) "Клонировать" else "Да") }
+        },
+        dismissButton = {
+            TextButton(enabled = !busy, onClick = {
+                // «Нет» на рабочий проект — запомнить и читать в пульте; отмена клона — ничего.
+                if (!clone) {
+                    loader.declineIde(project)
+                    onRead?.invoke()
+                }
+                onDone(null)
+            }) { Text(if (clone) "Отмена" else "Нет") }
+        },
     )
 }
 

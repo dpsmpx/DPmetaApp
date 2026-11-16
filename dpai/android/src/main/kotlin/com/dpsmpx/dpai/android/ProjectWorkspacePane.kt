@@ -83,6 +83,15 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
     val selected = current.tasks.firstOrNull { it.id.value == taskKey }
     val location = if (taskKey == null) current.main else selected?.location
     LaunchedEffect(jump, location?.key) { if (jump != null && jump?.root == location?.key) page = WorkspacePage.FILES.name }
+    // Документ из пульта (DPmetaApp:D-177): основное дерево этого проекта, «Файлы», вкладка — через переход к месту.
+    val fileRequest by IdeState.fileRequest.collectAsState()
+    LaunchedEffect(fileRequest, project.project.value) {
+        val r = fileRequest?.takeIf { it.project == project.project.value } ?: return@LaunchedEffect
+        if (!IdeState.fileRequest.compareAndSet(r, null)) return@LaunchedEffect
+        taskKey = null
+        page = WorkspacePage.FILES.name
+        IdeState.jumpTo(current.main.key, r.path, 1)
+    }
     val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val pageStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     if (taskSheet && selected != null) TaskSheet(model, selected.id, onSession = onSession) { taskSheet = false }

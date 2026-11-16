@@ -79,6 +79,15 @@ internal object IdeState {
     /** Открыть «Рабочий проект» во вкладке «Файлы» (мастер нового проекта, DPmetaApp:D-150). */
     val workspaceRequest = MutableStateFlow(false)
 
+    /**
+     * Файл документа из пульта (DPmetaApp:D-177): [path] — от корня рабочего проекта [project].
+     * Выполняет экран рабочего проекта, когда показывает этот проект: основное дерево, «Файлы»,
+     * вкладка редактора. Новый запрос заменяет прежний.
+     */
+    data class FileRequest(val project: String, val path: String)
+
+    val fileRequest = MutableStateFlow<FileRequest?>(null)
+
     fun jumpTo(root: String, path: String, line: Int) { jump.value = Jump(root, path, line.coerceAtLeast(1)) }
 
     /** Забрать запрос своего корня; чужой остаётся ждать свою панель. */

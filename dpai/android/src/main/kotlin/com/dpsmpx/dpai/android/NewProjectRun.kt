@@ -23,10 +23,54 @@ import com.dpsmpx.dpai.ui.TargetEntry
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.time.Duration.Companion.minutes
 
-/** Мост пульта к рабочим проектам (`DPmetaApp:D-150`): отправка ветки после «Опубликовать». */
+/**
+ * Мост пульта к рабочим проектам: отправка ветки после «Опубликовать» (`DPmetaApp:D-150`),
+ * клон пульта как рабочий проект и документ в редакторе (`DPmetaApp:D-177`).
+ */
 object PultProjects {
     fun publish(context: Context, projectId: String, url: String, token: com.dpsmpx.dpai.core.diagnostics.Secret): Outcome<String> =
         NewProjectRun.publish(context, DemoModel.get(context), projectId, url, token)
+
+    /** Рабочий проект с корнем [root] в Linux приложения; `null` — такого нет. Не из главного потока. */
+    fun find(context: Context, root: String): String? {
+        val controller = Controller.get(context.filesDir)
+        val inApp = controller.targets().filter { it.inApp }.map { it.id }.toSet()
+        return controller.projects().projects.firstOrNull { it.target in inApp && it.root.trimEnd('/') == root.trimEnd('/') }?.project?.value
+    }
+
+    /**
+     * Клон пульта [root] (`/root/projects/<владелец>/<имя>`) — рабочим проектом в Linux приложения,
+     * с веткой интеграции [branch]; деревья задач — `<владелец>/.trees/<имя>`, как у мастера. Уже есть —
+     * он же. Проект выбирается. Не из главного потока.
+     */
+    fun adopt(context: Context, root: String, branch: String): Outcome<String> {
+        find(context, root)?.let { return Outcome.success(it) }
+        val rel = root.trimEnd('/').removePrefix("$GUEST_PROJECTS/")
+        val owner = rel.substringBefore('/', "")
+        val name = rel.substringAfter('/', "")
+        if (!root.startsWith("$GUEST_PROJECTS/") || owner.isEmpty() || '/' in name || !com.dpsmpx.dpai.files.FileNames.segmentValid(owner) || !com.dpsmpx.dpai.files.FileNames.segmentValid(name)) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, "клон пульта — $GUEST_PROJECTS/<владелец>/<имя>", root)
+        }
+        val controller = Controller.get(context.filesDir)
+        val target = controller.targets().filter { it.inApp }.let { s -> s.firstOrNull { it.executor == com.dpsmpx.dpai.core.ids.Executor.CLAUDE } ?: s.firstOrNull() }
+            ?: when (val r = controller.addInApp(IdGenerator(Clock.SYSTEM, RandomSource.secure()).next(IdKinds.TARGET))) {
+                is Outcome.Failure -> return r
+                is Outcome.Success -> r.value
+            }
+        val home = GUEST_PROJECTS.substringBeforeLast('/')
+        val parent = "${GUEST_PROJECTS.substringAfterLast('/')}/$owner"
+        val entry = when (val f = controller.projectForm(target, root.trimEnd('/'), NewProject.worktreeRoot(home, parent, name), branch, check = "", claudeOn = target)) {
+            is Outcome.Failure -> return f
+            is Outcome.Success -> f.value
+        }
+        return when (val put = controller.putProject(entry)) {
+            is Outcome.Failure -> put
+            is Outcome.Success -> Outcome.success(entry.project.value)
+        }
+    }
+
+    /** Клоны пульта в госте (`DPmetaApp:D-111`, D-113). */
+    const val GUEST_PROJECTS = "/root/projects"
 }
 
 /** Запрос открыть мастер нового проекта — из любой вкладки, пульта и окна знакомства (`DPmetaApp:D-150`). */
