@@ -238,6 +238,8 @@ data class PultView(
     val clones: String = "",
     /** Числа «AI» от оболочки `:shell` (D-76); `null` — строки «AI» нет. */
     val ai: Screens.AiCounts? = null,
+    /** Работа студии по рабочим проектам (D-176); `null` — подсистемы IDE нет. */
+    val studio: List<Screens.StudioWork>? = null,
     /** Номер законченной (или не начатой) синхронизации — итог снэкбаром один раз (UX-6); 0 — ещё не было. */
     val syncEnded: Int = 0,
     /** Чем она кончилась — текст и переход снэкбара. */
@@ -313,6 +315,9 @@ interface Loader {
     /** «Клонировать и открыть в IDE» (D-177): клон — синхронизацией, файл — после неё. */
     fun cloneAndOpen(project: String, path: String, done: (Outcome<Unit>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "клонов здесь нет", project))
+
+    /** Корень клона проекта пульта в госте (D-176, D-177); `null` — проекта нет в списке. */
+    fun guestRoot(project: String): String? = null
 
     /** Документы и чек-листы проекта пульта (D-176); `null` — проекта нет в списке пользователя. */
     fun projectPaths(project: String): com.dpsmpx.dpmeta.model.UserProject? = null
@@ -709,11 +714,11 @@ fun PultApp(
                     }
                     Column(Modifier.weight(3f).fillMaxSize()) {
                         val card = chosen?.let { remember(s, it, view.zone) { Screens.card(s, it) } }
-                        if (card != null) CardScreen(card, loader, back, open) else Text("Выберите проект слева.", style = MaterialTheme.typography.bodySmall)
+                        if (card != null) CardScreen(card, view.studio, loader, back, open) else Text("Выберите проект слева.", style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 // Модели экранов — один раз на срез, а не на каждую перекомпозицию (UX-20).
-                top is Nav.Card && s != null -> remember(s, top.project, view.zone) { Screens.card(s, top.project) }?.let { CardScreen(it, loader, back, open) }
+                top is Nav.Card && s != null -> remember(s, top.project, view.zone) { Screens.card(s, top.project) }?.let { CardScreen(it, view.studio, loader, back, open) }
                 top is Nav.Dir -> DirScreen(top, loader, back, open)
                 top is Nav.Doc -> DocScreen(top, view.names, loader, back, open)
                 top is Nav.Feed -> FeedScreen(shownFeed, s?.projects?.map { it.name }.orEmpty(), back, onAi = onAi?.let { action -> { action(false) } }) { open(Nav.Card(it)) }
@@ -980,6 +985,12 @@ private fun Summary(
                 Text(Screens.aiLine(c) + " ▸", Modifier.padding(Tokens.gap))
             }
         }
+        // Студия по рабочим проектам (D-176): задачи, запросы, сборки за сутки, расход — к «AI».
+        view.studio?.let { list ->
+            Card(Modifier.fillMaxWidth().clickable(enabled = onAi != null) { onAi?.invoke(false) }) {
+                Text(Screens.studioLine(list) + " ▸", Modifier.padding(Tokens.gap))
+            }
+        }
         val recent = remember(view.feed) { Screens.feed(view.feed).take(SUMMARY_EVENTS) }
         Text("Последние события", style = MaterialTheme.typography.titleSmall)
         if (recent.isEmpty()) Text("Событий нет: они появляются со второй синхронизации.", style = MaterialTheme.typography.bodySmall)
@@ -1066,13 +1077,16 @@ private fun PanelRow(project: String, item: Panel.Item, loader: Loader, open: (N
 }
 
 @Composable
-private fun CardScreen(c: Screens.Card, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) {
+private fun CardScreen(c: Screens.Card, studio: List<Screens.StudioWork>?, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) {
     // Панель (F-10) — один раз на карточку: файл из APK и его разбор не повторяются при перерисовке.
     val panel = remember(c.name) { loader.panel(c.name) }
     // Пути пользователя (D-176) — из списка проектов; после сохранения перечитываются.
     var pathsVersion by remember(c.name) { mutableStateOf(0) }
     val user = remember(c.name, pathsVersion) { loader.projectPaths(c.name) }
-    CardList(c, panel, user, loader, onBack, open) { pathsVersion++ }
+    // Работа студии (D-176): рабочий проект — по корню клона пульта.
+    val root = remember(c.name) { loader.guestRoot(c.name) }
+    val studioSection = Screens.studioSection(root?.let { r -> studio?.firstOrNull { it.root.trimEnd('/') == r } }, studio != null && root != null)
+    CardList(c, panel, user, studioSection, loader, onBack, open) { pathsVersion++ }
 }
 
 /** Название документа на чипе: имя файла, а при повторе имени — путь целиком. */
@@ -1092,6 +1106,7 @@ private fun CardList(
     c: Screens.Card,
     panel: Outcome<Panel>?,
     user: com.dpsmpx.dpmeta.model.UserProject?,
+    studio: Screens.CardSection?,
     loader: Loader,
     onBack: () -> Unit,
     open: (Nav) -> Unit,
@@ -1167,7 +1182,7 @@ private fun CardList(
                 }
             }
         }
-        for (sec in view.sections) {
+        for (sec in listOfNotNull(studio) + view.sections) {
             val key = sec.kind.name
             val expanded = key in opened
             val expandable = sec.lines.isNotEmpty() || (sec.kind == Screens.CardSection.Kind.ABOUT && panel != null)

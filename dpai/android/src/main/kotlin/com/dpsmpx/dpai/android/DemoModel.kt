@@ -204,6 +204,27 @@ class DemoModel(
 
     @Volatile private var widgetCounts: List<Int>? = null
 
+    @Volatile private var workCached: List<com.dpsmpx.dpai.ui.ProjectWork>? = null
+
+    /**
+     * Работа студии по каждому рабочему проекту — для пульта (DPmetaApp:D-176). Такт держит замок —
+     * отдаётся прежний расчёт, а пульт не ждёт (A-23); его ещё не было — числа ИИ неизвестны.
+     */
+    fun projectWork(now: com.dpsmpx.dpai.core.clock.Timestamp): List<com.dpsmpx.dpai.ui.ProjectWork> {
+        val profiles = controller.manualProfiles
+        val active = profiles.snapshot().active
+        fun bare() = projects().projects.map { p -> com.dpsmpx.dpai.ui.ProjectWork.of(p, null, null, null, com.dpsmpx.dpai.ui.ProjectWork.manual(p, active, profiles.history(p), now)) }
+        if (!lock.tryLock()) return workCached ?: bare()
+        return try {
+            projects().projects.map { p ->
+                val o = contours[p.project]?.orchestrator
+                com.dpsmpx.dpai.ui.ProjectWork.of(p, o?.tasks, o?.sessions, o?.pendingRequests()?.size, com.dpsmpx.dpai.ui.ProjectWork.manual(p, active, profiles.history(p), now))
+            }.also { workCached = it }
+        } finally {
+            lock.unlock()
+        }
+    }
+
     /** Счётчики ручных сборок и проверок для виджета (DPmetaApp:D-153): идущий запуск и итоги за сутки. */
     fun manualCounts(now: com.dpsmpx.dpai.core.clock.Timestamp): com.dpsmpx.dpai.ui.ManualCounts =
         com.dpsmpx.dpai.ui.ManualCounts.of(controller.manualProfiles.snapshot().active, projects().projects.map { controller.manualProfiles.history(it) }, now)

@@ -69,6 +69,9 @@ object PultProjects {
         }
     }
 
+    /** Работа студии по рабочим проектам (`DPmetaApp:D-176`): задачи, ходы ИИ, сборки, расход. Не из главного потока. */
+    fun work(context: Context): List<com.dpsmpx.dpai.ui.ProjectWork> = DemoModel.get(context).projectWork(Clock.SYSTEM.now())
+
     /** Клоны пульта в госте (`DPmetaApp:D-111`, D-113). */
     const val GUEST_PROJECTS = "/root/projects"
 }
