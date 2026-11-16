@@ -89,7 +89,7 @@ internal fun EnvironmentSettingsSection(release: String?, repositories: List<Str
 
     fun save(next: List<OwnVariables.Var>, done: () -> Unit = {}) {
         scope.launch {
-            when (val r = withContext(Dispatchers.IO) { OwnVariablesStore.save(context, next) }) {
+            when (val r = withContext(Dispatchers.IO) { EnvSnapshotStore.take(context, "Свои переменные", prune = false); OwnVariablesStore.save(context, next) }) {
                 is Outcome.Failure -> note = r.errors.first().message
                 is Outcome.Success -> { note = null; done(); version++ }
             }
@@ -179,11 +179,12 @@ private fun RepositoriesBlock(release: String?, repositories: List<String>, runn
 /** Записать репозитории и привести пакеты к выбранной ветке — одной долгой работой гостя. */
 internal fun applyRepositories(context: Context, jobs: LongJobs, text: String, label: String) {
     jobs.start(LongJobs.LINUX_APK, label, excludes = LongJobs.GUEST) {
+        EnvSnapshotStore.take(context, label)
         when (val w = LinuxSetup.environment(context).writeRepositories(text)) {
             is Outcome.Failure -> return@start LongJobs.Done("$label: ${w.errors.first().message}", failed = true)
             is Outcome.Success -> Unit
         }
-        when (val r = LinuxSetup.apk(context, LinuxEnvironment.Apk.UPGRADE_AVAILABLE, emptyList())) {
+        when (val r = LinuxSetup.apk(context, LinuxEnvironment.Apk.UPGRADE_AVAILABLE, emptyList(), snapshot = false)) {
             is Outcome.Success -> LongJobs.Done(
                 if (r.value.ok) "$label: записано, пакеты приведены к ветке" else "$label: записано; apk завершился с кодом ${r.value.exitCode} — причина в выводе ниже",
                 (r.value.stdout + r.value.stderr).takeLast(20),

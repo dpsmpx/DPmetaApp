@@ -209,12 +209,14 @@ object LinuxSetup {
     }
 
     /** Пакеты Alpine (`apk` без `/proc`, D-82): итог и вывод — для экрана. */
-    fun apk(context: Context, action: LinuxEnvironment.Apk, packages: List<String>): Outcome<Completed> {
+    fun apk(context: Context, action: LinuxEnvironment.Apk, packages: List<String>, snapshot: Boolean = true): Outcome<Completed> {
         if (environment(context).installed() == null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сначала установите Linux")
         val spec = when (val s = LinuxEnvironment.apk(action, packages)) {
             is Outcome.Failure -> return s
             is Outcome.Success -> s.value
         }
+        // Снимок окружения перед правкой (D-194): откат вернёт состояние до неё.
+        if (snapshot) com.dpsmpx.dpai.android.EnvSnapshotStore.take(context, com.dpsmpx.dpai.ui.EnvSnapshots.label(action, packages))
         if (action == LinuxEnvironment.Apk.ADD) {
             (com.dpsmpx.dpai.android.StorageSpace.check(context, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.PACKAGES, null, packages.joinToString(" ")) as? Outcome.Failure)?.let { return it }
         }
@@ -229,8 +231,12 @@ object LinuxSetup {
      * `/proc` (D-82), остальное — с ним; первый неудачный шаг — итог. Вывод — всех шагов, для
      * экрана; DNS — сети телефона.
      */
-    fun runSteps(context: Context, steps: List<ProcessSpec>): Outcome<Completed> {
+    fun runSteps(context: Context, steps: List<ProcessSpec>, snapshot: Boolean = true): Outcome<Completed> {
         if (environment(context).installed() == null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сначала установите Linux")
+        // Снимок окружения (D-194), если шаги трогают пакеты.
+        if (snapshot && steps.any { it.command.firstOrNull() == "apk" }) {
+            com.dpsmpx.dpai.android.EnvSnapshotStore.take(context, "Установка: " + steps.last().command.joinToString(" ").take(80))
+        }
         refreshDns(context)
         if (steps.any { ProotHost.needsNoProc(it.command) }) (repairBroken(context, force = true) as? Outcome.Failure)?.let { return it }
         val out = mutableListOf<String>()

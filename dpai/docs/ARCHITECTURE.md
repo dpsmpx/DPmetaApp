@@ -431,6 +431,9 @@ AlpinePackageState учитывает виртуальные provides. Api FIX �
 `OwnVariablesStore` оболочки) — свои переменные под окружением процесса в
 `LinuxSetup.shell`, `agentHost` и `guestHost`; `AlpineRepositories` и
 `LinuxEnvironment.writeRepositories` — ветка Alpine с прежним зеркалом.
+Откат (D-194): `ui.EnvSnapshots` — снимок, план и итог; `EnvSnapshotStore`
+оболочки снимает его в `LinuxSetup.apk`/`runSteps` и ведёт откат через
+`writeWorld`, кеш apk (`enableCache`, `cachedPackages`) и `apkAddCached`/`apkPin`.
 
 Языки запуска (D-141): EditorRunOutput возвращает RunDiagnosis по пути
 файла, C++ использует прежний CppDependencies. PythonRuntime/KotlinRuntime
