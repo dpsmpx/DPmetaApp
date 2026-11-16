@@ -1245,8 +1245,14 @@ open class PultActivity : ComponentActivity() {
     /** После синхронизации с новым клоном (D-177): рабочий проект и файл в редакторе; отказ — строкой статуса. */
     private fun openPendingInIde() {
         val (project, path) = pendingIdeOpen ?: return
-        pendingIdeOpen = null
         if (pool.isShutdown) return
+        // Синхронизация шла раньше, чем репозиторий отметили, — клона ещё нет: ждать следующего «Обновить».
+        val slug = repo.userProject(project)?.repo
+        if (slug != null && !java.io.File(repo.cloneDir(slug), ".git").isDirectory) {
+            view.value = view.value.copy(status = "Клона $slug ещё нет — «Обновить», и файл откроется в IDE.")
+            return
+        }
+        pendingIdeOpen = null
         pool.execute {
             val r = runCatching { ideOpen(project, path, adopt = true) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "IDE: ${it.javaClass.simpleName}", project) }
             if (r is Outcome.Failure) runOnUiThread { view.value = view.value.copy(status = "В IDE не открылось: ${r.errors.first().message}.") }
