@@ -41,4 +41,18 @@ class ProjectListStoreTest {
         assertEquals(listOf("app"), reg.projects.map { it.name })
         assertTrue(reg.projects.all { it.place == Place.USER })
     }
+
+    @Test
+    fun pathsAreSavedByCardNameAndReachTheRegistry() {
+        val r = repo()
+        r.saveProjectList(ProjectList().add(ref("alice/app")).valueOrNull()!!.add(ref("bob/app")).valueOrNull()!!)
+        // Одинаковые имена у разных владельцев — карточка «владелец/имя».
+        assertIs<Outcome.Success<*>>(r.saveProjectPaths("bob/app", listOf("docs/plan.md"), listOf("TODO.md")))
+        val again = repo()
+        assertEquals(listOf("docs/plan.md"), again.userProject("bob/app")!!.docs)
+        assertEquals(emptyList(), again.userProject("alice/app")!!.checklists)
+        assertEquals(listOf("TODO.md"), again.commandRegistry().valueOrNull()!!.projects.single { it.name == "bob/app" }.checklists)
+        assertIs<Outcome.Failure>(r.saveProjectPaths("bob/app", listOf("/etc/passwd"), emptyList()))
+        assertIs<Outcome.Failure>(r.saveProjectPaths("carol", emptyList(), emptyList()))
+    }
 }
