@@ -225,18 +225,11 @@ class SubsystemScopeTest(CheckCase):
                 self.assertClean(s.run(cid))
 
     def test_moved_out_projects_are_not_subsystems(self):
-        # SocialMediaImage и DPprofile (D-154), DPpass (D-174) живут только в своём репозитории:
-        # каталог в корне — находка.
-        for d in ("socialmediaimage", "dpprofile", "dppass"):
+        # SocialMediaImage и DPprofile (D-154), DPpass (D-174), DPvisualisation (D-173) живут только
+        # в своём репозитории: каталог в корне — находка.
+        for d in ("socialmediaimage", "dpprofile", "dppass", "dpvisualisation"):
             with self.subTest(d):
                 self.assertCatches(self.sample({f"{d}/docs/X.md": "# X\n"}).run("repo.layout"), d)
-
-    def test_dpvisualisation_is_a_subsystem_too(self):
-        # DPvisualisation — подсистема со своим процессом (D-43): её номера без имени проекта — её проверкам.
-        s = self.sample({"dpvisualisation/docs/X.md": "# X\r\nСм. D-24, `docs/NOPE.md`.\n"})
-        for cid in ("repo.layout", "format.text", "docs.links", "docs.refs"):
-            with self.subTest(cid):
-                self.assertClean(s.run(cid))
 
     def test_dpmeta_is_a_subsystem_too(self):
         # DPmeta — подсистема со своим процессом (D-43): её номера M-NN без имени проекта — её проверкам.

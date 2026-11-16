@@ -486,8 +486,11 @@ Galdhold выполнены; контент и соцсети не входят 
       личного автора в сборке. Каждый шаг — отдельным PR:
   - [+] Вынос DPpass с историей в `dpsmpx/DPpass` (`main`, `DPpass:D-112`) и
         удаление `dppass/` (D-174): данные сборки DPpass — только в нём.
-  - [ ] Вынос DPvisualisation и DPmeta с историей в свои репозитории и
-        удаление `dpvisualisation/`, `dpmeta/`.
+  - [+] Вынос DPvisualisation с историей в `dpsmpx/DPvisualisation` (`main`,
+        `DPvisualisation:D-31`) и удаление `dpvisualisation/`.
+  - [ ] Вынос DPmeta с историей в `dpsmpx/DPmeta` и удаление `dpmeta/` — после
+        универсального пульта: реестр DPmeta читают пульт, «Экосистема»,
+        `dpmeta-cli` и корпусные тесты (ответ автора 16 ноября 2026).
   - [ ] Удалить окно «Экосистема» и модуль `ecosystem`, `dpmeta-cli`.
   - [ ] Удалить слушатель уведомлений других приложений (F-57), канал
         ntfy (F-55, F-56), сборку `android-app`, Termux-target и мост

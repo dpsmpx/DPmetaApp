@@ -23,7 +23,7 @@
 | DP_Backup_Tool | [Роль](https://github.com/dpsmpx/DP_Backup_Tool/blob/dpmeta/mobile-studio-roles/docs/direction/DP_META_APP.md), `3567bbf` |
 | dpcalls | [Роль](https://github.com/dpsmpx/dpcalls/blob/dpmeta/mobile-studio-roles/docs/direction/DP_META_APP.md), `41704bc` |
 | DPpass | DPpass:D-109; с 16 ноября 2026 — снова свой репозиторий `dpsmpx/DPpass` с историей (D-174, DPpass:D-112) |
-| DPvisualisation | DPvisualisation:D-30 в актуальном `dpvisualisation/` |
+| DPvisualisation | DPvisualisation:D-30; с 16 ноября 2026 — снова свой репозиторий `dpsmpx/DPvisualisation` с историей (D-173, DPvisualisation:D-31) |
 | pascalabcnet, TrueJointTileMaker | Роли сохранены в общей карте; сами репозитории не менялись по поручению автора |
 
 ## Что проверено и что осталось

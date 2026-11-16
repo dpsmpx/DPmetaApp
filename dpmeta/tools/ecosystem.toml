@@ -57,7 +57,6 @@ name = "DPpass"
 slug = "dpsmpx/DPpass"
 clone = "dppass"
 place = "core"
-dir = "dppass"
 decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
 
 [[repo]]
@@ -115,7 +114,6 @@ name = "DPvisualisation"
 slug = "dpsmpx/DPvisualisation"
 clone = "dpvisualisation"
 place = "support"
-dir = "dpvisualisation"
 decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
 
 [[repo]]
