@@ -36,6 +36,8 @@ data class PullRequest(
     val createdAt: Timestamp? = null,
     /** SHA головы PR — для CI (D-176); из того же ответа. */
     val headSha: String? = null,
+    /** У кого запрошено ревью (логины) — для «Ждут меня» (D-176); из того же ответа. */
+    val reviewers: List<String> = emptyList(),
 )
 
 /** Открытый issue (D-176): кто открыл, назначенные, метки, когда обновлён, комментариев. */
@@ -117,9 +119,16 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
                 mergedAt = time(o, "merged_at"),
                 createdAt = time(o, "created_at"),
                 headSha = (o["head"] as? JsonObject)?.let { str(it, "sha") }?.takeIf { SHA.matches(it) },
+                reviewers = (o["requested_reviewers"] as? JsonArray)?.items.orEmpty().mapNotNull { r -> (r as? JsonObject)?.let { str(it, "login") } },
             )
         }
         Outcome.success(Page(out, p.fetched))
+    }
+
+    /** Логин владельца токена — для «Ждут меня» (D-176): чьё ревью запрошено, кому назначено. */
+    fun viewer(): Outcome<String> = get("user", "user").then { p ->
+        val login = (p.value as? JsonObject)?.let { str(it, "login") } ?: return@then missing("login", "user")
+        Outcome.success(login)
     }
 
     /**

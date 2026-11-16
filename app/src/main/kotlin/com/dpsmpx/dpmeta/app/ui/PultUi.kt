@@ -240,6 +240,8 @@ data class PultView(
     val ai: Screens.AiCounts? = null,
     /** Работа студии по рабочим проектам (D-176); `null` — подсистемы IDE нет. */
     val studio: List<Screens.StudioWork>? = null,
+    /** Логин владельца токена GitHub (D-176): «Ждут меня»; `null` — ещё не известен. */
+    val me: String? = null,
     /** Номер законченной (или не начатой) синхронизации — итог снэкбаром один раз (UX-6); 0 — ещё не было. */
     val syncEnded: Int = 0,
     /** Чем она кончилась — текст и переход снэкбара. */
@@ -775,13 +777,13 @@ fun PultApp(
                     }
                 }
                 tab == Section.SUMMARY -> Summary(
-                    remember(s, view.zone) { Screens.summary(s) }, view.copy(feed = shownFeed), onSync, onAi,
+                    remember(s, view.zone, view.me, view.ai) { Screens.summary(s, view.me, view.ai) }, view.copy(feed = shownFeed), onSync, onAi,
                     onTile = { g ->
                         when (g) {
                             Screens.Goes.PROJECTS -> { tab = Section.DEV; devTab = DevTab.PROJECTS }
                             // Плитка считает все открытые PR (`repo.pr.open`) — и список открывается на «Все».
                             Screens.Goes.PULLS -> { tab = Section.DEV; devTab = DevTab.PULLS; pullFilter = Screens.PullFilter.WAITING; pullProject = null }
-                            Screens.Goes.QUESTIONS -> { tab = Section.DEV; devTab = DevTab.QUESTIONS }
+                            Screens.Goes.WAITING -> { tab = Section.DEV; devTab = DevTab.WAITING }
                             Screens.Goes.SYNC -> tab = Section.MORE
                         }
                     },
@@ -795,7 +797,7 @@ fun PultApp(
                             Projects(remember(s) { Screens.projects(s) }) { open(Nav.Card(it)) }
                         }
                         DevTab.PULLS -> Pulls(remember(s) { Screens.pulls(s) }, s.asOf, pullFilter, pullProject, { pullFilter = it }, { pullProject = it }) { r -> open(Nav.Pull(r.project, r.number.toInt())) }
-                        DevTab.QUESTIONS -> Questions(remember(s) { Screens.questions(s) }, remember(s) { Screens.pulls(s) }, loader, open)
+                        DevTab.WAITING -> WaitingList(remember(s, view.me, view.ai) { Screens.waiting(s, view.me, view.ai) }, view.me, loader, onAi, open)
                     }
                 }
             }
@@ -1589,50 +1591,31 @@ private fun Pulls(
  * Вопросы автору (F-24, UX-17): по проектам, метка — чипом, касание —
  * `TODO.md` проекта на разделе вопроса.
  */
+/**
+ * «Ждут меня» (D-176, п. 4): запросы ИИ — к «AI» на «Запросах», ревью — к экрану PR, назначенные
+ * issues — на GitHub. Ревью и issues отбираются по логину владельца токена.
+ */
 @Composable
-private fun Questions(q: List<Screens.Question>, pulls: List<Screens.PullRow>, loader: Loader, open: (Nav) -> Unit) {
-    // F-25: поручения ответа — из журнала действий; PR после поручения — из среза.
-    var journal by remember { mutableStateOf<List<ActionEntry>>(emptyList()) }
-    LaunchedEffect(q) { loader.journal { r -> journal = r.valueOrNull().orEmpty() } }
-    val context = LocalContext.current
-    val taps = remember { LinkTaps() }
-    QuestionsList(q, open) { i ->
-        RouteActions.answered(journal, pulls, i)?.let { a ->
-            Column(Modifier.padding(start = 12.dp, bottom = 4.dp)) {
-                Text("Ответ поручен ${Screens.time(a.at)}" + if (a.pulls.isEmpty()) " — PR после поручения пока нет" else "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                a.session?.let { url -> TextButton(onClick = { external(context, taps, url) }) { Text("Сессия Claude") } }
-                for (p in a.pulls) {
-                    Text(
-                        "PR #${p.number} ${p.title} ▸", style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.fillMaxWidth().clickable { open(Nav.Pull(p.project, p.number.toInt())) }.padding(vertical = 4.dp),
-                    )
+private fun WaitingList(list: List<Screens.Waiting>, me: String?, loader: Loader, onAi: ((requests: Boolean) -> Unit)?, open: (Nav) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    item { Text("Ждут меня: ${Screens.waitingCount(list, me)}", style = MaterialTheme.typography.titleMedium) }
+    if (me == null) item { Text("Логин GitHub появится после «Обновить»: по нему отбираются ревью и назначенные issues.", style = MaterialTheme.typography.bodySmall) }
+    if (list.isEmpty() && me != null) item { Text("Ничего не ждёт: ревью не запрошено, issues не назначены, запросов ИИ нет.", style = MaterialTheme.typography.bodySmall) }
+    val keys = contentKeys(list) { "${it.project}|${it.title}" }
+    items(list.size, key = { "w:${keys[it]}" }) { n ->
+        val w = list[n]
+        val context = LocalContext.current
+        val taps = remember { LinkTaps() }
+        Column(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
+                when {
+                    w.pull != null -> open(Nav.Pull(w.project, w.pull.toInt()))
+                    w.issue != null -> loader.repo(w.project) { r -> r.valueOrNull()?.let { repo -> external(context, taps, "https://github.com/$repo/issues/${w.issue}") } }
+                    else -> onAi?.invoke(true)
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun QuestionsList(q: List<Screens.Question>, open: (Nav) -> Unit, below: @Composable (Screens.Question) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-    item { Text("Вопросов автору: ${q.size}", style = MaterialTheme.typography.titleMedium) }
-    for ((project, items) in Screens.questionGroups(q)) {
-        item(key = "p:$project") { Text(project, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp)) }
-        val keys = contentKeys(items) { "${it.title}|${it.label}" }
-        items(items.size, key = { "q:$project:${keys[it]}" }) { n ->
-            val i = items[n]
-            Column {
-                Row(
-                    Modifier.fillMaxWidth().clickable(enabled = i.path != null) { open(Nav.Doc(i.project, i.path!!, i.section?.let(Links::slug))) }.padding(vertical = 4.dp),
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                ) {
-                    i.label?.let { AssistChip(onClick = {}, enabled = false, label = { Text(it) }, modifier = Modifier.padding(end = 6.dp)) }
-                    Text(i.title, Modifier.weight(1f))
-                    // F-25: ответ — поручением сессии репозитория-владельца по шаблону «записать ответ».
-                    TextButton(onClick = { open(Nav.Brief(i.project, ANSWER_BRIEF, Screens.questionSource(i), i.title)) }) { Text("Ответить") }
-                    if (i.path != null) Text("▸")
-                }
-                below(i)
-            }
+            }.padding(vertical = 4.dp),
+        ) {
+            if (w.project.isNotEmpty()) Text(w.project, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+            Text(w.title + " ▸")
         }
     }
 }

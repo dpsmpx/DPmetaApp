@@ -111,6 +111,14 @@ class GitHubTest {
         assertEquals(Issue(3, "Падает сборка", "alice", listOf("bob"), listOf("bug"), issue.updatedAt, 2), issue)
         val commit = (gh.recentCommits(repo) as Outcome.Success).value.value.single()
         assertEquals(RecentCommit(sha, "Первая строка", "Алиса", commit.date), commit)
+        val pulls = GitHub(Net(Fake(mapOf(
+            "/repos/example/Alpha/pulls?state=open&per_page=100" to (200 to """[{"number":8,"title":"Ревью","draft":false,"head":{"ref":"x","sha":"$sha"},"user":{"login":"bob"},"requested_reviewers":[{"login":"alice"}],"updated_at":"2026-11-01T10:00:00Z"}]"""),
+            "/user" to (200 to """{"login":"alice","id":1}"""),
+        ))), Secret("t"))
+        val pr = (pulls.pulls(repo) as Outcome.Success).value.value.single()
+        assertEquals(listOf("alice"), pr.reviewers)
+        assertEquals(sha, pr.headSha)
+        assertEquals("alice", (pulls.viewer() as Outcome.Success).value)
         val empty = GitHub(Net(Fake(mapOf("/repos/example/Alpha/commits?per_page=${GitHub.COMMITS_KEEP}" to (409 to """{"message":"Git Repository is empty."}""")))), Secret("t"))
         assertEquals(emptyList(), (empty.recentCommits(repo) as Outcome.Success).value.value, "пустой репозиторий — коммитов нет, не отказ")
     }

@@ -353,6 +353,13 @@ class PultRepository(
         }
     }
 
+    /** Логин владельца токена с последней синхронизации (D-176); `null` — ещё не известен. */
+    fun viewerLogin(): String? = settings.read(VIEWER).valueOrNull()?.content?.let { (it["login"] as? JsonString)?.value }
+
+    private fun saveViewer(login: String) {
+        if (viewerLogin() != login) settings.write(VIEWER, JsonObject.of(*com.dpsmpx.dpai.core.serialization.FormatHeader.write("dpmeta.viewer", 1), "login" to JsonString(login)))
+    }
+
     /** Проект пульта по имени карточки (D-176): документы и чек-листы; `null` — проекта в списке нет. */
     fun userProject(project: String): com.dpsmpx.dpmeta.model.UserProject? {
         val repo = registry().valueOrNull()?.projects?.firstOrNull { it.name == project }?.slug ?: return null
@@ -605,6 +612,8 @@ class PultRepository(
         // PR от запусков маршрутов из пульта (F-58; D-161) — по сессиям в журнале действий.
         val fresh = Feed.diff(previous, state, com.dpsmpx.dpmeta.app.screens.RouteActions.sessions(actionLog.entries().valueOrNull().orEmpty()))
         store.appendFeed(fresh).let { if (it is Outcome.Failure) return it }
+        // Владелец токена (D-176): «Ждут меня» — ревью и issues на нём. Не ответил — прежний логин.
+        gh.viewer().valueOrNull()?.let { saveViewer(it) }
         etags.save()
         val s = net.stats
         // Числа замера A-02 (ТЗ; как строка `dpmeta-cli sync --live`): запросы, доля 304, время.
@@ -728,6 +737,9 @@ class PultRepository(
 
         /** Ключ списка проектов пульта (D-176) в настройках пульта. */
         private const val PROJECTS = "projects"
+
+        /** Логин владельца токена (D-176) — в настройках пульта. */
+        private const val VIEWER = "viewer"
 
         /** Голова DPmetaApp от GitHub для манифеста «AI» (T19, D-114) — файл хранилища пульта. */
         private const val TRUSTED_HOST = "trusted/dpmetaapp-main"

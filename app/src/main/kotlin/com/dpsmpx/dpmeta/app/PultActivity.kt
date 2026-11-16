@@ -663,9 +663,10 @@ open class PultActivity : ComponentActivity() {
             val state = (repo.state() as? Outcome.Success)?.value
             val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
             val names = repo.names()
+            val me = runCatching { repo.viewerLogin() }.getOrNull()
             runOnUiThread {
                 if (!view.value.loading) return@runOnUiThread
-                view.value = view.value.copy(state = view.value.state ?: state, feed = view.value.feed.ifEmpty { feed }, names = view.value.names.ifEmpty { names }, loading = false)
+                view.value = view.value.copy(state = view.value.state ?: state, feed = view.value.feed.ifEmpty { feed }, names = view.value.names.ifEmpty { names }, loading = false, me = view.value.me ?: me)
                 entrySync()
             }
         }
@@ -1222,6 +1223,7 @@ open class PultActivity : ComponentActivity() {
             if (r is Outcome.Success) com.dpsmpx.dpmeta.app.data.WidgetCache.changed(app)
             val state = (repo.state() as? Outcome.Success)?.value
             val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
+            val me = runCatching { repo.viewerLogin() }.getOrNull()
             runOnUiThread {
                 view.value = when (r) {
                     is Outcome.Success -> view.value.copy(
@@ -1235,6 +1237,7 @@ open class PultActivity : ComponentActivity() {
                         cancelling = false,
                         feed = feed,
                         names = repo.names(),
+                        me = me ?: view.value.me,
                     ).also { loadHistory() }
                     is Outcome.Failure -> Screens.failure(r.diagnostics.first()).let { f ->
                         pendingIdeOpen = null

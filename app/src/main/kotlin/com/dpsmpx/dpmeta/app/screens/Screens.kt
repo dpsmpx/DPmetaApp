@@ -88,9 +88,12 @@ object Screens {
         val pullsOpen: String = UNKNOWN,
         /** Красный CI (D-176): голов основных веток и открытых PR. */
         val ciRed: String = UNKNOWN,
+        /** Ждут меня (D-176, п. 4): запросы ИИ, ревью, назначенные issues. */
+        val waiting: String = UNKNOWN,
     )
 
-    fun summary(s: EcosystemState): Summary = Summary(
+    fun summary(s: EcosystemState, me: String? = null, ai: AiCounts? = null): Summary = Summary(
+        waiting = waitingCount(waiting(s, me, ai), me),
         asOf = time(s.asOf),
         active = show(s.activeProjects),
         questions = show(s.questionsOpen),
@@ -134,7 +137,7 @@ object Screens {
     enum class Section(val title: String) { SUMMARY("Сводка"), DEV("Проекты"), MORE("Настройки"), HELP("Справка") }
 
     /** Вкладки раздела «Проекты» — в верхней панели (D-113): проекты, PR (F-11), вопросы автору. */
-    enum class DevTab(val title: String) { PROJECTS("Проекты"), PULLS("PR"), QUESTIONS("Вопросы") }
+    enum class DevTab(val title: String) { PROJECTS("Проекты"), PULLS("PR"), WAITING("Ждут меня") }
 
     /**
      * Пункт левой панели: раздел пульта или вход в окно «AI» ([section] `null`):
@@ -159,7 +162,7 @@ object Screens {
     const val AI_TITLE = "AI"
 
     /** Куда ведёт касание плитки сводки (UX-6; ТЗ, F-04: «каждая плитка ведёт на свой экран»). */
-    enum class Goes(val title: String) { PROJECTS("Проекты"), PULLS("PR"), QUESTIONS("Вопросы"), SYNC("Настройки") }
+    enum class Goes(val title: String) { PROJECTS("Проекты"), PULLS("PR"), WAITING("Ждут меня"), SYNC("Настройки") }
 
     /** Плитка сводки: [metric] — ряд истории для изменения и спарклайна (F-34), нет — без них. */
     data class Tile(val title: String, val value: String, val goes: Goes, val metric: String? = null)
@@ -171,7 +174,7 @@ object Screens {
      */
     fun tiles(s: Summary): List<Tile> = listOf(
         Tile("Работают", if (s.active == UNKNOWN) UNKNOWN else "${s.active} из ${s.projects}", Goes.PROJECTS, "eco.active_projects"),
-        Tile("Вопросов автору", s.questions, Goes.QUESTIONS, "eco.questions_open"),
+        Tile("Ждут меня", s.waiting, Goes.WAITING),
         Tile("PR ждут автора", s.pullsWaiting, Goes.PULLS),
         Tile("PR открыто", s.pullsOpen, Goes.PULLS),
         Tile("Красный CI", s.ciRed, Goes.PROJECTS),
@@ -654,6 +657,33 @@ object Screens {
     fun feed(events: List<FeedEvent>, project: String? = null, kind: String? = null): List<FeedRow> =
         events.filter { (project == null || it.project == project) && (kind == null || it.kind == kind) }
             .map { FeedRow(time(it.at), it.project, Feed.KINDS[it.kind] ?: it.kind, it.text) }
+
+    // --- Ждут меня (D-176) ---
+
+    /**
+     * Что ждёт пользователя (D-176, п. 4): запросы ИИ, PR с запрошенным у него ревью, назначенные
+     * ему issues — по всем проектам. [pull] — номер PR (касание — экран PR), [issue] — номер issue
+     * (касание — issue на GitHub), оба `null` — запросы ИИ (касание — «AI» на «Запросах»).
+     */
+    data class Waiting(val project: String, val title: String, val pull: Long? = null, val issue: Long? = null)
+
+    /** Список «Ждут меня»; [me] `null` — логин ещё не известен: ревью и issues не отобрать. */
+    fun waiting(s: EcosystemState?, me: String?, ai: AiCounts?): List<Waiting> = buildList {
+        ai?.waiting?.orNull()?.takeIf { it > 0 }?.let { add(Waiting("", "Запросы ИИ ждут ответа: $it")) }
+        if (s == null || me == null) return@buildList
+        fun mine(o: JsonObject, key: String) = (o[key] as? JsonArray)?.items.orEmpty().any { (it as? JsonString)?.value.equals(me, ignoreCase = true) }
+        for (p in s.projects) {
+            for (o in objects(payload(p, "pulls"), "pulls")) {
+                if (mine(o, "reviewers")) add(Waiting(p.name, "Ревью PR #${long(o, "number")}: ${str(o, "title").orEmpty()}", pull = long(o, "number")))
+            }
+            for (o in objects(payload(p, "issues"), "issues")) {
+                if (mine(o, "assignees")) add(Waiting(p.name, "Issue #${long(o, "number")}: ${str(o, "title").orEmpty()}", issue = long(o, "number")))
+            }
+        }
+    }
+
+    /** Число для плитки «Ждут меня»: логин неизвестен и запросов ИИ нет — неизвестно, а не ноль. */
+    fun waitingCount(list: List<Waiting>, me: String?): String = if (me == null && list.isEmpty()) UNKNOWN else list.size.toString()
 
     // --- Вопросы автору (F-24) ---
 
