@@ -17,7 +17,7 @@ import androidx.activity.enableEdgeToEdge
  * подтверждения на экране (D-44). Экран забирает и очищает.
  */
 /** Что пришло в окно «AI»: ссылка, подтверждение, остановка или вкладка ([tab] — имя `AiTab`, пункт панели приложения, D-112). */
-data class Incoming(val link: String? = null, val confirm: String? = null, val stop: Boolean = false, val tab: String? = null, val settings: Boolean = false, val settingsSub: String? = null, val newProject: Boolean = false, val workspace: Boolean = false, val file: IdeState.FileRequest? = null)
+data class Incoming(val link: String? = null, val confirm: String? = null, val stop: Boolean = false, val tab: String? = null, val settings: Boolean = false, val settingsSub: String? = null, val newProject: Boolean = false, val workspace: Boolean = false, val fileProject: String? = null, val filePath: String? = null)
 
 /** Единственная activity: экраны — Compose (D-34), данные — контроллер или демо (D-35). */
 class MainActivity : ComponentActivity() {
@@ -42,9 +42,8 @@ class MainActivity : ComponentActivity() {
             OPEN_FILE -> incoming.value = Incoming(
                 tab = com.dpsmpx.dpai.ui.AiTab.FILES.name,
                 workspace = true,
-                file = intent.getStringExtra(EXTRA_PROJECT)?.let { p ->
-                    intent.getStringExtra(EXTRA_PATH)?.takeIf { com.dpsmpx.dpai.files.FileNames.pathValid(it) }?.let { IdeState.FileRequest(p, it) }
-                },
+                fileProject = intent.getStringExtra(EXTRA_PROJECT),
+                filePath = intent.getStringExtra(EXTRA_PATH)?.takeIf { com.dpsmpx.dpai.files.FileNames.pathValid(it) },
             )
         }
     }
