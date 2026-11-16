@@ -86,6 +86,8 @@ object EnvSnapshots {
         val extra: List<String>,
         /** Вернутся к версии снимка. */
         val versions: List<VersionBack>,
+        /** Откат опасен — почему ([unsafe]). */
+        val unsafe: String? = null,
     ) {
         val empty: Boolean get() = !repositories && !vars && worldAdd.isEmpty() && worldRemove.isEmpty() && extra.isEmpty() && versions.isEmpty()
     }
@@ -102,12 +104,24 @@ object EnvSnapshots {
             worldRemove = world.filter { it !in s.world },
             extra = now.keys.filter { it !in s.packages }.sorted(),
             versions = versions.sortedBy { it.name },
+            unsafe = unsafe(s),
         )
+    }
+
+    /**
+     * Почему откат к [s] опасен; `null` — можно. Снимок без основы Alpine в `world` (файла не
+     * было, база повреждена) увёл бы `apk fix` к пустой системе.
+     */
+    fun unsafe(s: Snapshot): String? {
+        val names = s.world.mapNotNull { com.dpsmpx.dpai.orchestrator.linux.AlpinePackages.dependency(it)?.name }.toSet()
+        val missing = listOf("alpine-baselayout", "apk-tools", "busybox").filter { it !in names }
+        return if (missing.isEmpty()) null else "в снимке нет основы Alpine (${missing.joinToString()}) — откат к нему опасен"
     }
 
     /** Текст окна «Откатить?»: что вернётся наверняка, что — если зеркало даст, что уйдёт. */
     fun planText(p: Plan): String = buildString {
         if (p.empty) { append("Окружение уже такое, как в снимке."); return@buildString }
+        p.unsafe?.let { append("Откатить нельзя: $it."); return@buildString }
         if (p.repositories) appendLine("• Репозитории — как в снимке.")
         if (p.vars) appendLine("• Свои переменные — как в снимке.")
         if (p.worldAdd.isNotEmpty() || p.worldRemove.isNotEmpty()) {

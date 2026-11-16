@@ -54,6 +54,7 @@ internal object EnvSnapshotStore {
     private const val PREFS = "dpai.environment"
     private const val CACHE_KEY = "apkCache"
     private val lock = Any()
+    private const val FRESH_MS = 10L * 60 * 1000
 
     fun cacheOn(context: Context): Boolean = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(CACHE_KEY, true)
 
@@ -91,7 +92,10 @@ internal object EnvSnapshotStore {
                 val (keep, drop) = EnvSnapshots.prune(all + snap)
                 for (d in drop) v.delete("$DIR/${d.id}.json")
                 if (prune) {
-                    val cache = env.cachedPackages().mapNotNull(EnvSnapshots::cacheFile)
+                    // Свежие файлы (моложе 10 минут) не трогаются: их может прямо сейчас ставить apk в терминале или ходе ИИ.
+                    val dir = File(File(context.filesDir, env.rootfs), LinuxEnvironment.CACHE_DIR.removePrefix("/"))
+                    val old = at - FRESH_MS
+                    val cache = env.cachedPackages().filter { File(dir, it).lastModified() in 1 until old }.mapNotNull(EnvSnapshots::cacheFile)
                     env.dropCached(EnvSnapshots.prunableCache(keep, inv, cache).map { it.file })
                 }
             } catch (e: IOException) {
@@ -126,7 +130,9 @@ internal object EnvSnapshotStore {
     fun rollback(context: Context, jobs: LongJobs, s: EnvSnapshots.Snapshot) {
         val label = "Откат к снимку ${time(s.at)}"
         jobs.start(LongJobs.LINUX_APK, label, excludes = LongJobs.GUEST) {
-            take(context, "Перед откатом к снимку ${time(s.at)}")
+            // Без чистки кеша: иначе файлы, нужные только целевому снимку (если он выпадет из хранимых), ушли бы до отката.
+            take(context, "Перед откатом к снимку ${time(s.at)}", prune = false)
+            EnvSnapshots.unsafe(s)?.let { return@start LongJobs.Done("$label: $it", failed = true) }
             val env = LinuxSetup.environment(context)
             val out = mutableListOf<String>()
             val notes = mutableListOf<String>()
@@ -194,7 +200,7 @@ internal fun EnvironmentSnapshotsSection(running: Boolean, onRollback: (EnvSnaps
             onDismissRequest = { asking = null },
             title = { Text("Откатить к снимку ${EnvSnapshotStore.time(s.at)}?") },
             text = { Text(EnvSnapshots.planText(p)) },
-            confirmButton = { if (!p.empty) TextButton(onClick = { asking = null; onRollback(s) }) { Text("Откатить") } },
+            confirmButton = { if (!p.empty && p.unsafe == null) TextButton(onClick = { asking = null; onRollback(s) }) { Text("Откатить") } },
             dismissButton = { TextButton(onClick = { asking = null }) { Text(if (p.empty) "Закрыть" else "Отмена") } },
         )
     }

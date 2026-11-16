@@ -13,21 +13,21 @@ class EnvSnapshotsTest {
     private fun inv(vararg pkgs: Pair<String, String>, world: String, repos: String = "https://dl-cdn.alpinelinux.org/alpine/v3.24/main\n") =
         AlpinePackages.parse(pkgs.joinToString("\n\n") { "P:${it.first}\nV:${it.second}" }, world, repos, "3.24.3")
 
-    private val before = inv("busybox" to "1.37.0-r31", "bash" to "5.3.9-r1", "git" to "2.54.0-r0", world = "busybox bash git")
+    private val before = inv("busybox" to "1.37.0-r31", "bash" to "5.3.9-r1", "git" to "2.54.0-r0", world = "alpine-baselayout apk-tools busybox bash git")
     private val vars = listOf(OwnVariables.Var("TZ", "UTC"))
     private val snap = EnvSnapshots.take("s1", 1_000, "apk upgrade bash", before, vars)
 
     @Test
     fun takeAndSameState() {
         assertEquals(mapOf("bash" to "5.3.9-r1", "busybox" to "1.37.0-r31", "git" to "2.54.0-r0"), snap.packages)
-        assertEquals(listOf("busybox", "bash", "git"), snap.world)
+        assertEquals(listOf("alpine-baselayout", "apk-tools", "busybox", "bash", "git"), snap.world)
         assertTrue(snap.sameState(EnvSnapshots.take("s2", 2_000, "другое", before, vars)))
         assertTrue(!snap.sameState(EnvSnapshots.take("s3", 2_000, "x", before, emptyList())))
     }
 
     @Test
     fun planNamesWhatComesBackAndWhatMayNot() {
-        val after = inv("busybox" to "1.37.0-r31", "bash" to "5.3.9-r2", "git" to "2.54.1-r0", "tree" to "2.3.2-r0", world = "busybox bash git tree", repos = "https://dl-cdn.alpinelinux.org/alpine/edge/main\n")
+        val after = inv("busybox" to "1.37.0-r31", "bash" to "5.3.9-r2", "git" to "2.54.1-r0", "tree" to "2.3.2-r0", world = "alpine-baselayout apk-tools busybox bash git tree", repos = "https://dl-cdn.alpinelinux.org/alpine/edge/main\n")
         val cache = listOf(EnvSnapshots.cacheFile("bash-5.3.9-r1.2ce9606f.apk")!!, EnvSnapshots.cacheFile("git-init-template-2.54.0-r0.0a1b2c3d.apk")!!)
         val p = EnvSnapshots.plan(snap, after, emptyList(), cache)
         assertTrue(p.repositories && p.vars)
@@ -42,9 +42,18 @@ class EnvSnapshotsTest {
 
     @Test
     fun leftoverAfterRollback() {
-        val partly = inv("busybox" to "1.37.0-r31", "bash" to "5.3.9-r1", "git" to "2.54.1-r0", world = "busybox bash git")
+        val partly = inv("busybox" to "1.37.0-r31", "bash" to "5.3.9-r1", "git" to "2.54.1-r0", world = "alpine-baselayout apk-tools busybox bash git")
         assertEquals(listOf("git — 2.54.1-r0 вместо 2.54.0-r0"), EnvSnapshots.leftover(snap, partly, vars))
         assertEquals(emptyList(), EnvSnapshots.leftover(snap, before, vars))
+    }
+
+    @Test
+    fun snapshotWithoutAlpineBaseIsUnsafe() {
+        assertNull(EnvSnapshots.unsafe(snap))
+        val broken = snap.copy(world = emptyList())
+        assertTrue(EnvSnapshots.unsafe(broken)!!.contains("alpine-baselayout"))
+        val p = EnvSnapshots.plan(broken, before, vars, emptyList())
+        assertTrue(EnvSnapshots.planText(p).startsWith("Откатить нельзя"), EnvSnapshots.planText(p))
     }
 
     @Test
