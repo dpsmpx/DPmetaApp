@@ -111,6 +111,8 @@ class GitHubTest {
         assertEquals(Issue(3, "Падает сборка", "alice", listOf("bob"), listOf("bug"), issue.updatedAt, 2), issue)
         val commit = (gh.recentCommits(repo) as Outcome.Success).value.value.single()
         assertEquals(RecentCommit(sha, "Первая строка", "Алиса", commit.date), commit)
+        val empty = GitHub(Net(Fake(mapOf("/repos/example/Alpha/commits?per_page=${GitHub.COMMITS_KEEP}" to (409 to """{"message":"Git Repository is empty."}""")))), Secret("t"))
+        assertEquals(emptyList(), (empty.recentCommits(repo) as Outcome.Success).value.value, "пустой репозиторий — коммитов нет, не отказ")
     }
 
     @Test

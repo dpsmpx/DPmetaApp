@@ -247,15 +247,15 @@ object Sync {
         SourceKind.PULLS -> when (val p = reader.pulls(t.project)) {
             is Outcome.Failure -> p
             is Outcome.Success -> {
-                // CI последних PR (D-176): по голове; источник без CI — поля нет.
+                // CI последних PR (D-176): по голове; источник без CI или его сбой (лимит, 5xx) — поля нет:
+                // список PR важнее, а лимит остановит следующую задачу.
                 val heads = p.value.value.filter { it.headSha != null }.sortedByDescending { it.updatedAt }.take(CI_PULLS_KEEP)
                 val got = parallel.all(heads.map { pr -> { pr.number to reader.ci(t.project, pr.headSha!!) } })
                 val ci = HashMap<Int, CiState>()
                 val raws = StringBuilder(p.value.rawSha256.toString()).append('\n')
                 for ((number, r) in got) {
                     when (r) {
-                        null -> Unit
-                        is Outcome.Failure -> return r
+                        null, is Outcome.Failure -> Unit
                         is Outcome.Success -> {
                             ci[number] = r.value.value
                             raws.append(number).append('\u0000').append(r.value.rawSha256.toString()).append('\n')
@@ -433,12 +433,8 @@ object Sync {
             is Outcome.Success -> r.value
         }
         val head = got.value.firstOrNull()
-        val ci = head?.let { reader.ci(t.project, it.sha) }
-        val ciState = when (ci) {
-            null -> null
-            is Outcome.Failure -> return ci
-            is Outcome.Success -> ci.value
-        }
+        // Сбой CI головы — без поля CI (неизвестно), коммиты остаются.
+        val ciState = (head?.let { reader.ci(t.project, it.sha) } as? Outcome.Success)?.value
         val payload = JsonObject(
             linkedMapOf<String, JsonValue>(
                 "commits" to JsonArray(

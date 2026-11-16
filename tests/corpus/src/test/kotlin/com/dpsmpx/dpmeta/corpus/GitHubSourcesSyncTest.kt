@@ -101,11 +101,11 @@ class GitHubSourcesSyncTest {
     }
 
     @Test
-    fun rateLimitOnCiFailsTheTaskAndStopsTheRun() {
-        val r = run(Fake(ciLimited = true), SourceKind.PULLS, SourceKind.ISSUES, SourceKind.COMMITS)
-        assertEquals("pulls" to DiagCode.GITHUB_RATE_LIMITED, r.failures.first().let { it.kind to it.diagnostic.code })
-        assertTrue(r.observations.isEmpty(), "лимит — остальное откладывается")
-        assertEquals(2, r.deferred)
+    fun ciFailureKeepsPullsAndCommitsWithoutCi() {
+        val r = run(Fake(ciLimited = true), SourceKind.PULLS, SourceKind.COMMITS)
+        assertEquals(emptyList(), r.failures, "CI неизвестен, а список PR и коммиты — есть")
+        assertTrue((payload(r, "pulls")["pulls"] as JsonArray).items.all { (it as JsonObject)["ci"] == null })
+        assertNull(payload(r, "commits")["ci"])
     }
 
     @Test

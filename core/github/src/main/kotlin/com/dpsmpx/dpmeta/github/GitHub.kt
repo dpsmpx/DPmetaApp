@@ -145,9 +145,21 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
             Outcome.success(Page(out, p.fetched))
         }
 
-    /** Последние коммиты основной ветки (D-176), не больше [COMMITS_KEEP]; первый — её голова. */
-    fun recentCommits(repo: RepoRef): Outcome<Page<List<RecentCommit>>> =
-        get("repos/$repo/commits?per_page=$COMMITS_KEEP", "$repo:commits").then { p ->
+    /** Последние коммиты основной ветки (D-176), не больше [COMMITS_KEEP]; первый — её голова. Пустой репозиторий (409) — пусто. */
+    fun recentCommits(repo: RepoRef): Outcome<Page<List<RecentCommit>>> {
+        val path = "repos/$repo/commits?per_page=$COMMITS_KEEP"
+        val headers = mapOf("Accept" to JSON, "X-GitHub-Api-Version" to API_VERSION, "User-Agent" to USER_AGENT)
+        val raw = when (val r = net.get(api.resolve(path), headers, token)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        if (raw.status == 409) return Outcome.success(Page(emptyList(), raw))
+        return status(raw, "$repo:commits").then { f ->
+            when (val v = json.parse(f.text)) {
+                is Outcome.Failure -> Outcome.failure(DiagCode.CONNECTOR_REPLY_INVALID, "ответ GitHub — не JSON", "$repo:commits")
+                is Outcome.Success -> Outcome.success(Page(v.value, f))
+            }
+        }.then { p ->
             val items = (p.value as? JsonArray)?.items ?: return@then missing("[]", "$repo:commits")
             val out = items.map { v ->
                 val o = v as? JsonObject ?: return@then missing("commit", "$repo:commits")
@@ -159,6 +171,7 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
             }
             Outcome.success(Page(out, p.fetched))
         }
+    }
 
     /**
      * CI коммита [sha] (D-176): check runs (права Checks: read) и статусы (Commit statuses: read).
