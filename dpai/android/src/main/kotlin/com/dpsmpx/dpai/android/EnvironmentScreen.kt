@@ -37,11 +37,12 @@ import com.dpsmpx.dpai.orchestrator.linux.AlpinePackages
 import com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.ui.AlpineView
+import com.dpsmpx.dpai.ui.AppComponents
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Экран «Окружение» (D-191; `DPmetaApp:D-171`, шаг 1): пакеты Alpine гостя — что стоит,
+ * Экран «Окружение» (D-191, D-192; `DPmetaApp:D-171`, шаги 1–2): пакеты Alpine гостя — что стоит,
  * версия, размер, сумма, для кого нужен, совместимость между собой; обновить, убрать,
  * починить без ИИ. База читается с хоста без процесса гостя; команды `apk` — та же
  * долгая работа `LINUX_APK`, что и на экране «Linux в приложении», по одной (AI:A-14).
@@ -63,6 +64,9 @@ fun EnvironmentScreen(onBack: () -> Unit) {
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     var removing by remember { mutableStateOf<AlpinePackages.Removal?>(null) }
     var allOutput by remember { mutableStateOf(false) }
+    var section by rememberSaveable { mutableStateOf(EnvSection.ALPINE) }
+    var components by remember { mutableStateOf<List<AppComponents.Component>>(emptyList()) }
+    var removingComponent by remember { mutableStateOf<AppComponents.Component?>(null) }
 
     // Список перечитывается, когда команда гостя закончилась: база — после неё.
     LaunchedEffect(running) {
@@ -77,6 +81,8 @@ fun EnvironmentScreen(onBack: () -> Unit) {
                 }
                 is Outcome.Failure -> note = r.errors.first().message
             }
+            val arch = inv?.byName?.get("musl")?.arch
+            components = runCatching { AppComponents.scan(EnvironmentComponents.rootfs(context).toPath(), arch) }.getOrDefault(emptyList())
         }
         loaded = true
     }
@@ -112,6 +118,14 @@ fun EnvironmentScreen(onBack: () -> Unit) {
         )
     }
 
+    removingComponent?.let { c ->
+        RemoveComponentDialog(c, onCancel = { removingComponent = null }) {
+            removingComponent = null
+            allOutput = false
+            EnvironmentComponents.remove(context, jobs, c)
+        }
+    }
+
     val current = inv
     val rows = remember(current, problems, query, filter, sort) {
         current?.let { AlpineView.rows(it, problems, query, filter, sort) }.orEmpty()
@@ -121,10 +135,14 @@ fun EnvironmentScreen(onBack: () -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 TextButton(onClick = onBack) { Text("← Назад") }
                 Text("Окружение", style = MaterialTheme.typography.titleMedium)
-                Text("Пакеты Alpine в Linux приложения: что стоит, сколько занимает, для кого нужно.", style = MaterialTheme.typography.bodySmall)
+                Text("Linux в приложении: пакеты Alpine и компоненты DP_IDE — что стоит, сколько занимает, откуда и с какой суммой.", style = MaterialTheme.typography.bodySmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (sec in EnvSection.entries) FilterChip(selected = section == sec, onClick = { section = sec; open = null }, label = { Text(sec.title) })
+                }
                 if (!loaded) Text("Читаю базу пакетов…", style = MaterialTheme.typography.bodySmall)
-                note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                current?.let { c ->
+                note?.takeIf { section == EnvSection.ALPINE }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                if (section == EnvSection.COMPONENTS && loaded) Text(AppComponents.summary(components), style = MaterialTheme.typography.bodyMedium)
+                current?.takeIf { section == EnvSection.ALPINE }?.let { c ->
                     Text(AlpineView.summary(c, problems), style = MaterialTheme.typography.bodyMedium)
                     if (c.repositories.isNotEmpty()) {
                         Text("Репозитории: " + c.repositories.joinToString { it.removePrefix("https://dl-cdn.alpinelinux.org/alpine/") }, style = MaterialTheme.typography.bodySmall)
@@ -152,7 +170,7 @@ fun EnvironmentScreen(onBack: () -> Unit) {
                     Text((if (allOutput) output else output.takeLast(1)).joinToString("\n"), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
                     if (output.size > 1) TextButton(onClick = { allOutput = !allOutput }) { Text(if (allOutput) "Свернуть вывод" else "Показать весь вывод (${output.size} строк)") }
                 }
-                if (current != null) {
+                if (current != null && section == EnvSection.ALPINE) {
                     OutlinedTextField(query, { query = it.take(100) }, label = { Text("Поиск: имя или описание") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         for (f in AlpineView.Filter.entries) FilterChip(selected = filter == f, onClick = { filter = f }, label = { Text(f.title) })
@@ -162,7 +180,15 @@ fun EnvironmentScreen(onBack: () -> Unit) {
                 }
             }
         }
-        items(rows, key = { it.name }) { row ->
+        if (section == EnvSection.COMPONENTS) {
+            items(components, key = { it.id }) { c ->
+                val install = if (EnvironmentComponents.ideInstall(c) != null || EnvironmentComponents.reinstall(c) != null) {
+                    { allOutput = false; EnvironmentComponents.install(context, jobs, c) }
+                } else null
+                ComponentRow(c, open == c.id, running, onToggle = { open = if (open == c.id) null else c.id }, onRemove = { removingComponent = c }, onInstall = install)
+            }
+        }
+        if (section == EnvSection.ALPINE) items(rows, key = { it.name }) { row ->
             Column(Modifier.fillMaxWidth().clickable { open = if (open == row.name) null else row.name }.padding(vertical = 4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(row.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
@@ -187,6 +213,9 @@ fun EnvironmentScreen(onBack: () -> Unit) {
         }
     }
 }
+
+/** Разделы экрана. */
+private enum class EnvSection(val title: String) { ALPINE("Пакеты Alpine"), COMPONENTS("Компоненты") }
 
 /** Строк вывода `apk` на экране: хвост, где итог и ошибка. */
 private const val MAX_OUTPUT = 20

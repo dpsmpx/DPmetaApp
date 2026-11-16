@@ -423,6 +423,10 @@ AlpinePackageState учитывает виртуальные provides. Api FIX �
 что уйдёт при удалении; `AlpineVersion` сравнивает версии как apk-tools 3.
 `ui.AlpineView` — строки, подробности и починка; экран `EnvironmentScreen`
 оболочки зовёт apk через `LongJobs.LINUX_APK`, как «Linux в приложении».
+Компоненты (D-192): `ui.AppComponents` — SDK, службы IDE, kotlinc, окружения
+проектов, CLI исполнителей и модели с версией, суммой и размером с хоста;
+удаление — только в разрешённых местах дома гостя, установка — прежними
+установщиками (`EnvironmentComponents` оболочки).
 
 Языки запуска (D-141): EditorRunOutput возвращает RunDiagnosis по пути
 файла, C++ использует прежний CppDependencies. PythonRuntime/KotlinRuntime
