@@ -336,6 +336,7 @@ object Sync {
                         p.mergedAt?.let { put("mergedAt", JsonNumber.of(it.epochMillis)) }
                         p.createdAt?.let { put("createdAt", JsonNumber.of(it.epochMillis)) }
                         ci[p.number]?.let { put("ci", ciJson(it)) }
+                        if (p.reviewers.isNotEmpty()) put("reviewers", JsonArray(p.reviewers.map(::JsonString)))
                     },
                 )
             },

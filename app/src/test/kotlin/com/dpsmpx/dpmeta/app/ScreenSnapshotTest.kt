@@ -66,12 +66,12 @@ class ScreenSnapshotTest {
         assertEquals(0, Screens.filterPulls(rows, Screens.PullFilter.WAITING, null).size)
     }
 
-    /** Левая панель (D-112): шесть пунктов с «AI», четыре — без подсистемы; графиков нет; «Проекты» — три вкладки. */
+    /** Левая панель (D-112): шесть пунктов с «AI», четыре — без подсистемы; графиков нет; «Проекты» — три вкладки, третья — «Ждут меня» (D-176). */
     @Test
     fun panel() {
         assertEquals(listOf("Сводка", "Проекты", "IDE", "AI", "Настройки", "Справка"), Screens.panel(ai = true))
         assertEquals(listOf("Сводка", "Проекты", "Настройки", "Справка"), Screens.panel(ai = false))
-        assertEquals(listOf("Проекты", "PR", "Вопросы"), Screens.DevTab.entries.map { it.title })
+        assertEquals(listOf("Проекты", "PR", "Ждут меня"), Screens.DevTab.entries.map { it.title })
     }
 
     /** Строка «AI» (D-76): с контуром — числа и переход к запросам; без контура — «не настроено». */
@@ -178,6 +178,36 @@ class ScreenSnapshotTest {
         assertEquals(listOf("TODO.md — 1/3", "  ☐ второй", "  ☐ третий", "plan.md — файла нет"), sec.lines)
         assertEquals("Чек-листы: файлов нет", Screens.checklistsSection(files.drop(1)).title)
         assertEquals("Чек-листы: чекбоксов нет", Screens.checklistsSection(listOf(files[0].copy(done = 0, total = 0, open = emptyList()))).title)
+    }
+
+    @Test
+    fun waitingForMeFromReviewsIssuesAndAiRequests() {
+        fun arr(vararg v: String) = com.dpsmpx.dpai.core.serialization.JsonArray(v.map { com.dpsmpx.dpai.core.serialization.JsonString(it) })
+        fun obj(vararg f: Pair<String, com.dpsmpx.dpai.core.serialization.JsonValue>) = com.dpsmpx.dpai.core.serialization.JsonObject.of(*f)
+        fun num(n: Long) = com.dpsmpx.dpai.core.serialization.JsonNumber.of(n)
+        fun str(t: String) = com.dpsmpx.dpai.core.serialization.JsonString(t)
+        val pulls = obj("pulls" to com.dpsmpx.dpai.core.serialization.JsonArray(listOf(
+            obj("number" to num(8), "title" to str("Ревью мне"), "reviewers" to arr("Alice")),
+            obj("number" to num(9), "title" to str("Чужое"), "reviewers" to arr("bob")),
+        )))
+        val issues = obj("issues" to com.dpsmpx.dpai.core.serialization.JsonArray(listOf(
+            obj("number" to num(3), "title" to str("Мой баг"), "assignees" to arr("alice")),
+            obj("number" to num(4), "title" to str("Ничей"), "author" to str("alice")),
+        )))
+        val sections = mapOf(
+            "pulls" to com.dpsmpx.dpmeta.metrics.SourceSection("pulls", "github.pulls.v1", now, pulls),
+            "issues" to com.dpsmpx.dpmeta.metrics.SourceSection("issues", "github.issues.v1", now, issues),
+        )
+        val s = EcosystemState(now, 1, listOf(com.dpsmpx.dpmeta.metrics.ProjectState("app", "user", sections, emptyList())))
+        val ai = Screens.AiCounts(true, Measure.observed(2L), Measure.observed(0L), Measure.observed(0L))
+        val list = Screens.waiting(s, "alice", ai)
+        assertEquals(listOf("Запросы ИИ ждут ответа: 2", "Ревью PR #8: Ревью мне", "Issue #3: Мой баг"), list.map { it.title })
+        assertEquals(8L, list[1].pull)
+        assertEquals(3L, list[2].issue)
+        assertEquals("3", Screens.waitingCount(list, "alice"))
+        assertEquals(listOf("Запросы ИИ ждут ответа: 2"), Screens.waiting(s, null, ai).map { it.title }, "логина нет — ревью и issues не отобрать")
+        assertEquals(Screens.UNKNOWN, Screens.waitingCount(Screens.waiting(s, null, null), null), "неизвестно, а не ноль")
+        assertEquals("3", Screens.summary(s, "alice", ai).waiting)
     }
 
     @Test
