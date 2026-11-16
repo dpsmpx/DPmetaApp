@@ -20,6 +20,7 @@ import com.dpsmpx.dpmeta.metrics.MetricPoint
 import com.dpsmpx.dpmeta.metrics.Rules
 import com.dpsmpx.dpmeta.metrics.Store
 import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpmeta.model.ProjectList
 import com.dpsmpx.dpmeta.model.Registry
 import com.dpsmpx.dpmeta.model.SourceFailure
 import com.dpsmpx.dpmeta.net.Net
@@ -87,7 +88,7 @@ class PultRepository(
      */
     fun cloneOptions(token: Secret): Outcome<List<CloneOption>> {
         val (gh, etags) = client(token)
-        val reg = when (val r = registry(gh)) {
+        val reg = when (val r = registry()) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }
@@ -125,7 +126,7 @@ class PultRepository(
 
     /** Репозиторий проекта для действий с PR — тот же, откуда синхронизация берёт его PR. */
     private fun repoOf(gh: GitHub, project: String): Outcome<RepoRef> {
-        val reg = when (val r = registry(gh)) {
+        val reg = when (val r = registry()) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }
@@ -263,16 +264,9 @@ class PultRepository(
     }
 
     /**
-     * Реестр проектов для команд (D-82): прочитанный при синхронизации, иначе — из клона
-     * DPmetaApp, без сети и токена.
+     * Проекты для команд (D-82) — из списка пульта (D-176), без сети и токена.
      */
-    fun commandRegistry(selected: Set<String>): Outcome<Registry> {
-        registry?.let { return Outcome.success(it) }
-        val host = RepoRef.parse(HOST).valueOrNull() ?: return Outcome.failure(DiagCode.INTERNAL_ERROR, "адрес DPmetaApp", HOST)
-        val clones = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList())
-        return localRegistry(clones, host, selected)?.let { Outcome.success(it) }
-            ?: Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "реестра проектов ещё нет: синхронизируйте пульт или отметьте клон DPmetaApp", REGISTRY)
-    }
+    fun commandRegistry(): Outcome<Registry> = registry()
 
     /** Каталог клона репозитория [repo] на телефоне — тот же, что у гостя в `/root/projects` (D-111, D-113). */
     fun cloneDir(repo: RepoRef): java.io.File = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList()).dir("$repo")
@@ -307,7 +301,7 @@ class PultRepository(
     /** Файл к правке (F-69): репозиторий и путь — как у документа проекта, блоб — с основной ветки. */
     fun editable(token: Secret, project: String, path: String): Outcome<com.dpsmpx.dpmeta.app.screens.EditActions.Edit> {
         val (gh, etags) = client(token)
-        val reg = when (val r = registry(gh)) {
+        val reg = when (val r = registry()) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }
@@ -332,14 +326,31 @@ class PultRepository(
         return GitHub(Net(UrlTransport(), cache = etags), token) to etags
     }
 
-    private fun registry(gh: GitHub): Outcome<Registry> {
+    /** Проекты пульта как реестр синхронизации (D-176): из списка пользователя, без сети. */
+    private fun registry(): Outcome<Registry> {
         registry?.let { return Outcome.success(it) }
-        val host = RepoRef.parse(HOST).valueOrNull() ?: return Outcome.failure(DiagCode.INTERNAL_ERROR, "адрес DPmetaApp", HOST)
-        val text = when (val f = gh.file(host, REGISTRY)) {
-            is Outcome.Failure -> return f
-            is Outcome.Success -> f.value.value
+        return when (val r = projectList()) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> Outcome.success(r.value.toRegistry().also { registry = it })
         }
-        return RegistryFormat.parse(text, REGISTRY).also { r -> (r as? Outcome.Success)?.let { registry = it.value } }
+    }
+
+    /** Настройки пульта: список проектов (D-176) — рядом с правилами уведомлений (D-140). */
+    private val settings = DocumentStore(vfs, "settings")
+
+    /** Список проектов пульта (D-176); файла ещё нет — пустой список. */
+    fun projectList(): Outcome<ProjectList> = when (val r = settings.read(PROJECTS)) {
+        is Outcome.Failure -> r
+        is Outcome.Success -> r.value?.let { ProjectList.parse(it.content) } ?: Outcome.success(ProjectList())
+    }
+
+    /** Сохранить список; синхронизация и карточки берут его сразу. */
+    fun saveProjectList(list: ProjectList): Outcome<Unit> = when (val r = settings.write(PROJECTS, list.toJson())) {
+        is Outcome.Failure -> r
+        is Outcome.Success -> {
+            registry = list.toRegistry()
+            Outcome.success(Unit)
+        }
     }
 
     /** Имена, прежние имена и другие написания проектов → имя: ссылки `Проект:путь` (F-09). */
@@ -348,7 +359,7 @@ class PultRepository(
     /** Каталог проекта (F-09): пути — от корня проекта, у подсистемы — без её каталога в DPmetaApp. */
     fun directory(token: Secret, project: String, dir: String): Outcome<List<GitHub.Entry>> {
         val (gh, etags) = client(token)
-        val reg = when (val r = registry(gh)) {
+        val reg = when (val r = registry()) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }
@@ -366,7 +377,7 @@ class PultRepository(
     /** Файл проекта по запросу (F-09): тексты процесса — с кэшем ETag, код — без сохранения. */
     fun document(token: Secret, project: String, path: String): Outcome<String> {
         val (gh, etags) = client(token)
-        val reg = when (val r = registry(gh)) {
+        val reg = when (val r = registry()) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }
@@ -392,7 +403,7 @@ class PultRepository(
     private fun local(project: String, selected: Set<String>): Local? {
         val clones = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList())
         val host = RepoRef.parse(HOST).valueOrNull() ?: return null
-        val reg = registry ?: localRegistry(clones, host, selected) ?: return null
+        val reg = registry().valueOrNull() ?: return null
         val entry = reg.byName(project) ?: return null
         val key = if (entry.dir != null) host.toString() else entry.slug.toString()
         // Выбор — как `full_name` GitHub, ключ — как в реестре: сверка без регистра, как у синхронизации.
@@ -460,15 +471,6 @@ class PultRepository(
     }
 
     private fun trustedHost(): String? = runCatching { vfs.read(TRUSTED_HOST)?.toString(Charsets.UTF_8)?.trim() }.getOrNull()?.takeIf { Regex("[0-9a-f]{40}").matches(it) }
-
-    /** Реестр из отмеченного клона DPmetaApp — без сети и токена (окно открыли до первой синхронизации). */
-    private fun localRegistry(clones: com.dpsmpx.dpmeta.git.Clones, host: RepoRef, selected: Set<String>): Registry? {
-        if (selected.none { it.equals(host.toString(), ignoreCase = true) }) return null
-        val main = clones.main(host.toString()) ?: return null
-        val bytes = (clones.file(host.toString(), main, REGISTRY) as? Outcome.Success)?.value ?: return null
-        // Только для чтения из клона: в общий реестр (REST, окно клонов) он не кладётся — клон доступен гостю Linux на запись.
-        return (RegistryFormat.parse(bytes.toString(Charsets.UTF_8), REGISTRY) as? Outcome.Success)?.value
-    }
 
     /**
      * Каталог склонированного проекта — из клона (UX-9): без сети, токена и
@@ -551,13 +553,10 @@ class PultRepository(
         val net = Net(UrlTransport(), cache = etags)
         val gh = GitHub(net, token)
         val host = RepoRef.parse(HOST).valueOrNull() ?: return Outcome.failure(DiagCode.INTERNAL_ERROR, "адрес DPmetaApp", HOST)
-        val text = when (val f = gh.file(host, REGISTRY)) {
-            is Outcome.Failure -> return f
-            is Outcome.Success -> f.value.value
-        }
-        val reg = when (val r = RegistryFormat.parse(text, REGISTRY)) {
+        // Проекты — список пользователя (D-176), а не реестр DPmeta с GitHub (D-05).
+        val reg = when (val r = projectList()) {
             is Outcome.Failure -> return r
-            is Outcome.Success -> r.value.also { registry = it }
+            is Outcome.Success -> r.value.toRegistry().also { registry = it }
         }
         val known = previous?.projects.orEmpty().mapNotNull { p ->
             ((p.sections["roadmap"]?.payload as? JsonObject)?.get("path") as? JsonString)?.value?.let { (p.name to "roadmap") to it }
@@ -710,6 +709,9 @@ class PultRepository(
 
         const val HOST = "dpsmpx/DPmetaApp"
         const val REGISTRY = "dpmeta/tools/ecosystem.toml"
+
+        /** Ключ списка проектов пульта (D-176) в настройках пульта. */
+        private const val PROJECTS = "projects"
 
         /** Голова DPmetaApp от GitHub для манифеста «AI» (T19, D-114) — файл хранилища пульта. */
         private const val TRUSTED_HOST = "trusted/dpmetaapp-main"

@@ -229,6 +229,8 @@ data class PultView(
     val history: List<MetricPoint> = emptyList(),
     /** Окно выбора клонов (D-70); `null` — закрыто. */
     val clonePrompt: ClonePrompt? = null,
+    /** Окно «Проекты пульта» (D-176); `null` — закрыто. */
+    val projectsPrompt: ProjectsPrompt? = null,
     /** Код и сообщение отказа к [status] — под «Подробнее» (UX-13); пусто — нет. */
     val statusDetails: String = "",
     /** Сколько репозиториев отмечено для клонов — строка настроек. */
@@ -280,6 +282,12 @@ private fun <T> contentKeys(list: List<T>, of: (T) -> Any): List<String> {
  * [checked] — отмеченные заранее (при первом входе — реестр); [first] —
  * первый вход: «Позже» спросит снова.
  */
+/**
+ * Окно «Проекты пульта» (D-176): [options] — репозитории аккаунта и уже выбранные, которых в нём
+ * нет; [checked] — отмеченные по порядку; [first] — первый вход: «Позже» вместо «Отмена».
+ */
+data class ProjectsPrompt(val options: List<com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption>, val checked: List<String>, val first: Boolean)
+
 data class ClonePrompt(val options: List<com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption>, val checked: Set<String>, val first: Boolean, val note: String? = null)
 
 /** Итог «Обновить» для снэкбара (UX-6): обновлено, не вышло, не начато (нет токена, уже идёт). */
@@ -532,6 +540,10 @@ fun PultApp(
     onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null,
     /** «Клоны…» в настройках (D-70). */
     onClones: () -> Unit = {},
+    /** «Проекты пульта…» (D-176). */
+    onProjects: () -> Unit = {},
+    /** Итог окна проектов: отмеченные по порядку или `null` — «Позже» / «Отмена». */
+    onProjectsChosen: (List<String>?) -> Unit = {},
     /** «Отменить» клоны идущей синхронизации (UX-10). */
     onCancelSync: () -> Unit = {},
     /** Удалить не отмеченный клон (UX-11) — после вопроса. */
@@ -669,6 +681,7 @@ fun PultApp(
                     val chosen = top?.project
                     Column(Modifier.weight(2f).fillMaxSize()) {
                         LocalProjects(view.local, onNewProject, onOpenProject, compact = true, onPublish = { publishing = it })
+                        ProjectsButton(view, onProjects)
                         // Другой проект — вместо открытой карточки, а не поверх неё: «Назад» — к списку.
                         Projects(remember(s) { Screens.projects(s) }, chosen) { stacks[tab] = listOf(Nav.Card(it)) }
                     }
@@ -699,9 +712,9 @@ fun PultApp(
                     val doc = settingsDocument
                     if (doc != null) {
                         // Один документ на приложение (D-112): блок пульта — без своей прокрутки, внутри документа.
-                        doc(settingsQuery) { Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, scroll = false, onFeed = { open(Nav.Feed) }, onBackground = onBackground) }
+                        doc(settingsQuery) { Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onProjects = onProjects, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, scroll = false, onFeed = { open(Nav.Feed) }, onBackground = onBackground) }
                     } else {
-                        Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, onFeed = { open(Nav.Feed) }, onBackground = onBackground)
+                        Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onProjects = onProjects, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, onFeed = { open(Nav.Feed) }, onBackground = onBackground)
                     }
                 }
                 // Справка — и без токена и среза (D-112): с неё начинают.
@@ -751,6 +764,7 @@ fun PultApp(
                     when (devTab) {
                         DevTab.PROJECTS -> {
                             LocalProjects(view.local, onNewProject, onOpenProject, compact = true, onPublish = { publishing = it })
+                            ProjectsButton(view, onProjects)
                             Projects(remember(s) { Screens.projects(s) }) { open(Nav.Card(it)) }
                         }
                         DevTab.PULLS -> Pulls(remember(s) { Screens.pulls(s) }, s.asOf, pullFilter, pullProject, { pullFilter = it }, { pullProject = it }) { r -> open(Nav.Pull(r.project, r.number.toInt())) }
@@ -763,6 +777,7 @@ fun PultApp(
     }
     }
     view.clonePrompt?.let { ClonesDialog(it, onClonesChosen, onDeleteClone, busy = view.busy) }
+    view.projectsPrompt?.let { ProjectsDialog(it, onProjectsChosen) }
     publishing?.let { p ->
         PublishDialog(p, view.hasToken, loader, onToken = { publishing = null; settingsQuery = "токен"; tab = Section.MORE }) { publishing = null }
     }
@@ -1496,7 +1511,7 @@ private fun QuestionsList(q: List<Screens.Question>, open: (Nav) -> Unit, below:
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 // Листается (UX-15): при шрифте 200 % и в альбомной ориентации «Клоны…» не уходят за край.
-private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}, onJournal: () -> Unit = {}, onAsk: () -> Unit = {}, onCommands: () -> Unit = {}, onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null, scroll: Boolean = true, onFeed: () -> Unit = {}, onBackground: (Int) -> Unit = {}) = Column(if (scroll) Modifier.verticalScroll(rememberScrollState()) else Modifier, verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}, onJournal: () -> Unit = {}, onAsk: () -> Unit = {}, onCommands: () -> Unit = {}, onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null, scroll: Boolean = true, onFeed: () -> Unit = {}, onBackground: (Int) -> Unit = {}, onProjects: () -> Unit = {}) = Column(if (scroll) Modifier.verticalScroll(rememberScrollState()) else Modifier, verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     var token by remember { mutableStateOf("") }
     // Пока токен сохранён — одна строка, поле — по «Заменить» (UX-12): пустое поле при сохранённом токене путало.
     var replacing by rememberSaveable { mutableStateOf(false) }
@@ -1560,6 +1575,7 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
             view.clones,
         style = MaterialTheme.typography.bodySmall,
     )
+    TextButton(onClick = onProjects, enabled = view.hasToken && !view.busy) { Text("Проекты пульта…") }
     TextButton(onClick = onClones, enabled = view.hasToken && !view.busy) { Text("Клоны…") }
     // Выгрузка истории метрик (F-44) — здесь: экрана «Статистика» с графиками больше нет (D-112).
     if (onExport != null) {
@@ -1695,6 +1711,85 @@ fun ClonesDialog(prompt: ClonePrompt, onDone: (Set<String>?) -> Unit, onDelete: 
             confirmButton = { TextButton(onClick = { deleting = null; onDelete(slug) }) { Text("Удалить", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Отмена") } },
         )
+    }
+}
+
+/** «Проекты пульта…» над списком GitHub (D-176): есть токен — можно выбрать репозитории. */
+@Composable
+private fun ProjectsButton(view: PultView, onProjects: () -> Unit) {
+    if (view.hasToken) TextButton(onClick = onProjects, enabled = !view.busy) { Text("Проекты пульта…") }
+}
+
+/**
+ * «Проекты пульта» (D-176): полноэкранный лист, как выбор клонов (D-70) — поиск, строка —
+ * флажок (роль для TalkBack, цель 48 dp); репозиторий не из аккаунта — полем «владелец/имя».
+ * Порядок отмеченных — как в списке пульта, новые — в конец.
+ */
+@Composable
+fun ProjectsDialog(prompt: ProjectsPrompt, onDone: (List<String>?) -> Unit) {
+    var options by remember(prompt) { mutableStateOf(prompt.options) }
+    var checked by remember(prompt) { mutableStateOf(prompt.checked) }
+    var query by remember { mutableStateOf("") }
+    var typed by remember { mutableStateOf("") }
+    var typedError by remember { mutableStateOf<String?>(null) }
+    val shown = options.filter { query.isBlank() || it.slug.contains(query.trim(), ignoreCase = true) }
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = { onDone(null) },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
+    ) {
+        Surface(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).windowInsetsPadding(WindowInsets.navigationBars).padding(Tokens.gap), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                Text("Проекты пульта", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "Пульт показывает отмеченные репозитории: PR, ветки, проверки и документы. Рабочие проекты на устройстве видны всегда. " +
+                        "Клонировать или нет — отдельный выбор («Клоны…»).",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(query, { query = it }, label = { Text("Найти репозиторий") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                    OutlinedTextField(
+                        typed, { typed = it; typedError = null }, label = { Text("Другой: владелец/имя") }, singleLine = true,
+                        isError = typedError != null, supportingText = typedError?.let { e -> { Text(e) } }, modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = {
+                        when (val r = com.dpsmpx.dpmeta.model.RepoRef.parse(typed)) {
+                            is com.dpsmpx.dpai.core.result.Outcome.Failure -> typedError = "нужно «владелец/имя»"
+                            is com.dpsmpx.dpai.core.result.Outcome.Success -> {
+                                val slug = r.value.toString()
+                                if (options.none { it.slug.equals(slug, ignoreCase = true) }) {
+                                    options = options + com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(slug, registry = false, private = false, gone = true)
+                                }
+                                val known = options.first { it.slug.equals(slug, ignoreCase = true) }.slug
+                                if (checked.none { it.equals(known, ignoreCase = true) }) checked = checked + known
+                                typed = ""
+                            }
+                        }
+                    }) { Text("Добавить") }
+                }
+                LazyColumn(Modifier.weight(1f)) {
+                    items(shown, key = { it.slug }) { o ->
+                        val on = checked.any { it.equals(o.slug, ignoreCase = true) }
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                .toggleable(value = on, role = Role.Checkbox) { checked = if (on) checked.filterNot { it.equals(o.slug, ignoreCase = true) } else checked + o.slug },
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.Checkbox(checked = on, onCheckedChange = null)
+                            Column(Modifier.weight(1f).padding(start = 6.dp)) {
+                                Text(o.slug, style = MaterialTheme.typography.bodyMedium)
+                                val marks = listOfNotNull("закрытый".takeIf { o.private && !o.gone }, "не из вашего аккаунта".takeIf { o.gone })
+                                if (marks.isNotEmpty()) Text(marks.joinToString(" · "), style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                    TextButton(onClick = { onDone(null) }) { Text(if (prompt.first) "Позже" else "Отмена") }
+                    androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                    Button(onClick = { onDone(checked) }) { Text("Сохранить (${checked.size})") }
+                }
+            }
+        }
     }
 }
 

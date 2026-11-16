@@ -1,0 +1,44 @@
+package com.dpsmpx.dpmeta.app.data
+
+import com.dpsmpx.dpai.core.clock.Clock
+import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.storage.vfs.NioVfs
+import com.dpsmpx.dpmeta.model.Place
+import com.dpsmpx.dpmeta.model.ProjectList
+import com.dpsmpx.dpmeta.model.RepoRef
+import java.nio.file.Files
+import java.util.concurrent.Executors
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+
+/**
+ * Проекты пульта (D-176): список пользователя в настройках пульта — вместо реестра DPmeta;
+ * команды и синхронизация берут проекты из него, без сети. Репозитории — синтетические.
+ */
+class ProjectListStoreTest {
+    private val root = Files.createTempDirectory("pult-projects-test").toFile()
+    private fun repo() = PultRepository(NioVfs(java.io.File(root, "state").toPath()), Clock.SYSTEM, Executors.newSingleThreadExecutor(), java.io.File(root, "clones"))
+
+    private fun ref(s: String) = RepoRef.parse(s).valueOrNull()!!
+
+    @Test
+    fun emptyWithoutFileAndKeptAfterSave() {
+        val r = repo()
+        assertEquals(ProjectList(), r.projectList().valueOrNull())
+        val list = (ProjectList().add(ref("alice/app")) as Outcome.Success).value.add(ref("bob/lib")).valueOrNull()!!
+        assertIs<Outcome.Success<*>>(r.saveProjectList(list))
+        // Новый экземпляр — тот же список с диска (перезапуск приложения).
+        assertEquals(listOf("alice/app", "bob/lib"), repo().projectList().valueOrNull()!!.projects.map { it.repo.toString() })
+    }
+
+    @Test
+    fun commandsSeeTheListWithoutNetwork() {
+        val r = repo()
+        r.saveProjectList(ProjectList().add(ref("alice/app")).valueOrNull()!!)
+        val reg = r.commandRegistry().valueOrNull()!!
+        assertEquals(listOf("app"), reg.projects.map { it.name })
+        assertTrue(reg.projects.all { it.place == Place.USER })
+    }
+}
