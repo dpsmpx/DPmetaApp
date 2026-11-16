@@ -57,6 +57,21 @@ class GitHubReader(private val gh: GitHub, private val host: RepoRef) : SourceRe
 
     override fun commit(project: ProjectEntry, sha: String): Outcome<CommitInfo> = gh.commit(project.slug, sha)
 
+    // Issues, коммиты и CI (D-176) — у репозитория проекта; у подсистемы их нет (они у DPmetaApp).
+    override fun issues(project: ProjectEntry): Outcome<Got<List<com.dpsmpx.dpmeta.github.Issue>>>? =
+        if (project.dir != null) null else gh.issues(project.slug).map { Got(it.value, it.fetched.rawSha256, it.fetched.notModified) }
+
+    override fun recentCommits(project: ProjectEntry): Outcome<Got<List<com.dpsmpx.dpmeta.github.RecentCommit>>>? =
+        if (project.dir != null) null else gh.recentCommits(project.slug).map { Got(it.value, it.fetched.rawSha256, it.fetched.notModified) }
+
+    override fun ci(project: ProjectEntry, sha: String): Outcome<Got<com.dpsmpx.dpmeta.github.CiState>>? =
+        if (project.dir != null) null else gh.ci(project.slug, sha).map { Got(it.value, it.fetched.rawSha256) }
+
+    private inline fun <T, R> Outcome<T>.map(f: (T) -> R): Outcome<R> = when (this) {
+        is Outcome.Failure -> this
+        is Outcome.Success -> Outcome.success(f(value), diagnostics)
+    }
+
     /** Где лежат файлы проекта: репозиторий и каталог в нём (подсистема — в DPmetaApp). */
     fun where(project: ProjectEntry): Pair<RepoRef, String> = project.dir?.let { host to "$it/" } ?: (project.slug to "")
 
@@ -235,6 +250,13 @@ class CloneReader(
     override fun pulls(project: ProjectEntry): Outcome<Got<List<PullRequest>>> = rest.pulls(project)
 
     override fun closed(project: ProjectEntry): Outcome<Got<List<PullRequest>>> = rest.closed(project)
+
+    // Issues, коммиты и CI (D-176) — с GitHub, как PR: в клоне их нет или они не свежие.
+    override fun issues(project: ProjectEntry) = rest.issues(project)
+
+    override fun recentCommits(project: ProjectEntry) = rest.recentCommits(project)
+
+    override fun ci(project: ProjectEntry, sha: String) = rest.ci(project, sha)
 
     override fun branches(project: ProjectEntry): Outcome<Got<List<Branch>>> {
         // У подсистемы своих веток нет: ветки DPmetaApp — его, как у GitHubReader (hasActivity — нет).

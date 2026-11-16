@@ -96,6 +96,43 @@ class GitHubTest {
     }
 
     @Test
+    fun issuesSkipPullsAndCommitsTakeFirstLine() {
+        val fake = Fake(
+            mapOf(
+                "/repos/example/Alpha/issues?state=open&sort=updated&direction=desc&per_page=${GitHub.ISSUES_KEEP}" to (200 to """[
+                    {"number":3,"title":"Падает сборка","user":{"login":"alice"},"assignees":[{"login":"bob"}],"labels":[{"name":"bug"}],"updated_at":"2026-11-01T10:00:00Z","comments":2},
+                    {"number":4,"title":"PR","user":{"login":"bob"},"pull_request":{},"updated_at":"2026-11-01T10:00:00Z"}]"""),
+                "/repos/example/Alpha/commits?per_page=${GitHub.COMMITS_KEEP}" to (200 to """[
+                    {"sha":"$sha","commit":{"message":"Первая строка\n\nтело","committer":{"date":"2026-11-01T09:30:00Z"},"author":{"name":"Алиса"}},"author":null}]"""),
+            ),
+        )
+        val gh = GitHub(Net(fake), Secret("t"))
+        val issue = (gh.issues(repo) as Outcome.Success).value.value.single()
+        assertEquals(Issue(3, "Падает сборка", "alice", listOf("bob"), listOf("bug"), issue.updatedAt, 2), issue)
+        val commit = (gh.recentCommits(repo) as Outcome.Success).value.value.single()
+        assertEquals(RecentCommit(sha, "Первая строка", "Алиса", commit.date), commit)
+        val empty = GitHub(Net(Fake(mapOf("/repos/example/Alpha/commits?per_page=${GitHub.COMMITS_KEEP}" to (409 to """{"message":"Git Repository is empty."}""")))), Secret("t"))
+        assertEquals(emptyList(), (empty.recentCommits(repo) as Outcome.Success).value.value, "пустой репозиторий — коммитов нет, не отказ")
+    }
+
+    @Test
+    fun ciCombinesChecksAndStatusesAndHiddenIsUnknown() {
+        val checks = "/repos/example/Alpha/commits/$sha/check-runs?per_page=100"
+        val status = "/repos/example/Alpha/commits/$sha/status"
+        fun ci(vararg routes: Pair<String, Pair<Int, String>>): CiState =
+            (GitHub(Net(Fake(mapOf(*routes))), Secret("t")).ci(repo, sha) as Outcome.Success).value.value
+        val green = """{"check_runs":[{"name":"build","status":"completed","conclusion":"success"},{"name":"lint","status":"completed","conclusion":"skipped"}]}"""
+        assertEquals(CiState(CiState.Verdict.GREEN, 2, emptyList()), ci(checks to (200 to green), status to (200 to """{"statuses":[]}""")))
+        val red = """{"check_runs":[{"name":"build","status":"completed","conclusion":"failure"},{"name":"test","status":"in_progress"}]}"""
+        assertEquals(CiState(CiState.Verdict.RED, 2, listOf("build")), ci(checks to (200 to red), status to (403 to "{}")), "нет прав на статусы — по check runs")
+        assertEquals(CiState(CiState.Verdict.PENDING, 1, emptyList()), ci(checks to (403 to "{}"), status to (200 to """{"statuses":[{"context":"ci/x","state":"pending"}]}""")))
+        assertEquals(CiState(CiState.Verdict.NONE, 0, emptyList(), access = false), ci(), "не видно ничего — неизвестно, а не зелёный")
+        val limited = GitHub(Net(Fake(mapOf(checks to (429 to "{}")))), Secret("t")).ci(repo, sha)
+        assertEquals(DiagCode.GITHUB_RATE_LIMITED, assertIs<Outcome.Failure>(limited).diagnostics.first().code)
+        assertIs<Outcome.Failure>(GitHub(Net(Fake(emptyMap())), Secret("t")).ci(repo, "not-a-sha"))
+    }
+
+    @Test
     fun reposListsEveryPageSortedAndSkipsBadNames() {
         val page1 = (1..100).joinToString(",", "[", "]") { i -> "{\"full_name\":\"dpsmpx/r${"%03d".format(i)}\",\"private\":${i % 2 == 0},\"archived\":false}" }
         val page2 = "[{\"full_name\":\"dpsmpx/DPmetaApp\",\"private\":false,\"archived\":false},{\"full_name\":\"не адрес\"},{\"full_name\":\"dpsmpx/Old\",\"private\":true,\"archived\":true}]"

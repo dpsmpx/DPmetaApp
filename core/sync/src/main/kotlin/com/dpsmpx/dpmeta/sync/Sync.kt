@@ -20,8 +20,11 @@ import com.dpsmpx.dpmeta.formats.Roadmap
 import com.dpsmpx.dpmeta.formats.StatusBlocks
 import com.dpsmpx.dpmeta.formats.TodoList
 import com.dpsmpx.dpmeta.github.Branch
+import com.dpsmpx.dpmeta.github.CiState
 import com.dpsmpx.dpmeta.github.CommitInfo
+import com.dpsmpx.dpmeta.github.Issue
 import com.dpsmpx.dpmeta.github.PullRequest
+import com.dpsmpx.dpmeta.github.RecentCommit
 import com.dpsmpx.dpmeta.model.Observation
 import com.dpsmpx.dpmeta.formats.DpmetaDocs
 import com.dpsmpx.dpmeta.model.ObservationSource
@@ -37,6 +40,12 @@ enum class SourceKind(val code: String) {
     PULLS("pulls"),
     MERGED("merged"),
     BRANCHES("branches"),
+
+    /** Открытые issues (D-176): у источников без них (корпус, каталог) задача пропускается молча. */
+    ISSUES("issues"),
+
+    /** Последние коммиты основной ветки и CI её головы (D-176). */
+    COMMITS("commits"),
     DECISIONS("decisions"),
     TODO("todo"),
     ROADMAP("roadmap"),
@@ -76,6 +85,15 @@ interface SourceReader {
     fun commit(project: ProjectEntry, sha: String): Outcome<CommitInfo>
 
     fun file(project: ProjectEntry, path: String): Outcome<Got<String>>
+
+    /** Открытые issues (D-176); `null` — у этого источника их нет: задача пропускается молча. */
+    fun issues(project: ProjectEntry): Outcome<Got<List<Issue>>>? = null
+
+    /** Последние коммиты основной ветки (D-176); `null` — у этого источника их нет. */
+    fun recentCommits(project: ProjectEntry): Outcome<Got<List<RecentCommit>>>? = null
+
+    /** CI коммита [sha] (D-176); `null` — у этого источника CI нет (тогда его поля нет — неизвестно). */
+    fun ci(project: ProjectEntry, sha: String): Outcome<Got<CiState>>? = null
 
     /**
      * История проекта из клона (D-66); `null` — у этого источника её нет
@@ -122,10 +140,16 @@ object Sync {
     val ROADMAP_PATHS: List<String> = listOf("ROADMAP/ROADMAP.md", "docs/direction/ROADMAP/README.md")
 
     /** Источники активности: у подсистем их нет (общие с DPmetaApp), у клонов — тоже. */
-    private val ACTIVITY = setOf(SourceKind.PULLS, SourceKind.MERGED, SourceKind.BRANCHES)
+    private val ACTIVITY = setOf(SourceKind.PULLS, SourceKind.MERGED, SourceKind.BRANCHES, SourceKind.ISSUES, SourceKind.COMMITS)
+
+    /** У скольких последних открытых PR спрашивать CI (D-176): каждый — два запроса. */
+    const val CI_PULLS_KEEP = 10
 
     /** Сколько последних влитых PR хранить: итог проверок последнего и «влит» в ленте. */
     const val MERGED_KEEP = 5
+
+    /** Скрыто от токена (403 без лимита или 404): у прав «по желанию» — «нет прав», а не отказ. */
+    private val HIDDEN = setOf(DiagCode.GITHUB_AUTH_EXPIRED, DiagCode.GITHUB_NOT_FOUND)
 
     /** «Файла нет» у GitHub и у каталога: следующий путь-кандидат. */
     private val NOT_FOUND = setOf(DiagCode.GITHUB_NOT_FOUND, DiagCode.ENTITY_NOT_FOUND)
@@ -139,7 +163,7 @@ object Sync {
         for (kind in SourceKind.entries) {
             for (p in registry.shown) {
                 val paths = when (kind) {
-                    SourceKind.PULLS, SourceKind.MERGED, SourceKind.BRANCHES, SourceKind.HISTORY -> emptyList()
+                    SourceKind.PULLS, SourceKind.MERGED, SourceKind.BRANCHES, SourceKind.ISSUES, SourceKind.COMMITS, SourceKind.HISTORY -> emptyList()
                     SourceKind.DECISIONS -> p.decisions?.let { listOf(it.path) } ?: continue
                     SourceKind.TODO -> listOf("TODO.md")
                     SourceKind.ROADMAP -> known[p.name to kind.code]?.let { k -> listOf(k) + (ROADMAP_PATHS - k) } ?: ROADMAP_PATHS
@@ -180,6 +204,12 @@ object Sync {
                 }
                 SourceKind.DPMETA -> dpmeta(t, reader)
                 SourceKind.CHECKLISTS -> checklists(t, reader)
+                SourceKind.ISSUES -> when (val i = reader.issues(t.project) ?: continue) {
+                    // Токену не дали Issues (D-176): «нет прав», а не ошибка источника — права по желанию.
+                    is Outcome.Failure -> if (i.diagnostics.first().code in HIDDEN) Outcome.success(JsonObject.of("issues" to JsonArray(emptyList()), "access" to JsonBool(false)) to com.dpsmpx.dpai.core.hashing.Hashing.sha256("issues:hidden")) else i
+                    is Outcome.Success -> Outcome.success(issuesJson(i.value.value) to i.value.rawSha256)
+                }
+                SourceKind.COMMITS -> commits(t, reader) ?: continue
                 else -> fetch(t, reader, commits, parallel)
             }
             when (r) {
@@ -208,11 +238,34 @@ object Sync {
         SourceKind.HISTORY -> HISTORY_SCHEMA
         SourceKind.DPMETA -> DPMETA_SCHEMA
         SourceKind.CHECKLISTS -> CHECKLISTS_SCHEMA
+        SourceKind.ISSUES -> "github.issues.v1"
+        SourceKind.COMMITS -> "github.commits.v1"
         else -> "unknown"
     }
 
     private fun fetch(t: SourceTask, reader: SourceReader, commits: MutableMap<String, CommitInfo>, parallel: Parallel): Outcome<Pair<JsonObject, ContentHash>> = when (t.kind) {
-        SourceKind.PULLS -> reader.pulls(t.project).map { g -> pullsJson(g.value) to g.rawSha256 }
+        SourceKind.PULLS -> when (val p = reader.pulls(t.project)) {
+            is Outcome.Failure -> p
+            is Outcome.Success -> {
+                // CI последних PR (D-176): по голове; источник без CI или его сбой (лимит, 5xx) — поля нет:
+                // список PR важнее, а лимит остановит следующую задачу.
+                val heads = p.value.value.filter { it.headSha != null }.sortedByDescending { it.updatedAt }.take(CI_PULLS_KEEP)
+                val got = parallel.all(heads.map { pr -> { pr.number to reader.ci(t.project, pr.headSha!!) } })
+                val ci = HashMap<Int, CiState>()
+                val raws = StringBuilder(p.value.rawSha256.toString()).append('\n')
+                for ((number, r) in got) {
+                    when (r) {
+                        null, is Outcome.Failure -> Unit
+                        is Outcome.Success -> {
+                            ci[number] = r.value.value
+                            raws.append(number).append('\u0000').append(r.value.rawSha256.toString()).append('\n')
+                        }
+                    }
+                }
+                val raw = if (ci.isEmpty()) p.value.rawSha256 else com.dpsmpx.dpai.core.hashing.Hashing.sha256(raws.toString())
+                Outcome.success(pullsJson(p.value.value, ci) to raw)
+            }
+        }
         SourceKind.MERGED -> reader.closed(t.project).map { g -> pullsJson(g.value.filter { it.mergedAt != null }.sortedByDescending { it.mergedAt }.take(MERGED_KEEP)) to g.rawSha256 }
         SourceKind.BRANCHES -> when (val b = reader.branches(t.project)) {
             is Outcome.Failure -> b
@@ -263,7 +316,7 @@ object Sync {
         return last ?: Outcome.failure(DiagCode.INTERNAL_ERROR, "у задачи нет путей", t.project.name)
     }
 
-    private fun pullsJson(pulls: List<PullRequest>): JsonObject = JsonObject.of(
+    private fun pullsJson(pulls: List<PullRequest>, ci: Map<Int, CiState> = emptyMap()): JsonObject = JsonObject.of(
         "pulls" to JsonArray(
             pulls.sortedBy { it.number }.map { p ->
                 val checks = Checks.of(p.body)
@@ -282,6 +335,7 @@ object Sync {
                         com.dpsmpx.dpmeta.formats.SessionLink.of(p.body)?.let { put("session", JsonString(it)) }
                         p.mergedAt?.let { put("mergedAt", JsonNumber.of(it.epochMillis)) }
                         p.createdAt?.let { put("createdAt", JsonNumber.of(it.epochMillis)) }
+                        ci[p.number]?.let { put("ci", ciJson(it)) }
                     },
                 )
             },
@@ -334,6 +388,70 @@ object Sync {
             }
         }
         return Outcome.success(JsonObject(out) to com.dpsmpx.dpai.core.hashing.Hashing.sha256(raws.toString()))
+    }
+
+    /** CI коммита (D-176): итог, сколько проверок, упавшие по имени, видно ли токену. */
+    fun ciJson(c: CiState): JsonObject = JsonObject(
+        linkedMapOf<String, JsonValue>(
+            "verdict" to JsonString(c.verdict.code),
+            "total" to JsonNumber.of(c.total),
+        ).apply {
+            if (c.failing.isNotEmpty()) put("failing", JsonArray(c.failing.take(CI_FAILING_KEEP).map(::JsonString)))
+            if (!c.access) put("access", JsonBool(false))
+        },
+    )
+
+    /** Сколько имён упавших проверок хранить. */
+    const val CI_FAILING_KEEP = 10
+
+    private fun issuesJson(issues: List<Issue>): JsonObject = JsonObject.of(
+        "issues" to JsonArray(
+            issues.map { i ->
+                JsonObject(
+                    linkedMapOf<String, JsonValue>(
+                        "number" to JsonNumber.of(i.number),
+                        "title" to JsonString(i.title),
+                        "author" to JsonString(i.author),
+                        "updatedAt" to JsonNumber.of(i.updatedAt.epochMillis),
+                        "comments" to JsonNumber.of(i.comments),
+                    ).apply {
+                        if (i.assignees.isNotEmpty()) put("assignees", JsonArray(i.assignees.map(::JsonString)))
+                        if (i.labels.isNotEmpty()) put("labels", JsonArray(i.labels.map(::JsonString)))
+                    },
+                )
+            },
+        ),
+    )
+
+    /**
+     * Последние коммиты основной ветки и CI её головы (D-176) одним наблюдением: CI меняется и
+     * без новых коммитов (проверки доходят), поэтому отпечаток — из обоих ответов.
+     */
+    private fun commits(t: SourceTask, reader: SourceReader): Outcome<Pair<JsonObject, ContentHash>>? {
+        val got = when (val r = reader.recentCommits(t.project) ?: return null) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        val head = got.value.firstOrNull()
+        // Сбой CI головы — без поля CI (неизвестно), коммиты остаются.
+        val ciState = (head?.let { reader.ci(t.project, it.sha) } as? Outcome.Success)?.value
+        val payload = JsonObject(
+            linkedMapOf<String, JsonValue>(
+                "commits" to JsonArray(
+                    got.value.map { c ->
+                        JsonObject(
+                            linkedMapOf<String, JsonValue>(
+                                "sha" to JsonString(c.sha),
+                                "title" to JsonString(c.title),
+                                "date" to JsonNumber.of(c.date.epochMillis),
+                            ).apply { c.author?.let { put("author", JsonString(it)) } },
+                        )
+                    },
+                ),
+            ).apply { ciState?.let { put("ci", ciJson(it.value)) } },
+        )
+        val raw = ciState?.let { com.dpsmpx.dpai.core.hashing.Hashing.sha256(got.rawSha256.toString() + "\n" + it.rawSha256) } ?: got.rawSha256
+        return Outcome.success(payload to raw)
     }
 
     /** Схема чекбоксов файлов пользователя (D-176). */

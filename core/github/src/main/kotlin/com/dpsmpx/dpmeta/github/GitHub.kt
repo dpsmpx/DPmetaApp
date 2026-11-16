@@ -34,7 +34,32 @@ data class PullRequest(
     val mergedAt: Timestamp? = null,
     /** Время открытия — для «ждёт автора» и времени до вливания (ТЗ, §8); из того же ответа, без запроса. */
     val createdAt: Timestamp? = null,
+    /** SHA головы PR — для CI (D-176); из того же ответа. */
+    val headSha: String? = null,
 )
+
+/** Открытый issue (D-176): кто открыл, назначенные, метки, когда обновлён, комментариев. */
+data class Issue(
+    val number: Int,
+    val title: String,
+    val author: String,
+    val assignees: List<String>,
+    val labels: List<String>,
+    val updatedAt: Timestamp,
+    val comments: Int,
+)
+
+/** Коммит основной ветки (D-176): первая строка сообщения, автор (логин или имя), время. */
+data class RecentCommit(val sha: String, val title: String, val author: String?, val date: Timestamp)
+
+/**
+ * CI коммита (D-176): check runs и статусы коммита вместе. Итог — [Verdict]; [failing] — имена
+ * упавших; [access] — `false`, если токену не видно ни того, ни другого (нет прав Checks и
+ * Commit statuses): итог тогда неизвестен, а не «зелёный».
+ */
+data class CiState(val verdict: Verdict, val total: Int, val failing: List<String>, val access: Boolean = true) {
+    enum class Verdict(val code: String) { GREEN("green"), RED("red"), PENDING("pending"), NONE("none") }
+}
 
 data class Branch(val name: String, val sha: String)
 
@@ -91,9 +116,119 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
                 body = str(o, "body"),
                 mergedAt = time(o, "merged_at"),
                 createdAt = time(o, "created_at"),
+                headSha = (o["head"] as? JsonObject)?.let { str(it, "sha") }?.takeIf { SHA.matches(it) },
             )
         }
         Outcome.success(Page(out, p.fetched))
+    }
+
+    /**
+     * Открытые issues по обновлению (D-176), не больше [ISSUES_KEEP]: PR GitHub отдаёт тем же списком —
+     * они отсеиваются. Нужны права токена Issues: read.
+     */
+    fun issues(repo: RepoRef): Outcome<Page<List<Issue>>> =
+        get("repos/$repo/issues?state=open&sort=updated&direction=desc&per_page=$ISSUES_KEEP", "$repo:issues").then { p ->
+            val items = (p.value as? JsonArray)?.items ?: return@then missing("[]", "$repo:issues")
+            val out = items.mapNotNull { v ->
+                val o = v as? JsonObject ?: return@then missing("issue", "$repo:issues")
+                if (o["pull_request"] != null) return@mapNotNull null
+                Issue(
+                    number = int(o, "number") ?: return@then missing("number", "$repo:issues"),
+                    title = str(o, "title") ?: return@then missing("title", "$repo:issues"),
+                    author = (o["user"] as? JsonObject)?.let { str(it, "login") } ?: "?",
+                    assignees = (o["assignees"] as? JsonArray)?.items.orEmpty().mapNotNull { a -> (a as? JsonObject)?.let { str(it, "login") } },
+                    labels = (o["labels"] as? JsonArray)?.items.orEmpty().mapNotNull { l -> (l as? JsonObject)?.let { str(it, "name") } },
+                    updatedAt = time(o, "updated_at") ?: return@then missing("updated_at", "$repo:issues"),
+                    comments = int(o, "comments") ?: 0,
+                )
+            }
+            Outcome.success(Page(out, p.fetched))
+        }
+
+    /** Последние коммиты основной ветки (D-176), не больше [COMMITS_KEEP]; первый — её голова. Пустой репозиторий (409) — пусто. */
+    fun recentCommits(repo: RepoRef): Outcome<Page<List<RecentCommit>>> {
+        val path = "repos/$repo/commits?per_page=$COMMITS_KEEP"
+        val headers = mapOf("Accept" to JSON, "X-GitHub-Api-Version" to API_VERSION, "User-Agent" to USER_AGENT)
+        val raw = when (val r = net.get(api.resolve(path), headers, token)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        if (raw.status == 409) return Outcome.success(Page(emptyList(), raw))
+        return status(raw, "$repo:commits").then { f ->
+            when (val v = json.parse(f.text)) {
+                is Outcome.Failure -> Outcome.failure(DiagCode.CONNECTOR_REPLY_INVALID, "ответ GitHub — не JSON", "$repo:commits")
+                is Outcome.Success -> Outcome.success(Page(v.value, f))
+            }
+        }.then { p ->
+            val items = (p.value as? JsonArray)?.items ?: return@then missing("[]", "$repo:commits")
+            val out = items.map { v ->
+                val o = v as? JsonObject ?: return@then missing("commit", "$repo:commits")
+                val sha = str(o, "sha")?.takeIf { SHA.matches(it) } ?: return@then missing("sha", "$repo:commits")
+                val c = o["commit"] as? JsonObject ?: return@then missing("commit", "$repo:commits")
+                val date = (c["committer"] as? JsonObject)?.let { time(it, "date") } ?: return@then missing("commit.committer.date", "$repo:commits")
+                val login = (o["author"] as? JsonObject)?.let { str(it, "login") } ?: (c["author"] as? JsonObject)?.let { str(it, "name") }
+                RecentCommit(sha, str(c, "message").orEmpty().lineSequence().firstOrNull().orEmpty().take(TITLE_MAX), login, date)
+            }
+            Outcome.success(Page(out, p.fetched))
+        }
+    }
+
+    /**
+     * CI коммита [sha] (D-176): check runs (права Checks: read) и статусы (Commit statuses: read).
+     * Красный — что-то упало; идёт — что-то не закончено; зелёный — всё прошло; нет — проверок нет.
+     * Нет прав на одно — считается по другому; ни на то, ни на другое — `access = false`.
+     */
+    fun ci(repo: RepoRef, sha: String): Outcome<Page<CiState>> {
+        if (!SHA.matches(sha)) return Outcome.failure(DiagCode.VALUE_INVALID, "SHA коммита — 40 шестнадцатеричных знаков", sha)
+        val subject = "$repo@${sha.take(12)}"
+        data class Item(val name: String, val state: CiState.Verdict)
+        val items = mutableListOf<Item>()
+        var seen = 0
+        val raws = StringBuilder()
+        fun hidden(r: Outcome.Failure) = r.diagnostics.first().code in setOf(DiagCode.GITHUB_AUTH_EXPIRED, DiagCode.GITHUB_NOT_FOUND)
+        when (val r = get("repos/$repo/commits/$sha/check-runs?per_page=100", "$subject:checks")) {
+            is Outcome.Failure -> if (!hidden(r)) return r
+            is Outcome.Success -> {
+                seen++
+                raws.append(r.value.fetched.rawSha256).append('\n')
+                val runs = ((r.value.value as? JsonObject)?.get("check_runs") as? JsonArray)?.items.orEmpty()
+                for (v in runs) {
+                    val o = v as? JsonObject ?: continue
+                    val state = when {
+                        str(o, "status") != "completed" -> CiState.Verdict.PENDING
+                        str(o, "conclusion") in setOf("success", "neutral", "skipped") -> CiState.Verdict.GREEN
+                        else -> CiState.Verdict.RED
+                    }
+                    items += Item(str(o, "name") ?: "?", state)
+                }
+            }
+        }
+        when (val r = get("repos/$repo/commits/$sha/status", "$subject:status")) {
+            is Outcome.Failure -> if (!hidden(r)) return r
+            is Outcome.Success -> {
+                seen++
+                raws.append(r.value.fetched.rawSha256).append('\n')
+                val statuses = ((r.value.value as? JsonObject)?.get("statuses") as? JsonArray)?.items.orEmpty()
+                for (v in statuses) {
+                    val o = v as? JsonObject ?: continue
+                    val state = when (str(o, "state")) {
+                        "success" -> CiState.Verdict.GREEN
+                        "pending" -> CiState.Verdict.PENDING
+                        else -> CiState.Verdict.RED
+                    }
+                    items += Item(str(o, "context") ?: "?", state)
+                }
+            }
+        }
+        val verdict = when {
+            items.any { it.state == CiState.Verdict.RED } -> CiState.Verdict.RED
+            items.any { it.state == CiState.Verdict.PENDING } -> CiState.Verdict.PENDING
+            items.isNotEmpty() -> CiState.Verdict.GREEN
+            else -> CiState.Verdict.NONE
+        }
+        val state = CiState(verdict, items.size, items.filter { it.state == CiState.Verdict.RED }.map { it.name }.distinct(), access = seen > 0)
+        val body = raws.toString().toByteArray(Charsets.UTF_8)
+        return Outcome.success(Page(state, Fetched(200, body, false, emptyMap())))
     }
 
     fun branches(repo: RepoRef): Outcome<Page<List<Branch>>> = allPages("repos/$repo/branches?per_page=100", "$repo:branches").then { p ->
@@ -253,6 +388,13 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
                 null
             }
         }
+
+        /** Сколько открытых issues и последних коммитов хранить (D-176): карточке хватает первых. */
+        const val ISSUES_KEEP = 50
+        const val COMMITS_KEEP = 10
+
+        /** Предел заголовка коммита: строка карточки, а не сообщение целиком. */
+        const val TITLE_MAX = 200
 
         /** Предел страниц списка репозиториев: 1000 репозиториев — с запасом для одного автора. */
         const val MAX_REPO_PAGES = 10

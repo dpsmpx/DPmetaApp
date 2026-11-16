@@ -233,7 +233,7 @@ object Screens {
 
     /** Раздел карточки: [title] — строка с итогом, [lines] — что под раскрытием; [kind] — что рисует экран. */
     data class CardSection(val kind: Kind, val title: String, val lines: List<String>) {
-        enum class Kind { READY, ROADMAP, PULLS, BRANCHES, CHECKLISTS, DECISIONS, TODO, ABOUT }
+        enum class Kind { READY, ROADMAP, PULLS, BRANCHES, ISSUES, COMMITS, CHECKLISTS, DECISIONS, TODO, ABOUT }
     }
 
     fun cardView(c: Card): CardView {
@@ -242,6 +242,9 @@ object Screens {
             c.lastPull?.takeIf { it.verdict == verdictTitle("red") }?.let { add("Проверки PR #${it.number} — красные") }
             c.lastMerged?.takeIf { it.verdict == verdictTitle("red") }?.let { add("Проверки влитого PR #${it.number} — красные") }
             if (c.forAuthor != UNKNOWN && c.forAuthor != "0") add("За автором в TODO: ${c.forAuthor}")
+            // CI (D-176): красная голова основной ветки и красные PR — сверху.
+            c.headCi?.takeIf { it.verdict == "red" }?.let { add("CI основной ветки — красный" + it.failingLine()) }
+            for (p in c.pulls) p.ci?.takeIf { it.verdict == "red" }?.let { add("CI PR #${p.number} — красный" + it.failingLine()) }
         }
         val fresh = c.branches.count { it.recent }
         val pullVerdict = c.lastPull?.let { " · последние проверки: ${it.verdict}" }.orEmpty()
@@ -254,17 +257,62 @@ object Screens {
                 CardSection(
                     CardSection.Kind.PULLS,
                     "PR ${c.pulls.size}$pullVerdict",
-                    c.pulls.map { p -> "#${p.number} ${p.title}" + (if (p.draft) " (черновик)" else "") + " — ${p.head}, ${p.updated}" } +
+                    c.pulls.map { p -> "#${p.number} ${p.title}" + (if (p.draft) " (черновик)" else "") + " — ${p.head}, ${p.updated}" + (p.ci?.let { " · CI: ${it.word}" } ?: "") } +
                         "Проверки последнего PR: ${checkedLine(c.lastPull)}" + "Проверки последнего влитого: ${checkedLine(c.lastMerged)}",
                 ),
                 // «●» и «○» без легенды не читались (UX-8): свежесть — словом.
                 CardSection(CardSection.Kind.BRANCHES, "Ветки ${c.branches.size}, свежих $fresh", c.branches.map { b -> "${b.name} — ${b.updated}" + if (b.recent) " · свежая" else "" }),
-            ) + listOfNotNull(c.checklists?.let(::checklistsSection)) + listOf(
+            ) + listOfNotNull(c.issues?.let { issuesSection(it, c.issuesAccess) }, c.commits?.let { commitsSection(it, c.headCi) }, c.checklists?.let(::checklistsSection)) + listOf(
                 CardSection(CardSection.Kind.DECISIONS, "Решений ${c.decisions}", c.lastDecisions.map { it.text }),
                 CardSection(CardSection.Kind.TODO, "TODO ${c.todo}, за автором ${c.forAuthor}", emptyList()),
                 CardSection(CardSection.Kind.ABOUT, "О себе", c.panel.flatMap { listOf("${it.name}:") + it.text.lines().map { l -> "  $l" } }),
             ),
         )
+    }
+
+    /** CI коммита для показа (D-176): итог кодом, упавшие, видно ли токену. */
+    data class Ci(val verdict: String, val total: Long, val failing: List<String>, val access: Boolean) {
+        val word: String get() = when {
+            !access -> "нет прав токена"
+            verdict == "green" -> "зелёный"
+            verdict == "red" -> "красный"
+            verdict == "pending" -> "идёт"
+            verdict == "none" -> "проверок нет"
+            else -> UNKNOWN
+        }
+
+        fun failingLine(): String = if (failing.isEmpty()) "" else ": " + failing.joinToString(", ")
+    }
+
+    data class IssueRow(val number: Long, val title: String, val author: String, val updated: String, val labels: List<String>, val assignees: List<String>, val comments: Long)
+
+    data class CommitRow(val sha: String, val title: String, val author: String?, val time: String)
+
+    /** Открытые issues (D-176): число (из первых [com.dpsmpx.dpmeta.github.GitHub.ISSUES_KEEP] — «N+»), под раскрытием — по обновлению; [access] — видно ли токену. */
+    fun issuesSection(issues: List<IssueRow>, access: Boolean = true): CardSection {
+        if (!access) return CardSection(CardSection.Kind.ISSUES, "Issues: нет прав токена", emptyList())
+        val count = if (issues.size >= com.dpsmpx.dpmeta.github.GitHub.ISSUES_KEEP) "${issues.size}+" else "${issues.size}"
+        return CardSection(
+            CardSection.Kind.ISSUES,
+            "Issues: открытых $count",
+            issues.map { i ->
+                "#${i.number} ${i.title} — ${i.author}, ${i.updated}" +
+                    (if (i.labels.isEmpty()) "" else " · " + i.labels.joinToString(", ")) +
+                    (if (i.assignees.isEmpty()) "" else " · назначен: " + i.assignees.joinToString(", ")) +
+                    (if (i.comments > 0) " · комментариев ${i.comments}" else "")
+            },
+        )
+    }
+
+    /** Последние коммиты основной ветки и CI её головы (D-176). */
+    fun commitsSection(commits: List<CommitRow>, ci: Ci?): CardSection = CardSection(
+        CardSection.Kind.COMMITS,
+        "Коммиты: " + (commits.firstOrNull()?.let { "последний ${it.time}" } ?: "нет") + (ci?.let { " · CI: ${it.word}" } ?: ""),
+        commits.map { c -> "${c.sha.take(7)} ${c.title} — ${c.author ?: UNKNOWN}, ${c.time}" } + listOfNotNull(ci?.takeIf { it.failing.isNotEmpty() }?.let { "Упало: " + it.failing.joinToString(", ") }),
+    )
+
+    private fun ci(o: JsonObject?): Ci? = o?.let {
+        Ci(str(it, "verdict") ?: return@let null, long(it, "total") ?: 0, (it["failing"] as? JsonArray)?.items.orEmpty().mapNotNull { f -> (f as? JsonString)?.value }, (it["access"] as? JsonBool)?.value != false)
     }
 
     /**
@@ -291,7 +339,7 @@ object Screens {
         c?.let { "#${it.number} — ${it.verdict}, ${it.age}" + (it.line?.let { l -> "; «$l»" } ?: "") } ?: UNKNOWN
 
     /** PR в карточке; [checks] — вердикт раздела «Проверки» описания (`green`, `red`, `null`, F-15) — для «Влить» (F-13). */
-    data class Pull(val number: Long, val title: String, val draft: Boolean, val head: String, val updated: String, val checks: String? = null)
+    data class Pull(val number: Long, val title: String, val draft: Boolean, val head: String, val updated: String, val checks: String? = null, val ci: Ci? = null)
 
     data class BranchRow(val name: String, val updated: String, val recent: Boolean)
 
@@ -361,6 +409,14 @@ object Screens {
         val errors: List<String>,
         /** Чек-листы пользователя (D-176); `null` — не выбраны или ещё не прочитаны. */
         val checklists: List<ProjectState.ChecklistFile>? = null,
+        /** Открытые issues (D-176); `null` — источник их не читал. */
+        val issues: List<IssueRow>? = null,
+        /** Видны ли issues токену (права Issues — по желанию). */
+        val issuesAccess: Boolean = true,
+        /** Последние коммиты основной ветки (D-176); `null` — источник их не читал. */
+        val commits: List<CommitRow>? = null,
+        /** CI головы основной ветки (D-176); `null` — неизвестно. */
+        val headCi: Ci? = null,
     )
 
     fun card(s: EcosystemState, name: String): Card? {
@@ -380,7 +436,7 @@ object Screens {
             )
         }
         val pulls = objects(payload(p, "pulls"), "pulls").map { o ->
-            Pull(long(o, "number") ?: 0, str(o, "title").orEmpty(), (o["draft"] as? JsonBool)?.value ?: false, str(o, "head").orEmpty(), long(o, "updatedAt")?.let { time(Timestamp(it)) }.orEmpty(), str(o, "checks"))
+            Pull(long(o, "number") ?: 0, str(o, "title").orEmpty(), (o["draft"] as? JsonBool)?.value ?: false, str(o, "head").orEmpty(), long(o, "updatedAt")?.let { time(Timestamp(it)) }.orEmpty(), str(o, "checks"), ci(o["ci"] as? JsonObject))
         }
         val recentFrom = (s.asOf - Rules.BRANCH_OR_PR_WINDOW).epochMillis
         val branches = objects(payload(p, "branches"), "branches").map { o ->
@@ -416,6 +472,17 @@ object Screens {
             },
             errors = p.errors.map { "${it.kind}: ${com.dpsmpx.dpai.core.text.Words.reason(it.code)} — ${it.message} (${it.code}, ${time(it.at)})" },
             checklists = p.checklists,
+            issues = payload(p, "issues")?.let { pl ->
+                objects(pl, "issues").map { o ->
+                    fun names(k: String) = (o[k] as? JsonArray)?.items.orEmpty().mapNotNull { (it as? JsonString)?.value }
+                    IssueRow(long(o, "number") ?: 0, str(o, "title").orEmpty(), str(o, "author") ?: UNKNOWN, long(o, "updatedAt")?.let { time(Timestamp(it)) } ?: UNKNOWN, names("labels"), names("assignees"), long(o, "comments") ?: 0)
+                }
+            },
+            issuesAccess = (payload(p, "issues")?.get("access") as? JsonBool)?.value != false,
+            commits = payload(p, "commits")?.let { pl ->
+                objects(pl, "commits").map { o -> CommitRow(str(o, "sha").orEmpty(), str(o, "title").orEmpty(), str(o, "author"), long(o, "date")?.let { time(Timestamp(it)) } ?: UNKNOWN) }
+            },
+            headCi = ci(payload(p, "commits")?.get("ci") as? JsonObject),
         )
     }
 

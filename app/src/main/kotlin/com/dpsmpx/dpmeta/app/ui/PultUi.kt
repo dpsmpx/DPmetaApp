@@ -1205,7 +1205,7 @@ private fun CardList(
                     // PR — касанием к его экрану с действиями (F-12); строки проверок — как прежде.
                     items(c.pulls) { pr ->
                         Text(
-                            "  #${pr.number} ${pr.title}" + (if (pr.draft) " (черновик)" else "") + " — ${pr.head}, ${pr.updated} ▸",
+                            "  #${pr.number} ${pr.title}" + (if (pr.draft) " (черновик)" else "") + " — ${pr.head}, ${pr.updated}" + (pr.ci?.let { " · CI: ${it.word}" } ?: "") + " ▸",
                             Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "PR и действия") { open(Nav.Pull(c.name, pr.number.toInt())) }.padding(vertical = 4.dp),
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -1638,7 +1638,7 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
             TextButton(onClick = { forgetting = true }) { Text("Забыть токен…", color = MaterialTheme.colorScheme.error) }
         }
     } else {
-        Text("Fine-grained PAT: Contents, Pull requests, Metadata. Для чтения хватит «Read-only»; для действий с PR (комментарий, ревью, «Влить», «Закрыть») — Pull requests и Contents «Read and write».")
+        Text("Fine-grained PAT: Contents, Pull requests, Metadata. Для чтения хватит «Read-only»; для действий с PR (комментарий, ревью, «Влить», «Закрыть») — Pull requests и Contents «Read and write». Issues и CI в карточке — по желанию ещё Issues, Checks и Commit statuses «Read-only»; без них карточка пишет «нет прав токена».")
         // Тип «пароль» для клавиатуры: без подсказок и запоминания набранного, а не только точки на экране (UX-12).
         OutlinedTextField(
             value = token, onValueChange = { token = it.trim() }, label = { Text("Токен") }, visualTransformation = PasswordVisualTransformation(),

@@ -179,4 +179,29 @@ class ScreenSnapshotTest {
         assertEquals("Чек-листы: файлов нет", Screens.checklistsSection(files.drop(1)).title)
         assertEquals("Чек-листы: чекбоксов нет", Screens.checklistsSection(listOf(files[0].copy(done = 0, total = 0, open = emptyList()))).title)
     }
+
+    @Test
+    fun issuesCommitsAndCiInCard() {
+        val alpha = Screens.card(state(), "Alpha")!!
+        val plain = Screens.cardView(alpha)
+        assertTrue(plain.sections.none { it.kind == Screens.CardSection.Kind.ISSUES || it.kind == Screens.CardSection.Kind.COMMITS }, "источник их не читал — разделов нет")
+        val red = Screens.Ci("red", 2, listOf("build"), access = true)
+        val c = alpha.copy(
+            pulls = alpha.pulls.map { it.copy(ci = red) },
+            issues = listOf(Screens.IssueRow(3, "Баг", "alice", "01.11 10:00", listOf("bug"), listOf("bob"), 2)),
+            commits = listOf(Screens.CommitRow("a".repeat(40), "Голова", null, "01.11 09:30")),
+            headCi = Screens.Ci("none", 0, emptyList(), access = false),
+        )
+        val v = Screens.cardView(c)
+        assertTrue(v.attention.any { it.startsWith("CI PR #") && it.endsWith("красный: build") })
+        assertTrue(v.attention.none { it.startsWith("CI основной") }, "нет прав — не красный")
+        assertEquals("Issues: открытых 1", v.sections.single { it.kind == Screens.CardSection.Kind.ISSUES }.title)
+        assertEquals("#3 Баг — alice, 01.11 10:00 · bug · назначен: bob · комментариев 2", v.sections.single { it.kind == Screens.CardSection.Kind.ISSUES }.lines.single())
+        val commits = v.sections.single { it.kind == Screens.CardSection.Kind.COMMITS }
+        assertEquals("Коммиты: последний 01.11 09:30 · CI: нет прав токена", commits.title)
+        assertEquals("aaaaaaa Голова — ${Screens.UNKNOWN}, 01.11 09:30", commits.lines.single())
+        assertTrue(v.sections.single { it.kind == Screens.CardSection.Kind.PULLS }.lines.first().endsWith("· CI: красный"))
+        assertEquals("Issues: нет прав токена", Screens.cardView(c.copy(issues = emptyList(), issuesAccess = false)).sections.single { it.kind == Screens.CardSection.Kind.ISSUES }.title)
+        assertEquals("Issues: открытых ${com.dpsmpx.dpmeta.github.GitHub.ISSUES_KEEP}+", Screens.issuesSection(List(com.dpsmpx.dpmeta.github.GitHub.ISSUES_KEEP) { c.issues!!.first() }).title)
+    }
 }
