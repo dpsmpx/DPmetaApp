@@ -19,6 +19,9 @@ enum class Place(val code: String, val title: String) {
     SUPPORT("support", "поддерживающий слой"),
     PERIPHERY("periphery", "периферия"),
     ARCHIVE("archive", "архив"),
+
+    /** Проекты из списка пользователя (D-176): мест экосистемы у них нет; убирается вместе с местами. */
+    USER("user", "проекты"),
     ;
 
     /** Архив не показывается (D-26). */

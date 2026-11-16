@@ -25,6 +25,7 @@ import com.dpsmpx.dpmeta.app.screens.Screens
 import com.dpsmpx.dpmeta.app.screens.Stats
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpmeta.app.ui.ClonePrompt
+import com.dpsmpx.dpmeta.app.ui.ProjectsPrompt
 import com.dpsmpx.dpmeta.app.ui.Loader
 import com.dpsmpx.dpmeta.app.ui.PultApp
 import com.dpsmpx.dpmeta.formats.Panel
@@ -378,8 +379,8 @@ open class PultActivity : ComponentActivity() {
         entryAt?.let { if (now - it < com.dpsmpx.dpmeta.metrics.Rules.ENTRY_SYNC_EVERY) return }
         val token = (secrets.load() as? Outcome.Success)?.value ?: return
         entryAt = now
-        // Первый вход (D-70): сначала — какие репозитории клонировать; без ответа клонов нет.
-        if (!clonesAsked()) askClones(token, first = true) else sync(token)
+        // Первый вход: сначала — проекты пульта (D-176), затем — какие клонировать (D-70).
+        if (!projectsAsked()) askProjects(token, first = true) else continueEntry(token)
     }
 
     /** Токен, ждущий ответа окна клонов: после выбора — синхронизация. */
@@ -447,6 +448,77 @@ open class PultActivity : ComponentActivity() {
         if (token != null && (selected != null || prompt.first)) sync(token)
     }
 
+    /** Токен, ждущий ответа окна проектов (D-176): после выбора — клоны или синхронизация. */
+    private var projectsToken: Secret? = null
+
+    /**
+     * Окно «Проекты пульта» (D-176): репозитории аккаунта. Отмечен список пульта; при первом
+     * входе с пустым списком — проекты прежнего среза этого телефона и отмеченные клоны.
+     */
+    private fun askProjects(token: Secret, first: Boolean) {
+        if (pool.isShutdown || view.value.busy) return
+        view.value = view.value.copy(busy = true, statusDetails = "", status = "Ищу репозитории аккаунта…")
+        val earlier = view.value.state?.projects.orEmpty().map { it.name.lowercase() }.toSet()
+        val clones = clonesSelected()
+        pool.execute {
+            val r = runCatching { repo.cloneOptions(token) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "список репозиториев: ${it.javaClass.simpleName}") }
+            val list = repo.projectList().valueOrNull() ?: com.dpsmpx.dpmeta.model.ProjectList()
+            runOnUiThread {
+                when (r) {
+                    is Outcome.Success -> {
+                        projectsToken = token
+                        val inList = list.projects.map { it.repo.toString() }
+                        val listed = r.value.map { it.slug.lowercase() }.toSet()
+                        val gone = inList.filter { it.lowercase() !in listed }
+                            .map { com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(it, registry = true, private = true, gone = true) }
+                        val checked = if (inList.isEmpty() && first) {
+                            r.value.filter { o -> o.slug.substringAfter('/').lowercase() in earlier || clones.any { it.equals(o.slug, ignoreCase = true) } }.map { it.slug }
+                        } else inList
+                        view.value = view.value.copy(busy = false, statusDetails = "", status = "", projectsPrompt = ProjectsPrompt(r.value + gone, checked, first))
+                    }
+                    is Outcome.Failure -> {
+                        view.value = view.value.copy(busy = false)
+                        val why = "Список репозиториев не получен: ${r.diagnostics.first().message}."
+                        if (first) {
+                            syncNote = why
+                            continueEntry(token)
+                        } else {
+                            view.value = view.value.copy(statusDetails = "", status = why)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Ответ окна проектов: сохранить по порядку; новые — в конец. «Позже» на первом входе — дальше без списка. */
+    private fun projectsChosen(selected: List<String>?) {
+        val prompt = view.value.projectsPrompt ?: return
+        val token = projectsToken
+        projectsToken = null
+        view.value = view.value.copy(projectsPrompt = null)
+        if (selected != null) {
+            val old = repo.projectList().valueOrNull() ?: com.dpsmpx.dpmeta.model.ProjectList()
+            var list = com.dpsmpx.dpmeta.model.ProjectList(old.projects.filter { p -> selected.any { it.equals(p.repo.toString(), ignoreCase = true) } })
+            for (slug in selected) com.dpsmpx.dpmeta.model.RepoRef.parse(slug).valueOrNull()?.let { ref -> list = list.add(ref).valueOrNull() ?: list }
+            when (val saved = repo.saveProjectList(list)) {
+                is Outcome.Failure -> Screens.failure(saved.diagnostics.first()).let { f ->
+                    view.value = view.value.copy(statusDetails = f.details, status = "Список проектов не сохранён: ${f.text}.")
+                }
+                is Outcome.Success -> view.value = view.value.copy(status = "Проектов в пульте: ${list.projects.size}.")
+            }
+        }
+        if (selected != null || prompt.first) getSharedPreferences(CLONES_PREFS, MODE_PRIVATE).edit { putBoolean(PROJECTS_ASKED, true) }
+        if (token != null && (selected != null || prompt.first)) continueEntry(token)
+    }
+
+    /** После окна проектов: окно клонов (D-70), если его ещё не было, иначе — синхронизация. */
+    private fun continueEntry(token: Secret) = if (!clonesAsked()) askClones(token, first = true) else sync(token)
+
+    /** Окно проектов уже было или список не пуст (например, восстановлен из копии). */
+    private fun projectsAsked(): Boolean = getSharedPreferences(CLONES_PREFS, MODE_PRIVATE).getBoolean(PROJECTS_ASKED, false) ||
+        repo.projectList().valueOrNull()?.projects?.isNotEmpty() == true
+
     private fun clonesAsked(): Boolean = getSharedPreferences(CLONES_PREFS, MODE_PRIVATE).getBoolean(CLONES_ASKED, false)
 
     private fun clonesSelected(): Set<String> = getSharedPreferences(CLONES_PREFS, MODE_PRIVATE).getStringSet(CLONES_SELECTED, null).orEmpty().toSet()
@@ -506,6 +578,7 @@ open class PultActivity : ComponentActivity() {
                     openPull = openPull.value, onPullOpened = { openPull.value = null },
                     openAsk = openAsk.value, onAskOpened = { openAsk.value = false },
                     onClones = { withToken { token -> if (token != null) askClones(token, first = false) } }, onClonesChosen = ::clonesChosen,
+                    onProjects = { withToken { token -> if (token != null) askProjects(token, first = false) } }, onProjectsChosen = ::projectsChosen,
                     onCancelSync = {
                         repo.cancelClones()
                         // Отклик сразу (проверка PR #173): начатый клон ещё доходит до конца.
@@ -825,7 +898,7 @@ open class PultActivity : ComponentActivity() {
             }
             when (parsed) {
                 is Outcome.Failure -> parsed
-                is Outcome.Success -> when (val reg = repo.commandRegistry(clonesSelected())) {
+                is Outcome.Success -> when (val reg = repo.commandRegistry()) {
                     is Outcome.Failure -> reg
                     is Outcome.Success -> Outcome.success(
                         com.dpsmpx.dpmeta.app.screens.CommandActions.Catalog(
@@ -1022,7 +1095,7 @@ open class PultActivity : ComponentActivity() {
     /** «Обновить»: до первого выбора клонов (D-70) — сначала окно выбора. */
     private fun sync() = withToken { token ->
         if (token != null) {
-            if (!clonesAsked()) askClones(token, first = true) else sync(token)
+            if (!projectsAsked()) askProjects(token, first = true) else continueEntry(token)
         } else {
             // Нет токена или входа — «Обновить» не началось: сказать снэкбаром, а не молча (проверка PR #172).
             view.value = view.value.copy(syncEnded = view.value.syncEnded + 1, syncEnd = SyncEnd.REFUSED)
@@ -1150,6 +1223,9 @@ open class PultActivity : ComponentActivity() {
         }
         private const val CLONES_ASKED = "asked"
         private const val CLONES_SELECTED = "selected"
+
+        /** Окно «Проекты пульта» (D-176) уже было. */
+        private const val PROJECTS_ASKED = "projects-asked"
 
         /**
          * Манифест экосистемы для «AI» (`DP_AI_Orcestrator:D-114`) — из реестра
