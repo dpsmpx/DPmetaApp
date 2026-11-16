@@ -16,7 +16,6 @@ dependencies {
     api(project(":verification"))
     api(project(":monitoring"))
     api(project(":notifications"))
-    api(project(":ecosystem"))
     api(project(":connectors"))
     api(project(":analytics"))
     testImplementation(project(":testkit"))

@@ -65,6 +65,10 @@ import kotlinx.coroutines.withContext
  * применяет её `Controller` при следующем запуске.
  */
 object CloudSync {
+    /** Время копии для экрана — коротко, в поясе и формате телефона. */
+    internal fun stamp(t: com.dpsmpx.dpai.core.clock.Timestamp): String =
+        java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(t.epochMillis))
+
     private const val PREFS = "dpai.cloud"
     private const val TOKEN = "cloud.token"
     private const val PASSPHRASE = "cloud.passphrase"
@@ -342,7 +346,7 @@ internal fun CloudCard(model: DemoModel, framed: Boolean = true) {
                     s == null -> "…"
                     !s.canRestore -> "Не настроена."
                     !s.ready -> "Пароль копии не задан: отправка выключена, восстановление — можно."
-                    else -> s.last?.let { (at, note) -> (if (at > 0) "Последняя отправка: ${EcosystemAuto.stamp(com.dpsmpx.dpai.core.clock.Timestamp(at))}. " else "") + note } ?: "Настроена, копий ещё не было."
+                    else -> s.last?.let { (at, note) -> (if (at > 0) "Последняя отправка: ${CloudSync.stamp(com.dpsmpx.dpai.core.clock.Timestamp(at))}. " else "") + note } ?: "Настроена, копий ещё не было."
                 },
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -543,7 +547,7 @@ private fun CloudRestoreDialog(onDismiss: () -> Unit) {
                         style = MaterialTheme.typography.bodySmall,
                     )
                     f != null -> Text(
-                        "Копия «${f.info.device}» от ${EcosystemAuto.stamp(f.info.createdAt)}: файлов ${f.info.files}, ${f.info.bytes / 1024} КиБ. " +
+                        "Копия «${f.info.device}» от ${CloudSync.stamp(f.info.createdAt)}: файлов ${f.info.files}, ${f.info.bytes / 1024} КиБ. " +
                             "Восстановить — заменить ею журнал, задачи, targets и проект этого телефона?",
                         style = MaterialTheme.typography.bodySmall,
                     )

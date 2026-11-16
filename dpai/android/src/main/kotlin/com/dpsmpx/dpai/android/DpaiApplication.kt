@@ -55,17 +55,6 @@ open class DpaiApplication : Application() {
      */
     open fun parentIntent(): Intent? = null
 
-    /**
-     * Манифест экосистемы из реестра приложения (D-114): его собирает
-     * оболочка DPmetaApp из реестра и клонов пульта; подсистема от модулей
-     * DPmetaApp не зависит. `null` — источника нет (отдельная сборка «AI»):
-     * только файл. Блокирующий вызов — с фонового потока.
-     */
-    open fun ecosystemManifest(): com.dpsmpx.dpai.core.result.Outcome<String>? = null
-
-    /** Есть ли [ecosystemManifest] у этой сборки — без вызова (он читает клоны). */
-    open val ecosystemRegistry: Boolean get() = false
-
     /** Обычное сообщение по политике оболочки; callback — под её guard приватности (D-176). */
     open fun presentNotice(notice: com.dpsmpx.dpai.notifications.Notification, render: (com.dpsmpx.dpai.ui.NoticePresentation) -> Boolean) {
         render(com.dpsmpx.dpai.ui.NoticePresentation())

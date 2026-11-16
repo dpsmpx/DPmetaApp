@@ -109,11 +109,6 @@ class DpmetaApplication : DpaiApplication() {
     /** Опасный ответ окна поверх приложений — только после входа (D-61). */
     override fun loginNeeded(): Boolean = AppLock.loginNeeded
 
-    /** Манифест экосистемы для «AI» — из реестра и клонов пульта (DP_AI_Orcestrator:D-114). */
-    override fun ecosystemManifest(): com.dpsmpx.dpai.core.result.Outcome<String> = com.dpsmpx.dpmeta.app.PultActivity.ecosystemManifest(this)
-
-    override val ecosystemRegistry: Boolean get() = true
-
     override fun presentNotice(notice: com.dpsmpx.dpai.notifications.Notification, render: (com.dpsmpx.dpai.ui.NoticePresentation) -> Boolean) =
         com.dpsmpx.dpmeta.app.data.PultAlerts.presentAi(this, notice, render)
 

@@ -7,8 +7,7 @@ import kotlin.system.exitProcess
  * Точка входа `dpai` — оболочка JVM над ядром (D-02).
  *
  * Версия, справка (этап 0), агент target `dpai agent` (этап 3), пульт
- * приложения (D-47) и глобальный прогон экосистемы `dpai ecosystem`
- * (ТЗ, §43–§46; D-97).
+ * приложения (D-47). Глобальный прогон экосистемы убран (D-200).
  */
 fun main(args: Array<String>) {
     // Ответ агента — строки JSON в UTF-8 при любой локали target: System.out
@@ -37,8 +36,6 @@ class Cli(
     private val version: String = Cli::class.java.`package`?.implementationVersion ?: "dev",
     /** Стандартный вывод закрыт: поток `dpai agent follow` кончается (D-76). */
     private val outClosed: () -> Boolean = { false },
-    /** Ответ человека на вопрос команды (`dpai ecosystem run`); конец ввода — `null`. */
-    private val input: () -> String? = ::readlnOrNull,
     private val control: () -> ControlCommand = { ControlCommand(out, err) },
 ) {
     fun run(args: List<String>): Int = when (args.firstOrNull()) {
@@ -51,12 +48,6 @@ class Cli(
         // Пульт приложения (D-47): те же команды, что на экране, через канал на loopback.
         "control", "status", "task", "session", "requests", "answer", "limit", "target", "slot", "sessions-limit", "search" ->
             control().run(args.first(), args.drop(1))
-        // Глобальный прогон (ТЗ, §43–§46): манифест — файлом, задачи — контуру приложения тем же каналом.
-        "ecosystem" -> {
-            // Канал — только когда есть что ставить: `show` работает и без сопряжения.
-            val c by lazy(control)
-            EcosystemCommand(out, err, input, { s -> s.command()?.let { c.submit(it) } ?: ControlCommand.FAILED }).run(args.drop(1))
-        }
         "help", "--help", "-h" -> {
             out(USAGE)
             OK
@@ -83,7 +74,6 @@ class Cli(
             |  dpai agent     агент на execution target (dpai agent без параметров — справка)
             |  dpai tools     общая папка инструментов target (configure|status|disable)
             |${ControlCommand.USAGE}
-            |${EcosystemCommand.USAGE}
             |  dpai help      эта справка
             |
             |Коды выхода: 0 — успех, 1 — отказ, 2 — неверный вызов.

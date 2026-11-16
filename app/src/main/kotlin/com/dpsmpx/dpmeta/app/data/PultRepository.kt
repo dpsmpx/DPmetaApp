@@ -436,66 +436,6 @@ class PultRepository(
     }
 
     /**
-     * Манифест `dpai.ecosystem` v1 для «AI» (`DP_AI_Orcestrator:D-114`): реестр
-     * (в памяти или из отмеченного клона DPmetaApp) и факты отмеченных клонов
-     * — ветка, последний коммит (у подсистемы — её каталога), документы;
-     * предложения — из очереди DPmeta в клоне DPmetaApp. Без сети и токена.
-     * Реестра нет — отказ словами: «AI» предложит файл с ПК.
-     */
-    fun ecosystemManifest(selected: Set<String>): Outcome<String> {
-        val clones = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList())
-        val host = RepoRef.parse(HOST).valueOrNull() ?: return Outcome.failure(DiagCode.INTERNAL_ERROR, "адрес DPmetaApp не разбирается")
-        fun chosen(key: String) = selected.any { it.equals(key, ignoreCase = true) }
-        // Реестр и очередь — из клона DPmetaApp на голове, которую назвал GitHub при последней синхронизации
-        // (T19): ссылки клона может переписать Linux-среда, объекты на этом SHA — нет.
-        if (!chosen(host.toString())) return Outcome.failure(DiagCode.ECOSYSTEM_UNAVAILABLE, "клон DPmetaApp не отмечен: отметьте его в пульте («Ещё» → «Клоны…») или выберите файл манифеста")
-        val sha = trustedHost() ?: return Outcome.failure(DiagCode.ECOSYSTEM_UNAVAILABLE, "пульт ещё не синхронизировал клон DPmetaApp: «Обновить» в пульте — или выберите файл манифеста")
-        val regText = when (val r = clones.fileAt(host.toString(), sha, REGISTRY)) {
-            is Outcome.Failure -> return Outcome.failure(DiagCode.ECOSYSTEM_UNAVAILABLE, "реестр не читается из клона DPmetaApp: ${r.diagnostics.first().message}")
-            is Outcome.Success -> r.value?.toString(Charsets.UTF_8) ?: return Outcome.failure(DiagCode.ECOSYSTEM_UNAVAILABLE, "в клоне DPmetaApp нет реестра $REGISTRY")
-        }
-        val reg = when (val r = RegistryFormat.parse(regText, REGISTRY)) {
-            is Outcome.Failure -> return r
-            is Outcome.Success -> r.value
-        }
-        val facts = linkedMapOf<String, com.dpsmpx.dpmeta.formats.DpaiManifest.Clone>()
-        for (e in reg.shown) {
-            val key = if (e.dir != null) host.toString() else e.slug.toString()
-            if (!chosen(key)) continue
-            val main = clones.main(key) ?: continue
-            // Ветки GitHub в клоне нет — «без основной ветки», как у DPmeta:tools/manifest.py.
-            if ((clones.heads(key) as? Outcome.Success)?.value?.any { it.name == main } != true) {
-                facts[e.name] = com.dpsmpx.dpmeta.formats.DpaiManifest.Clone(null)
-                continue
-            }
-            val prefix = e.dir?.let { "$it/" } ?: ""
-            val last = (clones.last(key, main, e.dir.orEmpty()) as? Outcome.Success)?.value
-            val docs = com.dpsmpx.dpmeta.formats.DpaiManifest.wanted(reg, e.name).filter { p ->
-                // Подсистема — на проверенной голове DPmetaApp; свой репозиторий — по своей ветке.
-                if (key == host.toString()) (clones.fileAt(key, sha, prefix + p) as? Outcome.Success)?.value != null else (clones.size(key, main, prefix + p) as? Outcome.Success)?.value != null
-            }
-            facts[e.name] = com.dpsmpx.dpmeta.formats.DpaiManifest.Clone(main, last?.first, last?.second, docs)
-        }
-        // Очередь не читается (подложенный объект, удалённые паки) — отказ всего манифеста, а не тихое «предложений нет»:
-        // окно и журнал прохода политики это покажут (T19). Очереди нет в основной ветке — предложений нет.
-        val queue = when (val q = clones.fileAt(host.toString(), sha, com.dpsmpx.dpmeta.formats.DpaiManifest.QUEUE)) {
-            is Outcome.Failure -> return Outcome.failure(DiagCode.ECOSYSTEM_UNAVAILABLE, "очередь DPmeta не читается из клона DPmetaApp: ${q.diagnostics.first().message}")
-            is Outcome.Success -> q.value?.toString(Charsets.UTF_8)
-        }
-        return com.dpsmpx.dpmeta.formats.DpaiManifest.build(reg, facts, queue.orEmpty())
-    }
-
-    /** Голова DPmetaApp по ответу GitHub при последней синхронизации (T19): в хранилище пульта, не в клоне. */
-    private fun trustHost(sha: String) {
-        runCatching {
-            vfs.mkdirs(TRUSTED_HOST.substringBeforeLast('/'))
-            vfs.write(TRUSTED_HOST, sha.toByteArray(Charsets.UTF_8))
-        }
-    }
-
-    private fun trustedHost(): String? = runCatching { vfs.read(TRUSTED_HOST)?.toString(Charsets.UTF_8)?.trim() }.getOrNull()?.takeIf { Regex("[0-9a-f]{40}").matches(it) }
-
-    /**
      * Каталог склонированного проекта — из клона (UX-9): без сети, токена и
      * входа по PIN; `null` — клона нет или он не отмечен, тогда [directory].
      */
@@ -705,8 +645,6 @@ class PultRepository(
                 }
                 is Outcome.Success -> {
                     ok++
-                    // Голова DPmetaApp по ответу GitHub — в данных пульта: гостю Linux они не смонтированы (D-114, T19; обход proot — T13).
-                    if (key.equals(HOST, ignoreCase = true)) r.value.mainSha?.let(::trustHost)
                     if (r.value.action == com.dpsmpx.dpmeta.git.Clones.Action.CLONED) created++
                     // Перезаписанная на GitHub история — сведение (D-70): клон взял её; работа ИИ в клоне — не расхождение.
                     if (r.value.conflicts.isNotEmpty()) rewritten++
@@ -733,7 +671,6 @@ class PultRepository(
         fun cloneNeed(githubBytes: Long?): Long? = githubBytes?.let { it * 2 }
 
         const val HOST = "dpsmpx/DPmetaApp"
-        const val REGISTRY = "dpmeta/tools/ecosystem.toml"
 
         /** Ключ списка проектов пульта (D-176) в настройках пульта. */
         private const val PROJECTS = "projects"
@@ -741,8 +678,6 @@ class PultRepository(
         /** Логин владельца токена (D-176) — в настройках пульта. */
         private const val VIEWER = "viewer"
 
-        /** Голова DPmetaApp от GitHub для манифеста «AI» (T19, D-114) — файл хранилища пульта. */
-        private const val TRUSTED_HOST = "trusted/dpmetaapp-main"
         private val MISSING = setOf(DiagCode.GITHUB_NOT_FOUND.name, DiagCode.ENTITY_NOT_FOUND.name)
 
         /** Вид отказа источника для клона (D-65): «Ошибки источников» показывают его рядом с файлами. */
