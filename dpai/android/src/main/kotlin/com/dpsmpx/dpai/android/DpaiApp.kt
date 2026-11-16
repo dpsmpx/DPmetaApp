@@ -365,7 +365,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         gesturesEnabled = !ideFullscreen,
         drawerContent = {
             androidx.compose.material3.ModalDrawerSheet(Modifier.widthIn(max = 320.dp)) {
-                Text("DPmetaApp", Modifier.padding(horizontal = 28.dp, vertical = 16.dp), style = MaterialTheme.typography.titleMedium)
+                Text("DP_IDE", Modifier.padding(horizontal = 28.dp, vertical = 16.dp), style = MaterialTheme.typography.titleMedium)
                 val activity = androidx.activity.compose.LocalActivity.current
                 fun section(sec: com.dpsmpx.dpai.ui.AppSection) {
                     // Разделы пульта: окно пульта под «AI» выходит вперёд на нужном разделе, «AI» закрывается.

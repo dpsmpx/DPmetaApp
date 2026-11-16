@@ -17,7 +17,7 @@ object Lock {
     fun ask(activity: Activity, subtitle: String, pinOnly: Boolean, signal: CancellationSignal = CancellationSignal(), onOpen: () -> Unit, onDenied: (Int, String) -> Unit) {
         val allowed = if (pinOnly) Authenticators.DEVICE_CREDENTIAL else Authenticators.BIOMETRIC_STRONG or Authenticators.DEVICE_CREDENTIAL
         val prompt = BiometricPrompt.Builder(activity)
-            .setTitle("DPmetaApp")
+            .setTitle("DP_IDE")
             .setSubtitle(subtitle)
             .setAllowedAuthenticators(allowed)
             .build()

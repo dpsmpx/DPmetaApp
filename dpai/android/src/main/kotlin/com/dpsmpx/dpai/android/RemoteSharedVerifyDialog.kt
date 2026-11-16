@@ -100,7 +100,7 @@ internal fun RemoteSharedVerifyDialog(controller: Controller, target: TargetEntr
                     TextButton(enabled = !busy && root.isNotBlank() && python.isNotBlank() && app.sharedToolsAccountAvailable, onClick = ::synchronize) {
                         Text(if (current.configured == null) "Установить или подключить…" else "Синхронизировать…")
                     }
-                    if (!app.sharedToolsAccountAvailable) Text("Сначала подключите GitHub-аккаунт в DPmetaApp", style = MaterialTheme.typography.bodySmall)
+                    if (!app.sharedToolsAccountAvailable) Text("Сначала подключите GitHub-аккаунт в DP_IDE", style = MaterialTheme.typography.bodySmall)
                     Row {
                         Checkbox(checked = automatic, enabled = !busy && RemoteSharedVerify.connected(context, target) && current.configured != null, onCheckedChange = {
                             automatic = it

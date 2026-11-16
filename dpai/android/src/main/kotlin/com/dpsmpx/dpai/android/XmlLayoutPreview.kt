@@ -40,7 +40,7 @@ internal object XmlLayoutPreview {
         val foreign = try {
             context.createPackageContext(pkg, 0)
         } catch (_: PackageManager.NameNotFoundException) {
-            return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "пакет $pkg не виден DPmetaApp: Android показывает приложению только пакеты, которые оно установило — поставьте APK через «Артефакты»")
+            return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "пакет $pkg не виден DP_IDE: Android показывает приложению только пакеты, которые оно установило — поставьте APK через «Артефакты»")
         }
         val res = foreign.resources
         // Разметка чужого APK — только по имени: класса R того приложения у DPmetaApp нет (D-168).

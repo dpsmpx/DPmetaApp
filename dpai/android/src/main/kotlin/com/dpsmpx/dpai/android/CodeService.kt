@@ -53,7 +53,7 @@ internal object CodeService {
         KOTLIN(
             "Поставить kotlin-lsp",
             "Проверенная сборка ${KotlinLsp.PINNED_BUILD} официальной службы JetBrains: SHA-256 закреплена в приложении (около 370 МБ загрузки, около 1 ГБ на диске), RocksDB для musl с Maven Central (84 МБ) и JDK 25/21 Alpine. " +
-                "Сборки EAP перестают запускаться примерно через 30 дней — новая проверенная версия приходит с обновлением DPmetaApp. Статистика и отчёты JetBrains выключены (--data-sharing=none).",
+                "Сборки EAP перестают запускаться примерно через 30 дней — новая проверенная версия приходит с обновлением DP_IDE. Статистика и отчёты JetBrains выключены (--data-sharing=none).",
             1536L shl 20,
         ),
         KOTLIN_UPDATE("Поставить проверенную версию", KOTLIN.note, 1536L shl 20),
@@ -435,18 +435,18 @@ internal object CodeService {
             is Outcome.Success -> r.value
         }
         if (KotlinLsp.productBuild(files.first) != KotlinLsp.PINNED_BUILD) {
-            return Plan.Stop(State.Failed("Установленная сборка kotlin-lsp не закреплена в этой версии DPmetaApp", listOf(Install.KOTLIN_UPDATE)))
+            return Plan.Stop(State.Failed("Установленная сборка kotlin-lsp не закреплена в этой версии DP_IDE", listOf(Install.KOTLIN_UPDATE)))
         }
         state(State.Starting("проверяю срок сборки kotlin-lsp"))
         val validity = when (val r = host.run(ProcessSpec(KotlinLsp.statusCommand(command)), 2.minutes)) {
             is Outcome.Failure -> return Plan.Stop(State.Failed(r.diagnostics.first().message))
             is Outcome.Success -> KotlinLsp.validity(r.value.exitCode, (r.value.stdout + r.value.stderr).joinToString("\n"))
         }
-        if (validity.expired) return Plan.Stop(State.Failed("Срок проверенной сборки kotlin-lsp истёк — обновите DPmetaApp для получения новой версии службы"))
+        if (validity.expired) return Plan.Stop(State.Failed("Срок проверенной сборки kotlin-lsp истёк — обновите DP_IDE для получения новой версии службы"))
         val notes = mutableListOf("Импорт Gradle идёт в фоне: первые минуты замечаний может не быть; синхронизация качает зависимости проекта из его репозиториев")
         val actions = mutableListOf<Install>()
         validity.daysLeft?.takeIf { it <= 3 }?.let {
-            notes += "проверенная сборка kotlin-lsp истекает через $it дн.; новая версия службы приходит с обновлением DPmetaApp"
+            notes += "проверенная сборка kotlin-lsp истекает через $it дн.; новая версия службы приходит с обновлением DP_IDE"
         }
         if (found.androidProject && found.androidSdk == null) {
             notes += "Android-проект: нет платформы Android SDK${found.compileSdk?.let { " $it" }.orEmpty()} — Android API служба не увидит"

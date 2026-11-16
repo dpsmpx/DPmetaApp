@@ -288,7 +288,7 @@ object PultAlerts {
             }
             manager.createNotificationChannel(
                 NotificationChannel(id, "Пульт: ${channel.title}$suffix", level).apply {
-                    description = "Тревоги пульта DPmetaApp по правилам: ${channel.title.lowercase()}."
+                    description = "Тревоги пульта DP_IDE по правилам: ${channel.title.lowercase()}."
                     // Приватность (T-08): на экране блокировки — только общая строка.
                     lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
                 },
@@ -331,7 +331,7 @@ object PultAlerts {
         // Экран блокировки (T-08): только вид события — без проекта и текста.
         val public = NotificationCompat.Builder(context, card.channel)
             .setSmallIcon(R.drawable.ic_pult_summary)
-            .setContentTitle("DPmetaApp")
+            .setContentTitle("DP_IDE")
             .setContentText(card.typeTitle)
             .build()
         val b = NotificationCompat.Builder(context, card.channel)
@@ -407,7 +407,7 @@ object PultAlerts {
             .setAutoCancel(true)
             .setSilent(quietNow(app))
             .setVisibility(if (settings(app).privacy) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_PUBLIC)
-            .setPublicVersion(NotificationCompat.Builder(app, DIGEST_CHANNEL).setSmallIcon(R.drawable.ic_pult_summary).setContentTitle("DPmetaApp").setContentText("Сводка").build())
+            .setPublicVersion(NotificationCompat.Builder(app, DIGEST_CHANNEL).setSmallIcon(R.drawable.ic_pult_summary).setContentTitle("DP_IDE").setContentText("Сводка").build())
             .apply { open?.let { setContentIntent(PendingIntent.getActivity(app, 1, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)) } }
             .build()
         try {

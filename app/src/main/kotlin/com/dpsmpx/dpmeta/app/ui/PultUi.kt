@@ -620,7 +620,7 @@ fun PultApp(
         drawerState = drawer,
         drawerContent = {
             androidx.compose.material3.ModalDrawerSheet(Modifier.widthIn(max = DRAWER_WIDTH)) {
-                Text("DPmetaApp", Modifier.padding(horizontal = 28.dp, vertical = 16.dp), style = MaterialTheme.typography.titleMedium)
+                Text("DP_IDE", Modifier.padding(horizontal = 28.dp, vertical = 16.dp), style = MaterialTheme.typography.titleMedium)
                 // Порядок — Screens.panelItems: тот же, что сверяет тест панели.
                 for (e in Screens.panelItems(ai = onAi != null)) {
                     val section = e.section
@@ -1894,7 +1894,7 @@ private fun JournalScreen(loader: Loader, onBack: () -> Unit) {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") }
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = { loader.share("Журнал действий DPmetaApp", rows.joinToString("\n") { journalLine(it) }) }, enabled = rows.isNotEmpty()) { Text("Поделиться") }
+                TextButton(onClick = { loader.share("Журнал действий DP_IDE", rows.joinToString("\n") { journalLine(it) }) }, enabled = rows.isNotEmpty()) { Text("Поделиться") }
             }
         }
         item { Text("Журнал действий", style = MaterialTheme.typography.titleMedium) }

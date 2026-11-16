@@ -140,7 +140,7 @@ object TermuxActions {
      * есть (каталоги — с «/»); нет какого-то — код 2 и строка в stderr, это не отказ пробы.
      */
     fun probe(paths: List<String>): Call =
-        Call("$PREFIX/bin/ls", listOf("-1", "-d", "-p", "--") + paths, null, true, "DPmetaApp: проверка папки проектов")
+        Call("$PREFIX/bin/ls", listOf("-1", "-d", "-p", "--") + paths, null, true, "DP_IDE: проверка папки проектов")
 
     /** Что есть из путей пробы — по выводу `ls -1 -d -p`: строка — путь, «/» в конце снят. */
     fun existing(r: Result): Set<String> =

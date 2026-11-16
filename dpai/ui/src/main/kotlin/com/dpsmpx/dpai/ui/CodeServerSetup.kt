@@ -55,7 +55,7 @@ object CodeServerSetup {
      */
     fun kotlinInstall(build: String, arch: String): Outcome<List<String>> {
         if (!KotlinLsp.validBuild(build)) return Outcome.failure(DiagCode.VALUE_INVALID, "номер сборки kotlin-lsp непонятен: $build")
-        if (build != KotlinLsp.PINNED_BUILD) return Outcome.failure(DiagCode.VALUE_INVALID, "сборка kotlin-lsp $build не закреплена в этой версии приложения — обновите DPmetaApp")
+        if (build != KotlinLsp.PINNED_BUILD) return Outcome.failure(DiagCode.VALUE_INVALID, "сборка kotlin-lsp $build не закреплена в этой версии приложения — обновите DP_IDE")
         if (arch != "aarch64" && arch != "x86_64") return Outcome.failure(DiagCode.UNSUPPORTED, "архитектура $arch не поддержана")
         return Outcome.success(
             sh(

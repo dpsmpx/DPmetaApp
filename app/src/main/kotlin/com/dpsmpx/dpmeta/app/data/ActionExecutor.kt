@@ -80,7 +80,7 @@ object ActionExecutor {
             return commit
         }
         val title = message.lineSequence().first().take(200)
-        val body = "Правка `$path` с телефона (DPmetaApp, пульт).\n\n$message"
+        val body = "Правка `$path` с телефона (DP_IDE, пульт).\n\n$message"
         return w.openPull(repo, branch, base, title, body)
     }
 

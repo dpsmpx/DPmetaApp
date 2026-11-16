@@ -301,14 +301,14 @@ open class PultActivity : ComponentActivity() {
         val signer = runCatching {
             packageManager.getPackageInfo(packageName, android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES).signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray()
         }.getOrNull()?.let { cert -> java.security.MessageDigest.getInstance("SHA-256").digest(cert).joinToString(":") { "%02X".format(it) } }
-        return "DPmetaApp $app" + (aiVersion()?.let { " · AI $it" } ?: "") +
+        return "DP_IDE $app" + (aiVersion()?.let { " · AI $it" } ?: "") +
             "\nКоммит сборки: ${getString(R.string.dpmeta_build_commit)}" +
             "\nПодпись APK, SHA-256: ${signer ?: "не прочитана"}"
     }
 
     /** Лицензии компонентов (F-50, A-12): документы происхождения из APK; не на главном потоке. */
     private fun licenses(): List<com.dpsmpx.dpmeta.app.data.Licenses.Row> =
-        listOf("about/PROVENANCE.md" to "DPmetaApp", "about/PROVENANCE-ai.md" to "AI").flatMap { (path, name) ->
+        listOf("about/PROVENANCE.md" to "DP_IDE", "about/PROVENANCE-ai.md" to "AI").flatMap { (path, name) ->
             runCatching { assets.open(path).bufferedReader().use { it.readText() } }.getOrNull()?.let { com.dpsmpx.dpmeta.app.data.Licenses.parse(name, it) }.orEmpty()
         }
 

@@ -244,7 +244,7 @@ object Debugger {
      */
     private fun runApk(app: Context, target: DebugTargets.Target) {
         val pkg = target.program
-        if (pkg == app.packageName) return end("Сам DPmetaApp отлаживать нельзя: остановка его кода остановила бы и отладчик")
+        if (pkg == app.packageName) return end("Сам DP_IDE отлаживать нельзя: остановка его кода остановила бы и отладчик")
         val host = LinuxSetup.guestHost(app) ?: return end("Linux в приложении недоступен")
         if ((host.run(ProcessSpec(Adb.check), 30.seconds) as? Outcome.Success)?.value?.ok != true) {
             flow.update { it.copy(phase = Phase.ENDED, missing = Missing.ADB, note = "Нет adb в Linux приложения. Поставьте его кнопкой, подключите в «Logcat» и начните снова.") }

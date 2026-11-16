@@ -30,7 +30,7 @@ object PublishActions {
     fun url(repo: RepoRef): String = "https://github.com/$repo.git"
 
     /** Описание репозитория на GitHub. */
-    fun description(c: ActionCommand): String = "Проект «${c.params["project"].orEmpty()}», созданный в DPmetaApp"
+    fun description(c: ActionCommand): String = "Проект «${c.params["project"].orEmpty()}», созданный в DP_IDE"
 
     /** Что произойдёт — для окна подтверждения уровня 1. */
     fun preview(project: Screens.LocalProject, owner: String?, name: String): List<String> = listOf(

@@ -45,13 +45,13 @@ class ApkReviewTest {
         assertTrue("Сертификат SHA-256: ${"ab".repeat(32)}" in text, text)
         assertTrue("Подписан вашим ключом." in text, text)
         assertTrue(text.endsWith("SHA-256 файла: ${"cd".repeat(32)}"), text)
-        assertFalse("самого DPmetaApp" in text, text)
+        assertFalse("самого DP_IDE" in text, text)
     }
 
     @Test
     fun ownApkIsNamedAndForeignKeyIsNotCalledYours() {
         val text = ApkReview.describe(Outcome.success(meta.copy(self = true)), Outcome.success(sig), "00", keySha256 = "ef".repeat(32))
-        assertTrue("Это APK самого DPmetaApp." in text, text)
+        assertTrue("Это APK самого DP_IDE." in text, text)
         assertFalse("вашим ключом" in text, text)
     }
 
