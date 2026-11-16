@@ -98,6 +98,11 @@ object LinuxSetup {
         if (!available(context)) return Outcome.failure(DiagCode.UNSUPPORTED, "Linux в приложении — только на телефоне с arm64")
         return environment(context).install(VERSION) { context.assets.open(ASSET) }.also {
             // `~/tools/bin` в PATH оболочек входа и карта — сразу после установки (D-143).
+            // Сброс Alpine оборвался после распаковки (D-196): вернуть сохранённый дом.
+            if (it is Outcome.Success) {
+                val reset = com.dpsmpx.dpai.orchestrator.linux.RootfsReset(NioVfs(context.filesDir.toPath()), context.filesDir.toPath())
+                if (reset.pending()) reset.restore()
+            }
             if (it is Outcome.Success && it.value != null) {
                 environment(context).writeProfile()
                 // Помощник входа Git из GH_TOKEN (D-158): без токена молчит.

@@ -77,7 +77,7 @@ internal object OwnVariablesStore {
 
 /** Раздел «Настройки» экрана «Окружение»: свои переменные и репозитории Alpine. */
 @Composable
-internal fun EnvironmentSettingsSection(release: String?, repositories: List<String>, running: Boolean, onApply: (String, String) -> Unit) {
+internal fun EnvironmentSettingsSection(release: String?, repositories: List<String>, running: Boolean, onApply: (String, String) -> Unit, onReset: (Boolean) -> Unit = {}) {
     val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     var version by remember { mutableIntStateOf(0) }
@@ -121,6 +121,12 @@ internal fun EnvironmentSettingsSection(release: String?, repositories: List<Str
         note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         HorizontalDivider()
         RepositoriesBlock(release, repositories, running, onApply)
+        HorizontalDivider()
+        var resetting by remember { mutableStateOf(false) }
+        if (resetting) ResetAlpineDialog(onCancel = { resetting = false }) { whole -> resetting = false; onReset(whole) }
+        Text("Сброс Alpine", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.error)
+        Text("Если окружение сломано так, что не помогают ни починка, ни откат. Закройте вкладки терминала и дождитесь конца ходов ИИ.", style = MaterialTheme.typography.bodySmall)
+        TextButton(enabled = !running, onClick = { resetting = true }) { Text("Сбросить Alpine…", color = MaterialTheme.colorScheme.error) }
     }
 }
 
@@ -193,4 +199,66 @@ internal fun applyRepositories(context: Context, jobs: LongJobs, text: String, l
             is Outcome.Failure -> LongJobs.Done("$label: записано; apk: ${r.errors.first().message}", failed = true)
         }
     }
+}
+
+/**
+ * Сброс Alpine целиком (D-196; `DPmetaApp:D-171`, шаг 6) одной долгой работой: снимок (после
+ * сброса откат вернёт прежний набор пакетов), запись в журнал, [RootfsReset.begin], распаковка
+ * тем же путём, что установка, возврат сохранённого.
+ */
+internal fun resetAlpine(context: Context, jobs: LongJobs, wholeHome: Boolean) {
+    val app = context.applicationContext
+    val label = "Сброс Alpine"
+    jobs.start(LongJobs.LINUX_APK, label, excludes = LongJobs.GUEST) {
+        val reset = com.dpsmpx.dpai.orchestrator.linux.RootfsReset(NioVfs(app.filesDir.toPath()), app.filesDir.toPath())
+        EnvSnapshotStore.take(app, "Перед сбросом Alpine")
+        AppLogs.info(app, "окружение", "сброс Alpine начат; сохраняется: ${reset.keeps(wholeHome).joinToString()}")
+        when (val b = reset.begin(wholeHome)) {
+            is Outcome.Failure -> return@start LongJobs.Done("$label: ${b.errors.first().message}", failed = true).also { AppLogs.info(app, "окружение", "сброс Alpine остановлен: ${b.errors.first().message}") }
+            is Outcome.Success -> Unit
+        }
+        // Установка сама возвращает сохранённое (доделка оборванного сброса); не вернула — здесь.
+        val installed = LinuxSetup.install(app)
+        val back: Outcome<List<String>> = if (reset.pending()) reset.restore() else Outcome.success(reset.keeps(wholeHome))
+        val note = when {
+            installed is Outcome.Failure -> "$label: Alpine не распакована — ${installed.errors.first().message}; дом цел, «Установить» доделает"
+            back is Outcome.Failure -> "$label: ${back.errors.first().message}"
+            else -> "$label: готово; сохранено ${(back as Outcome.Success).value.joinToString().ifEmpty { "—" }}. Пакеты — заново: «Снимки» → снимок «перед сбросом» вернёт прежний набор"
+        }
+        AppLogs.info(app, "окружение", note)
+        LongJobs.Done(note, failed = installed is Outcome.Failure || back is Outcome.Failure)
+    }
+}
+
+/** Окно сброса (D-37): красное предупреждение, выбор, что сохранить, и ввод имени. */
+@Composable
+internal fun ResetAlpineDialog(onCancel: () -> Unit, onConfirm: (Boolean) -> Unit) {
+    var whole by remember { mutableStateOf(true) }
+    var typed by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Сбросить Alpine целиком?", color = MaterialTheme.colorScheme.error) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    "Корневая система будет распакована из APK заново. Пропадут все пакеты Alpine, настройки в /etc, Claude Code, Codex и Gemini (пакеты npm). " +
+                        "~/projects и ~/ai сохраняются всегда.",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(whole, { whole = it })
+                    Text("Сохранить всю домашнюю папку: ~/tools (службы IDE, модели), ~/android-sdk, свои настройки", style = MaterialTheme.typography.bodySmall)
+                }
+                Text("Перед сбросом — снимок окружения: «Откатить» к нему поставит прежний набор пакетов.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(typed, { typed = it.take(20) }, label = { Text("Введите ${com.dpsmpx.dpai.orchestrator.linux.RootfsReset.CONFIRM}") }, singleLine = true)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = typed == com.dpsmpx.dpai.orchestrator.linux.RootfsReset.CONFIRM, onClick = { onConfirm(whole) }) {
+                Text("Сбросить", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = { TextButton(onClick = onCancel) { Text("Отмена") } },
+    )
 }
