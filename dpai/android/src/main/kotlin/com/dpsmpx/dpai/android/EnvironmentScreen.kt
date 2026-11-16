@@ -42,7 +42,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Экран «Окружение» (D-191…D-196; `DPmetaApp:D-171`, шаги 1–6): пакеты Alpine гостя — что стоит,
+ * Экран «Окружение» (D-191…D-197; `DPmetaApp:D-171`, шаги 1–7): пакеты Alpine гостя — что стоит,
  * версия, размер, сумма, для кого нужен, совместимость между собой; обновить, убрать,
  * починить без ИИ. База читается с хоста без процесса гостя; команды `apk` — та же
  * долгая работа `LINUX_APK`, что и на экране «Linux в приложении», по одной (AI:A-14).
@@ -68,6 +68,7 @@ fun EnvironmentScreen(onBack: () -> Unit, controller: Controller? = null, model:
     var components by remember { mutableStateOf<List<AppComponents.Component>>(emptyList()) }
     var removingComponent by remember { mutableStateOf<AppComponents.Component?>(null) }
     var projectChecks by remember { mutableStateOf<List<com.dpsmpx.dpai.ui.ProjectNeeds.Check>>(emptyList()) }
+    var updates by remember { mutableStateOf<com.dpsmpx.dpai.ui.EnvUpdates.Result?>(null) }
 
     // Список перечитывается, когда команда гостя закончилась: база — после неё.
     LaunchedEffect(running) {
@@ -85,6 +86,7 @@ fun EnvironmentScreen(onBack: () -> Unit, controller: Controller? = null, model:
             val arch = inv?.byName?.get("musl")?.arch
             components = runCatching { AppComponents.scan(EnvironmentComponents.rootfs(context).toPath(), arch) }.getOrDefault(emptyList())
             projectChecks = runCatching { EnvironmentProjects.checks(context, controller, model, inv) }.getOrDefault(emptyList())
+            updates = EnvUpdatesJob.last(context)
         }
         loaded = true
     }
@@ -150,6 +152,9 @@ fun EnvironmentScreen(onBack: () -> Unit, controller: Controller? = null, model:
                 if (section == EnvSection.COMPONENTS && loaded) Text(AppComponents.summary(components), style = MaterialTheme.typography.bodyMedium)
                 current?.takeIf { section == EnvSection.ALPINE }?.let { c ->
                     Text(AlpineView.summary(c, problems), style = MaterialTheme.typography.bodyMedium)
+                    // Итог проверки обновлений (D-197): версии, что новее в зеркале, — только из него, не стоявшие уже ушли.
+                    val newer = updates?.packages.orEmpty().filter { u -> c.byName[u.name]?.version == u.installed }
+                    if (newer.isNotEmpty()) Text("Есть новее (проверено ${EnvSnapshotStore.time(updates!!.at)}): ${newer.size} — «Обновить всё» или у пакета", style = MaterialTheme.typography.bodySmall)
                     if (c.repositories.isNotEmpty()) {
                         Text("Репозитории: " + c.repositories.joinToString { it.removePrefix("https://dl-cdn.alpinelinux.org/alpine/") }, style = MaterialTheme.typography.bodySmall)
                     }
@@ -220,7 +225,8 @@ fun EnvironmentScreen(onBack: () -> Unit, controller: Controller? = null, model:
             Column(Modifier.fillMaxWidth().clickable { open = if (open == row.name) null else row.name }.padding(vertical = 4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(row.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    Text(row.version, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
+                    val next = updates?.packages?.firstOrNull { it.name == row.name && it.installed == row.version }?.available
+                    Text(row.version + (next?.let { " → $it" } ?: ""), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
                     Text(row.size, style = MaterialTheme.typography.labelSmall)
                 }
                 val tags = listOfNotNull("ваш".takeIf { row.mine }, "система".takeIf { row.system }, row.requiredBy.takeIf { it.isNotEmpty() }?.let { "нужен для ${it.size}" })

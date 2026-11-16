@@ -57,6 +57,7 @@ object EnvSnapshots {
             LinuxEnvironment.Apk.UPGRADE_AVAILABLE, LinuxEnvironment.Apk.UPGRADE_AVAILABLE_SOME -> "Привести к ветке"
             LinuxEnvironment.Apk.FIX, LinuxEnvironment.Apk.REPAIR -> "Починить"
             LinuxEnvironment.Apk.APPLY_WORLD -> "Применить список"
+            LinuxEnvironment.Apk.UPDATE, LinuxEnvironment.Apk.LIST_UPGRADES -> "Проверить обновления"
         }
         return (what + if (packages.isEmpty()) "" else ": " + packages.joinToString(" ")).take(MAX_LABEL)
     }

@@ -302,6 +302,12 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
         /** Обновить всё установленное — и саму Alpine. */
         UPGRADE(listOf("upgrade", "-U", "--no-progress"), false),
 
+        /** Обновить индексы репозиториев (D-197, проверка обновлений): пакеты не меняются. */
+        UPDATE(listOf("update", "--no-progress"), false),
+
+        /** Какие пакеты новее в репозиториях (D-197): только чтение. */
+        LIST_UPGRADES(listOf("version", "-l", "<"), false),
+
         /** Применить `/etc/apk/world` (D-194, откат): поставить нужное, убрать лишнее; версии не поднимаются. */
         APPLY_WORLD(listOf("fix", "-U", "--no-progress"), false),
 

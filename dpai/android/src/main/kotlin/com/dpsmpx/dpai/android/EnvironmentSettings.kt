@@ -122,6 +122,8 @@ internal fun EnvironmentSettingsSection(release: String?, repositories: List<Str
         HorizontalDivider()
         RepositoriesBlock(release, repositories, running, onApply)
         HorizontalDivider()
+        UpdatesBlock(running)
+        HorizontalDivider()
         var resetting by remember { mutableStateOf(false) }
         if (resetting) ResetAlpineDialog(onCancel = { resetting = false }) { whole -> resetting = false; onReset(whole) }
         Text("Сброс Alpine", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.error)
@@ -261,4 +263,38 @@ internal fun ResetAlpineDialog(onCancel: () -> Unit, onConfirm: (Boolean) -> Uni
         },
         dismissButton = { TextButton(onClick = onCancel) { Text("Отмена") } },
     )
+}
+
+/** Проверка обновлений (D-197): раз в сутки в фоне по настройке и «Проверить сейчас». */
+@Composable
+private fun UpdatesBlock(running: Boolean) {
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
+    var on by remember { mutableStateOf(true) }
+    var last by remember { mutableStateOf<com.dpsmpx.dpai.ui.EnvUpdates.Result?>(null) }
+    LaunchedEffect(running) {
+        if (running) return@LaunchedEffect
+        withContext(Dispatchers.IO) { on = EnvUpdatesJob.on(context); last = EnvUpdatesJob.last(context) }
+    }
+    Text("Обновления", style = MaterialTheme.typography.titleSmall)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Проверять раз в сутки", style = MaterialTheme.typography.bodyMedium)
+            Text("В фоне при Wi-Fi и зарядке: индекс Alpine и версии компонентов; есть новое — уведомление. Ставите вы.", style = MaterialTheme.typography.bodySmall)
+        }
+        androidx.compose.material3.Switch(on, onCheckedChange = { v ->
+            on = v
+            scope.launch { withContext(Dispatchers.IO) { EnvUpdatesJob.setOn(context, v) } }
+        })
+    }
+    Text(
+        last?.let { r -> "Проверено ${EnvSnapshotStore.time(r.at)}: " + (com.dpsmpx.dpai.ui.EnvUpdates.notice(r) ?: "всё новое") } ?: "Ещё не проверялось.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    TextButton(enabled = !running, onClick = {
+        LongJobs.get(context).start(LongJobs.LINUX_APK, "Проверка обновлений", excludes = LongJobs.GUEST) {
+            val r = EnvUpdatesJob.check(context, notify = false)
+            LongJobs.Done(r?.let { "Проверка обновлений: " + (com.dpsmpx.dpai.ui.EnvUpdates.notice(it) ?: "всё новое") } ?: "Проверка обновлений: не вышло — нет сети или Linux не установлен", failed = r == null)
+        }
+    }) { Text("Проверить сейчас") }
 }

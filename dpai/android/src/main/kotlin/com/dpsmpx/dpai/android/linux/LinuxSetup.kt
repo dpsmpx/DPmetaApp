@@ -232,6 +232,19 @@ object LinuxSetup {
     }
 
     /**
+     * Только чтение пакетов (D-197, проверка обновлений): `apk update` и `apk version` — без
+     * починки повреждённых, без снимка и без вопроса о месте: в фоне ничего не меняется,
+     * кроме индексов репозиториев в кеше.
+     */
+    fun apkReadOnly(context: Context, action: LinuxEnvironment.Apk): Outcome<Completed> {
+        if (action != LinuxEnvironment.Apk.UPDATE && action != LinuxEnvironment.Apk.LIST_UPGRADES) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "в фоне — только чтение пакетов")
+        if (environment(context).installed() == null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "Linux не установлен")
+        val spec = (LinuxEnvironment.apk(action, emptyList()) as? Outcome.Success)?.value ?: return Outcome.failure(DiagCode.VALUE_INVALID, "команда apk не собрана")
+        refreshDns(context)
+        return host(context).run(spec, 10.minutes, maxStdoutChars = 200_000)
+    }
+
+    /**
      * Шаги установки в госте по очереди (Claude Code, Codex и Gemini, llama.cpp): `apk` — без
      * `/proc` (D-82), остальное — с ним; первый неудачный шаг — итог. Вывод — всех шагов, для
      * экрана; DNS — сети телефона.

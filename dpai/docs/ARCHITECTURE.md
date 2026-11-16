@@ -440,6 +440,9 @@ AlpinePackageState учитывает виртуальные provides. Api FIX �
 Сброс (D-196): `orchestrator.linux.RootfsReset` — `begin` (готовность, перенос
 дома и кеша apk в `linux/reset-kept`, удаление корня) и `restore`;
 `LinuxSetup.install` доделывает оборванный сброс.
+Обновления (D-197): `EnvUpdatesJob` оболочки — JobScheduler раз в сутки,
+`LinuxSetup.apkReadOnly` (`apk update`, `apk version -l '<'`), разбор и итог —
+`ui.EnvUpdates`.
 
 Языки запуска (D-141): EditorRunOutput возвращает RunDiagnosis по пути
 файла, C++ использует прежний CppDependencies. PythonRuntime/KotlinRuntime
