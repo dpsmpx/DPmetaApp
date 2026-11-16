@@ -427,6 +427,10 @@ AlpinePackageState учитывает виртуальные provides. Api FIX �
 проектов, CLI исполнителей и модели с версией, суммой и размером с хоста;
 удаление — только в разрешённых местах дома гостя, установка — прежними
 установщиками (`EnvironmentComponents` оболочки).
+Настройки (D-193): `ui.OwnVariables` (`dpai.env-vars` v1, хранит
+`OwnVariablesStore` оболочки) — свои переменные под окружением процесса в
+`LinuxSetup.shell`, `agentHost` и `guestHost`; `AlpineRepositories` и
+`LinuxEnvironment.writeRepositories` — ветка Alpine с прежним зеркалом.
 
 Языки запуска (D-141): EditorRunOutput возвращает RunDiagnosis по пути
 файла, C++ использует прежний CppDependencies. PythonRuntime/KotlinRuntime

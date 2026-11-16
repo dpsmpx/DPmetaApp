@@ -260,8 +260,12 @@ object LinuxSetup {
         val argv = if (command.isEmpty()) listOf("/bin/sh", "-l") else command.mapIndexed { i, a -> if (i == 0 && a == "sh") "/bin/sh" else a }
         // 24-битный цвет (терминал:A-23): COLORTERM — как у kitty и Windows Terminal.
         // Секреты, выданные ИИ автором (DPmetaApp:D-114), — и терминалу; слот во вкладке убирает перекрывающие вход сам (`env -u`).
-        val env = ProotHost.GUEST_ENVIRONMENT + com.dpsmpx.dpai.android.SecretGrants.environment(context) +
-            ("TERM" to "xterm-256color") + ("COLORTERM" to com.dpsmpx.dpai.ui.TerminalLaunch.COLORTERM)
+        // Свои переменные автора (D-193) — под окружением гостя: оно сильнее.
+        val env = com.dpsmpx.dpai.android.OwnVariablesStore.under(
+            context,
+            ProotHost.GUEST_ENVIRONMENT + com.dpsmpx.dpai.android.SecretGrants.environment(context) +
+                ("TERM" to "xterm-256color") + ("COLORTERM" to com.dpsmpx.dpai.ui.TerminalLaunch.COLORTERM),
+        )
         val spec = ProcessSpec(argv, environment = env)
         val wrapped = host(context).wrap(spec)
         return JniProcesses().spawn(wrapped.command, wrapped.environment.orEmpty(), null, size)
@@ -296,7 +300,8 @@ object LinuxSetup {
             return com.dpsmpx.dpai.orchestrator.agent.InAppAgentHost.create(
                 home, Clock.SYSTEM, version ?: "dev", JniProcesses(), guestHost(context)!!, ProotHost.GUEST_ENVIRONMENT,
                 // Секреты, выданные ИИ автором (DPmetaApp:D-114; D-144): на каждый запуск, не в документ хода.
-                secrets = { com.dpsmpx.dpai.android.SecretGrants.environment(app) },
+                // Свои переменные (D-193) — на каждый запуск тем же путём; секрет с тем же именем сильнее (имена не пересекаются по проверке).
+                secrets = { com.dpsmpx.dpai.android.OwnVariablesStore.map(app) + com.dpsmpx.dpai.android.SecretGrants.environment(app) },
             )
                 .also { agent = it }
         }
@@ -317,7 +322,9 @@ object LinuxSetup {
                 refreshDns(app)
                 // Раскладка — на каждый запуск: привязка хранилища следует переключателю (D-99).
                 val layout = layout(app)
-                return ProotHost(NativeProcessHost(JniProcesses(), Clock.SYSTEM), layout.copy(binds = layout.binds + ProotLayout.Bind(home, home))).start(spec, onOutput)
+                // Свои переменные автора (D-193) — шагам профилей и Git проекта, под окружением процесса: оно сильнее.
+                val withOwn = spec.copy(environment = com.dpsmpx.dpai.android.OwnVariablesStore.under(app, spec.environment ?: ProotHost.GUEST_ENVIRONMENT))
+                return ProotHost(NativeProcessHost(JniProcesses(), Clock.SYSTEM), layout.copy(binds = layout.binds + ProotLayout.Bind(home, home))).start(withOwn, onOutput)
             }
         }
     }

@@ -42,7 +42,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Экран «Окружение» (D-191, D-192; `DPmetaApp:D-171`, шаги 1–2): пакеты Alpine гостя — что стоит,
+ * Экран «Окружение» (D-191…D-193; `DPmetaApp:D-171`, шаги 1–3): пакеты Alpine гостя — что стоит,
  * версия, размер, сумма, для кого нужен, совместимость между собой; обновить, убрать,
  * починить без ИИ. База читается с хоста без процесса гостя; команды `apk` — та же
  * долгая работа `LINUX_APK`, что и на экране «Linux в приложении», по одной (AI:A-14).
@@ -180,6 +180,14 @@ fun EnvironmentScreen(onBack: () -> Unit) {
                 }
             }
         }
+        if (section == EnvSection.SETTINGS) {
+            item {
+                EnvironmentSettingsSection(current?.release, current?.repositories.orEmpty(), running) { text, label ->
+                    allOutput = false
+                    applyRepositories(context, jobs, text, label)
+                }
+            }
+        }
         if (section == EnvSection.COMPONENTS) {
             items(components, key = { it.id }) { c ->
                 val install = if (EnvironmentComponents.ideInstall(c) != null || EnvironmentComponents.reinstall(c) != null) {
@@ -215,7 +223,7 @@ fun EnvironmentScreen(onBack: () -> Unit) {
 }
 
 /** Разделы экрана. */
-private enum class EnvSection(val title: String) { ALPINE("Пакеты Alpine"), COMPONENTS("Компоненты") }
+private enum class EnvSection(val title: String) { ALPINE("Пакеты Alpine"), COMPONENTS("Компоненты"), SETTINGS("Настройки") }
 
 /** Строк вывода `apk` на экране: хвост, где итог и ошибка. */
 private const val MAX_OUTPUT = 20

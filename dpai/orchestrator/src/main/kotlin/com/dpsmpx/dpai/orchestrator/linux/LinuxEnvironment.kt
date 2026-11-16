@@ -37,6 +37,7 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
     private val keyDraft = Vfs.join(dir, "llama-key.draft")
     private val profileDraft = Vfs.join(dir, "profile.draft")
     private val gitDraft = Vfs.join(dir, "gitconfig.draft")
+    private val repoDraft = Vfs.join(dir, "repositories.draft")
 
     /** Версия установленной корневой системы; `null` — не установлена или установка оборвалась. */
     fun installed(): String? = vfs.read(ready)?.toString(Charsets.UTF_8)?.trim()?.ifEmpty { null }
@@ -146,6 +147,30 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
     }
 
     /**
+     * `/etc/apk/repositories` гостя (D-193): как у [writeDns] — черновик вне корня гостя и
+     * переименование; `/etc` или `/etc/apk` — ссылка — отказ. Текст — только из
+     * [AlpineRepositories.text]: строки — адреса зеркала [AlpineRepositories.MIRROR].
+     */
+    fun writeRepositories(text: String): Outcome<Unit> {
+        val lines = text.lines().filter { it.isNotEmpty() }
+        if (lines.isEmpty() || lines.any { !it.startsWith(AlpineRepositories.MIRROR + "/") || it.any { c -> c.isWhitespace() } }) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, "репозитории — только адреса ${AlpineRepositories.MIRROR}", rootfs)
+        }
+        val etc = Vfs.join(rootfs, "etc")
+        val apk = Vfs.join(etc, "apk")
+        val path = Vfs.join(apk, "repositories")
+        if (vfs.isSymlink(etc) || vfs.isSymlink(apk)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "/etc гостя — символьная ссылка: репозитории не записаны", apk)
+        return try {
+            vfs.mkdirs(apk)
+            vfs.write(repoDraft, text.toByteArray())
+            vfs.rename(repoDraft, path)
+            Outcome.success(Unit)
+        } catch (e: IOException) {
+            Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "/etc/apk/repositories гостя не записан", e, path)))
+        }
+    }
+
+    /**
      * Ключ API сервера локальной модели в госте (D-105, T18), как
      * [writeDns] (A-3): каталоги `~/.config` и `~/.config/llama` пишет и гость
      * — ссылка на их месте — отказ; ключ пишется черновиком вне корня гостя
@@ -189,6 +214,9 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
 
         /** Обновить всё установленное — и саму Alpine. */
         UPGRADE(listOf("upgrade", "-U", "--no-progress"), false),
+
+        /** Привести пакеты к версиям выбранных репозиториев (D-193: смена ветки), в том числе вниз. */
+        UPGRADE_AVAILABLE(listOf("upgrade", "-U", "--available", "--no-progress"), false),
 
         /** Обновить только названные пакеты (D-191, экран «Окружение»); индекс — тем же вызовом. */
         UPGRADE_SOME(listOf("upgrade", "-U", "--no-progress"), true),
