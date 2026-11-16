@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
@@ -157,7 +159,7 @@ private fun PrCard(
  * окно показывает, что уйдёт, — ветку, удалённый, базу и заголовок; итог — адрес PR.
  */
 @Composable
-internal fun GitHubSendSection(model: DemoModel, task: TaskId, title: String) {
+internal fun GitHubSendSection(model: DemoModel, task: TaskId, title: String, objective: String = "", reviews: List<String> = emptyList()) {
     val desk = remember { model.github() } ?: return
     val scope = rememberCoroutineScope()
     val link = rememberLinkTap()
@@ -167,6 +169,14 @@ internal fun GitHubSendSection(model: DemoModel, task: TaskId, title: String) {
     var failure by remember(task) { mutableStateOf<String?>(null) }
     val plan = remember(task) { desk.plan(task) }
     val prTitle = title.lineSequence().firstOrNull().orEmpty().take(120).ifBlank { "Задача ${task.value}" }
+    // Описание по шаблону из фактов задачи — без ИИ (D-189; DPmetaApp:D-168); правится перед отправкой.
+    var body by remember(task) { mutableStateOf<String?>(null) }
+    androidx.compose.runtime.LaunchedEffect(asking) {
+        if (asking && body == null) {
+            val diff = withContext(Dispatchers.IO) { model.taskDiff(task).valueOrNull() }
+            body = com.dpsmpx.dpai.ui.PrTemplate.body(task.value, objective, plan.branch, diff, reviews)
+        }
+    }
     HorizontalDivider()
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("GitHub", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
@@ -179,18 +189,25 @@ internal fun GitHubSendSection(model: DemoModel, task: TaskId, title: String) {
             onDismissRequest = { asking = false },
             title = { Text("Отправить на GitHub?") },
             text = {
-                Text(
-                    "Ветка ${plan.branch} уйдёт в ${plan.remote} (репозиторий ${plan.repository}), и откроется PR в ${plan.base} " +
-                        "с заголовком «$prTitle». Это увидят на GitHub; PR можно закрыть, ветку — удалить. Запись — в журнал действий.",
-                )
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "Ветка ${plan.branch} уйдёт в ${plan.remote} (репозиторий ${plan.repository}), и откроется PR в ${plan.base} " +
+                            "с заголовком «$prTitle». Это увидят на GitHub; PR можно закрыть, ветку — удалить. Запись — в журнал действий.",
+                    )
+                    // Шаблон без ИИ: факты задачи; что не известно — сказано, правьте здесь.
+                    androidx.compose.material3.OutlinedTextField(
+                        value = body ?: "Собираю описание…", onValueChange = { body = it.take(com.dpsmpx.dpai.ui.PrTemplate.MAX_BODY) },
+                        enabled = body != null, label = { Text("Описание PR (шаблон, без ИИ)") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
                     asking = false
                     busy = true
                     scope.launch {
-                        val body = "Задача ${task.value} контура «AI» DPmetaApp, ветка ${plan.branch}."
-                        when (val r = withContext(Dispatchers.IO) { desk.send(task, prTitle, body) }) {
+                        val text = body ?: "Задача ${task.value} контура «AI», ветка ${plan.branch}."
+                        when (val r = withContext(Dispatchers.IO) { desk.send(task, prTitle, text) }) {
                             is Outcome.Success -> { result = r.value; failure = null }
                             is Outcome.Failure -> failure = r.errors.first().message
                         }

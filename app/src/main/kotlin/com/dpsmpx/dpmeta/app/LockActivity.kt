@@ -66,7 +66,7 @@ class LockActivity : ComponentActivity() {
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Icon(painterResource(R.drawable.ic_pult_lock), contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
-                        Text("DPmetaApp закрыто", style = MaterialTheme.typography.headlineSmall)
+                        Text("DP_IDE закрыто", style = MaterialTheme.typography.headlineSmall)
                         if (noPin.value) {
                             Text("У телефона нет блокировки экрана, а вход — по PIN устройства: задайте PIN.", textAlign = TextAlign.Center)
                             Button(onClick = ::openSecuritySettings) { Text("Задать PIN") }

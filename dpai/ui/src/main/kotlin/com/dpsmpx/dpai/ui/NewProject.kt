@@ -55,7 +55,7 @@ object NewProject {
 
     const val MAX_NAME = 40
     const val BRANCH = "main"
-    const val FIRST_COMMIT = "Начало проекта (мастер DPmetaApp)"
+    const val FIRST_COMMIT = "Начало проекта (мастер DP_IDE)"
     const val OK_MARKER = "DPAI_NEW_PROJECT_OK"
     const val MISSING_MARKER = "DPAI_MISSING"
 
@@ -519,7 +519,7 @@ object NewProject {
                 [project]
                 name = "${s.name}"
                 version = "0.1.0"
-                description = "Проект, созданный мастером DPmetaApp"
+                description = "Проект, созданный мастером DP_IDE"
                 requires-python = ">=3.10"
 
                 [project.scripts]
@@ -572,7 +572,7 @@ object NewProject {
         val lines = buildList {
             add("# ${s.name}")
             add("")
-            add("Проект создан мастером DPmetaApp: ${s.template.title}. Репозиторий Git — локальный, без GitHub;")
+            add("Проект создан мастером DP_IDE: ${s.template.title}. Репозиторий Git — локальный, без GitHub;")
             add("опубликовать его можно позже из приложения.")
             add("")
             add("## Команды")
@@ -582,7 +582,7 @@ object NewProject {
             c.run?.let { r -> add("- Запуск: `${r.command}`" + (if (r.dir.isNotEmpty()) " (из папки `${r.dir}`)" else "")) }
             if (s.template == Template.KOTLIN_ANDROID) add("- APK: `app/build/outputs/apk/debug/` — в приложении «Артефакты» скачают и подпишут его.")
             add("")
-            add("В DPmetaApp: «IDE» → «Рабочий проект» — вкладки «Сборка», «Проверки» и «Запуск».")
+            add("В DP_IDE: «IDE» → «Рабочий проект» — вкладки «Сборка», «Проверки» и «Запуск».")
         }
         return lines.joinToString("\n") + "\n"
     }

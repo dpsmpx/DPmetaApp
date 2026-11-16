@@ -37,6 +37,8 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
     private val keyDraft = Vfs.join(dir, "llama-key.draft")
     private val profileDraft = Vfs.join(dir, "profile.draft")
     private val gitDraft = Vfs.join(dir, "gitconfig.draft")
+    private val repoDraft = Vfs.join(dir, "repositories.draft")
+    private val worldDraft = Vfs.join(dir, "world.draft")
 
     /** Версия установленной корневой системы; `null` — не установлена или установка оборвалась. */
     fun installed(): String? = vfs.read(ready)?.toString(Charsets.UTF_8)?.trim()?.ifEmpty { null }
@@ -146,6 +148,116 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
     }
 
     /**
+     * `/etc/apk/repositories` гостя (D-193): как у [writeDns] — черновик вне корня гостя и
+     * переименование; `/etc` или `/etc/apk` — ссылка — отказ. Текст — только из
+     * [AlpineRepositories.text]: строки — адреса зеркала [AlpineRepositories.MIRROR].
+     */
+    fun writeRepositories(text: String): Outcome<Unit> {
+        val lines = text.lines().filter { it.isNotEmpty() }
+        if (lines.isEmpty() || lines.any { !it.startsWith(AlpineRepositories.MIRROR + "/") || it.any { c -> c.isWhitespace() } }) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, "репозитории — только адреса ${AlpineRepositories.MIRROR}", rootfs)
+        }
+        val etc = Vfs.join(rootfs, "etc")
+        val apk = Vfs.join(etc, "apk")
+        val path = Vfs.join(apk, "repositories")
+        if (vfs.isSymlink(etc) || vfs.isSymlink(apk)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "/etc гостя — символьная ссылка: репозитории не записаны", apk)
+        return try {
+            vfs.mkdirs(apk)
+            vfs.write(repoDraft, text.toByteArray())
+            vfs.rename(repoDraft, path)
+            Outcome.success(Unit)
+        } catch (e: IOException) {
+            Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "/etc/apk/repositories гостя не записан", e, path)))
+        }
+    }
+
+    /**
+     * `/etc/apk/world` гостя из снимка (D-194): каждая строка — ограничение apk без пробелов
+     * ([AlpinePackages.dependency]); как у [writeRepositories] — черновик вне корня гостя,
+     * `/etc` или `/etc/apk` — ссылка — отказ. Применяет `world` команда [Apk.APPLY_WORLD].
+     */
+    fun writeWorld(lines: List<String>): Outcome<Unit> {
+        if (lines.size > MAX_WORLD || lines.any { it.isEmpty() || it.any(Char::isWhitespace) || AlpinePackages.dependency(it) == null }) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, "список пакетов снимка не похож на /etc/apk/world", rootfs)
+        }
+        val apk = Vfs.join(Vfs.join(rootfs, "etc"), "apk")
+        val path = Vfs.join(apk, "world")
+        if (vfs.isSymlink(Vfs.join(rootfs, "etc")) || vfs.isSymlink(apk)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "/etc гостя — символьная ссылка: world не записан", apk)
+        return try {
+            vfs.mkdirs(apk)
+            vfs.write(worldDraft, lines.joinToString("") { "$it\n" }.toByteArray())
+            vfs.rename(worldDraft, path)
+            Outcome.success(Unit)
+        } catch (e: IOException) {
+            Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "/etc/apk/world гостя не записан", e, path)))
+        }
+    }
+
+    /**
+     * Кеш файлов пакетов apk (D-194): ссылка `/etc/apk/cache` → [CACHE_DIR] — так apk 3 хранит
+     * скачанные пакеты. Каталог и ссылка — только если их нет; иное на месте ссылки (настроил
+     * человек) не трогается — итог `false`. Ссылка среди родителей — отказ.
+     */
+    fun enableCache(): Outcome<Boolean> {
+        val etcApk = Vfs.join(Vfs.join(rootfs, "etc"), "apk")
+        val link = Vfs.join(etcApk, "cache")
+        val cache = Vfs.join(rootfs, CACHE_DIR.removePrefix("/"))
+        for (d in listOf(Vfs.join(rootfs, "etc"), etcApk, Vfs.join(rootfs, "var"), Vfs.join(Vfs.join(rootfs, "var"), "cache"))) {
+            if (vfs.isSymlink(d)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "каталог гостя — символьная ссылка: кеш пакетов не включён", d)
+        }
+        return try {
+            if (vfs.isSymlink(link)) return Outcome.success(true)
+            if (vfs.exists(link) || vfs.isDirectory(link)) return Outcome.success(false)
+            if (vfs.isSymlink(cache)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "каталог кеша гостя — символьная ссылка", cache)
+            vfs.mkdirs(cache)
+            vfs.symlink(link, CACHE_DIR)
+            Outcome.success(true)
+        } catch (e: IOException) {
+            Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "кеш пакетов не включён", e, link)))
+        }
+    }
+
+    /** Выключить кеш (D-194): убрать ссылку `/etc/apk/cache`; каталог или иное на её месте — не трогаются. */
+    fun disableCache(): Outcome<Boolean> {
+        val etcApk = Vfs.join(Vfs.join(rootfs, "etc"), "apk")
+        val link = Vfs.join(etcApk, "cache")
+        if (vfs.isSymlink(Vfs.join(rootfs, "etc")) || vfs.isSymlink(etcApk)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "/etc гостя — символьная ссылка", etcApk)
+        if (!vfs.isSymlink(link)) return Outcome.success(false)
+        return try {
+            vfs.delete(link)
+            Outcome.success(true)
+        } catch (e: IOException) {
+            Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "кеш пакетов не выключен", e, link)))
+        }
+    }
+
+    /** Файлы пакетов в кеше (имена); каталог — ссылка или его нет — пусто. */
+    fun cachedPackages(): List<String> {
+        val cache = Vfs.join(rootfs, CACHE_DIR.removePrefix("/"))
+        for (d in listOf(Vfs.join(rootfs, "var"), Vfs.join(Vfs.join(rootfs, "var"), "cache"), cache)) if (vfs.isSymlink(d)) return emptyList()
+        return vfs.list(cache).filter { CACHE_FILE.matches(it) }
+    }
+
+    /** Убрать файлы пакетов из кеша (только имена вида [CACHE_FILE]); итог — сколько убрано. */
+    fun dropCached(files: List<String>): Outcome<Int> {
+        val cache = Vfs.join(rootfs, CACHE_DIR.removePrefix("/"))
+        for (d in listOf(Vfs.join(rootfs, "var"), Vfs.join(Vfs.join(rootfs, "var"), "cache"), cache)) {
+            if (vfs.isSymlink(d)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "каталог кеша гостя — символьная ссылка", d)
+        }
+        var n = 0
+        return try {
+            for (f in files) {
+                if (!CACHE_FILE.matches(f)) continue
+                vfs.delete(Vfs.join(cache, f))
+                n++
+            }
+            Outcome.success(n)
+        } catch (e: IOException) {
+            Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "кеш пакетов очищен не весь", e, cache)))
+        }
+    }
+
+    /**
      * Ключ API сервера локальной модели в госте (D-105, T18), как
      * [writeDns] (A-3): каталоги `~/.config` и `~/.config/llama` пишет и гость
      * — ссылка на их месте — отказ; ключ пишется черновиком вне корня гостя
@@ -189,6 +301,24 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
 
         /** Обновить всё установленное — и саму Alpine. */
         UPGRADE(listOf("upgrade", "-U", "--no-progress"), false),
+
+        /** Обновить индексы репозиториев (D-197, проверка обновлений): пакеты не меняются. */
+        UPDATE(listOf("update", "--no-progress"), false),
+
+        /** Какие пакеты новее в репозиториях (D-197): только чтение. */
+        LIST_UPGRADES(listOf("version", "-l", "<"), false),
+
+        /** Применить `/etc/apk/world` (D-194, откат): поставить нужное, убрать лишнее; версии не поднимаются. */
+        APPLY_WORLD(listOf("fix", "-U", "--no-progress"), false),
+
+        /** Привести пакеты к версиям выбранных репозиториев (D-193: смена ветки), в том числе вниз. */
+        UPGRADE_AVAILABLE(listOf("upgrade", "-U", "--available", "--no-progress"), false),
+
+        /** Названные пакеты — к версиям выбранных репозиториев (D-194: точной версии снимка нигде нет). */
+        UPGRADE_AVAILABLE_SOME(listOf("upgrade", "-U", "--available", "--no-progress"), true),
+
+        /** Обновить только названные пакеты (D-191, экран «Окружение»); индекс — тем же вызовом. */
+        UPGRADE_SOME(listOf("upgrade", "-U", "--no-progress"), true),
     }
 
     companion object {
@@ -216,6 +346,30 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
 
         /** Больше трёх серверов `resolv.conf` musl не читает. */
         const val MAX_DNS = 3
+
+        /** Кеш файлов пакетов apk в госте (D-194). */
+        const val CACHE_DIR: String = "/var/cache/apk"
+
+        /** Файл пакета в кеше apk: `имя-версия.хеш8.apk`. */
+        val CACHE_FILE = Regex("^[a-z0-9][a-z0-9+._-]{0,99}-[0-9][0-9A-Za-z._~+-]{0,60}-r[0-9]{1,6}\\.[0-9a-f]{8}\\.apk$")
+
+        /** Строк в `world` снимка — не больше. */
+        const val MAX_WORLD = 2_000
+
+        /** Поставить файлы пакетов из кеша (D-194): точные версии снимка; подписи сверяет apk. */
+        fun apkAddCached(files: List<String>): Outcome<ProcessSpec> {
+            if (files.isEmpty()) return Outcome.failure(DiagCode.FIELD_MISSING, "нет файлов кеша")
+            if (files.size > MAX_PACKAGES) return Outcome.failure(DiagCode.VALUE_INVALID, "файлов в одной команде — не больше $MAX_PACKAGES")
+            files.firstOrNull { !CACHE_FILE.matches(it) }?.let { return Outcome.failure(DiagCode.VALUE_INVALID, "«$it» — не файл пакета кеша") }
+            return Outcome.success(ProcessSpec(listOf("apk", "add", "-U", "--no-progress") + files.map { "$CACHE_DIR/$it" }))
+        }
+
+        /** Поставить точную версию из зеркала (D-194): `имя=версия`; версия — по правилам apk. */
+        fun apkPin(name: String, version: String): Outcome<ProcessSpec> {
+            if (!PACKAGE.matches(name)) return Outcome.failure(DiagCode.VALUE_INVALID, "«$name» — не имя пакета Alpine")
+            if (!AlpineVersion.valid(version)) return Outcome.failure(DiagCode.VALUE_INVALID, "«$version» — не версия Alpine")
+            return Outcome.success(ProcessSpec(listOf("apk", "add", "-U", "--no-progress", "$name=$version")))
+        }
 
         /** Пакетов в одной команде — не больше. */
         const val MAX_PACKAGES = 50

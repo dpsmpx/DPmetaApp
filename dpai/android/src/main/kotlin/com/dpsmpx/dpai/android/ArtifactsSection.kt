@@ -259,7 +259,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                         }) { Text("Сведения") }
                         TextButton(enabled = busy == null, onClick = {
                             if (!ApkInstaller.allowed(context)) {
-                                note = "Разрешите DPmetaApp устанавливать приложения: откроется настройка Android, затем нажмите «Установить» снова."
+                                note = "Разрешите DP_IDE устанавливать приложения: откроется настройка Android, затем нажмите «Установить» снова."
                                 ApkInstaller.askPermission(context)
                                 return@TextButton
                             }
@@ -329,7 +329,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                         Row(Modifier.horizontalScroll(rememberScrollState())) {
                             TextButton(enabled = busy == null, onClick = {
                                 if (!ApkInstaller.allowed(context)) {
-                                    note = "Разрешите DPmetaApp устанавливать приложения: откроется настройка Android, затем нажмите «Установить» снова."
+                                    note = "Разрешите DP_IDE устанавливать приложения: откроется настройка Android, затем нажмите «Установить» снова."
                                     ApkInstaller.askPermission(context)
                                     return@TextButton
                                 }
@@ -374,7 +374,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                     Column(Modifier.verticalScroll(rememberScrollState())) {
                         if (r.self && action == ApkAction.INSTALL) {
                             Text(
-                                "Это APK самого DPmetaApp: он заменит работающее приложение, оно закроется и откроется заново. Ставьте, только если собирали его сами.",
+                                "Это APK самого DP_IDE: он заменит работающее приложение, оно закроется и откроется заново. Ставьте, только если собирали его сами.",
                                 Modifier.padding(bottom = 8.dp), color = MaterialTheme.colorScheme.error,
                             )
                         }

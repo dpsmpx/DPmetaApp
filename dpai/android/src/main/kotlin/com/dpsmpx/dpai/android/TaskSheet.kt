@@ -194,7 +194,7 @@ fun TaskSheet(
                 Text(if (moving) "Слот следующего хода ▾" else "Слот следующего хода ▸", Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { moving = !moving }.padding(vertical = 12.dp), fontWeight = FontWeight.SemiBold)
                 if (moving) MoveSection(model, task, d.executor) { c -> send(c) }
                 ChangesSection(model, task)
-                GitHubSendSection(model, task, title)
+                GitHubSendSection(model, task, title, d.objective, d.reviews.map { "Ревью ${it.label}: ${it.verdict}" })
             }
     }
     if (embedded) SidePanel(onDone, title, modifier, menu = menu, content = body) else FullScreenDialog(onDone, title, menu = menu, content = body)

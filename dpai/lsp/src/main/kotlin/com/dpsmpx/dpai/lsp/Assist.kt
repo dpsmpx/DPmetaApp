@@ -215,6 +215,42 @@ object Assist {
         return Fixes(withEdit.sortedWith(compareBy({ !it.preferred }, { it.title })), without.size)
     }
 
+    /**
+     * «Исправить всё без ИИ» (D-187; `DPmetaApp:D-168`): правки и сколько замечаний
+     * исправлено и оставлено.
+     */
+    data class FixAll(val edits: List<TextEdit>, val fixed: Int, val skipped: Int)
+
+    /** Сколько замечаний файла «Исправить всё» спрашивает у службы за раз. */
+    const val MAX_FIX_ALL = 30
+
+    /**
+     * Из ответов службы по каждому замечанию — одна предпочтительная (★) правка этого файла:
+     * только её служба считает верной без выбора человека. Без ★, только командой, с правкой
+     * других файлов или с пересечением уже взятых — замечание остаётся (его — человеку или
+     * ИИ). Одинаковая правка для двух замечаний берётся один раз.
+     */
+    fun fixAll(uri: String, perDiagnostic: List<List<CodeAction>>): FixAll {
+        val taken = mutableListOf<TextEdit>()
+        var fixed = 0
+        var skipped = 0
+        for (actions in perDiagnostic) {
+            val edits = actions.asSequence()
+                .filter { it.preferred && it.edit != null && (it.kind == null || it.kind.startsWith("quickfix")) }
+                .mapNotNull { a -> (editsForFile(a.edit!!, uri) as? Outcome.Success)?.value?.takeIf { it.isNotEmpty() } }
+                .firstOrNull()
+            if (edits == null) { skipped++; continue }
+            val fresh = edits.filter { it !in taken }
+            if (fresh.any { e -> taken.any { overlaps(it.range, e.range) } }) { skipped++; continue }
+            taken += fresh
+            fixed++
+        }
+        return FixAll(taken.sortedBy { it.range.start }, fixed, skipped)
+    }
+
+    /** Пересекаются ли правки; две вставки в одной точке — тоже (порядок не определён). */
+    private fun overlaps(a: Range, b: Range): Boolean = if (a.start == a.end && b.start == b.end) a.start == b.start else a.start < b.end && b.start < a.end
+
     private val IDENTIFIER = Regex("[A-Za-z_][A-Za-z0-9_]*")
     private const val MAX_NAME = 255
 

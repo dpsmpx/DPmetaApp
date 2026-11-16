@@ -65,7 +65,7 @@ class AppDiskProvider : DocumentsProvider() {
         c.newRow().apply {
             add(Root.COLUMN_ROOT_ID, ROOT_ID)
             add(Root.COLUMN_DOCUMENT_ID, DOC_PREFIX)
-            add(Root.COLUMN_TITLE, "DPmetaApp")
+            add(Root.COLUMN_TITLE, "DP_IDE")
             add(Root.COLUMN_SUMMARY, "данные приложения: чтение; запись — Linux /root")
             add(Root.COLUMN_FLAGS, Root.FLAG_LOCAL_ONLY or Root.FLAG_SUPPORTS_IS_CHILD or if (home) Root.FLAG_SUPPORTS_CREATE else 0)
             add(Root.COLUMN_ICON, R.mipmap.ic_launcher)
@@ -97,7 +97,7 @@ class AppDiskProvider : DocumentsProvider() {
         }
         c.newRow().apply {
             add(Document.COLUMN_DOCUMENT_ID, DOC_PREFIX + rel)
-            add(Document.COLUMN_DISPLAY_NAME, if (rel.isEmpty()) "DPmetaApp" else rel.substringAfterLast('/'))
+            add(Document.COLUMN_DISPLAY_NAME, if (rel.isEmpty()) "DP_IDE" else rel.substringAfterLast('/'))
             add(Document.COLUMN_MIME_TYPE, if (dir) Document.MIME_TYPE_DIR else mime(rel))
             add(Document.COLUMN_FLAGS, flags)
             add(Document.COLUMN_SIZE, if (dir) null else runCatching { Files.size(p) }.getOrNull())
@@ -264,7 +264,7 @@ object AppDiskNotice {
         val n = AndroidNotification.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notify_ai)
             .setContentTitle("Диск приложения открыт")
-            .setContentText("Файлы DPmetaApp видны менеджерам файлов (без секретов)")
+            .setContentText("Файлы DP_IDE видны менеджерам файлов (без секретов)")
             .setOngoing(true)
             .addAction(AndroidNotification.Action.Builder(null as android.graphics.drawable.Icon?, "Закрыть", close).build())
             .build()

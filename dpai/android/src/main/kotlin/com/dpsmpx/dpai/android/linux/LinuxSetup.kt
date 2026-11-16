@@ -98,6 +98,11 @@ object LinuxSetup {
         if (!available(context)) return Outcome.failure(DiagCode.UNSUPPORTED, "Linux в приложении — только на телефоне с arm64")
         return environment(context).install(VERSION) { context.assets.open(ASSET) }.also {
             // `~/tools/bin` в PATH оболочек входа и карта — сразу после установки (D-143).
+            // Сброс Alpine оборвался после распаковки (D-196): вернуть сохранённый дом.
+            if (it is Outcome.Success) {
+                val reset = com.dpsmpx.dpai.orchestrator.linux.RootfsReset(NioVfs(context.filesDir.toPath()), context.filesDir.toPath())
+                if (reset.pending()) reset.restore()
+            }
             if (it is Outcome.Success && it.value != null) {
                 environment(context).writeProfile()
                 // Помощник входа Git из GH_TOKEN (D-158): без токена молчит.
@@ -209,12 +214,14 @@ object LinuxSetup {
     }
 
     /** Пакеты Alpine (`apk` без `/proc`, D-82): итог и вывод — для экрана. */
-    fun apk(context: Context, action: LinuxEnvironment.Apk, packages: List<String>): Outcome<Completed> {
+    fun apk(context: Context, action: LinuxEnvironment.Apk, packages: List<String>, snapshot: Boolean = true): Outcome<Completed> {
         if (environment(context).installed() == null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сначала установите Linux")
         val spec = when (val s = LinuxEnvironment.apk(action, packages)) {
             is Outcome.Failure -> return s
             is Outcome.Success -> s.value
         }
+        // Снимок окружения перед правкой (D-194): откат вернёт состояние до неё.
+        if (snapshot) com.dpsmpx.dpai.android.EnvSnapshotStore.take(context, com.dpsmpx.dpai.ui.EnvSnapshots.label(action, packages))
         if (action == LinuxEnvironment.Apk.ADD) {
             (com.dpsmpx.dpai.android.StorageSpace.check(context, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.PACKAGES, null, packages.joinToString(" ")) as? Outcome.Failure)?.let { return it }
         }
@@ -225,12 +232,29 @@ object LinuxSetup {
     }
 
     /**
+     * Только чтение пакетов (D-197, проверка обновлений): `apk update` и `apk version` — без
+     * починки повреждённых, без снимка и без вопроса о месте: в фоне ничего не меняется,
+     * кроме индексов репозиториев в кеше.
+     */
+    fun apkReadOnly(context: Context, action: LinuxEnvironment.Apk): Outcome<Completed> {
+        if (action != LinuxEnvironment.Apk.UPDATE && action != LinuxEnvironment.Apk.LIST_UPGRADES) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "в фоне — только чтение пакетов")
+        if (environment(context).installed() == null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "Linux не установлен")
+        val spec = (LinuxEnvironment.apk(action, emptyList()) as? Outcome.Success)?.value ?: return Outcome.failure(DiagCode.VALUE_INVALID, "команда apk не собрана")
+        refreshDns(context)
+        return host(context).run(spec, 10.minutes, maxStdoutChars = 200_000)
+    }
+
+    /**
      * Шаги установки в госте по очереди (Claude Code, Codex и Gemini, llama.cpp): `apk` — без
      * `/proc` (D-82), остальное — с ним; первый неудачный шаг — итог. Вывод — всех шагов, для
      * экрана; DNS — сети телефона.
      */
-    fun runSteps(context: Context, steps: List<ProcessSpec>): Outcome<Completed> {
+    fun runSteps(context: Context, steps: List<ProcessSpec>, snapshot: Boolean = true): Outcome<Completed> {
         if (environment(context).installed() == null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сначала установите Linux")
+        // Снимок окружения (D-194), если шаги трогают пакеты.
+        if (snapshot && steps.any { it.command.firstOrNull() == "apk" }) {
+            com.dpsmpx.dpai.android.EnvSnapshotStore.take(context, "Установка: " + steps.last().command.joinToString(" ").take(80))
+        }
         refreshDns(context)
         if (steps.any { ProotHost.needsNoProc(it.command) }) (repairBroken(context, force = true) as? Outcome.Failure)?.let { return it }
         val out = mutableListOf<String>()
@@ -260,8 +284,12 @@ object LinuxSetup {
         val argv = if (command.isEmpty()) listOf("/bin/sh", "-l") else command.mapIndexed { i, a -> if (i == 0 && a == "sh") "/bin/sh" else a }
         // 24-битный цвет (терминал:A-23): COLORTERM — как у kitty и Windows Terminal.
         // Секреты, выданные ИИ автором (DPmetaApp:D-114), — и терминалу; слот во вкладке убирает перекрывающие вход сам (`env -u`).
-        val env = ProotHost.GUEST_ENVIRONMENT + com.dpsmpx.dpai.android.SecretGrants.environment(context) +
-            ("TERM" to "xterm-256color") + ("COLORTERM" to com.dpsmpx.dpai.ui.TerminalLaunch.COLORTERM)
+        // Свои переменные автора (D-193) — под окружением гостя: оно сильнее.
+        val env = com.dpsmpx.dpai.android.OwnVariablesStore.under(
+            context,
+            ProotHost.GUEST_ENVIRONMENT + com.dpsmpx.dpai.android.SecretGrants.environment(context) +
+                ("TERM" to "xterm-256color") + ("COLORTERM" to com.dpsmpx.dpai.ui.TerminalLaunch.COLORTERM),
+        )
         val spec = ProcessSpec(argv, environment = env)
         val wrapped = host(context).wrap(spec)
         return JniProcesses().spawn(wrapped.command, wrapped.environment.orEmpty(), null, size)
@@ -296,7 +324,8 @@ object LinuxSetup {
             return com.dpsmpx.dpai.orchestrator.agent.InAppAgentHost.create(
                 home, Clock.SYSTEM, version ?: "dev", JniProcesses(), guestHost(context)!!, ProotHost.GUEST_ENVIRONMENT,
                 // Секреты, выданные ИИ автором (DPmetaApp:D-114; D-144): на каждый запуск, не в документ хода.
-                secrets = { com.dpsmpx.dpai.android.SecretGrants.environment(app) },
+                // Свои переменные (D-193) — на каждый запуск тем же путём; секрет с тем же именем сильнее (имена не пересекаются по проверке).
+                secrets = { com.dpsmpx.dpai.android.OwnVariablesStore.map(app) + com.dpsmpx.dpai.android.SecretGrants.environment(app) },
             )
                 .also { agent = it }
         }
@@ -317,7 +346,9 @@ object LinuxSetup {
                 refreshDns(app)
                 // Раскладка — на каждый запуск: привязка хранилища следует переключателю (D-99).
                 val layout = layout(app)
-                return ProotHost(NativeProcessHost(JniProcesses(), Clock.SYSTEM), layout.copy(binds = layout.binds + ProotLayout.Bind(home, home))).start(spec, onOutput)
+                // Свои переменные автора (D-193) — шагам профилей и Git проекта, под окружением процесса: оно сильнее.
+                val withOwn = spec.copy(environment = com.dpsmpx.dpai.android.OwnVariablesStore.under(app, spec.environment ?: ProotHost.GUEST_ENVIRONMENT))
+                return ProotHost(NativeProcessHost(JniProcesses(), Clock.SYSTEM), layout.copy(binds = layout.binds + ProotLayout.Bind(home, home))).start(withOwn, onOutput)
             }
         }
     }

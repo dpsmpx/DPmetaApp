@@ -11,6 +11,8 @@
         tools:ignore="ScopedStorage" />
     <!-- Такт контроллера при выключенном экране — частичный wakelock службы (D-39). -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Проверка обновлений окружения переживает перезагрузку (D-197); у приложения оно уже есть (DPmetaApp:D-149). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Уведомления контроллера (D-36); на Android 13+ разрешение спрашивается при запуске. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Контроллер в фоне — служба переднего плана (D-36). -->
@@ -71,6 +73,11 @@
             android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize" />
         <!-- Ответы на запросы — только через PendingIntent своего уведомления (D-44). -->
+        <!-- Проверка обновлений окружения раз в сутки (D-197): Wi-Fi и зарядка; только чтение. -->
+        <service
+            android:name=".EnvUpdatesJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
         <receiver
             android:name=".RequestReceiver"
             android:exported="false" />

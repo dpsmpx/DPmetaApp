@@ -50,7 +50,7 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onTar
         }
         LINUX -> {
             BackHandler { onSub(null) }
-            LinuxScreen(onBack = { onSub(null) })
+            LinuxScreen(onBack = { onSub(null) }, controller = controller, model = model)
             return
         }
         GITHUB -> {

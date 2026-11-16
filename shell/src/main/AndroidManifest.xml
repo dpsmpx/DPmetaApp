@@ -8,7 +8,7 @@
     <!-- Процесс — DpmetaApplication: процесс «AI» и вход по PIN на все окна (D-59). -->
     <application
         android:name=".DpmetaApplication"
-        android:label="DPmetaApp"
+        android:label="DP_IDE"
         android:icon="@mipmap/ic_launcher_dpmeta"
         android:roundIcon="@mipmap/ic_launcher_dpmeta"
         tools:replace="android:name,android:label,android:icon,android:roundIcon">

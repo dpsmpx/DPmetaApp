@@ -88,7 +88,7 @@ internal object ApkReview {
             is Outcome.Success -> {
                 append("Пакет: ${meta.value.packageName}\nВерсия: ${meta.value.versionName ?: "?"} (${meta.value.versionCode})\n")
                 append("Установлено: ${meta.value.installed ?: "нет"}\n")
-                if (meta.value.self) append("Это APK самого DPmetaApp.\n")
+                if (meta.value.self) append("Это APK самого DP_IDE.\n")
             }
             is Outcome.Failure -> append(meta.diagnostics.first().message + "\n")
         }

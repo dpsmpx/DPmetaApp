@@ -36,6 +36,8 @@ open class DpaiApplication : Application() {
         runCatching { AppDiskNotice.sync(this) }
         // DNS гостя — и при смене сети (D-158): без этого гость спрашивал прежние серверы.
         runCatching { com.dpsmpx.dpai.android.linux.LinuxSetup.watchDns(this) }
+        // Проверка обновлений окружения раз в сутки (D-197): по настройке, по умолчанию включена.
+        runCatching { EnvUpdatesJob.schedule(this) }
     }
 
     /**

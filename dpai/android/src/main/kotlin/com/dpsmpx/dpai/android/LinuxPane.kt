@@ -50,7 +50,7 @@ import kotlinx.coroutines.withContext
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun LinuxScreen(onBack: () -> Unit) {
+fun LinuxScreen(onBack: () -> Unit, controller: Controller? = null, model: DemoModel? = null) {
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     val available = remember { LinuxSetup.available(context) }
@@ -77,6 +77,12 @@ fun LinuxScreen(onBack: () -> Unit) {
     var howto by rememberSaveable { mutableStateOf(false) }
     var slotMenu by remember { mutableStateOf(false) }
     var sdkOpen by remember { mutableStateOf(false) }
+    var envOpen by rememberSaveable { mutableStateOf(false) }
+    if (envOpen) {
+        androidx.activity.compose.BackHandler { envOpen = false }
+        EnvironmentScreen(onBack = { envOpen = false }, controller = controller, model = model)
+        return
+    }
 
     fun run(label: String, job: () -> Outcome<com.dpsmpx.dpai.execution.process.Completed>, done: (com.dpsmpx.dpai.execution.process.Completed) -> String) {
         allOutput = false
@@ -105,7 +111,10 @@ fun LinuxScreen(onBack: () -> Unit) {
             else -> {
                 Text("Установлено: $installed", style = MaterialTheme.typography.bodySmall)
                 // Терминал — первым и заметным (терминал §4, п. 9).
-                Button(onClick = { TerminalActivity.startLinux(context) }) { Text("Терминал") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { TerminalActivity.startLinux(context) }) { Text("Терминал") }
+                    OutlinedButton(onClick = { envOpen = true }) { Text("Окружение: пакеты…") }
+                }
                 OutlinedTextField(packages, { packages = it }, label = { Text("Пакеты, например: git nodejs npm") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(enabled = !running && packages.isNotBlank(), onClick = { apk(LinuxEnvironment.Apk.ADD, "Поставить") }) { Text("Поставить") }
@@ -233,7 +242,7 @@ fun AppDiskCard() {
             }
             Text(
                 if (open) {
-                    "Открыт: в менеджере файлов — «DPmetaApp» в системном выборе папки (в Total Commander — «Добавить место» → системный выбор). " +
+                    "Открыт: в менеджере файлов — «DP_IDE» в системном выборе папки (в Total Commander — «Добавить место» → системный выбор). " +
                         "Только чтение; файлы можно класть в Linux /root. Токена dpai и входов Claude на диске нет."
                 } else {
                     "Закрыт: файлы приложения не видны другим программам. Откройте, чтобы смотреть журналы, копии журнала и файлы Linux менеджером файлов."
