@@ -106,7 +106,7 @@ class ProcessSupervision(
 
     override fun awaitEnd(id: SessionId, supervisor: ProcessMark, timeout: Duration): Boolean {
         val h = find(supervisor) ?: return true
-        return ProcessTree.awaitExit(h, timeout, clock)
+        return runCatching { ProcessTree.awaitExit(h, timeout, clock) }.getOrDefault(false)
     }
 
     override fun stopSupervisor(id: SessionId, supervisor: ProcessMark, child: ProcessMark?, grace: Duration): StopResult {
