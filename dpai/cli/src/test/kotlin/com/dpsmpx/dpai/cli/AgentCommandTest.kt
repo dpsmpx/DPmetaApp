@@ -130,7 +130,9 @@ class AgentCommandTest {
             seen.firstOrNull { it.type == EventType.TARGET_PROCESS_OUTPUT && it.payload["text"] == JsonString("ready") }
         }
         val pid = client.status(run).valueOrNull()!!.pid!!
-        val stopped = client.stop(run, 2.seconds).valueOrNull()!!
+        val stopReply = client.stop(run, 2.seconds)
+        assertTrue(stopReply.isSuccess, stopReply.diagnostics.toString())
+        val stopped = stopReply.valueOrNull()!!
         assertEquals(RunState.EXITED, stopped.run!!.state)
         assertEquals(emptyList(), stopped.stop!!.survivors)
         assertFalse(ProcessHandle.of(pid).map { it.isAlive }.orElse(false))
@@ -160,7 +162,9 @@ class AgentCommandTest {
             seen.firstOrNull { it.type == EventType.TARGET_PROCESS_OUTPUT && it.payload["text"] == JsonString("ready") }?.takeIf { source.served > 0 }
         }
         assertEquals(1, source.started)
-        assertEquals(RunState.EXITED, client.stop(run, 2.seconds).valueOrNull()!!.run!!.state)
+        val stopReply = client.stop(run, 2.seconds)
+        assertTrue(stopReply.isSuccess, stopReply.diagnostics.toString())
+        assertEquals(RunState.EXITED, stopReply.valueOrNull()!!.run!!.state)
         RealTime.await(60.seconds, "конец хода получен") {
             seen += channel.poll().valueOrNull()!!.events
             seen.lastOrNull()?.takeIf { it.type == EventType.TARGET_PROCESS_EXITED }
@@ -184,7 +188,9 @@ class AgentCommandTest {
         val run = ids.next(IdKinds.SESSION)
         assertTrue(client.start(run, RunSpec(hangCommand())).isSuccess)
         RealTime.await(60.seconds, "супервизор взял ход") { client.status(run).valueOrNull()?.takeIf { it.state == RunState.RUNNING } }
-        assertEquals(RunState.EXITED, client.stop(run, 2.seconds).valueOrNull()!!.run!!.state)
+        val stopReply = client.stop(run, 2.seconds)
+        assertTrue(stopReply.isSuccess, stopReply.diagnostics.toString())
+        assertEquals(RunState.EXITED, stopReply.valueOrNull()!!.run!!.state)
     }
 
     /**
@@ -220,7 +226,9 @@ class AgentCommandTest {
         val source = FollowingEventSource(client, Clock.SYSTEM)
         val channel = RunChannel(source, run)
         RealTime.await(60.seconds, "строка потока по SSH") { channel.poll().valueOrNull(); if (source.served > 0) Unit else null }
-        val stopped = client.stop(run, 2.seconds).valueOrNull()!!
+        val stopReply = client.stop(run, 2.seconds)
+        assertTrue(stopReply.isSuccess, stopReply.diagnostics.toString())
+        val stopped = stopReply.valueOrNull()!!
         assertEquals(RunState.EXITED, stopped.run!!.state)
         assertEquals(emptyList(), stopped.stop!!.survivors)
         RealTime.await(60.seconds, "поток кончился с ходом") { channel.poll(); if (source.streaming == 0) Unit else null }
