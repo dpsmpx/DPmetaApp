@@ -93,7 +93,7 @@ internal object KeyWrap {
             val plain = KeyEnvelope.open(key(alias, userAuth), alias, name, sealed)
             if (KeyEnvelope.isLegacy(sealed)) {
                 // write затирает свой аргумент; исходник нужен вызывающему только
-                // после проверенной атомарной миграции. Отказ сохраняет старый файл.
+                // после проверенной атомарной миграции. Отказ до замены сохраняет старый файл.
                 when (val migrated = write(base, alias, userAuth, name, plain.copyOf())) {
                     is Outcome.Failure -> { plain.fill(0); return migrated }
                     is Outcome.Success -> Unit
