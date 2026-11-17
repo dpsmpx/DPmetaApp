@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Имя слушателя уведомлений в настройках Android «Доступ к уведомлениям» (F-57; D-155). -->
-<resources>
-    <string name="listener_label">DP_IDE: уведомления из белого списка</string>
-</resources>

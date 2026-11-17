@@ -95,11 +95,10 @@ class OwnDocumentsTest {
         assertEquals(named + ai, catalog.types.map { it.type }.toSet(), "каталог — ровно типы ТЗ, §8.1 и дополнение D-142; обязательных категорий в нём нет")
         for (t in com.dpsmpx.dpmeta.metrics.Feed.TYPES.values) assertTrue(catalog.type(t) != null, "вид ленты $t — не в каталоге")
         val rules = AlertFormat.parse(text("config/alerts.toml"), catalog, "config/alerts.toml").ok("config/alerts.toml").rules
-        assertEquals(21, rules.size, "12 правил F-37 после снятия ntfy D-173, 6 правил ИИ D-142, слушатель D-155, чат и PR D-161")
-        assertTrue(rules.any { it.id == "app.claude" && it.on == "app.notification" }, "правило слушателя D-155")
+        assertEquals(20, rules.size, "12 правил F-37 после снятия ntfy D-173, 6 правил ИИ D-142, чат и PR D-161")
         assertTrue(rules.any { it.id == "chat.done" && it.on == "chat.answer.done" } && rules.any { it.id == "routine.pr" && it.on == "pr.opened" }, "правила F-58 (D-161)")
         assertTrue(rules.all { it.enabled })
-        assertTrue(rules.none { it.id in setOf("claude.input", "claude.done") }, "стандартных правил снятого канала ntfy нет")
+        assertTrue(rules.none { it.id in setOf("claude.input", "claude.done", "app.claude") }, "стандартных правил снятых источников D-173 нет")
         assertTrue(rules.all { it.quiet }, "обычные уведомления учитывают тихие часы")
     }
 
