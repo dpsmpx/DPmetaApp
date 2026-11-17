@@ -1,11 +1,13 @@
 package com.dpsmpx.dpai.execution.process
 
 import com.dpsmpx.dpai.core.clock.Clock
+import com.dpsmpx.dpai.execution.linux.ProcStat
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Duration.Companion.nanoseconds
 
 /**
  * Остановка дерева процессов (ТЗ, §119): список потомков снимается до
@@ -22,6 +24,34 @@ object ProcessTree {
      * (7 октября 2026, `AgentRuntimeTest`).
      */
     private val FORCE_WAIT = 10.seconds
+    private val EXIT_POLL_NANOS = 100_000_000L
+
+    /** JDK считает зомби живым до waitpid родителя; код он уже не исполняет. */
+    fun alive(handle: ProcessHandle): Boolean {
+        if (!handle.isAlive) return false
+        val state = ProcStat.of(handle.pid())?.state
+        // Нет /proc (Windows) или нет доступа — сохраняется консервативный ответ JDK.
+        return state != 'Z' && state != 'X'
+    }
+
+    /** Выход, включая зомби чужого родителя, который может не вызывать waitpid. */
+    fun awaitExit(handle: ProcessHandle, timeout: Duration, clock: Clock): Boolean {
+        if (!alive(handle)) return true
+        val deadline = clock.monotonicNanos() + timeout.inWholeNanoseconds
+        val exited = handle.onExit()
+        while (alive(handle)) {
+            val left = deadline - clock.monotonicNanos()
+            if (left <= 0) return !alive(handle)
+            try {
+                exited.get(minOf(left, EXIT_POLL_NANOS), TimeUnit.NANOSECONDS)
+            } catch (_: TimeoutException) {
+                // Проверяем /proc снова: onExit ждёт уборки зомби, а не только конца кода.
+            } catch (_: ExecutionException) {
+                return !alive(handle)
+            }
+        }
+        return true
+    }
 
     /** Итог: [forced] — понадобилось принудительное завершение; [survivors] — кто выжил. */
     data class Result(val forced: Boolean, val survivors: List<Long>)
@@ -52,13 +82,14 @@ object ProcessTree {
             waitAll(tree.values, FORCE_WAIT, clock)
         }
         snapshot()
-        return Result(forced, tree.values.filter { it.isAlive }.map { it.pid() })
+        return Result(forced, tree.values.filter(::alive).map { it.pid() })
     }
 
     /**
-     * Живой процесс с идентификатором [pid], запущенный в [startedAtMillis]
+     * Процесс с идентификатором [pid], запущенный в [startedAtMillis]
      * (±1 с): идентификатор мог достаться другому процессу, и убить чужой
-     * процесс нельзя. Без известного времени старта — `null`.
+     * процесс нельзя. Без известного времени старта — `null`. Зомби сохраняет
+     * личность: его сеанс ещё может содержать живых потомков; жизнь — [alive].
      */
     fun find(pid: Long, startedAtMillis: Long?, bootAtMillis: Long? = null): ProcessHandle? = find(pid, startedAtMillis, bootAtMillis, bootMillis())
 
@@ -81,21 +112,15 @@ object ProcessTree {
     }
 
     /** Сеанс процесса [pid] (`/proc/<pid>/stat`, поле 6; Linux и Android); где его нет — `null`. */
-    fun sessionOf(pid: Long): Long? = try {
-        java.io.File("/proc/$pid/stat").takeIf { it.isFile }?.readText()
-            ?.substringAfterLast(')')?.trim()?.split(' ')?.getOrNull(3)?.toLongOrNull()
-    } catch (_: java.io.IOException) {
-        null
-    }
+    fun sessionOf(pid: Long): Long? = ProcStat.of(pid)?.session
 
     /** Свой сеанс, если этот процесс — его лидер (супервизор, запущенный через `setsid`); иначе `null`. */
     fun ownSession(): Long? = ProcessHandle.current().pid().takeIf { sessionOf(it) == it }
 
     private fun sessionMembers(sid: Long): List<ProcessHandle> {
-        val dirs = java.io.File("/proc").listFiles { f -> f.isDirectory && f.name.all(Char::isDigit) }.orEmpty()
-        return dirs.mapNotNull { d -> d.name.toLongOrNull()?.takeIf { sessionOf(it) == sid } }
+        return ProcStat.livingInSession(sid)
             .mapNotNull { ProcessHandle.of(it).orElse(null) }
-            .filter { it.isAlive }
+            .filter(::alive)
     }
 
     /** Время загрузки (`btime` из `/proc/stat`, Linux и Android); где его нет — `null`. */
@@ -113,15 +138,9 @@ object ProcessTree {
         val deadline = clock.monotonicNanos() + limit.inWholeNanoseconds
         for (h in handles) {
             val left = deadline - clock.monotonicNanos()
-            if (left <= 0) return handles.none { it.isAlive }
-            try {
-                h.onExit().get(left, TimeUnit.NANOSECONDS)
-            } catch (_: TimeoutException) {
-                return false
-            } catch (_: ExecutionException) {
-                // onExit завершился ошибкой — процесс ОС уже недоступен; ниже проверяется isAlive.
-            }
+            if (left <= 0) return handles.none(::alive)
+            if (!awaitExit(h, left.nanoseconds, clock)) return false
         }
-        return handles.none { it.isAlive }
+        return handles.none(::alive)
     }
 }
