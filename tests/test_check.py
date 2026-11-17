@@ -722,7 +722,7 @@ class ModulesTest(CheckCase):
         self.assertCatches(s.run("modules.root"), "модуль :core:store не описан")
 
     def test_shells_depend_on_all(self):
-        s = self.sample({"cli/build.gradle.kts": 'dependencies {\n    implementation(project(":core:sync"))\n    implementation("com.dpsmpx.dpai:orchestrator")\n}\n'})
+        s = self.sample({"app/build.gradle.kts": 'dependencies {\n    implementation(project(":core:sync"))\n    implementation("com.dpsmpx.dpai:orchestrator")\n}\n'})
         self.assertClean(s.run("modules.root"))
 
     def test_code_rules(self):

@@ -86,7 +86,7 @@ class GitHubReader(private val gh: GitHub, private val host: RepoRef) : SourceRe
 }
 
 /**
- * Каталог на диске: синтетический корпус (`dpmeta-cli sync --corpus`) или
+ * Каталог на диске: синтетический корпус или
  * клоны репозиториев (`--clones`). Каталог проекта — `clone` из реестра,
  * иначе имя; подсистема — в каталоге клона DPmetaApp. PR и ветки — из
  * `pulls.json` и `branches.json` каталога проекта, если они есть (корпус):
@@ -197,7 +197,7 @@ class DirectoryReader(private val root: Path, private val hostDir: String = "dpm
         }
     }
 
-    /** Имена файлов каталога проекта на диске (корпус, клоны `dpmeta-cli`); каталога нет — «нет». */
+    /** Имена файлов каталога проекта на диске (корпус, клоны); каталога нет — «нет». */
     override fun names(project: ProjectEntry, dir: String): Outcome<List<String>>? {
         checkPath(dir).let { if (it is Outcome.Failure) return it }
         val d = dir(project).resolve(dir)

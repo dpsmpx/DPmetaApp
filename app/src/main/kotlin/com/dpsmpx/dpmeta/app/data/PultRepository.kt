@@ -556,7 +556,7 @@ class PultRepository(
         gh.viewer().valueOrNull()?.let { saveViewer(it) }
         etags.save()
         val s = net.stats
-        // Числа замера A-02 (ТЗ; как строка `dpmeta-cli sync --live`): запросы, доля 304, время.
+        // Числа замера A-02 (ТЗ; строка итога синхронизации): запросы, доля 304, время.
         val share = if (s.requests == 0) 0 else s.notModified * 100 / s.requests
         val seconds = (clock.monotonicNanos() - started) / 1_000_000_000.0
         val line = "запросов ${s.requests}, без изменений ${s.notModified} ($share %), отказов источников ${result.failures.size + cloned.failures.size}, " +

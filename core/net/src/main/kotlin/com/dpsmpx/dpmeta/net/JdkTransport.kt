@@ -9,7 +9,7 @@ import java.net.http.HttpResponse.BodyHandlers
 import java.time.Duration
 
 /**
- * Транспорт на `java.net.http` для `dpmeta-cli` и тестов на JVM; у телефона
+ * Транспорт на `java.net.http` для тестов на JVM; у телефона
  * транспорт свой, в `:app`. TLS — системными корнями, своего `TrustManager`
  * нет (ТЗ, §6.8); переадресации выключены.
  */

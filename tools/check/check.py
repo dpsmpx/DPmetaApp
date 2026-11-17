@@ -539,16 +539,16 @@ ROOT_MODULES = {
     ":core:sync": {":core:model", ":core:formats", ":core:net", ":core:github", ":core:git", ":core:site", ":core:social"},
 }
 # Оболочки и тесты зависят от всех (ТЗ, §6.2); :shell — приложение из корня (D-35, D-53).
-ROOT_SHELLS = (":cli", ":app", ":shell", ":tests:")
+ROOT_SHELLS = (":app", ":shell", ":tests:")
 DPAI_CORE = {"core", "storage", "security", "notifications"}
 MODULE_DEP = re.compile(r'project\(\s*"(:[\w:-]+)"\s*\)|"com\.dpsmpx\.dpai:([\w-]+)"')
 # Код модулей корня (не оболочек): правила кода CLAUDE.md — Android только в оболочке,
-# время — Clock, печать — только cli, секрет раскрывается в одном месте сети.
+# время — Clock, вывод — Diagnostic, секрет раскрывается в одном месте сети.
 MODULE_CODE_RULES = (
     (re.compile(r"^\s*import\s+(?:android|androidx)\."), "Android-типы — только в оболочке (D-03)"),
     (re.compile(r"System\.currentTimeMillis|Instant\.now\(|LocalDateTime\.now\("), "время — через Clock ядра"),
-    (re.compile(r"Thread\.sleep|GlobalScope|runBlocking"), "без сна и глобальных корутин вне cli"),
-    (re.compile(r"(?<![\w.])println\(|System\.out|System\.err"), "печать — только в cli; остальное — Diagnostic"),
+    (re.compile(r"Thread\.sleep|GlobalScope|runBlocking"), "без сна и глобальных корутин в модулях ядра"),
+    (re.compile(r"(?<![\w.])println\(|System\.out|System\.err"), "печать — в оболочке; здесь — Diagnostic"),
 )
 REVEAL = re.compile(r"\.reveal\s*\(\s*\)")
 REVEAL_HOME = "core/net/src/main/kotlin/com/dpsmpx/dpmeta/net/Auth.kt"

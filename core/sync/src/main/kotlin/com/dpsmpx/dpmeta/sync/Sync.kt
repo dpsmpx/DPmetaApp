@@ -117,7 +117,7 @@ class SyncResult(val observations: List<Observation>, val failures: List<SourceF
 
 /**
  * Как выполнить независимые запросы (даты коммитов веток): по очереди или
- * пулом потоков оболочки (`dpmeta-cli`). Порядок итогов — порядок задач.
+ * пулом потоков оболочки. Порядок итогов — порядок задач.
  */
 interface Parallel {
     fun <T> all(jobs: List<() -> T>): List<T>

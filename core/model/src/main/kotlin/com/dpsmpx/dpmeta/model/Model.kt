@@ -67,7 +67,7 @@ enum class ObservationSource(val code: String) {
     SOCIAL("social"),
     MANUAL("manual"),
 
-    /** Каталог на диске: синтетический корпус или клоны репозиториев (`dpmeta-cli sync --corpus`/`--clones`). */
+    /** Каталог на диске: синтетический корпус или клоны репозиториев. */
     DIRECTORY("directory"),
     ;
 

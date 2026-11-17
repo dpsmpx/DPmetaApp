@@ -22,12 +22,12 @@ DPmetaApp/                        сборка Gradle из корня: ./gradlew
 ├── dpai/                         подсистема «AI» (DP_AI_Orcestrator) и ядро приложения
 │   ├── core storage security notifications      ← ядро: общее для всех подсистем
 │   ├── accounts execution sessions tasks contexts git verification
-│   │   monitoring ecosystem connectors analytics orchestrator   ← контур «AI»
+│   │   monitoring connectors analytics orchestrator   ← контур «AI»
 │   ├── ui cli jsch               представление без платформы, команда dpai, SSH на JVM
 │   ├── android                   оболочка Android — библиотека (DP_AI_Orcestrator:D-103)
 │   └── android-app               отдельная сборка «AI» (D-35)
 ├── dpmeta/                       подсистема DPmeta (D-43): реестр экосистемы, контракты, очередь, свой процесс
-├── core/ cli/ app/               модули DPmetaApp на ядре dpai/ (ТЗ, §6.2); app — пульт
+├── core/ app/               модули DPmetaApp на ядре dpai/ (ТЗ, §6.2); app — пульт
 ├── shell/                        приложение DPmetaApp — один APK: пульт и «AI» (D-53)
 ├── config/projects/              панели проектов (F-10, D-57)
 ├── config/briefs/                шаблоны поручений Claude (F-23)
@@ -75,7 +75,7 @@ DPpass и DPvisualisation — в своих репозиториях (D-174, D-1
   таблице `dpai/docs/ARCHITECTURE.md`, §2; для модулей DPmetaApp —
   проверка `modules.root` (`tools/check/check.py`, таблица `ROOT_MODULES`):
   направления по ТЗ, §6.2 и правила их кода — Android только в оболочке,
-  время через `Clock`, печать только в `:cli`, секрет раскрывается в одном
+  время через `Clock`, вывод через диагностики, секрет раскрывается в одном
   месте (`core/net/…/Auth.kt`).
 
 ### Модули DPmetaApp (этап 2)
@@ -91,7 +91,6 @@ DPpass и DPvisualisation — в своих репозиториях (D-174, D-1
 | `:core:actions` | действия с уровнями (ТЗ, §6.5; D-07, D-36, D-37; этап 5): каталог видов с уровнем у вида (ветка и PR — 1, `main` и слияние — 2, перезапись истории и удаления — 3), политика подтверждений — уровень 1 «показано», 2 — только PIN или биометрия, 3 — только ввод точного имени (A-06); одобрение — `dpai/security`, на хеш предложения, однократное, 2 мин; журнал действий (F-44) — `ACTION_REQUESTED`, `ACTION_SETTLED`, `ACTION_REFUSED` в журнале `dpai/storage` (файл `actions.jsonl` в данных приложения): запись до исполнения, итог, отказ; запрошенное без итога — «итог неизвестен»; параметры — через `Redactor`; исполнитель — у оболочки | `model`, ядро (`storage`, `security`) |
 | `:core:notify` | движок правил тревог (ТЗ, §6.7, F-51…F-53; D-85; этап 7): события, каталог, правила, время, тихие часы и недавно показанное → решения (`notify`, `digest`, лента, `silent`); событие неизвестного типа — `RULE_INVALID`; решает первое подходящее включённое правило; антидребезг по правилу и проекту; «что сработало бы» за 7 дней тем же движком; каталог `config/events.toml` и правила `config/alerts.toml` разбирает `:core:formats`, типы — в `:core:model` | `model` |
 | `:core:sync` | план по реестру с приоритетом (PR → ветки → файлы), чтение GitHub или каталога (корпус, клоны), отказы по источникам, отложенное по бюджету | `formats`, `github` |
-| `:cli` | `dpmeta-cli`: `sync --corpus/--clones/--live`, `state`, `history`, `smoke` | все |
 | `:tests:corpus` | синтетический корпус «ловит / пропускает» (`samples/`), экосистема для синхронизации (`ecosystem/`), свои документы DPmetaApp как образцы | все |
 
 ### Пульт `:app` (этап 3)

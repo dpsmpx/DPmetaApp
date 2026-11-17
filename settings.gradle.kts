@@ -1,5 +1,5 @@
 // Сборка DPmetaApp из корня (D-28, D-29): подсистема «AI» и ядро — включённая
-// сборка dpai/; модули DPmetaApp — core/ и cli/ корня (ТЗ, §6.2) на ядре dpai/,
+// сборка dpai/; модули DPmetaApp — core/ корня (ТЗ, §6.2) на ядре dpai/,
 // с его convention-плагинами и каталогом версий — второго набора нет.
 pluginManagement {
     includeBuild("dpai/build-logic")
@@ -62,7 +62,6 @@ include(":core:sync")
 include(":core:git")
 include(":core:actions")
 include(":core:notify")
-include(":cli")
 include(":tests:corpus")
 
 // Пульт DPmetaApp (этап 3): Android-библиотека :app — экраны на Compose, хранилище с
