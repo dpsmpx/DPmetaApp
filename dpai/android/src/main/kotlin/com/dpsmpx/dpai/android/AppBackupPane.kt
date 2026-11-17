@@ -65,6 +65,7 @@ fun AppBackupCard() {
     var plan by remember { mutableStateOf<SavePlan?>(null) }
     var restoreBytes by remember { mutableStateOf<ByteArray?>(null) }
     var archive by remember { mutableStateOf<AppBackup.Archive?>(null) }
+    var archiveEncrypted by remember { mutableStateOf(false) }
     var restarting by remember { mutableStateOf(false) }
     val lastAuto = rememberRead(refresh, initial = null) { AppBackups.lastAuto(app) }
     val applied = rememberRead(Unit, initial = null) { AppBackups.lastApplied(app, clear = true) }
@@ -103,11 +104,12 @@ fun AppBackupCard() {
                 is Outcome.Failure -> status = "Копия не прочитана: ${r.errors.first().message}"
                 is Outcome.Success -> if (AppBackup.sealed(r.value)) {
                     status = null
+                    archiveEncrypted = true
                     restoreBytes = r.value
                 } else {
                     when (val a = AppBackups.open(r.value, null)) {
                         is Outcome.Failure -> status = "Копия не прочитана: ${a.errors.first().message}"
-                        is Outcome.Success -> { status = null; archive = a.value }
+                        is Outcome.Success -> { status = null; archiveEncrypted = false; archive = a.value }
                     }
                 }
             }
@@ -155,7 +157,7 @@ fun AppBackupCard() {
         }
     }
     archive?.let { a ->
-        RestoreDialog(a, onCancel = { archive = null }) { ids ->
+        RestoreDialog(a, archiveEncrypted, onCancel = { archive = null }) { ids ->
             archive = null
             busy = true
             status = "Восстанавливаю…"
@@ -254,7 +256,7 @@ private fun PasswordDialog(onCancel: () -> Unit, onOpen: (Secret, (String?) -> U
 }
 
 @Composable
-private fun RestoreDialog(a: AppBackup.Archive, onCancel: () -> Unit, onRestore: (Set<String>) -> Unit) {
+private fun RestoreDialog(a: AppBackup.Archive, encrypted: Boolean, onCancel: () -> Unit, onRestore: (Set<String>) -> Unit) {
     val known = remember { AppBackups.sections().associateBy { it.id } }
     val present = a.sections.filter { !it.empty }
     // Неизвестный этой версии раздел не выбирается: его некуда разложить.
@@ -265,6 +267,8 @@ private fun RestoreDialog(a: AppBackup.Archive, onCancel: () -> Unit, onRestore:
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Копия от ${dateText(a.createdAt)}" + (a.appVersion?.let { ", версия $it" } ?: "") + ".", style = MaterialTheme.typography.bodySmall)
+                if (!encrypted) Text("Копия без пароля не защищена от подмены: в ней могли изменить адреса ПК, доверенные ключи SSH и команды профилей. Восстанавливайте только свою копию из доверенного места.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 for (s in present) {
                     val title = if (s.id == AppBackup.SECRETS) "${AppBackups.SECRETS_TITLE} (${s.secrets.size})" else known[s.id]?.title ?: "${s.id} — неизвестен этой версии"
                     val what = if (s.id == AppBackup.SECRETS) "записываются сразу, поверх нынешних с тем же именем" else known[s.id]?.what.orEmpty()
