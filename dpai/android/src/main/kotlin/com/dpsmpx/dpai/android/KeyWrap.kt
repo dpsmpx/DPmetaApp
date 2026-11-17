@@ -68,7 +68,7 @@ internal object KeyWrap {
         v.write("$name.tmp", sealed)
         // Прочитать именно записанное до замены прежнего файла; неверная
         // запись или ключ оставляют прежнюю копию на месте.
-        val saved = v.read("$name.tmp")
+        val saved = checkNotNull(v.read("$name.tmp")) { "временная копия ключа не прочитана" }
         val verify = Cipher.getInstance(TRANSFORMATION).apply {
             init(Cipher.DECRYPT_MODE, key(alias, userAuth), GCMParameterSpec(128, saved, 0, IV))
         }.doFinal(saved, IV, saved.size - IV)
