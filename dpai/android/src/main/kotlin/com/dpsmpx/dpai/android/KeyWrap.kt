@@ -59,6 +59,7 @@ internal object KeyWrap {
         }
         val v = vfs(base)
         v.write("$name.tmp", sealed)
+        v.fsync("$name.tmp")
         // Прочитать именно записанное до замены прежнего файла; неверная
         // запись или ключ оставляют прежнюю копию на месте.
         val saved = checkNotNull(v.read("$name.tmp")) { "временная копия ключа не прочитана" }
@@ -69,6 +70,7 @@ internal object KeyWrap {
             verify.fill(0)
         }
         v.rename("$name.tmp", name)
+        v.fsyncDir("")
         Outcome.success(Unit)
     } catch (e: UserNotAuthenticatedException) {
         Outcome.failure(DiagCode.DEVICE_AUTH_REQUIRED, "нужен вход по PIN или отпечатку", name)
