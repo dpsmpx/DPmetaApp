@@ -71,22 +71,13 @@ class OwnDocumentsTest {
         }
     }
 
-    /**
-     * Реестр команд (F-40, F-43; D-82): разбирается, проекты — из реестра DPmeta, не из
-     * архива; уровень 1 — только `repo.ff`, и он — для любого проекта.
-     */
+    /** D-176: в APK только общие команды пользователя, без записей реестра DPmeta. */
     @Test
-    fun ownCommandsParseAndNameRegistryProjects() {
-        val r = RegistryFormat.parse(text("dpmeta/tools/ecosystem.toml")).ok("реестр DPmeta")
+    fun ownCommandsAreGeneric() {
         val commands = CommandFormat.parse(text("config/commands.toml"), "config/commands.toml").ok("config/commands.toml").commands
-        assertTrue(commands.size >= 5, "команд: ${commands.size}")
-        for (c in commands) {
-            if (c.anyProject) continue
-            val p = r.byName(c.project) ?: fail("${c.id}: проекта ${c.project} нет в реестре")
-            assertTrue(p.place.shown, "${c.id}: проект ${c.project} — в архиве")
-        }
+        assertEquals(listOf("repo.ff"), commands.map { it.id })
+        assertTrue(commands.all { it.anyProject }, "нет команд под проекты автора")
         assertEquals(listOf("repo.ff"), commands.filter { it.level == 1 }.map { it.id })
-        assertTrue(commands.first { it.id == "repo.ff" }.project == CommandSpec.ANY)
     }
 
     /**
