@@ -226,14 +226,17 @@ musl-сборка `@anthropic-ai/claude-code-linux-arm64-musl` распаков�
 `android` только рисует (D-34). Сборка и установка на устройство по USB:
 
 ```sh
-./gradlew :android-app:assembleDebug
-adb install -r android-app/build/outputs/apk/debug/android-app-debug.apk
-adb shell am start -n com.dpsmpx.dpai/com.dpsmpx.dpai.android.MainActivity
+cd ..  # из dpai/ в корень DPmetaApp
+./gradlew :shell:assembleDebug
+adb install -r shell/build/outputs/apk/debug/shell-debug.apk
+adb shell am start -n com.dpsmpx.dpai/com.dpsmpx.dpmeta.shell.DpmetaActivity
 adb shell dumpsys gfxinfo com.dpsmpx.dpai   # кадры: Janky frames, перцентили
 ```
 
-Кадры меряются на release (`:android-app:assembleRelease`, пока подписан
-отладочным ключом): debug-сборка Compose в разы медленнее. На устройствах
+В приложении откройте вкладку «AI»: её Activity не экспортируется наружу.
+Кадры меряются на release (`:shell:assembleRelease` из корня DPmetaApp,
+подпись — по `docs/PROCESS.md`, §6): debug-сборка Compose в разы медленнее.
+На устройствах
 с выключенным системным журналом (Realme C21Y) причина падения — в
 `files/last-crash.txt` приложения: `adb shell run-as com.dpsmpx.dpai cat
 files/last-crash.txt` (только debug).

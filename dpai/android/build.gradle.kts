@@ -1,7 +1,7 @@
 // Оболочка Android (D-02, D-34) — библиотека (D-103, DPmetaApp:D-53): Compose рисует
-// состояния экранов из ui; логики здесь нет. APK собирают тонкие приложения: отдельная
-// сборка «AI» `android-app` и приложение DPmetaApp из корня; личность пакета, версия,
-// подпись и упаковка — у них. Подключается только при Android SDK (settings.gradle.kts).
+// состояния экранов из ui; логики здесь нет. APK собирает приложение DPmetaApp из корня;
+// отдельная упаковка подсистемы снята D-201. Личность пакета, версия,
+// подпись и упаковка — у приложения. Подключается только при Android SDK (settings.gradle.kts).
 // Плагины Android и Compose — convention-плагин build-logic (D-102).
 import java.net.URI
 import java.nio.ByteBuffer

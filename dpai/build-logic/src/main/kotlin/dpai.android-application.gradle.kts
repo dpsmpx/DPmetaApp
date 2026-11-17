@@ -1,6 +1,6 @@
-// Приложение Android (D-102, D-103; DPmetaApp:D-53): отдельная сборка «AI» `android-app` и
-// приложение DPmetaApp `:shell` из корня. Плагины — с classpath build-logic, как Kotlin. Здесь же —
-// общее обеим сборкам `com.dpsmpx.dpai`: ключ выпуска (один — иначе APK не встанет поверх другого),
+// Приложение Android (D-102, D-103; DPmetaApp:D-53): единый APK DPmetaApp::shell.
+// Плагины — с classpath build-logic, как Kotlin. Здесь же — подпись пакета
+// `com.dpsmpx.dpai` прежним ключом выпуска для установки поверх старых сборок,
 // упаковка библиотек Linux-среды, байт-код Java 17. Личность пакета и версия — в модуле.
 import com.android.build.api.dsl.ApplicationExtension
 

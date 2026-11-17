@@ -24,8 +24,7 @@ DPmetaApp/                        сборка Gradle из корня: ./gradlew
 │   ├── accounts execution sessions tasks contexts git verification
 │   │   monitoring connectors analytics orchestrator   ← контур «AI»
 │   ├── ui cli jsch               представление без платформы, команда dpai, SSH на JVM
-│   ├── android                   оболочка Android — библиотека (DP_AI_Orcestrator:D-103)
-│   └── android-app               отдельная сборка «AI» (D-35)
+│   └── android                   оболочка Android — библиотека (DP_AI_Orcestrator:D-103)
 ├── dpmeta/                       подсистема DPmeta (D-43): реестр экосистемы, контракты, очередь, свой процесс
 ├── core/ app/               модули DPmetaApp на ядре dpai/ (ТЗ, §6.2); app — пульт
 ├── shell/                        приложение DPmetaApp — один APK: пульт и «AI» (D-53)
@@ -192,8 +191,8 @@ DPmetaApp; у команды — рабочее дерево клона рядо
 для сверки с агентом — своя (`BuildConfig.DPAI_VERSION` оболочки). Ключ
 выпуска — тот же, что у сборки «AI» (`dpai.release.*`). Lint модуля —
 предупреждения как ошибки, код библиотек проверяет Lint их модулей.
-Сборка — `tools/build-apk.sh` (APK — в каталоге сборки модуля `shell`);
-отдельная сборка «AI» — `dpai/android-app` (D-35).
+Сборка — `tools/build-apk.sh`, единый APK — в каталоге сборки модуля
+`shell` (D-173, `DP_AI_Orcestrator:D-201`).
 
 Подсистемы DPmetaApp синхронизация читает из их каталога в DPmetaApp — поле
 `dir` реестра DPmeta (D-46, `DPmeta:M-16`); их PR и ветки общие с DPmetaApp,

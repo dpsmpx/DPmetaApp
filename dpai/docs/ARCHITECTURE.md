@@ -91,7 +91,6 @@
 | `jsch` | SSH-хост на JVM (JSch) для targets там, где нет системного OpenSSH — приложение Android (D-35); интерактивная оболочка с PTY для терминала (D-71); файлы ПК по SFTP только для чтения (D-162); процесс-собеседник без PTY — адаптер отладки на ПК (D-164), lsp — только для живого теста отладки по SSH | `execution`, `files`, `lsp` | 11 |
 | `terminal` | эмулятор xterm: экран, разбор последовательностей, ввод — свой терминал (D-71); без Android | `core` | — |
 | `android` | оболочка Android — библиотека (D-103): интерфейс, Keystore, WorkManager, уведомления, экран терминала (D-71); нативный код процессов и псевдотерминала (`JniProcesses`, C через NDK; D-75); ключи API-профилей и чат (D-98); файлы пользователя — папки системного окна и всё хранилище (D-99); сервер локальной модели llama.cpp и подсказки локального ИИ (D-105); политика прогона в окне «Экосистема» (D-106); облачная копия контура (D-107); языковая служба C++ в Linux приложения и её показ в редакторе (D-137); подключается при Android SDK | `ui`, `jsch`, `terminal`, `providers`, `files`, `localai`, `sync`, `lsp` | 11 |
-| `android-app` | отдельная сборка «AI» (D-103): `applicationId`, версия, подпись, упаковка APK; своего кода нет; подключается при Android SDK | `android` | — |
 | `tests/integration` | межмодульные сценарии | `orchestrator` | 1 |
 <!-- check_modules: end -->
 
@@ -100,8 +99,8 @@
 - `android.*` и `androidx.*` — только в модуле `android` (D-02).
 - `testkit` — только в тестовых конфигурациях (`testImplementation`); в
   основном коде любого модуля — нельзя.
-- Модули `android` и `android-app` могут отсутствовать в
-  `settings.gradle.kts`: они подключаются только при найденном Android
+- Модуль `android` может отсутствовать в
+  `settings.gradle.kts`: он подключается только при найденном Android
   SDK, как в `DPpass:settings.gradle.kts`. Плагины Android и Compose —
   convention-плагины `build-logic` (D-102): плагин Kotlin загружается
   один раз; AGP — из Google Maven или build_tools автора.
