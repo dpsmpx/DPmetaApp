@@ -31,7 +31,7 @@ class ProcessSupervisionTest {
         ).value
         try {
             val handle = ProcessHandle.of(assertNotNull(child.pid)).orElseThrow()
-            val mark = ProcessMark(handle.pid(), assertNotNull(ProcessTree.startedAtMillis(handle)))
+            val mark = ProcessMark(handle.pid(), assertNotNull(ProcessTree.startedAtMillis(handle)), ProcessTree.bootMillis())
             val supervision = ProcessSupervision(dir.toString(), TestChild.selfCommand(), Detacher(), Clock.SYSTEM)
             val id = IdGenerator(Clock.SYSTEM, RandomSource.seeded(431)).next(IdKinds.SESSION)
             val ended = try {
