@@ -52,7 +52,16 @@ internal object KeyWrap {
 
     /** Зашифровать [plain] и записать файлом [name]; исходные байты затираются. */
     fun write(base: java.io.File, alias: String, userAuth: Boolean, name: String, plain: ByteArray): Outcome<Unit> = try {
-        val c = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, key(alias, userAuth)) }
+        val c = Cipher.getInstance(TRANSFORMATION).apply {
+            try {
+                init(Cipher.ENCRYPT_MODE, key(alias, userAuth))
+            } catch (e: KeyPermanentlyInvalidatedException) {
+                // Как SecretStore.save: сброшенный ключ не оживёт; новую копию
+                // можно записать новым ключом, прежние файлы уже не расшифровать.
+                store().deleteEntry(alias)
+                init(Cipher.ENCRYPT_MODE, key(alias, userAuth))
+            }
+        }
         val sealed = c.iv + c.doFinal(plain)
         val v = vfs(base)
         v.write("$name.tmp", sealed)

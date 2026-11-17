@@ -15,7 +15,7 @@ class AndroidSdkTest {
         val script = AndroidSdk.install(licenses = true, ndk = false, aapt2 = null, ndkCommunity = null).last()
         assertTrue(AndroidSdk.CMDLINE_URL in script && AndroidSdk.CMDLINE_SHA256 in script && "sha256sum -c" in script)
         assertTrue("'${AndroidSdk.PLATFORM}' '${AndroidSdk.BUILD_TOOLS}'" in script)
-        assertTrue("--licenses" in script)
+        assertFalse("--licenses" in script, "согласие только для выбранных SDK-пакетов, не для всех лицензий каталога")
         assertFalse("aapt2FromMavenOverride" in script, "без сборки сообщества — без подмены aapt2")
         val refused = AndroidSdk.install(licenses = false, ndk = false, aapt2 = null, ndkCommunity = null).last()
         assertFalse("--licenses" in refused)

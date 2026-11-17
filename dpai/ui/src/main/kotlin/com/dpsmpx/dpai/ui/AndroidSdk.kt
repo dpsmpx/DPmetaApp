@@ -91,12 +91,11 @@ object AndroidSdk {
             appendLine("  mkdir -p \"\$SDK/cmdline-tools\" && rm -rf \"\$SDK/cmdline-tools/latest\" && mv \"\$STAGE/x/cmdline-tools\" \"\$SDK/cmdline-tools/latest\"")
             appendLine("fi")
             appendLine("SDKM=\"\$SDK/cmdline-tools/latest/bin/sdkmanager\"")
-            if (licenses) {
-                appendLine("yes | \"\$SDKM\" --sdk_root=\"\$SDK\" --licenses >/dev/null")
-            } else {
+            if (!licenses) {
                 appendLine("echo 'DPAI_ANDROID_LICENSE: не принята — sdkmanager ничего не ставит'; exit 3")
             }
-            appendLine("\"\$SDKM\" --sdk_root=\"\$SDK\" '$PLATFORM' '$BUILD_TOOLS'")
+            // Только лицензия выбранных SDK-пакетов: --licenses принял бы и чужие/preview.
+            appendLine("printf 'y\\n' | \"\$SDKM\" --sdk_root=\"\$SDK\" '$PLATFORM' '$BUILD_TOOLS'")
             appendLine("mkdir -p /root/.gradle")
             appendLine("touch /root/.gradle/gradle.properties")
             // aapt2 для Gradle: официальный — только x86_64; на arm64 — сборка сообщества по желанию.
@@ -114,7 +113,7 @@ object AndroidSdk {
             }
             if (ndk) {
                 appendLine("if test \"\$ARCH\" = x86_64; then")
-                appendLine("  \"\$SDKM\" --sdk_root=\"\$SDK\" '$NDK'")
+                appendLine("  printf 'y\\n' | \"\$SDKM\" --sdk_root=\"\$SDK\" '$NDK'")
                 if (ndkCommunity != null) {
                     appendLine("else")
                     appendLine("  curl --fail --location --proto '=https' --connect-timeout 30 --max-time 3600 '${ndkCommunity.url}' -o \"\$STAGE/ndk.pkg\"")
