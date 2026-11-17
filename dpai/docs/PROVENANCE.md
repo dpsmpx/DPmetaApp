@@ -27,6 +27,9 @@ SHA-256 `1239e9dbe1397cd5971342956b2511bc3ace7b641842e4372a088dcfa8b9ad55`.
 `com.google.guava:guava-parent:33.4.0-jre`, Gradle module metadata
 `org.junit:junit-bom:5.10.2` и `org.junit:junit-bom:5.11.0-M2`.
 Оба источника совпали; SHA-256 записаны в обоих реестрах проверки.
+Дополнительно сверены POM `org.apache.groovy:groovy-bom:4.0.29`, POM и
+module metadata `org.junit:junit-bom:5.10.1`, POM
+`org.jetbrains.kotlinx:kotlinx-coroutines-bom:1.6.4`.
 
 <!-- provenance: begin -->
 | Компонент | Версия | Лицензия | Куда попадает | Источник | Проверено |
