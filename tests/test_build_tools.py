@@ -61,7 +61,9 @@ def pom(g, a, v, deps=(), packaging="jar", props="", managed=(), parent=None):
 
 class BuildTools(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="bt-"))
+        temp = tempfile.TemporaryDirectory(prefix="bt-")
+        self.addCleanup(temp.cleanup)
+        self.tmp = Path(temp.name)
         self.root, self.sdk, self.maven, self.central = (self.tmp / n for n in ("root", "sdk", "maven", "central"))
         self.out = self.tmp / "build_tools"
         # клон DPmetaApp: версии — из файлов сборки
