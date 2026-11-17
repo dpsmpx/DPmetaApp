@@ -28,8 +28,6 @@ import com.dpsmpx.dpmeta.app.ui.ClonePrompt
 import com.dpsmpx.dpmeta.app.ui.ProjectsPrompt
 import com.dpsmpx.dpmeta.app.ui.Loader
 import com.dpsmpx.dpmeta.app.ui.PultApp
-import com.dpsmpx.dpmeta.formats.Panel
-import com.dpsmpx.dpmeta.formats.PanelFormat
 import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.app.ui.PultTheme
 import com.dpsmpx.dpmeta.app.ui.SyncEnd
@@ -829,13 +827,6 @@ open class PultActivity : ComponentActivity() {
 
         override fun saveProjectPaths(project: String, docs: List<String>, checklists: List<String>): Outcome<Unit> =
             repo.saveProjectPaths(project, docs, checklists)
-
-        /** Панель (F-10) — файл `config/projects/<Проект>.toml`, собранный в APK; нет файла — нет панели. */
-        override fun panel(project: String): Outcome<Panel>? {
-            val name = "projects/$project.toml"
-            val text = runCatching { assets.open(name).use { String(it.readBytes(), Charsets.UTF_8) } }.getOrNull() ?: return null
-            return PanelFormat.parse(text, name)
-        }
 
         override fun pull(project: String, number: Int, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, com.dpsmpx.dpmeta.github.PullDetail>>) -> Unit) =
             run({ repo.pull(it, project, number) }, done)

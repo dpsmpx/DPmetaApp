@@ -1739,9 +1739,8 @@ DPlang, Obsidian, DP_TextFile_Sorter и DP_Repeated_Tasks; «Знания» — 
 **Почему.** Слово автора: панель — данными, а не кодом под проект; чтение
 по запросу не утяжеляет синхронизацию.
 
-**Проверка.** Корпус `tests/corpus/samples/panel/` (ловит и пропускает),
-`OwnDocumentsTest.projectPanelsParseAndNameRegistryProjects`,
-`PanelsTest` в `:app`.
+**Проверка.** До снятия D-176 — бывший корпус панелей, проверка панелей
+своих документов и PanelsTest (удалены вместе с механизмом, шаг 4c1).
 
 ### D-58 — Разбор подсистем принят; DPlang — отдельный проект до завершения, затем — в DPmetaApp
 

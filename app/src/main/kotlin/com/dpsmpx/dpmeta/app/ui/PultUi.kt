@@ -122,12 +122,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.collectAsState
 import com.dpsmpx.dpmeta.app.screens.Links
-import com.dpsmpx.dpmeta.app.screens.Panels
 import com.dpsmpx.dpmeta.app.screens.Screens
 import com.dpsmpx.dpmeta.app.screens.Screens.DevTab
 import com.dpsmpx.dpmeta.app.screens.Screens.Section
 import com.dpsmpx.dpmeta.app.screens.Stats
-import com.dpsmpx.dpmeta.formats.Panel
 import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.metrics.Feed
@@ -327,9 +325,6 @@ interface Loader {
     /** Сохранить документы и чек-листы проекта: пути проверяются; отказ — что не так. */
     fun saveProjectPaths(project: String, docs: List<String>, checklists: List<String>): Outcome<Unit> =
         Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "проектов пульта здесь нет", project)
-
-    /** Панель проекта (F-10) — `config/projects/<Проект>.toml` в APK; нет файла — `null`. */
-    fun panel(project: String): Outcome<Panel>? = null
 
     /** PR перед действием (F-12): репозиторий проекта и свежий PR с GitHub. */
     fun pull(project: String, number: Int, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, PullDetail>>) -> Unit) =
@@ -1056,39 +1051,15 @@ private fun Projects(groups: List<Screens.Group>, selected: String? = null, onOp
     }
 }
 
-/** Пункт панели (F-10): читается при показе карточки; документ — переход в просмотр (F-09). */
-@Composable
-private fun PanelRow(project: String, item: Panel.Item, loader: Loader, open: (Nav) -> Unit) {
-    if (item.kind == Panel.Kind.DOCUMENT) {
-        TextButton(onClick = { open(Nav.Doc(project, item.path, null)) }) { Text(item.title) }
-        return
-    }
-    var lines by remember(project, item) { mutableStateOf<List<String>?>(null) }
-    LaunchedEffect(project, item) {
-        if (item.kind == Panel.Kind.COUNT) {
-            loader.directory(project, item.path) { r -> lines = if (r is Outcome.Success) Panels.fromDirectory(item, r.value) else Panels.failed(r as Outcome.Failure) }
-        } else {
-            loader.document(project, item.path) { r -> lines = if (r is Outcome.Success) Panels.fromText(item, r.value) else Panels.failed(r as Outcome.Failure) }
-        }
-    }
-    val shown = lines
-    Column {
-        Text("${item.title}: ${shown?.firstOrNull() ?: "…"}")
-        shown?.drop(1)?.forEach { Text("  $it", style = MaterialTheme.typography.bodySmall) }
-    }
-}
-
 @Composable
 private fun CardScreen(c: Screens.Card, studio: List<Screens.StudioWork>?, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) {
-    // Панель (F-10) — один раз на карточку: файл из APK и его разбор не повторяются при перерисовке.
-    val panel = remember(c.name) { loader.panel(c.name) }
     // Пути пользователя (D-176) — из списка проектов; после сохранения перечитываются.
     var pathsVersion by remember(c.name) { mutableStateOf(0) }
     val user = remember(c.name, pathsVersion) { loader.projectPaths(c.name) }
     // Работа студии (D-176): рабочий проект — по корню клона пульта.
     val root = remember(c.name) { loader.guestRoot(c.name) }
     val studioSection = Screens.studioSection(root?.let { r -> studio?.firstOrNull { it.root.trimEnd('/') == r } }, studio != null && root != null)
-    CardList(c, panel, user, studioSection, loader, onBack, open) { pathsVersion++ }
+    CardList(c, user, studioSection, loader, onBack, open) { pathsVersion++ }
 }
 
 /** Название документа на чипе: имя файла, а при повторе имени — путь целиком. */
@@ -1106,7 +1077,6 @@ private fun docTitle(path: String, all: List<String>): String {
 @Composable
 private fun CardList(
     c: Screens.Card,
-    panel: Outcome<Panel>?,
     user: com.dpsmpx.dpmeta.model.UserProject?,
     studio: Screens.CardSection?,
     loader: Loader,
@@ -1252,13 +1222,6 @@ private fun CardList(
                     }
                 } else {
                     items(sec.lines) { Text("  $it", style = MaterialTheme.typography.bodySmall) }
-                }
-                if (sec.kind == Screens.CardSection.Kind.ABOUT) {
-                    when (panel) {
-                        null -> Unit
-                        is Outcome.Failure -> item { Text("Панель: ${Panels.failed(panel).first()}", color = MaterialTheme.colorScheme.error) }
-                        is Outcome.Success -> items(panel.value.items) { PanelRow(c.name, it, loader, open) }
-                    }
                 }
             }
         }

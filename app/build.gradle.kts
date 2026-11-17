@@ -47,17 +47,10 @@ android {
     }
 }
 
-// Панели проектов (F-10, D-57), шаблоны поручений (F-23), реестр команд (F-40, D-82), каталог
-// событий и правила тревог (F-37, F-51; D-85) — только config/projects/*.toml, config/briefs/*.md,
-// config/commands.toml, config/events.toml и config/alerts.toml корня, в ресурсах APK —
-// assets/projects/<Проект>.toml, assets/briefs/<ключ>.md, assets/commands.toml, assets/events.toml
-// и assets/alerts.toml; другие файлы config/ в APK не попадают. Документы происхождения корня и
-// «AI» — assets/about/PROVENANCE.md и PROVENANCE-ai.md («О программе», F-50).
-val panelAssets = tasks.register<Sync>("panelAssets") {
-    from(rootProject.layout.projectDirectory.dir("config/projects")) {
-        include("*.toml")
-        into("projects")
-    }
+// Шаблоны поручений (F-23), команды (F-40), события и правила тревог (D-85)
+// из config/ — в assets APK. Панели проектов автора сняты D-176.
+// Документы происхождения — в assets/about/ («О программе», F-50).
+val pultAssets = tasks.register<Sync>("pultAssets") {
     from(rootProject.layout.projectDirectory.dir("config/briefs")) {
         include("*.md")
         into("briefs")
@@ -71,17 +64,17 @@ val panelAssets = tasks.register<Sync>("panelAssets") {
         into("about")
         rename { "PROVENANCE-ai.md" }
     }
-    into(layout.buildDirectory.dir("generated/panel-assets"))
+    into(layout.buildDirectory.dir("generated/pult-assets"))
 }
 androidComponents {
     onVariants { v ->
-        v.sources.assets?.addStaticSourceDirectory(layout.buildDirectory.dir("generated/panel-assets").get().asFile.path)
+        v.sources.assets?.addStaticSourceDirectory(layout.buildDirectory.dir("generated/pult-assets").get().asFile.path)
     }
 }
 // Каталог читают слияние ресурсов и lint — зависят от задачи явно (как linuxFiles в dpai/android).
 tasks.matching {
-    it.name != panelAssets.name && ((it.name.startsWith("merge") || it.name.startsWith("package")) && it.name.endsWith("Assets") || it.name.contains("lint", ignoreCase = true))
-}.configureEach { dependsOn(panelAssets) }
+    it.name != pultAssets.name && ((it.name.startsWith("merge") || it.name.startsWith("package")) && it.name.endsWith("Assets") || it.name.contains("lint", ignoreCase = true))
+}.configureEach { dependsOn(pultAssets) }
 
 kotlin {
     compilerOptions {
