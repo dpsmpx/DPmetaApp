@@ -78,7 +78,11 @@ class AgentRuntimeTest {
         }
     }
 
-    private fun alive(pid: Long) = ProcessHandle.of(pid).map { it.isAlive }.orElse(false)
+    /** Зомби уже не исполняется; уборка записи init не входит в остановку агента. */
+    private fun alive(pid: Long) = ProcessHandle.of(pid).map {
+        val state = com.dpsmpx.dpai.execution.linux.ProcStat.of(pid)?.state
+        it.isAlive && state != 'Z' && state != 'X'
+    }.orElse(false)
 
     @Test
     fun unknownFenceFormatCannotPretendToConfirmSafeExit() {
