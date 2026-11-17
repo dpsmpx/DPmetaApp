@@ -27,7 +27,7 @@ import kotlin.time.Duration.Companion.seconds
  * связь; разбор сигнатур для экрана.
  */
 class JdwpPeerTest {
-    /** ВМ-двойник: [answer] — данные ответа на команду (`null` — ошибка [ERROR]). */
+    /** ВМ-двойник: [answer] — данные ответа на команду (`null` — ошибка [error]). */
     private class FakeVm(handshake: String = "JDWP-Handshake", private val error: Int = ERROR, private val answer: (set: Int, cmd: Int, data: ByteArray) -> ByteArray?) {
         private val toVm = PipedOutputStream()
         private val vmIn = DataInputStream(PipedInputStream(toVm, 1 shl 16))
