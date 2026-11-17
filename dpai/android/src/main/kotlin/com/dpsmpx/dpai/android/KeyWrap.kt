@@ -51,6 +51,7 @@ internal object KeyWrap {
     }
 
     /** Зашифровать [plain] и записать файлом [name]; исходные байты затираются. */
+    @Synchronized
     fun write(base: java.io.File, alias: String, userAuth: Boolean, name: String, plain: ByteArray): Outcome<Unit> = try {
         val c = Cipher.getInstance(TRANSFORMATION).apply {
             try {
@@ -65,6 +66,17 @@ internal object KeyWrap {
         val sealed = c.iv + c.doFinal(plain)
         val v = vfs(base)
         v.write("$name.tmp", sealed)
+        // Прочитать именно записанное до замены прежнего файла; неверная
+        // запись или ключ оставляют прежнюю копию на месте.
+        val saved = v.read("$name.tmp")
+        val verify = Cipher.getInstance(TRANSFORMATION).apply {
+            init(Cipher.DECRYPT_MODE, key(alias, userAuth), GCMParameterSpec(128, saved, 0, IV))
+        }.doFinal(saved, IV, saved.size - IV)
+        try {
+            check(verify.contentEquals(plain)) { "записанная копия ключа не совпадает" }
+        } finally {
+            verify.fill(0)
+        }
         v.rename("$name.tmp", name)
         Outcome.success(Unit)
     } catch (e: UserNotAuthenticatedException) {
@@ -73,6 +85,7 @@ internal object KeyWrap {
         Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "ключ не записан", e))
     } finally {
         plain.fill(0)
+        runCatching { vfs(base).let { if (it.exists("$name.tmp")) it.delete("$name.tmp") } }
     }
 
     /** Прочитать и расшифровать файл [name]; нет файла — `null`. */
