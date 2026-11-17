@@ -1157,7 +1157,7 @@ private fun CardList(
         for (sec in listOfNotNull(studio) + view.sections) {
             val key = sec.kind.name
             val expanded = key in opened
-            val expandable = sec.lines.isNotEmpty() || (sec.kind == Screens.CardSection.Kind.ABOUT && panel != null)
+            val expandable = sec.lines.isNotEmpty()
             item(key = key) {
                 Text(
                     sec.title + when {
