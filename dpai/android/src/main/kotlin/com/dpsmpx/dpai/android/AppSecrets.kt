@@ -85,18 +85,17 @@ object AppSecrets {
     }
 
     /**
-     * Внешние секреты, которым нужен вход, — открыть до копии или восстановления;
+     * Любая копия секретов и их восстановление — после подтверждения устройства.
+     * Внешние секреты, которым нужен свой вход, — открыть до чтения или записи;
      * [includeAbsent] — и те, которых ещё нет (запись из копии на новом телефоне).
      */
-    fun unlockAll(activity: Activity, includeAbsent: Boolean = false, done: (Outcome<Unit>) -> Unit) {
+    fun unlockAll(activity: Activity?, includeAbsent: Boolean = false, done: (Outcome<Unit>) -> Unit) {
+        if (activity == null) return done(Outcome.failure(DiagCode.DEVICE_AUTH_REQUIRED, "нет окна для подтверждения устройства"))
         val pending = externals.filter { it.unlock != null && (includeAbsent || runCatching { it.present(activity) }.getOrDefault(false)) }.toMutableList()
-        // Копии ключей подписи (D-184) открываются только после входа — один вход на все.
-        val signing = includeAbsent || SigningKeys.all().any { SigningKeys.portable(activity, it) }
         fun next() {
             val e = pending.removeFirstOrNull()
             if (e == null) {
-                if (!signing) return done(Outcome.success(Unit))
-                return DeviceConfirm.ask(activity, "Ключи подписи — в копию или из неё",
+                return DeviceConfirm.ask(activity, "Секреты — в копию или из неё",
                     onOk = { done(Outcome.success(Unit)) },
                     onDenied = { why -> done(Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "вход не подтверждён: $why")) })
             }

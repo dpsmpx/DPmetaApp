@@ -89,8 +89,8 @@ fun AppBackupCard() {
                 is Outcome.Failure -> "Копия не сохранена: ${r.errors.first().message}"
             }
         }
-        // Токен GitHub пульта открывается только после входа (T-01): сначала вход, потом чтение.
-        if (p.password != null && activity != null) AppSecrets.unlockAll(activity) { u -> if (u is Outcome.Failure) { busy = false; status = "Копия не сохранена: ${u.errors.first().message}" } else go() } else go()
+        // Любые секреты — после входа (в том числе SSH и API-ключи без токена GitHub).
+        if (p.password != null) AppSecrets.unlockAll(activity) { u -> if (u is Outcome.Failure) { busy = false; status = "Копия не сохранена: ${u.errors.first().message}" } else go() } else go()
     }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -168,8 +168,8 @@ fun AppBackupCard() {
                     is Outcome.Failure -> status = "Не восстановлено: ${r.errors.first().message}"
                 }
             }
-            // Токен GitHub пульта пишется под ключом, которому нужен вход (T-01).
-            if (AppBackup.SECRETS in ids && activity != null) AppSecrets.unlockAll(activity, includeAbsent = true) { u -> if (u is Outcome.Failure) { busy = false; status = "Не восстановлено: ${u.errors.first().message}" } else go() } else go()
+            // И на новом телефоне, где ещё нет ключей, сначала подтверждение устройства.
+            if (AppBackup.SECRETS in ids) AppSecrets.unlockAll(activity, includeAbsent = true) { u -> if (u is Outcome.Failure) { busy = false; status = "Не восстановлено: ${u.errors.first().message}" } else go() } else go()
         }
     }
     if (restarting) AlertDialog(
