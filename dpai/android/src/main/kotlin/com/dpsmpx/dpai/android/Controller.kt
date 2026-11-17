@@ -152,10 +152,15 @@ object KeystoreKey {
     fun importValue(text: String): Outcome<Unit> {
         val pair = decode(text) ?: return Outcome.failure(DiagCode.VALUE_INVALID, "ключ SSH в копии не читается")
         val base = app ?: return Outcome.failure(DiagCode.STATE_CONFLICT, "приложение не готово")
-        if (legacy()) runCatching { store().deleteEntry(ALIAS) }
         return when (val w = KeyWrap.write(base, WRAP, userAuth = false, FILE, encode(pair).toByteArray(Charsets.UTF_8))) {
             is Outcome.Failure -> w
-            is Outcome.Success -> { cached = pair; Outcome.success(Unit) }
+            is Outcome.Success -> {
+                // Новая переносимая копия уже записана: при отказе записи прежний
+                // неизвлекаемый ключ остаётся и продолжает открывать target.
+                cached = pair
+                if (legacy()) runCatching { store().deleteEntry(ALIAS) }
+                Outcome.success(Unit)
+            }
         }
     }
 
