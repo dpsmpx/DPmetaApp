@@ -6,7 +6,6 @@ import com.dpsmpx.dpmeta.formats.BriefFormat
 import com.dpsmpx.dpmeta.formats.AlertFormat
 import com.dpsmpx.dpmeta.formats.CommandFormat
 import com.dpsmpx.dpmeta.formats.EventCatalogFormat
-import com.dpsmpx.dpmeta.formats.CommandSpec
 import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.formats.Roadmap
 import com.dpsmpx.dpmeta.formats.StatusBlocks
