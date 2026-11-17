@@ -10,6 +10,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** Импорт SSH: настоящая пара принимается; несовместимые половины и чужая версия — до записи. */
 class PortableSshKeyTest {
@@ -21,7 +22,7 @@ class PortableSshKeyTest {
         val text = KeystoreKey.encode(original)
         val decoded = assertNotNull(KeystoreKey.decode(text))
         assertContentEquals(original.public.encoded, decoded.public.encoded)
-        assertContentEquals(original.private.encoded, decoded.private.encoded)
+        assertTrue(original.private.encoded.contentEquals(decoded.private.encoded), "закрытый ключ сохранился без вывода его байтов")
         val document = JsonParser().parse(text).valueOrNull() as JsonObject
         val another = JsonParser().parse(KeystoreKey.encode(pair())).valueOrNull() as JsonObject
         val mixed = JsonObject(document.fields + ("public" to another.fields.getValue("public")))
