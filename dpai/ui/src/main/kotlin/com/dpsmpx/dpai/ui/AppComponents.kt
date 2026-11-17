@@ -221,7 +221,7 @@ object AppComponents {
     private fun json(f: Path): JsonObject? {
         if (!Files.isRegularFile(f, LinkOption.NOFOLLOW_LINKS)) return null
         if (runCatching { Files.size(f) }.getOrDefault(Long.MAX_VALUE) > MAX_JSON) return null
-        val text = runCatching { Files.readString(f) }.getOrNull() ?: return null
+        val text = runCatching { Files.newBufferedReader(f, Charsets.UTF_8).use { it.readText() } }.getOrNull() ?: return null
         return (JsonParser().parse(text) as? Outcome.Success)?.value as? JsonObject
     }
 
