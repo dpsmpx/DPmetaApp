@@ -10,6 +10,7 @@ import com.dpsmpx.dpai.core.clock.Timestamp
 /** Откуда приходит событие (§8.1): С — синхронизация, М — мгновенный канал, Л — слушатель, П — приложение. */
 enum class EventSource(val code: String) {
     SYNC("sync"),
+    /** Только чтение прежней ленты: сам мгновенный канал удалён по D-173. */
     PUSH("push"),
     LISTENER("listener"),
     APP("app"),

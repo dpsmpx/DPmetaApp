@@ -140,10 +140,5 @@ class SecretStore(
         /** Сколько ключ работает после входа: хватает на синхронизацию по кнопке. */
         const val AUTH_SECONDS = 300
 
-        /** Ключ подписи мгновенного канала (D-152): без входа, в `noBackupFilesDir`. */
-        fun push(context: android.content.Context): SecretStore = SecretStore(
-            com.dpsmpx.dpai.storage.vfs.NioVfs(context.noBackupFilesDir.toPath().resolve("dpmeta")),
-            path = "push.key", alias = "dpmeta.push", userAuth = false, onChange = {},
-        )
     }
 }

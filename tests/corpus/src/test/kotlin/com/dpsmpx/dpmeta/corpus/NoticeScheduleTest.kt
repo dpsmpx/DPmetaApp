@@ -79,5 +79,7 @@ class NoticeScheduleTest {
         assertEquals("Сводка: 1 событие", Digest.text(events.take(1), catalog)!!.title)
         assertEquals(9, Digest.pullNumber(events.last()))
         assertNull(Digest.pullNumber(Event("claude.turn.done", Timestamp(1), "x", "PR #3")))
+        assertEquals("https://claude.ai/code/session_01ABCdef234", Digest.sessionUrl(Event("claude.turn.done", Timestamp(1), "x", "", fields = mapOf("session" to "session_01ABCdef234"))))
+        assertNull(Digest.sessionUrl(Event("claude.turn.done", Timestamp(1), "x", "", fields = mapOf("session" to "https://example.org"))))
     }
 }

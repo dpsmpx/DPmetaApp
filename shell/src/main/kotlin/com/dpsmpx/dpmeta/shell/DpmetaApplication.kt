@@ -33,8 +33,6 @@ class DpmetaApplication : DpaiApplication() {
         )
         com.dpsmpx.dpai.android.StorageMap.prepare(this)
         com.dpsmpx.dpai.android.StorageMap.refresh(this)
-        // Мгновенный канал (D-152): включённый поднимается с любым окном — из фона Android 12+ службу не запустить.
-        registerActivityLifecycleCallbacks(PushOnResume)
         // Виджет по такту (D-153): синхронизация пульта перечитывает его сразу.
         com.dpsmpx.dpmeta.app.data.WidgetCache.onChanged = { StudioWidget.refresh(it) }
     }
@@ -42,17 +40,9 @@ class DpmetaApplication : DpaiApplication() {
     /** Ручной запуск кончился, числа «AI» или проверки сменились (D-153). */
     override fun studioChanged() = StudioWidget.refresh(this)
 
-    private object PushOnResume : android.app.Application.ActivityLifecycleCallbacks {
-        override fun onActivityResumed(activity: android.app.Activity) = com.dpsmpx.dpmeta.app.PushChannelService.ensure(activity)
-        override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: android.os.Bundle?) = Unit
-        override fun onActivityStarted(activity: android.app.Activity) = Unit
-        override fun onActivityPaused(activity: android.app.Activity) = Unit
-        override fun onActivityStopped(activity: android.app.Activity) = Unit
-        override fun onActivitySaveInstanceState(activity: android.app.Activity, outState: android.os.Bundle) = Unit
-        override fun onActivityDestroyed(activity: android.app.Activity) = Unit
-    }
-
     private fun registerBackup() {
+        // D-173: прежний ключ ntfy из копии больше не нужен; остальным секретам не мешает.
+        com.dpsmpx.dpai.android.AppSecrets.retireExternal("push")
         val dpmeta = { c: android.content.Context -> c.filesDir.resolve("dpmeta") }
         com.dpsmpx.dpai.android.AppBackups.register(
             com.dpsmpx.dpai.android.AppBackups.Section(
@@ -63,7 +53,6 @@ class DpmetaApplication : DpaiApplication() {
                     com.dpsmpx.dpai.android.AppBackups.PrefsSpec("dpmeta.background") { it == "last" },
                     // Мгновенный канал (D-152): сервер и тема; ключ — секретом ниже. Включённость не переносится:
                     // на новом телефоне канал включают сами, когда хук получит ключ.
-                    com.dpsmpx.dpai.android.AppBackups.PrefsSpec(com.dpsmpx.dpmeta.app.data.PushPrefs.PREFS) { it == com.dpsmpx.dpmeta.app.data.PushPrefs.ENABLED },
                     // Слушатель (D-155): включённость и белый список; доступ Android даётся заново на новом телефоне.
                     com.dpsmpx.dpai.android.AppBackups.PrefsSpec(com.dpsmpx.dpmeta.app.data.ListenerPrefs.PREFS),
                 ),
@@ -89,21 +78,7 @@ class DpmetaApplication : DpaiApplication() {
                 },
             ),
         )
-        // Ключ подписи мгновенного канала (D-152): без входа — служба проверяет подписи при запертом телефоне (T30).
-        com.dpsmpx.dpai.android.AppSecrets.register(
-            com.dpsmpx.dpai.android.AppSecrets.External(
-                id = "push", name = "Ключ мгновенного канала", revoke = null,
-                hint = "сотрите или смените ключ — старый перестанет проходить; новый — в окружение хука",
-                present = { com.dpsmpx.dpmeta.app.data.PushPrefs.hasKey(it) },
-                read = { com.dpsmpx.dpmeta.app.data.PushPrefs.key(it) },
-                write = { c, s -> com.dpsmpx.dpmeta.app.data.SecretStore.push(c).save(s) },
-                erase = { c ->
-                    com.dpsmpx.dpmeta.app.PushChannelService.stop(c)
-                    com.dpsmpx.dpmeta.app.data.SecretStore.push(c).forget()
-                    com.dpsmpx.dpai.core.result.Outcome.success(Unit)
-                },
-            ),
-        )
+
     }
 
     /** Опасный ответ окна поверх приложений — только после входа (D-61). */

@@ -103,7 +103,6 @@ internal fun NotificationSettings(feed: List<FeedEvent>, onFeed: () -> Unit) {
     }) { Text("Сохранить тихие часы") }
     note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     DigestAndSnooze()
-    PushSettings()
     ListenerSettings()
     TextButton(onClick = { rules = true }) { Text("Правила и проба по ленте…") }
     TextButton(onClick = onFeed) { Text("Лента уведомлений ИИ и проектов…") }

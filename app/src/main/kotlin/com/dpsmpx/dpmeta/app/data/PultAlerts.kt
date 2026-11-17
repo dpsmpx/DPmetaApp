@@ -304,7 +304,7 @@ object PultAlerts {
         val card = NoticeCard(
             d.tag, channel(manager, d.channel, d.importance), listOfNotNull(d.event.project, typeTitle).joinToString(": "), d.event.text, typeTitle,
             d.event.at.epochMillis, "dpmeta.alert.${d.rule.id}", d.event.project.takeIf { pull != null }, pull,
-            url = com.dpsmpx.dpmeta.notify.PushEvents.sessionUrl(d.event),
+            url = com.dpsmpx.dpmeta.notify.Digest.sessionUrl(d.event),
             ask = d.event.type == CHAT_DONE,
         )
         return present(context, card, d.silent)

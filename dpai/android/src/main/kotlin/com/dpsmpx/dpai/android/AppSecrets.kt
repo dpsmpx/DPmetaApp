@@ -36,10 +36,18 @@ object AppSecrets {
     data class Row(val id: String, val name: String, val revoke: String?, val hint: String, val exportable: Boolean)
 
     private val externals = CopyOnWriteArrayList<External>()
+    private val retiredExternals = java.util.concurrent.CopyOnWriteArraySet<String>()
 
     fun register(e: External) {
+        retiredExternals.remove(e.id)
         externals.removeAll { it.id == e.id }
         externals += e
+    }
+
+    /** Компонент удалён: его секрет из прежней копии пропускается, остальные восстанавливаются. */
+    fun retireExternal(id: String) {
+        externals.removeAll { it.id == id }
+        retiredExternals += id
     }
 
     private const val API = "api:"
@@ -140,6 +148,7 @@ object AppSecrets {
             when {
                 key.startsWith(API) -> if (ApiKeys.putNamed(app, key.removePrefix(API), v)) n++ else failed += key
                 key.startsWith(EXT) -> {
+                    if (key.removePrefix(EXT) in retiredExternals) continue
                     val e = externals.firstOrNull { it.id == key.removePrefix(EXT) }
                     if (e != null && e.write(app, v) is Outcome.Success) n++ else failed += key
                 }
