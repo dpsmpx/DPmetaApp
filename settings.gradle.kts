@@ -38,6 +38,14 @@ dependencyResolutionManagement {
 
 rootProject.name = "DPmetaApp"
 
+// Нужен и при подстановке Android-библиотеки включённой сборки: без SDK
+// dpai/ не объявляет :android, поэтому ссылаться на него нельзя.
+val androidSdk = run {
+    val local = file("local.properties").takeIf { it.isFile }?.readLines()
+        ?.firstOrNull { it.startsWith("sdk.dir=") }?.substringAfter("=")?.replace("""\:""", ":")?.replace("""\\""", "/")
+    listOf(local, System.getenv("ANDROID_HOME"), System.getenv("ANDROID_SDK_ROOT")).firstOrNull { !it.isNullOrBlank() }?.takeIf { file(it).isDirectory }
+}
+
 // Ядро dpai/ — по координатам com.dpsmpx.dpai:<модуль>: зависимость модуля корня
 // заменяется проектом включённой сборки. Подсистема «AI» от модулей корня не
 // зависит (DP_AI_Orcestrator:D-55) — замен в обратную сторону нет.
@@ -48,7 +56,7 @@ includeBuild("dpai") {
             substitute(module("com.dpsmpx.dpai:$m")).using(project(":$m"))
         }
         // Оболочка «AI» — библиотека (DP_AI_Orcestrator:D-103): её берёт приложение корня :shell (D-53).
-        substitute(module("com.dpsmpx.dpai:android")).using(project(":android"))
+        if (androidSdk != null) substitute(module("com.dpsmpx.dpai:android")).using(project(":android"))
     }
 }
 
@@ -68,9 +76,4 @@ include(":tests:corpus")
 // Keystore, блокировка; приложение :shell (D-53) — один APK: пульт первым экраном,
 // оболочка «AI» вкладкой. Только при найденном Android SDK, как оболочка dpai/android:
 // без SDK модули корня собираются и проверяются как прежде.
-val androidSdk = run {
-    val local = file("local.properties").takeIf { it.isFile }?.readLines()
-        ?.firstOrNull { it.startsWith("sdk.dir=") }?.substringAfter("=")?.replace("""\:""", ":")?.replace("""\\""", "/")
-    listOf(local, System.getenv("ANDROID_HOME"), System.getenv("ANDROID_SDK_ROOT")).firstOrNull { !it.isNullOrBlank() }?.takeIf { file(it).isDirectory }
-}
 if (androidSdk != null) include(":app", ":shell")
