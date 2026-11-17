@@ -78,18 +78,28 @@ object KeystoreKey {
         return try { decode(String(plain, Charsets.UTF_8)) } finally { plain.fill(0) }?.also { cached = it }
     }
 
-    private fun decode(text: String): java.security.KeyPair? = runCatching {
+    internal fun decode(text: String): java.security.KeyPair? = runCatching {
         val o = com.dpsmpx.dpai.core.serialization.JsonParser().parse(text).valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject
         require((o["format"] as com.dpsmpx.dpai.core.serialization.JsonString).value == FORMAT)
+        require((o["version"] as com.dpsmpx.dpai.core.serialization.JsonNumber).toLongExact() == 1L)
         val f = java.security.KeyFactory.getInstance("EC")
         val b64 = java.util.Base64.getDecoder()
         val priv = f.generatePrivate(java.security.spec.PKCS8EncodedKeySpec(b64.decode((o["private"] as com.dpsmpx.dpai.core.serialization.JsonString).value)))
         val pub = f.generatePublic(java.security.spec.X509EncodedKeySpec(b64.decode((o["public"] as com.dpsmpx.dpai.core.serialization.JsonString).value))) as ECPublicKey
         require(pub.params.curve.field.fieldSize == 256)
+        // Формально корректные ключи могут принадлежать разным парам: такая
+        // копия не должна заменить рабочий ключ и лишить доступа к target.
+        val probe = "dpai ssh key pair".toByteArray(Charsets.US_ASCII)
+        val signature = Signature.getInstance("SHA256withECDSA").run {
+            initSign(priv); update(probe); sign()
+        }
+        require(Signature.getInstance("SHA256withECDSA").run {
+            initVerify(pub); update(probe); verify(signature)
+        })
         java.security.KeyPair(pub, priv)
     }.getOrNull()
 
-    private fun encode(pair: java.security.KeyPair): String {
+    internal fun encode(pair: java.security.KeyPair): String {
         val b64 = java.util.Base64.getEncoder()
         return com.dpsmpx.dpai.core.serialization.CanonicalJson.write(com.dpsmpx.dpai.core.serialization.JsonObject.of(
             "format" to com.dpsmpx.dpai.core.serialization.JsonString(FORMAT),
