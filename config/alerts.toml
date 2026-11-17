@@ -97,20 +97,6 @@ action = "notify"
 field = "left"
 at_most = 4
 
-[[rule]]
-id = "claude.done"
-title = "Claude закончил ответ"
-on = "claude.turn.done"
-action = "notify"
-
-[[rule]]
-id = "claude.input"
-title = "Claude ждёт разрешения или ввода"
-on = "claude.needs_input"
-action = "notify"
-importance = "high"
-quiet = false
-
 # Ответ чата «Спросить Claude» дописан, пока приложение в фоне (F-58; D-161): только «Ответ готов».
 [[rule]]
 id = "chat.done"

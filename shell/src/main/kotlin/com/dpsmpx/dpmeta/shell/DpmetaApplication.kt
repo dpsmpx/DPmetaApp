@@ -46,7 +46,7 @@ class DpmetaApplication : DpaiApplication() {
         val dpmeta = { c: android.content.Context -> c.filesDir.resolve("dpmeta") }
         com.dpsmpx.dpai.android.AppBackups.register(
             com.dpsmpx.dpai.android.AppBackups.Section(
-                "pult", "Пульт", "часовой пояс, тихие часы и приватность, отмеченные клоны, фоновое обновление, свои правила тревог, сводка и «Отложить», сервер и тема мгновенного канала, белый список уведомлений",
+                "pult", "Пульт", "часовой пояс, тихие часы и приватность, отмеченные клоны, фоновое обновление, свои правила тревог, сводка и «Отложить», белый список уведомлений",
                 prefs = listOf(
                     com.dpsmpx.dpai.android.AppBackups.PrefsSpec("dpmeta.settings"),
                     com.dpsmpx.dpai.android.AppBackups.PrefsSpec("dpmeta.clones") { it == "flat-removed" },

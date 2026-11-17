@@ -241,7 +241,7 @@ object PultAlerts {
         if (events.isEmpty()) "событий нет" else postEvents(context, events.mapNotNull(Feed::event), now, events.size)
 
     /**
-     * То же для готовых событий — и мгновенного канала (D-152): правила, сводка,
+     * То же для готовых событий приложения: правила, сводка,
      * уведомления. [total] — сколько событий пришло (для строки журнала).
      */
     @Synchronized

@@ -5,7 +5,7 @@
 #
 #   type     тип латиницей, части через точку
 #   title    подпись для экрана
-#   source   sync — синхронизация, push — мгновенный канал, listener — слушатель
+#   source   sync — синхронизация, push — только чтение прежних правил канала, listener — слушатель
 #            уведомлений, app — само приложение
 #   channel  вид канала уведомлений (F-38): claude, dev, social, site, questions, sync
 #   fields   текстовые поля для условий; проект и текст события — у всех
@@ -155,30 +155,32 @@ title = "Проект — «свободен»"
 source = ["app"]
 channel = "dev"
 
+# Прежние типы канала (D-173): только совместимость сохранённых правил и истории.
+# Новых событий этих типов приложение не получает; стандартных правил для них нет.
 [[event]]
 type = "claude.turn.done"
-title = "Claude закончил ответ"
+title = "Claude закончил ответ (прежний канал удалён)"
 source = ["push"]
 channel = "claude"
 fields = ["branch", "session", "reason"]
 
 [[event]]
 type = "claude.needs_input"
-title = "Claude ждёт разрешения или ввода"
+title = "Claude ждёт разрешения или ввода (прежний канал удалён)"
 source = ["push"]
 channel = "claude"
 fields = ["session", "kind"]
 
 [[event]]
 type = "claude.turn.failed"
-title = "Ход Claude оборвался ошибкой API"
+title = "Ход Claude оборвался ошибкой API (прежний канал удалён)"
 source = ["push"]
 channel = "claude"
 fields = ["session"]
 
 [[event]]
 type = "claude.session.ended"
-title = "Сессия Claude завершена"
+title = "Сессия Claude завершена (прежний канал удалён)"
 source = ["push"]
 channel = "claude"
 fields = ["session"]
