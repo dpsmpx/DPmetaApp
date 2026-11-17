@@ -319,13 +319,13 @@ Release нужен только §4 (замеры): debug медленнее, и
 сборки (`docs/PROCESS.md`, §6):
 
 ```sh
-cd DPmetaApp/dpai && ./gradlew :android-app:assembleRelease
-adb install -r android-app/build/outputs/apk/release/android-app-release.apk
+cd DPmetaApp && ./gradlew :shell:assembleRelease
+adb install -r shell/build/outputs/apk/release/shell-release.apk
 ```
 
 Свойства `dpai.release.*` — те же, что для `resign-apk.sh`; без них
 Gradle подпишет release отладочным ключом машины, и поверх вашей версии
-он не встанет. Ярлыка Termux для release `dpai` пока нет (`TODO.md`).
+он не встанет. Отдельная упаковка подсистемы снята D-201; ставится единый APK студии.
 Нет release — §4 записывается «не проверено: нет release»; §3 идёт на
 любой сборке.
 
