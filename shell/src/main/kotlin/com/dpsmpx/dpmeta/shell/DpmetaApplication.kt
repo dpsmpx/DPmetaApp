@@ -51,8 +51,6 @@ class DpmetaApplication : DpaiApplication() {
                     com.dpsmpx.dpai.android.AppBackups.PrefsSpec("dpmeta.settings"),
                     com.dpsmpx.dpai.android.AppBackups.PrefsSpec("dpmeta.clones") { it == "flat-removed" },
                     com.dpsmpx.dpai.android.AppBackups.PrefsSpec("dpmeta.background") { it == "last" },
-                    // Мгновенный канал (D-152): сервер и тема; ключ — секретом ниже. Включённость не переносится:
-                    // на новом телефоне канал включают сами, когда хук получит ключ.
                     // Слушатель (D-155): включённость и белый список; доступ Android даётся заново на новом телефоне.
                     com.dpsmpx.dpai.android.AppBackups.PrefsSpec(com.dpsmpx.dpmeta.app.data.ListenerPrefs.PREFS),
                 ),
@@ -78,7 +76,6 @@ class DpmetaApplication : DpaiApplication() {
                 },
             ),
         )
-
     }
 
     /** Опасный ответ окна поверх приложений — только после входа (D-61). */

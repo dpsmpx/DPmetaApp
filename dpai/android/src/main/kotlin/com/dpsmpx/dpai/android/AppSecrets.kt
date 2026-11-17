@@ -50,6 +50,14 @@ object AppSecrets {
         retiredExternals += id
     }
 
+    /** Только явно снятый id можно пропустить: неизвестный секрет — отказ. */
+    internal fun externalForImport(id: String): Outcome<External?> {
+        if (id in retiredExternals) return Outcome.success(null)
+        val external = externals.firstOrNull { it.id == id }
+            ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такого внешнего секрета", id)
+        return Outcome.success(external)
+    }
+
     private const val API = "api:"
     private const val EXT = "ext:"
     private const val SSH = "keystore:ssh"
@@ -148,9 +156,10 @@ object AppSecrets {
             when {
                 key.startsWith(API) -> if (ApiKeys.putNamed(app, key.removePrefix(API), v)) n++ else failed += key
                 key.startsWith(EXT) -> {
-                    if (key.removePrefix(EXT) in retiredExternals) continue
-                    val e = externals.firstOrNull { it.id == key.removePrefix(EXT) }
-                    if (e != null && e.write(app, v) is Outcome.Success) n++ else failed += key
+                    when (val e = externalForImport(key.removePrefix(EXT))) {
+                        is Outcome.Failure -> failed += key
+                        is Outcome.Success -> e.value?.let { if (it.write(app, v) is Outcome.Success) n++ else failed += key }
+                    }
                 }
                 key == SSH -> if (PortableKeys.importSsh(v) is Outcome.Success) n++ else failed += key
                 key.startsWith(SIGN) -> {
