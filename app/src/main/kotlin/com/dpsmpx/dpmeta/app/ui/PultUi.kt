@@ -988,25 +988,14 @@ private fun Summary(
 private const val SUMMARY_EVENTS = 3
 
 /**
- * Список проектов (UX-18): место — заголовком, строка — имя и состояние
- * словом и цветом, ниже — ROADMAP, PR, TODO без «неизвестно» трижды;
+ * Список пользователя (D-176): порядок из состояния, без карты и мест.
+ * Строка — имя и состояние, ниже — ROADMAP, PR, TODO без «неизвестно» трижды;
  * ошибки источников — «⚠ N» цветом ошибки; решения — в карточке.
  */
 @Composable
 private fun Projects(groups: List<Screens.Group>, selected: String? = null, onOpen: (String) -> Unit) {
-    var map by rememberSaveable { mutableStateOf(true) }
-    var all by rememberSaveable { mutableStateOf(false) }
-    val shown = if (map) com.dpsmpx.dpmeta.app.screens.ProjectMap.groups(groups, all) else groups
     LazyColumn(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
-        item {
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = map, onClick = { map = true }, label = { Text("Карта") })
-                FilterChip(selected = !map, onClick = { map = false }, label = { Text("Список") })
-                if (map) FilterChip(selected = all, onClick = { all = !all }, label = { Text("С периферией") })
-            }
-            if (map) Text("Основные проекты реестра DPmeta. Любой другой репозиторий можно открыть в IDE; клонирование не добавляет его на карту.", style = MaterialTheme.typography.bodySmall)
-        }
-        for (g in shown) {
+        for (g in groups) {
             item { Text(g.title, style = MaterialTheme.typography.titleMedium) }
             items(g.rows, key = { "row:${g.title}:${it.name}" }) { r ->
                 // Открытый в соседней панели (UX-24) — выделен цветом и для TalkBack.
@@ -1026,7 +1015,6 @@ private fun Projects(groups: List<Screens.Group>, selected: String? = null, onOp
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Text(Screens.projectLine(r), style = MaterialTheme.typography.bodySmall)
-                        if (map) Text(com.dpsmpx.dpmeta.app.screens.ProjectMap.role(r.name), style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }

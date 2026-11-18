@@ -267,7 +267,7 @@ object Screens {
 
     data class ProjectRow(val name: String, val working: String, val decisions: String, val todo: String, val roadmap: String, val pulls: String, val errors: Int)
 
-    data class Group(val title: String, val rows: List<ProjectRow>, val place: Place? = null)
+    data class Group(val title: String, val rows: List<ProjectRow>)
 
     /**
      * Вторая строка проекта в списке (UX-18): ROADMAP, PR, TODO — без
@@ -280,8 +280,9 @@ object Screens {
             .joinToString(" · ") { "${it.first} ${it.second}" }
             .ifEmpty { "данных пока нет" }
 
-    fun projects(s: EcosystemState): List<Group> = Place.entries.filter { it.shown }.mapNotNull { place ->
-        val rows = s.projects.filter { it.place == place.code }.map { p ->
+    /** Места старого снимка не фильтруют список пользователя и не меняют его порядок (D-176). */
+    fun projects(s: EcosystemState): List<Group> {
+        val rows = s.projects.map { p ->
             ProjectRow(
                 name = p.name,
                 working = working(p, s.asOf),
@@ -292,7 +293,7 @@ object Screens {
                 errors = p.errors.size,
             )
         }
-        if (rows.isEmpty()) null else Group(place.title, rows, place)
+        return if (rows.isEmpty()) emptyList() else listOf(Group("Проекты", rows))
     }
 
     // --- Карточка проекта (F-06…F-08, F-11, F-14, F-16) ---

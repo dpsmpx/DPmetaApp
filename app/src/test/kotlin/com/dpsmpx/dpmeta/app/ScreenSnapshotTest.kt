@@ -99,6 +99,16 @@ class ScreenSnapshotTest {
     @Test
     fun projects() = snapshot("projects", ScreenText.projects(Screens.projects(state())))
 
+    /** D-176: старое место «архив» и неизвестное место не скрывают выбранный пользователем проект. */
+    @Test
+    fun projectListKeepsOrderAndIgnoresLegacyPlaces() {
+        val base = state()
+        val selected = listOf(base.projects.last().copy(place = "archive"), base.projects.first().copy(place = "custom"))
+        val rows = Screens.projects(base.copy(projects = selected)).flatMap { it.rows }
+        assertEquals(selected.map { it.name }, rows.map { it.name })
+        assertTrue(Screens.projects(base.copy(projects = emptyList())).isEmpty())
+    }
+
     @Test
     fun cardOfAlpha() = snapshot("card-alpha", ScreenText.card(Screens.card(state(), "Alpha")!!))
 
