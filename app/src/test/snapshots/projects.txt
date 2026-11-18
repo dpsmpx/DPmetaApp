@@ -1,10 +1,10 @@
 ПРОЕКТЫ
 — Проекты
-  Pult — неизвестно
-    ROADMAP 50 % · TODO 1
   Alpha — работает
     ROADMAP 50 % · PR 1 · TODO 3
-  DPmeta — неизвестно · ⚠ 2
-    TODO 1
   Beta — неизвестно
     ROADMAP 50 % · TODO 1
+  Pult — неизвестно
+    ROADMAP 50 % · TODO 1
+  DPmeta — неизвестно · ⚠ 2
+    TODO 1
