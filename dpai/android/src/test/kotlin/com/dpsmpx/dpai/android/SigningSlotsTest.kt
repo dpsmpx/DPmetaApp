@@ -157,6 +157,25 @@ class SigningSlotsTest {
         assertFalse(staged)
     }
 
+    @Test fun exportScopeCheckRejectsLostSelectionEvenWhenKeystoreIsEmpty() {
+        val f = Fixture(dir)
+        assertEquals(emptyList(), f.slots.checkedScopes(emptyList()).valueOrNull())
+        f.keys[SigningSlots.legacyAlias(null)] = "old"
+        assertEquals(listOf(null), f.slots.checkedScopes(f.keys.keys).valueOrNull(), "прежний alias без селектора читается")
+        assertTrue(f.replace() is Outcome.Success)
+        assertEquals(listOf(null), f.slots.checkedScopes(f.keys.keys).valueOrNull())
+        f.keys.clear()
+        assertTrue(f.slots.checkedScopes(f.keys.keys) is Outcome.Failure, "пустой Keystore не скрывает потерянный выбранный ключ")
+        assertTrue(f.slots.delete(null) { Outcome.success(Unit) } is Outcome.Success)
+        assertEquals(emptyList(), f.slots.checkedScopes(emptyList()).valueOrNull(), "надгробие не требует удалённый ключ")
+        val orphan = SigningSlots.BASE + ":v2:g:" + "0".repeat(32)
+        val fresh = Fixture(dir.resolve("fresh"))
+        assertTrue(fresh.slots.checkedScopes(listOf(orphan)) is Outcome.Failure, "поколение без выбора не пропускается")
+        val unknown = JsonObject(linkedMapOf(*FormatHeader.write(SigningSlots.FORMAT, 2), "slots" to JsonArray(emptyList())))
+        f.documents.write(SigningSlots.KEY, unknown)
+        assertTrue(f.slots.checkedScopes(emptyList()) is Outcome.Failure, "чужая схема не становится пустым списком")
+    }
+
     @Test fun generationCollisionNeverOverwritesExistingAlias() {
         val f = Fixture(dir)
         assertTrue(f.replace() is Outcome.Success)

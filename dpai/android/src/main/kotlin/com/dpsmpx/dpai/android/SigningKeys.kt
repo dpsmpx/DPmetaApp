@@ -266,10 +266,10 @@ internal object SigningKeys {
 
     /** Включая прежние/неочищенные поколения: аварийный отзыв не должен их пропустить. */
     @Synchronized
-    fun allChecked(): Outcome<List<String?>> = access { ks -> Outcome.success(ks.aliases().toList().mapNotNull(SigningSlots::scope).map { it.project }.distinct()) }
+    fun allChecked(context: Context): Outcome<List<String?>> = access { ks -> slots(context).checkedScopes(ks.aliases().toList()) }
 
     @Synchronized
-    fun all(): List<String?> = allChecked().valueOrNull().orEmpty()
+    fun all(): List<String?> = access { ks -> Outcome.success(ks.aliases().toList().mapNotNull(SigningSlots::scope).map { it.project }.distinct()) }.valueOrNull().orEmpty()
 
     private fun eraseOne(context: Context, ks: KeyStore, alias: String, project: String?): Outcome<Unit> {
         val erased = KeyWrap.deleteChecked(context.applicationContext.noBackupFilesDir, copyName(alias, project))

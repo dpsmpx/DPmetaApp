@@ -137,7 +137,7 @@ object AppSecrets {
         }
         // Переносимые ключи (D-184): SSH — без входа, подписи — после входа (unlockAll).
         KeystoreKey.exportValue()?.let { out[SSH] = it }
-        val signing = when (val r = SigningKeys.allChecked()) {
+        val signing = when (val r = SigningKeys.allChecked(app)) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }

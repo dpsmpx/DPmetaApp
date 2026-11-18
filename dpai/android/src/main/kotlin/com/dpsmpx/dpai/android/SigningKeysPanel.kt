@@ -58,7 +58,7 @@ internal fun SigningKeysPanel(project: String, projectName: String, enabled: Boo
     var problem by remember(project, version) { mutableStateOf<String?>(null) }
     var loaded by remember(project, version) { mutableStateOf(false) }
     LaunchedEffect(project, version) {
-        val (g, p, stored) = withContext(Dispatchers.IO) { Triple(SigningKeys.info(app, null), SigningKeys.info(app, project), SigningKeys.allChecked()) }
+        val (g, p, stored) = withContext(Dispatchers.IO) { Triple(SigningKeys.info(app, null), SigningKeys.info(app, project), SigningKeys.allChecked(app)) }
         global = g.valueOrNull()
         own = p.valueOrNull()
         globalFailed = g is Outcome.Failure

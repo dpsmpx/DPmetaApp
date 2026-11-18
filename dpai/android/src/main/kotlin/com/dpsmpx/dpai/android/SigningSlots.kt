@@ -5,6 +5,7 @@ import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.diagnostics.DiagnosticCollector
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.result.then
 import com.dpsmpx.dpai.core.serialization.FormatHeader
 import com.dpsmpx.dpai.core.serialization.JsonArray
 import com.dpsmpx.dpai.core.serialization.JsonFields
@@ -28,9 +29,24 @@ internal class SigningSlots(
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }
-        val read = load()
-        if (read is Outcome.Failure) return read
-        val slots = (read as Outcome.Success).value
+        return load().then { resolve(project, token, aliases, it) }
+    }
+
+    /** Все сохранённые выборы проверяются, даже если Keystore вернул пустой список alias. */
+    fun checkedScopes(aliases: Collection<String>): Outcome<List<String?>> = load().then { slots ->
+        val scopes = (slots.keys.mapNotNull(::decodeToken) + aliases.mapNotNull(::scope)).distinct()
+        for (scope in scopes) {
+            val token = when (val r = token(scope.project)) {
+                is Outcome.Failure -> return@then r
+                is Outcome.Success -> r.value
+            }
+            val selected = resolve(scope.project, token, aliases, slots)
+            if (selected is Outcome.Failure) return@then selected
+        }
+        Outcome.success(aliases.mapNotNull(::scope).map { it.project }.distinct())
+    }
+
+    private fun resolve(project: String?, token: String, aliases: Collection<String>, slots: Map<String, String?>): Outcome<String?> {
         val alias = if (token in slots) {
             slots[token]?.let { if (it == LEGACY) legacyAlias(project) else alias(token, it) }
         } else {
@@ -42,7 +58,7 @@ internal class SigningSlots(
         if (alias != null && alias !in aliases) {
             return Outcome.failure(DiagCode.STORAGE_CORRUPTED, "выбранный ключ подписи отсутствует в Keystore")
         }
-        return Outcome.success(alias, read.diagnostics)
+        return Outcome.success(alias)
     }
 
     /** stage возвращает успех только после проверки ключа и необходимой переносимой копии. */
