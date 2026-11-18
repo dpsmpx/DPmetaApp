@@ -118,7 +118,12 @@ class CommitHistoryTest {
     }
 
     @Test
-    fun copiesNeverMergeIndependentAuthorAndTimeGroups() {
+    fun copiesNeverMergeIndependentAuthorAndTimeGroups() = pairedCopies("Two", "2026-11-02 10:00")
+
+    @Test
+    fun copiesWithChangedAuthorTimeRemainIndependent() = pairedCopies("One", "2026-11-02 11:00")
+
+    private fun pairedCopies(other: String, time: String) {
         Git.init().setBare(true).setInitialBranch("main").setDirectory(remoteDir).call().close()
         Git.init().setInitialBranch("main").setDirectory(work).call().use { git ->
             git.repository.config.apply { setString("remote", "origin", "url", remoteDir.toURI().toString()) }.save()
@@ -128,8 +133,8 @@ class CommitHistoryTest {
             git.push().setRemote("origin").add("main").call()
             for ((branch, who, time) in listOf(
                 Triple("one-copy", "One", "2026-11-02 10:00"),
-                Triple("two-a", "Two", "2026-11-02 11:00"),
-                Triple("two-b", "Two", "2026-11-02 11:00"),
+                Triple("two-a", other, time),
+                Triple("two-b", other, time),
             )) {
                 git.checkout().setCreateBranch(true).setName(branch).setStartPoint(base.name).call()
                 commit(git, who, time, "x.txt", "same\n", branch)

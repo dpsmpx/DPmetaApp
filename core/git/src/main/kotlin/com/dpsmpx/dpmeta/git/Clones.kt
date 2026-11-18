@@ -455,17 +455,19 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
             val groups = work.groupBy { it.author to it.at }.filterValues { it.size > 1 }
             val patch = HashMap<ObjectId, String?>()
             for (g in groups.values) for (c in g) patch[c.id] = patchId(repo, walk.parseCommit(c.id))
-            val mainPatches = work.filter { it.main }.mapNotNull { patch[it.id] }.toSet()
-            val seenPatches = HashSet<String>()
+            // Один patch-id сам по себе не связывает независимых авторов и время.
+            fun copyKey(c: Seen): Triple<String, Long, String>? = patch[c.id]?.let { Triple(c.author, c.at, it) }
+            val mainCopies = work.filter { it.main }.mapNotNull(::copyKey).toSet()
+            val seenCopies = HashSet<Triple<String, Long, String>>()
             val counted = ArrayList<Seen>()
             val copies = HashSet<ObjectId>()
             for (c in work) {
-                val p = patch[c.id]
-                if (!c.main && p != null && (p in mainPatches || p in seenPatches)) {
+                val p = copyKey(c)
+                if (!c.main && p != null && (p in mainCopies || p in seenCopies)) {
                     copies += c.id
                     continue
                 }
-                if (p != null) seenPatches += p
+                if (p != null) seenCopies += p
                 counted += c
             }
             fun day(sec: Long) = java.time.Instant.ofEpochSecond(sec).atOffset(zone).toLocalDate().toString()
