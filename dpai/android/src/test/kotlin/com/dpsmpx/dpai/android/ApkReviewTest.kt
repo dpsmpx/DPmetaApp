@@ -8,6 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /** Окно перед установкой и подписью (D-157, T22): копия, сведения словами, строка журнала. */
@@ -30,7 +31,7 @@ class ApkReviewTest {
         val copy = assertIs<Outcome.Success<File>>(ApkReview.stage(source, stage)).value
         staged += copy
         assertFalse(File(stage, "старое.apk").exists(), "неиспользуемая прежняя копия убрана")
-        assertEquals(stage.canonicalPath, copy.parentFile.parentFile.canonicalPath)
+        assertEquals(stage.canonicalPath, assertNotNull(assertNotNull(copy.parentFile).parentFile).canonicalPath)
         source.writeText("подмена")
         assertEquals("первый", copy.readText())
     }
