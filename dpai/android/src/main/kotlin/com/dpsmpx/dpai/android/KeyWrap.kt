@@ -113,6 +113,18 @@ internal object KeyWrap {
 
     @Synchronized
     fun delete(base: java.io.File, name: String) {
-        runCatching { vfs(base).let { if (it.exists(name)) it.delete(name) } }
+        deleteChecked(base, name)
+    }
+
+    /** Для удаления ключа подписи отказ очистки нельзя скрывать успешным отзывом. */
+    @Synchronized
+    fun deleteChecked(base: java.io.File, name: String): Outcome<Unit> = try {
+        val v = vfs(base)
+        v.delete("$name.tmp")
+        v.delete(name)
+        v.fsyncDir("")
+        Outcome.success(Unit)
+    } catch (e: Exception) {
+        Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "копия ключа не удалена", e, name))
     }
 }

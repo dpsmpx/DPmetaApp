@@ -28,7 +28,7 @@ internal object ApkReview {
     private const val DIR = "apk-review"
 
     /** Что показано человеку: файл дерева, его копия, сведения и строка журнала. */
-    data class Review(val source: File, val copy: File, val meta: ApkInstaller.Meta?, val sha256: String, val text: String, val log: String) {
+    data class Review(val source: File, val copy: File, val meta: ApkInstaller.Meta?, val sha256: String, val text: String, val log: String, val keySha256: String? = null) {
         val self: Boolean get() = meta?.self == true
     }
 
@@ -70,7 +70,7 @@ internal object ApkReview {
             val meta = ApkInstaller.meta(context, copy)
             val sig = ApkSign.inspect(copy)
             val sha = ApkSign.fileSha256(copy)
-            Outcome.success(Review(file, copy, (meta as? Outcome.Success)?.value, sha, describe(meta, sig, sha, keySha256), logLine(meta, sig, sha)))
+            Outcome.success(Review(file, copy, (meta as? Outcome.Success)?.value, sha, describe(meta, sig, sha, keySha256), logLine(meta, sig, sha), keySha256))
         } catch (e: IOException) {
             copy.delete()
             Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "копия APK не прочитана", e, file.name))

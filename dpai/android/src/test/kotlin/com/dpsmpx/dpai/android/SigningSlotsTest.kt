@@ -24,8 +24,9 @@ class SigningSlotsTest {
     private class Faults(private val real: Vfs) : Vfs by real {
         var failAt: Int? = null
         var operations = 0
+        var corruptWrites = false
         private fun check() { if (++operations == failAt) throw IOException("отказ хранилища") }
-        override fun write(path: String, bytes: ByteArray) { check(); real.write(path, bytes) }
+        override fun write(path: String, bytes: ByteArray) { check(); real.write(path, if (corruptWrites) byteArrayOf(7, 9) else bytes) }
         override fun fsync(path: String) { check(); real.fsync(path) }
         override fun rename(from: String, to: String) { check(); real.rename(from, to) }
         override fun fsyncDir(dir: String) { check(); real.fsyncDir(dir) }
@@ -162,5 +163,16 @@ class SigningSlotsTest {
         f.number = 0
         assertTrue(f.replace(value = "other") is Outcome.Failure)
         assertEquals(listOf("new"), f.keys.values.toList())
+    }
+
+    @Test fun silentCorruptionCannotAuthorizeOldKeyCleanup() {
+        val f = Fixture(dir)
+        assertTrue(f.replace(value = "old") is Outcome.Success)
+        val old = assertNotNull(f.active())
+        f.faults.corruptWrites = true
+        assertTrue(f.replace() is Outcome.Failure)
+        assertEquals("old", f.keys[old])
+        assertTrue(old in f.copies)
+        assertEquals(old, SigningSlots(DocumentStore(f.real, "selectors")).active(null, f.keys.keys).valueOrNull())
     }
 }

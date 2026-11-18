@@ -137,8 +137,11 @@ object AppSecrets {
         }
         // Переносимые ключи (D-184): SSH — без входа, подписи — после входа (unlockAll).
         KeystoreKey.exportValue()?.let { out[SSH] = it }
-        for (p in SigningKeys.all()) {
-            if (!SigningKeys.portable(app, p)) continue
+        val signing = when (val r = SigningKeys.allChecked()) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        for (p in signing) {
             when (val r = SigningKeys.exportValue(app, p)) {
                 is Outcome.Failure -> return Outcome.failure(r.errors.first().code, "ключ подписи ${p ?: GLOBAL} не прочитан: ${r.errors.first().message}", p ?: GLOBAL)
                 is Outcome.Success -> r.value?.let { out[SIGN + (p ?: GLOBAL)] = it }
