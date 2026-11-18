@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
 
 /**
  * История из клона (D-66) на синтетическом репозитории, теми же
- * определениями, что у наборов прогресса сайта: свои авторы, без слияний,
+ * определениями D-176: все авторы, без слияний,
  * копия после cherry-pick — один раз, день — по поясу +03:00, слияния PR —
  * отдельно, журнал решений — на конец дня, ветки впереди основной.
  */
@@ -84,7 +84,7 @@ class CommitHistoryTest {
         val build = { b: String -> b == "apk_debug" }
         c.sync("Alpha", remoteDir.toURI(), null, build)
         val count = { text: String -> Regex("^### D-\\d+", RegexOption.MULTILINE).findAll(text).count() }
-        val h = (c.history("Alpha", "main", zone, setOf("Claude"), setOf("dpsmpx"), build, "docs/DECISIONS.md" to count) as Outcome.Success).value
+        val h = (c.history("Alpha", "main", zone, setOf("Claude"), build, "docs/DECISIONS.md" to count) as Outcome.Success).value
 
         assertEquals("2026-11-01", h.first)
         val days = h.days.associateBy { it.date }
@@ -93,7 +93,7 @@ class CommitHistoryTest {
         assertEquals(CommitHistory.Day("2026-11-02", 3, 2, 1, 2, 1, 0), days["2026-11-02"])
         assertEquals(CommitHistory.Day("2026-11-03", 1, 1, 0, 1, 0, 0), days["2026-11-03"], "ветка сборок — мимо")
         assertEquals(listOf("2026-11-01" to 2, "2026-11-03" to 4), h.decisions, "журнал — только в дни перемен")
-        // Впереди main — одна ветка с одним своим коммитом: копия влитого не в счёте.
+        // Впереди main — одна ветка с одним коммитом: копия влитого не в счёте.
         assertEquals(listOf("work" to 1), h.ahead.map { it.name to it.commits })
         assertTrue(h.complete)
     }
@@ -111,9 +111,40 @@ class CommitHistoryTest {
         }
         val clones = Clones(File(tmp, "clones"), open, setOf("file"))
         clones.sync("Alpha", remoteDir.toURI(), null) { false }
-        val history = (clones.history("Alpha", "main", zone, setOf("Claude"), setOf("dpsmpx"), { false }) as Outcome.Success).value
+        val history = (clones.history("Alpha", "main", zone, setOf("Claude"), { false }) as Outcome.Success).value
         assertEquals(listOf("contributor" to 1), history.ahead.map { it.name to it.commits })
         assertEquals(2, history.days.sumOf { it.commits }, "коммиты не зависят от личных имён")
+        assertEquals(2, history.days.sumOf { it.other }, "прочие — без предположения, что это люди")
+    }
+
+    @Test
+    fun copiesNeverMergeIndependentAuthorAndTimeGroups() {
+        Git.init().setBare(true).setInitialBranch("main").setDirectory(remoteDir).call().close()
+        Git.init().setInitialBranch("main").setDirectory(work).call().use { git ->
+            git.repository.config.apply { setString("remote", "origin", "url", remoteDir.toURI().toString()) }.save()
+            commit(git, "Maintainer", "2026-11-01 10:00", "base.txt", "base\n")
+            val base = git.repository.resolve("HEAD")
+            commit(git, "One", "2026-11-02 10:00", "x.txt", "same\n", "One main")
+            git.push().setRemote("origin").add("main").call()
+            for ((branch, who, time) in listOf(
+                Triple("one-copy", "One", "2026-11-02 10:00"),
+                Triple("two-a", "Two", "2026-11-02 11:00"),
+                Triple("two-b", "Two", "2026-11-02 11:00"),
+            )) {
+                git.checkout().setCreateBranch(true).setName(branch).setStartPoint(base.name).call()
+                commit(git, who, time, "x.txt", "same\n", branch)
+                git.push().setRemote("origin").add(branch).call()
+            }
+        }
+        val clones = Clones(File(tmp, "clones"), open, setOf("file"))
+        clones.sync("Alpha", remoteDir.toURI(), null) { false }
+        val h = (clones.history("Alpha", "main", zone, setOf("Claude"), { false }) as Outcome.Success).value
+        val day = h.days.single { it.date == "2026-11-02" }
+        assertEquals(2, day.commits, "одинаковый patch-id разных авторов/времени — независимые изменения")
+        assertEquals(1, day.mainline)
+        assertEquals(1, day.branchOnly, "две копии одного автора в ветках — один раз")
+        assertEquals(1, h.ahead.size)
+        assertEquals(1, h.ahead.single().commits)
     }
 
     @Test
@@ -133,7 +164,7 @@ class CommitHistoryTest {
         }
         val c = Clones(File(tmp, "clones"), open, setOf("file"))
         c.sync("Alpha", remoteDir.toURI(), null) { false }
-        val h = (c.history("Alpha", "main", zone, setOf("Claude"), setOf("dpsmpx"), { false }) as Outcome.Success).value
+        val h = (c.history("Alpha", "main", zone, setOf("Claude"), { false }) as Outcome.Success).value
         val days = h.days.associateBy { it.date }
         assertEquals(CommitHistory.Day("2026-11-01", 3, 1, 2, 3, 0, 0), days["2026-11-01"], "коммит ветки влит — он в основной")
         assertEquals(CommitHistory.Day("2026-11-02", 0, 0, 0, 0, 0, 1), days["2026-11-02"], "слияние — не коммит работы, а слияние PR")

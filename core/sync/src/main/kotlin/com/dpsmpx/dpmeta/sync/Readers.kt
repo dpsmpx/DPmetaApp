@@ -234,11 +234,11 @@ class CloneReader(
     private val selected: (String) -> Boolean = { true },
 ) : SourceReader {
     /**
-     * Как считать историю из клона (D-66): пояс дней и свои авторы — ИИ и
-     * человек (чужие — исходные проекты форков — не в счёте). Задаёт
-     * оболочка из `Rules.kt`; `null` — история не читается.
+     * История всех авторов (D-176): пояс дней и известные метки ИИ задаёт
+     * оболочка из `Rules.kt`; прочие авторы не объявляются людьми.
+     * `null` — история не читается.
      */
-    data class HistoryRules(val zone: java.time.ZoneOffset, val ai: Set<String>, val human: Set<String>)
+    data class HistoryRules(val zone: java.time.ZoneOffset, val ai: Set<String>)
 
     override val source: ObservationSource = rest.source
 
@@ -308,7 +308,7 @@ class CloneReader(
             val rx = (ids.regex() as? Outcome.Success)?.value ?: return@let null
             ids.path to { text: String -> (com.dpsmpx.dpmeta.formats.DecisionLog.parse(text, rx, "${project.name}:${ids.path}") as? Outcome.Success)?.value?.entries?.size }
         }
-        return when (val r = clones.history(key, main, rules.zone, rules.ai, rules.human, excluded, journal)) {
+        return when (val r = clones.history(key, main, rules.zone, rules.ai, excluded, journal)) {
             is Outcome.Failure -> r
             is Outcome.Success -> {
                 val json = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(Sync.historyJson(r.value))

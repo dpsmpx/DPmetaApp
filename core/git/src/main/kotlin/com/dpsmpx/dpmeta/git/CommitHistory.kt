@@ -15,13 +15,13 @@ data class CommitHistory(
     val complete: Boolean,
 ) {
     /**
-     * День `ГГГГ-ММ-ДД`: [commits] — своих коммитов работы; из них [ai] и
-     * [human]; [mainline] — сейчас в основной ветке, [branchOnly] — только в
+     * День `ГГГГ-ММ-ДД`: [commits] — коммитов работы всех авторов; из них [ai] и
+     * [other]; [mainline] — сейчас в основной ветке, [branchOnly] — только в
      * ветках; [merges] — слияний PR в основную ветку.
      */
-    data class Day(val date: String, val commits: Int, val ai: Int, val human: Int, val mainline: Int, val branchOnly: Int, val merges: Int)
+    data class Day(val date: String, val commits: Int, val ai: Int, val other: Int, val mainline: Int, val branchOnly: Int, val merges: Int)
 
-    /** Ветка впереди основной: своих коммитов сверх неё и время последнего. */
+    /** Ветка впереди основной: коммитов сверх неё и время последнего. */
     data class Ahead(val name: String, val commits: Int, val last: Timestamp)
 
     companion object {

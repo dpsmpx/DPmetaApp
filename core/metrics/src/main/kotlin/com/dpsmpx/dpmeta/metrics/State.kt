@@ -14,6 +14,7 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpmeta.model.Observation
+import com.dpsmpx.dpmeta.model.HistorySchema
 import com.dpsmpx.dpmeta.model.Registry
 import com.dpsmpx.dpmeta.model.SourceFailure
 
@@ -168,17 +169,34 @@ data class ProjectState(
             ChecklistFile(path, false, (o["done"] as? JsonNumber)?.toLongExact() ?: 0L, (o["total"] as? JsonNumber)?.toLongExact() ?: 0L, open)
         }
 
-    /** День истории из клона (D-66): коммиты, из них ИИ и человек, в основной и только в ветках, слияния PR. */
-    data class HistoryDay(val date: String, val commits: Long, val ai: Long, val human: Long, val mainline: Long, val branchOnly: Long, val merges: Long)
+    /** v1 хранит прежнюю категорию «человек», v2 — «прочие»; числа не перекрашиваются (D-176). */
+    data class HistoryDay(
+        val date: String, val commits: Long, val ai: Long,
+        val human: Long?, val other: Long?,
+        val mainline: Long, val branchOnly: Long, val merges: Long,
+    )
 
-    /** Дни истории из клона (`clone.history.v1`); секции нет — `null` (неизвестно, а не «коммитов не было»). */
+    /** Прежние строки читаются для истории, но не участвуют в новых расчётах. */
     val historyDays: List<HistoryDay>?
-        get() = (payload("history")?.get("days") as? JsonArray)?.items?.mapNotNull { d ->
-            val a = (d as? JsonArray)?.items ?: return@mapNotNull null
-            val date = (a.getOrNull(0) as? JsonString)?.value ?: return@mapNotNull null
-            val n = (1..6).map { (a.getOrNull(it) as? JsonNumber)?.toLongExact() ?: return@mapNotNull null }
-            HistoryDay(date, n[0], n[1], n[2], n[3], n[4], n[5])
+        get() {
+            val source = sections["history"] ?: return null
+            val current = when (source.schema) {
+                HistorySchema.LEGACY -> false
+                HistorySchema.CURRENT -> true
+                else -> return null
+            }
+            return ((source.payload as? JsonObject)?.get("days") as? JsonArray)?.items?.mapNotNull { d ->
+                val a = (d as? JsonArray)?.items ?: return@mapNotNull null
+                val date = (a.getOrNull(0) as? JsonString)?.value ?: return@mapNotNull null
+                val n = (1..6).map { (a.getOrNull(it) as? JsonNumber)?.toLongExact() ?: return@mapNotNull null }
+                HistoryDay(date, n[0], n[1], n[2].takeUnless { current }, n[2].takeIf { current }, n[3], n[4], n[5])
+            }
         }
+
+    /** Счётчики личного списка v1 не становятся числами всех авторов под новой версией правил. */
+    private fun currentHistory(): JsonObject? = payload("history")?.takeIf {
+        sections["history"]?.schema == HistorySchema.CURRENT && (it["complete"] as? JsonBool)?.value == true
+    }
 
     /** День `ГГГГ-ММ-ДД` по поясу истории ([Rules.HISTORY_ZONE]), [back] дней назад от [now]. */
     private fun day(now: Timestamp, back: Int): String =
@@ -190,17 +208,19 @@ data class ProjectState(
      * Коммитов за окно не было — неизвестно, а не 0 %.
      */
     fun aiShare(now: Timestamp): Measure<Long> {
+        if (currentHistory() == null) return Measure.unknown("нужна свежая история клона")
         val days = historyDays ?: return Measure.unknown("нет истории из клона")
         val from = day(now, Rules.AI_SHARE_DAYS - 1)
-        val window = days.filter { it.date >= from }
+        val today = day(now, 0)
+        val window = days.filter { it.date >= from && it.date <= today }
         val total = window.sumOf { it.commits }
         return if (total == 0L) Measure.unknown("коммитов за ${Rules.AI_SHARE_DAYS} дней нет") else Measure.observed(window.sumOf { it.ai } * 100 / total)
     }
 
-    /** Ветки впереди основной (ТЗ, §8, `repo.branches.unmerged`): сколько и своих коммитов сверх неё. */
+    /** Ветки впереди основной (ТЗ, §8, `repo.branches.unmerged`): сколько и коммитов всех авторов сверх неё. */
     val branchesAhead: Measure<Pair<Long, Long>>
         get() {
-            val list = (payload("history")?.get("ahead") as? JsonArray)?.items?.mapNotNull { it as? JsonObject } ?: return Measure.unknown("нет истории из клона")
+            val list = (currentHistory()?.get("ahead") as? JsonArray)?.items?.mapNotNull { it as? JsonObject } ?: return Measure.unknown("нет истории из клона")
             return Measure.observed(list.size.toLong() to list.sumOf { (it["commits"] as? JsonNumber)?.toLongExact() ?: 0L })
         }
 
@@ -211,7 +231,7 @@ data class ProjectState(
      * истории нет — неизвестно.
      */
     fun decisionsNew(now: Timestamp): Measure<Long> {
-        val points = (payload("history")?.get("decisions") as? JsonArray)?.items?.mapNotNull { p ->
+        val points = (currentHistory()?.get("decisions") as? JsonArray)?.items?.mapNotNull { p ->
             val a = (p as? JsonArray)?.items ?: return@mapNotNull null
             val d = (a.getOrNull(0) as? JsonString)?.value ?: return@mapNotNull null
             val n = (a.getOrNull(1) as? JsonNumber)?.toLongExact() ?: return@mapNotNull null
@@ -336,7 +356,7 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
 
     companion object {
         const val FORMAT = "dpmeta.state"
-        const val VERSION = 2
+        const val VERSION = 3
         private const val DAY_MS = 24 * 60 * 60 * 1000L
         private val NOT_FOUND = setOf(DiagCode.GITHUB_NOT_FOUND, DiagCode.ENTITY_NOT_FOUND)
 
@@ -382,7 +402,7 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
             return EcosystemState(now, Rules.RULES_VERSION, projects, health)
         }
 
-        /** v1 сохраняет прежние числа и версию правил; неизвестная версия — отказ. */
+        /** v1/v2 сохраняют прежние числа и версию правил; неизвестная версия — отказ. */
         fun fromJson(value: JsonValue): Outcome<EcosystemState> {
             val d = DiagnosticCollector()
             val f = JsonFields.root(value, d) ?: return Outcome.Failure(d.all)

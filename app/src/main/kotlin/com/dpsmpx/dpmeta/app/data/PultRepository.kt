@@ -540,7 +540,7 @@ class PultRepository(
         // Выбор записан как `full_name` GitHub, ключи клонов реестра — как в реестре: один каталог на репозиторий, сверка без регистра.
         val regKeys = reg.shown.map { if (it.dir != null) host.toString() else it.slug.toString() }.toSet()
         val chosen = selected.map { s -> regKeys.firstOrNull { it.equals(s, ignoreCase = true) } ?: s }.toSet()
-        val reader = CloneReader(clones, GitHubReader(gh, host), host, Rules::isBuildBranch, CloneReader.HistoryRules(Rules.HISTORY_ZONE, Rules.AI_AUTHORS, Rules.HUMAN_AUTHORS)) { it in chosen }
+        val reader = CloneReader(clones, GitHubReader(gh, host), host, Rules::isBuildBranch, CloneReader.HistoryRules(Rules.HISTORY_ZONE, Rules.AI_AUTHORS)) { it in chosen }
         // Размер нового клона — по ответу GitHub; не ответил — оценка вида работы (D-113).
         val sizeOf = { key: String -> RepoRef.parse(key).valueOrNull()?.let { gh.repoSize(it).valueOrNull() } }
         val cloned = cloneAll(reg, clones, reader, token, chosen, sizeOf, progress)

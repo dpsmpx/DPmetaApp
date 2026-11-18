@@ -137,7 +137,7 @@ class CloneReaderTest {
         val clones = Clones(File(tmp, "clones"), { Outcome.success(Unit) }, setOf("file"))
         clones.sync("dpsmpx/Alpha", remote("alpha", mapOf("TODO.md" to "- [ ] пункт\n")), null, build)
         clones.sync(host.toString(), remote("host", mapOf("dpai/TODO.md" to "- [ ] «AI»\n")), null, build)
-        val rules = CloneReader.HistoryRules(java.time.ZoneOffset.ofHours(3), setOf("Claude"), setOf("dpsmpx"))
+        val rules = CloneReader.HistoryRules(java.time.ZoneOffset.ofHours(3), setOf("Claude"))
         val alpha = project("dpsmpx/Alpha")
         val h = (CloneReader(clones, Rest(), host, build, rules).history(alpha) as Outcome.Success).value.value
         assertEquals(2, h.days.sumOf { it.commits }, "main и work, без ветки сборок")

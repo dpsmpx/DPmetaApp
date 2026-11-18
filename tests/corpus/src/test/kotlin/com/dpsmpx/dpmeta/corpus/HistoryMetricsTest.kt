@@ -9,6 +9,7 @@ import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.metrics.ProjectState
 import com.dpsmpx.dpmeta.metrics.Rules
 import com.dpsmpx.dpmeta.metrics.SourceSection
+import com.dpsmpx.dpmeta.model.HistorySchema
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,9 +25,9 @@ class HistoryMetricsTest {
     // 8 ноября 2026, 12:00 по +03:00.
     private val now = Timestamp(Instant.parse("2026-11-08T09:00:00Z").toEpochMilli())
 
-    private fun project(json: String?) = ProjectState(
+    private fun project(json: String?, schema: String = HistorySchema.CURRENT) = ProjectState(
         "P", "core",
-        json?.let { mapOf("history" to SourceSection("history", "clone.history.v1", now, (JsonParser().parse(it) as Outcome.Success).value as JsonObject)) }.orEmpty().toSortedMap(),
+        json?.let { mapOf("history" to SourceSection("history", schema, now, (JsonParser().parse(it) as Outcome.Success).value as JsonObject)) }.orEmpty().toSortedMap(),
         emptyList(),
     )
 
@@ -41,7 +42,16 @@ class HistoryMetricsTest {
     fun aiShareCountsOnlyTheWindow() {
         // Окно 30 дней — с 10 октября по 8 ноября: 1 + 3 + 2 = 6 ИИ из 12; 1 сентября — за окном.
         assertEquals(30, Rules.AI_SHARE_DAYS)
-        assertEquals(Measure.observed(50L), project(history).aiShare(now))
+        val p = project(history)
+        assertEquals(Measure.observed(50L), p.aiShare(now))
+        assertEquals(3L, p.historyDays!!.first { it.date == "2026-11-01" }.other)
+        assertEquals(null, p.historyDays!!.first().human, "прочие авторы не объявляются людьми")
+    }
+
+    @Test
+    fun futureAuthorDatesDoNotEnterThePastWindow() {
+        val p = project("""{"complete":true,"days":[["2026-11-08",4,2,2,4,0,0],["2026-11-09",100,100,0,100,0,0]],"decisions":[],"ahead":[]}""")
+        assertEquals(Measure.observed(50L), p.aiShare(now), "окно заканчивается сегодняшним днём, не будущим временем автора")
     }
 
     @Test
@@ -77,6 +87,6 @@ class HistoryMetricsTest {
         for (m in listOf("repo.commits.ai_share", "repo.branches.unmerged", "repo.branches.unmerged.commits", "repo.decisions.new")) {
             assertTrue(m in names, m)
         }
-        assertTrue(state.points().all { it.rulesVersion == 6 }, "новые точки — правила 6; прежние проверяет DpmetaCountersTest")
+        assertTrue(state.points().all { it.rulesVersion == 7 }, "новые точки — правила 7; прежние версии проверяются отдельно")
     }
 }

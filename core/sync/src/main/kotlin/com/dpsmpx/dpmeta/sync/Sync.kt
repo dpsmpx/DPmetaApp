@@ -26,6 +26,7 @@ import com.dpsmpx.dpmeta.github.Issue
 import com.dpsmpx.dpmeta.github.PullRequest
 import com.dpsmpx.dpmeta.github.RecentCommit
 import com.dpsmpx.dpmeta.model.Observation
+import com.dpsmpx.dpmeta.model.HistorySchema
 import com.dpsmpx.dpmeta.model.ObservationSource
 import com.dpsmpx.dpmeta.model.ProjectEntry
 import com.dpsmpx.dpmeta.model.Registry
@@ -430,18 +431,19 @@ object Sync {
     }
 
     /** Схема наблюдения истории из клона (D-66). */
-    const val HISTORY_SCHEMA = "clone.history.v1"
+    const val HISTORY_SCHEMA = HistorySchema.CURRENT
 
     /**
-     * История из клона одной строкой JSON: дни — `[дата, коммиты, ИИ, человек,
+     * История из клона одной строкой JSON: дни — `[дата, коммиты, ИИ, прочие,
      * в основной, только в ветках, слияния PR]`, журнал — `[дата, записей]`
      * в дни перемен, ветки впереди основной — имя, коммитов сверх неё, время
      * последнего. Ни авторов, ни сообщений, ни путей.
      */
     fun historyJson(h: com.dpsmpx.dpmeta.git.CommitHistory): JsonObject = JsonObject(
         linkedMapOf<String, JsonValue>(
+            "schema" to JsonString(HISTORY_SCHEMA),
             "complete" to JsonBool(h.complete),
-            "days" to JsonArray(h.days.map { d -> JsonArray(listOf(JsonString(d.date)) + listOf(d.commits, d.ai, d.human, d.mainline, d.branchOnly, d.merges).map { JsonNumber.of(it.toLong()) }) }),
+            "days" to JsonArray(h.days.map { d -> JsonArray(listOf(JsonString(d.date)) + listOf(d.commits, d.ai, d.other, d.mainline, d.branchOnly, d.merges).map { JsonNumber.of(it.toLong()) }) }),
             "decisions" to JsonArray(h.decisions.map { (d, n) -> JsonArray(listOf(JsonString(d), JsonNumber.of(n.toLong()))) }),
             "ahead" to JsonArray(h.ahead.map { a -> JsonObject.of("name" to JsonString(a.name), "commits" to JsonNumber.of(a.commits.toLong()), "last" to JsonNumber.of(a.last.epochMillis)) }),
         ).apply { h.first?.let { put("first", JsonString(it)) } },
