@@ -25,15 +25,8 @@
     <!-- Подтверждение действия уровня 2 PIN устройства или отпечатком (DPmetaApp:D-80): комментарий к PR. Обычное разрешение,
          выдаётся при установке; в приложении DPmetaApp оно уже есть у входа (DPmetaApp:D-59). -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
-    <!-- Запуск sshd Termux-target на этом телефоне (D-46): только эта команда; разрешение даёт человек. -->
-    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
     <!-- Установка собранного APK (D-157): каждую установку подтверждает человек в окне Android. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-
-    <!-- Android 11+: видеть Termux, чтобы послать ему RUN_COMMAND (D-46). -->
-    <queries>
-        <package android:name="com.termux" />
-    </queries>
 
     <application
         android:name=".DpaiApplication"

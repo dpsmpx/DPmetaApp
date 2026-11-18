@@ -149,11 +149,11 @@ object NewProject {
     }
 
     /**
-     * Шаблон можно создать на target платформы [platform]; [inApp] — Linux приложения,
-     * [termux] — Termux. Нельзя — причина словами.
+     * [inApp] — Linux приложения. Ограничение шаблона объясняется словами;
+     * SSH-target больше не определяется по адресу loopback (D-202).
      */
-    fun unavailable(template: Template, inApp: Boolean, termux: Boolean): String? =
-        if (template.pcOnly && (inApp || termux)) "Android-приложение собирается на ПК-target с Android SDK — выберите ПК" else null
+    fun unavailable(template: Template, inApp: Boolean): String? =
+        if (template.pcOnly && inApp) "Android-приложение собирается на ПК-target с Android SDK — выберите ПК" else null
 
     /** Абсолютный путь проекта: домашний каталог [home], папка [parent] от него и имя. */
     fun root(home: String, parent: String, name: String): String = join(home, parent, name)

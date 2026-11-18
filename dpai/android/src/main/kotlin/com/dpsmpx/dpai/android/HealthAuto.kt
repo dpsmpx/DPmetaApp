@@ -15,8 +15,8 @@ import java.nio.file.Files
 
 /**
  * Факты для проверки приложения (DPmetaApp:D-123, D-158): с хоста, без процессов
- * гостя — файлы корневой системы, секреты, Termux, замер такта, место. Вызывать
- * не из потока экрана: Termux проверяется подключением к порту.
+ * гостя — файлы корневой системы, секреты, замер такта, место.
+ * Вызывать не из потока экрана: читается хранилище.
  */
 object HealthProbe {
     /** Больше — не `~/.gitconfig` человека; читать не нужно. */
@@ -27,7 +27,6 @@ object HealthProbe {
         val linux = if (!LinuxSetup.available(app)) null else linuxFacts(app)
         val github = runCatching { SecretGrants.rows(app).firstOrNull { it.variable == GITHUB_VARIABLE } }.getOrNull()
         val o = model?.liveOrchestrator()
-        val termux = runCatching { TermuxLauncher.state(app, Controller.get(app.filesDir).targets()) }.getOrNull()
         val stats = ControllerService.lastStats?.takeIf { ControllerService.running }
         return HealthFacts(
             linux = linux,
@@ -35,8 +34,6 @@ object HealthProbe {
             loggedIn = o?.accounts?.slots?.values?.any { it.login == com.dpsmpx.dpai.accounts.LoginStatus.OK } == true,
             githubToken = github?.present,
             githubForAi = github?.granted,
-            termux = termux?.first,
-            termuxPort = termux?.second ?: 8022,
             tick = stats?.let { TickFacts(it.maxMs, it.avgMs, it.slowest?.first, it.slowest?.second) },
             freeBytes = runCatching { android.os.StatFs(app.filesDir.path).availableBytes }.getOrNull(),
         )

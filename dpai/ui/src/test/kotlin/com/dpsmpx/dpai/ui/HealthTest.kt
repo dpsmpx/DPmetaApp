@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 /**
  * Проверка приложения (DPmetaApp:D-123, D-158): пункты по фактам, шаги мастера, причины
  * отказа `apk` и автор коммитов. Факты — как в отчёте автора 13 ноября 2026: повреждённые
- * binutils, gcc, g++, Git без автора, токен GitHub не выдан Linux, Termux-target с закрытым портом.
+ * binutils, gcc, g++, Git без автора, токен GitHub не выдан Linux, медленный такт.
  */
 class HealthTest {
     private val reported = HealthFacts(
@@ -20,7 +20,6 @@ class HealthTest {
             git = true, gitHelper = true, gitIdentity = false, claude = true,
         ),
         slots = 1, loggedIn = true, githubToken = true, githubForAi = false,
-        termux = TermuxState.REQUESTED_NOT_UP,
         tick = TickFacts(maxMs = 71_342, avgMs = 60_000, slowest = "шаг контура", slowestMs = 70_900),
         freeBytes = 13L shl 30,
     )
@@ -28,7 +27,7 @@ class HealthTest {
     @Test
     fun reportedProblemsBecomeItemsWithActions() {
         val items = Health.items(reported)
-        assertEquals(listOf("linux.broken", "git.identity", "git.token", "termux", "tick.slow"), items.map { it.id })
+        assertEquals(listOf("linux.broken", "git.identity", "git.token", "tick.slow"), items.map { it.id })
         val broken = items.first()
         assertEquals(HealthLevel.ERROR, broken.level)
         assertEquals("Пакеты Linux повреждены: binutils, gcc, g++", broken.title)
@@ -36,8 +35,7 @@ class HealthTest {
         assertEquals(listOf(HealthAction.REPAIR_PACKAGES), broken.actions)
         assertEquals(listOf(HealthAction.GIT_IDENTITY), items[1].actions)
         assertEquals(listOf(HealthAction.OPEN_SECRETS), items[2].actions)
-        assertTrue("allow-external-apps" in items[3].detail)
-        assertTrue("71 с" in items[4].detail && "шаг контура (71 с)" in items[4].detail, items[4].detail)
+        assertTrue("71 с" in items[3].detail && "шаг контура (71 с)" in items[3].detail, items[3].detail)
         assertTrue(items.drop(1).all { it.level == HealthLevel.WARNING })
     }
 
@@ -45,33 +43,17 @@ class HealthTest {
     fun healthyAppHasNoItems() {
         val ok = reported.copy(
             linux = reported.linux!!.copy(broken = emptyList(), gitIdentity = true),
-            githubForAi = true, termux = TermuxState.LISTENING, tick = TickFacts(120, 15),
+            githubForAi = true, tick = TickFacts(120, 15),
         )
         assertEquals(emptyList(), Health.items(ok))
         assertTrue(Health.setupDone(ok))
-        // Без Termux-target и без замера — тоже ничего; запрос sshd только что ушёл — ещё не проблема.
-        assertEquals(emptyList(), Health.items(ok.copy(termux = null, tick = null)))
-        assertEquals(emptyList(), Health.items(ok.copy(termux = TermuxState.STARTING)))
+        // Без замера — тоже ничего.
+        assertEquals(emptyList(), Health.items(ok.copy(tick = null)))
         // Токен не сохранён — не пункт проверки, а шаг мастера.
         assertEquals(emptyList(), Health.items(ok.copy(githubToken = false, githubForAi = false)))
         // GitHub — по желанию (DPmetaApp:D-150): без токена настройка закончена.
         assertTrue(Health.setupDone(ok.copy(githubToken = false)))
         assertTrue(Health.setup(ok).single { it.id == "github" }.optional)
-    }
-
-    @Test
-    fun termuxStatesExplainWhatToDo() {
-        val actions = mapOf(
-            TermuxState.NOT_INSTALLED to listOf(HealthAction.OPEN_TARGETS),
-            TermuxState.NO_RUN_COMMAND to listOf(HealthAction.TERMUX_GUIDE, HealthAction.OPEN_TARGETS),
-            TermuxState.NO_PERMISSION to listOf(HealthAction.APP_SETTINGS, HealthAction.OPEN_TARGETS),
-            TermuxState.REQUESTED_NOT_UP to listOf(HealthAction.TERMUX_GUIDE, HealthAction.OPEN_TARGETS),
-        )
-        for ((state, expected) in actions) {
-            val item = Health.items(HealthFacts(termux = state, termuxPort = 8022)).single()
-            assertEquals(expected, item.actions, "$state")
-            assertTrue("8022" in item.title)
-        }
     }
 
     @Test

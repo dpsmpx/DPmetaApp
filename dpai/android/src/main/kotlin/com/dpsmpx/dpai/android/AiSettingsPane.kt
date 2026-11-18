@@ -73,7 +73,6 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onTar
             return
         }
     }
-    var restoring by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val app = context.applicationContext as? DpaiApplication
     // В DPmetaApp «Оформление» и «Хранилище и секреты» — в документе настроек приложения (DPmetaApp:D-112), здесь — ссылка.
@@ -84,7 +83,7 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onTar
         item(key = "guide") {
             Card(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Termux, агент, ключ, вход, проект, dpai — по шагам", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                    Text("Linux приложения и ПК по SSH — по шагам", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                     Button(onClick = { onSub(GUIDE) }) { Text("Инструкция") }
                 }
             }
@@ -102,16 +101,12 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onTar
         if (appSettings == null) {
             item(key = "key") { AppKeyCard(controller) }
             item(key = "control") { ControlCard(model) }
-            // Три копии — одной карточкой (AI:A-3, §4, п. 6): копия настроек, восстановление доступа, облако.
+            // Копии настроек и облако; восстановление через Termux снято D-202.
             item(key = "copies") {
                 Card(Modifier.fillMaxWidth()) {
                     Column {
                         Text("Копии и восстановление", Modifier.padding(start = 12.dp, top = 12.dp), style = MaterialTheme.typography.titleMedium)
-                        BackupCard(controller, framed = false, onRestoreAccess = { restoring = true }) {}
-                        if (restoring) {
-                            HorizontalDivider()
-                            RestoreCard(controller, framed = false, onHide = { restoring = false }) {}
-                        }
+                        BackupCard(controller, framed = false) {}
                         HorizontalDivider()
                         CloudCard(model, framed = false)
                     }

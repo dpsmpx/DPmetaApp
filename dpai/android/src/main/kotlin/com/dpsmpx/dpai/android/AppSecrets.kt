@@ -90,7 +90,7 @@ object AppSecrets {
         if (KeystoreKey.exists()) {
             val portable = KeystoreKey.portable()
             out += Row(SSH, "Ключ SSH приложения", null,
-                "уберите его строку из authorized_keys на ПК и в Termux" + if (portable) "" else "; прежний, не переносится — «Новый переносимый ключ SSH…»", portable)
+                "уберите его строку из authorized_keys на SSH-targets" + if (portable) "" else "; прежний, не переносится — «Новый переносимый ключ SSH…»", portable)
         }
         for (p in SigningKeys.all()) {
             val portable = SigningKeys.portable(app, p)

@@ -15,7 +15,7 @@ import com.dpsmpx.dpai.execution.target.TargetPlatform
 object TerminalLaunch {
     /**
      * CLI слота — через оболочку входа (`sh -l`): `PATH` пользователя
-     * (`~/.local/bin`, `$PREFIX/bin` Termux) есть только в ней, а канал
+     * (`~/.local/bin`) есть только в ней, а канал
      * `exec` её не читает. Профиль может выставить ключ API или Bedrock —
      * их `env -u` снимает уже после профиля (D-29, ревью 17 октября 2026):
      * иначе CLI слота шёл бы не на подписку слота. Windows и target без

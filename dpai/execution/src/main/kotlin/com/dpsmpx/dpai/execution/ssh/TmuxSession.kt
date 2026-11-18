@@ -7,11 +7,11 @@ import com.dpsmpx.dpai.execution.target.TargetPlatform
  * Сессия вкладки терминала в `tmux` на POSIX target (D-111): после обрыва
  * связи или перезапуска приложения вкладка входит в ту же сессию. Команда —
  * одна строка `sh -lc` (оболочка входа: `PATH` пользователя с `tmux` из
- * Termux — только в ней), кавычки — по правилам [RemoteShell].
+ * пользователя — только в ней), кавычки — по правилам [RemoteShell].
  */
 object TmuxSession {
     /** Строка в терминале, когда `tmux` на target нет: приложение его не ставит само (D-111). */
-    const val NO_TMUX: String = "Нет tmux — сессия не переживёт обрыв связи. Поставить: pkg install tmux (Termux), sudo apt install tmux (Debian, Ubuntu), apk add tmux (Alpine)."
+    const val NO_TMUX: String = "Нет tmux — сессия не переживёт обрыв связи. Поставить: sudo apt install tmux (Debian, Ubuntu), apk add tmux (Alpine)."
 
     /** `tmux` есть, но не запустился (версия, права) — вкладка работает без него. */
     const val TMUX_FAILED: String = "tmux не запустился — вкладка без него."

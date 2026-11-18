@@ -231,12 +231,6 @@ class ControllerService : Service() {
                             } catch (e: Exception) {
                                 log.warn("проверка", AppLogs.describe(e))
                             }
-                            // Termux-target на этом телефоне: sshd не слушает — запустить его в Termux (D-46).
-                            try {
-                                TermuxLauncher.ensureSshd(app, Controller.get(app.filesDir).targets())?.let { log.info("termux", it) }
-                            } catch (e: Exception) {
-                                log.warn("termux", AppLogs.describe(e))
-                            }
                         }
                     } catch (e: Throwable) {
                         // Сюда попадает то, что вне внутренних `try`: настройки с диска, wakelock (на части

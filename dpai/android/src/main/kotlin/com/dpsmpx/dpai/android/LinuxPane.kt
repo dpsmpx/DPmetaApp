@@ -101,7 +101,7 @@ fun LinuxScreen(onBack: () -> Unit, controller: Controller? = null, model: DemoM
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         TextButton(onClick = onBack) { Text("← Назад") }
         Text("Linux в приложении", style = MaterialTheme.typography.titleMedium)
-        Text("Alpine в данных приложения — без Termux.", style = MaterialTheme.typography.bodySmall)
+        Text("Alpine в данных приложения.", style = MaterialTheme.typography.bodySmall)
         when {
             !available -> Text("Недоступно на этом телефоне: нужен процессор arm64.", style = MaterialTheme.typography.bodySmall)
             !checked -> Text("Проверяю…", style = MaterialTheme.typography.bodySmall)

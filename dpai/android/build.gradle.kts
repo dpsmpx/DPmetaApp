@@ -60,9 +60,8 @@ android {
 val packAgent = tasks.register<Zip>("packAgent") {
     dependsOn(":cli:installDist")
     from(rootProject.file("cli/build/install/dpai")) { into("dpai") }
-    from(rootProject.file("tools/termux/claude-proot.sh")) { into("dpai") }
     // Скрипты — исполняемыми: без этого `dpai/bin/dpai` после unzip не запускался (ревью сборки 0.1.0-dev.2).
-    eachFile { if (path == "dpai/bin/dpai" || path == "dpai/claude-proot.sh") permissions { unix("rwxr-xr-x") } }
+    eachFile { if (path == "dpai/bin/dpai") permissions { unix("rwxr-xr-x") } }
     archiveFileName.set("dpai-agent.zip")
     destinationDirectory.set(layout.buildDirectory.dir("generated/dpai-setup-assets"))
     isPreserveFileTimestamps = false

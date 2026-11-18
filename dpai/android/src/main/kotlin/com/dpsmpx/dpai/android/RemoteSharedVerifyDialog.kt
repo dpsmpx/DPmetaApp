@@ -33,7 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Настройка ПК/Termux: первая проба без аккаунта, синхронизация после явного входа. */
+/** Настройка ПК: первая проба без аккаунта, синхронизация после явного входа. */
 @Composable
 internal fun RemoteSharedVerifyDialog(controller: Controller, target: TargetEntry, onClose: () -> Unit) {
     val context = LocalContext.current.applicationContext

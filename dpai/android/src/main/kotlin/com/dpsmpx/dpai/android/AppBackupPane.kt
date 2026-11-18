@@ -380,7 +380,7 @@ private fun EraseDialog(rows: List<AppSecrets.Row>, onCancel: () -> Unit, onEras
 /**
  * Ключ SSH в копии (D-184): переносимый — уходит в копию под паролем; прежний внутри
  * Keystore не извлекается — его можно сменить на новый переносимый (строку на ПК и в
- * Termux тогда нужно заменить).
+ * SSH-targets тогда нужно заменить).
  */
 @Composable
 private fun PortableSshRow(refresh: Int, onChanged: () -> Unit) {
@@ -394,7 +394,7 @@ private fun PortableSshRow(refresh: Int, onChanged: () -> Unit) {
         null -> return
         true -> Text("Ключ SSH приложения — переносимый: уходит в копию под паролем.", style = MaterialTheme.typography.bodySmall)
         false -> {
-            Text("Ключ SSH приложения — прежний, внутри Keystore: в копию не уходит. Новый переносимый ключ уйдёт в неё, но строку ключа на ПК и в Termux нужно будет заменить.",
+            Text("Ключ SSH приложения — прежний, внутри Keystore: в копию не уходит. Новый переносимый ключ уйдёт в неё, но строку ключа на SSH-targets нужно будет заменить.",
                 style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = { confirm = true }) { Text("Новый переносимый ключ SSH…") }
         }
@@ -403,14 +403,14 @@ private fun PortableSshRow(refresh: Int, onChanged: () -> Unit) {
         Text(l, style = MaterialTheme.typography.bodySmall)
         TextButton(onClick = {
             context.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(android.content.ClipData.newPlainText("ключ SSH", l))
-            note = "Строка скопирована — добавьте её в ~/.ssh/authorized_keys на ПК и в Termux"
+            note = "Строка скопирована — добавьте её в ~/.ssh/authorized_keys на SSH-targets"
         }) { Text("Скопировать строку ключа") }
     }
     note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     if (confirm) AlertDialog(
         onDismissRequest = { confirm = false },
         title = { Text("Новый ключ SSH") },
-        text = { Text("Прежний ключ будет стёрт: подключения к ПК и Termux перестанут работать, пока вы не добавите новую строку ключа в authorized_keys.") },
+        text = { Text("Прежний ключ будет стёрт: подключения к SSH-targets перестанут работать, пока вы не добавите новую строку ключа в authorized_keys.") },
         confirmButton = {
             TextButton(onClick = {
                 confirm = false

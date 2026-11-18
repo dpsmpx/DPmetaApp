@@ -107,7 +107,6 @@ internal object NewProjectRun {
             override val key: String get() = target.id.value
             override val title: String get() = target.label
             override val platform: TargetPlatform get() = target.platform
-            val termux: Boolean get() = target.type == TargetType.TERMUX_LOCAL
         }
     }
 
@@ -116,10 +115,10 @@ internal object NewProjectRun {
 
     const val PHONE = "phone"
 
-    /** Где можно создать проект: телефон — первым, затем Termux и ПК. */
+    /** Где можно создать проект: Linux приложения первым, затем ПК по SSH. */
     fun places(context: Context, targets: List<TargetEntry>): List<Option> {
         val linux = when {
-            !LinuxSetup.available(context) -> "Linux приложения на этом устройстве не работает (нужен arm64) — выберите Termux или ПК"
+            !LinuxSetup.available(context) -> "Linux приложения на этом устройстве не работает (нужен arm64) — выберите ПК по SSH"
             LinuxSetup.environment(context).installed() == null -> "сначала установите Linux приложения"
             else -> null
         }
@@ -130,11 +129,11 @@ internal object NewProjectRun {
         return listOf(Option(Place.Phone(slot), linux)) + remote
     }
 
-    private val REMOTE = setOf(TargetType.TERMUX_LOCAL, TargetType.LINUX_SSH, TargetType.WINDOWS_REMOTE)
+    private val REMOTE = setOf(TargetType.LINUX_SSH, TargetType.WINDOWS_REMOTE)
 
     /** Причина, по которой шаблон нельзя создать в [place]; `null` — можно. */
     fun unavailable(template: NewProject.Template, place: Place): String? =
-        NewProject.unavailable(template, inApp = place is Place.Phone, termux = (place as? Place.Remote)?.termux == true)
+        NewProject.unavailable(template, inApp = place is Place.Phone)
 
     /** Gradle wrapper из APK; нет (сборка без него) — `null`. */
     fun wrapper(context: Context): NewProject.GradleWrapper? = try {
@@ -276,7 +275,7 @@ internal object NewProjectRun {
      * «Опубликовать на GitHub» (`DPmetaApp:D-150`): после того как пульт создал репозиторий —
      * remote `origin` = [url] и отправка ветки проекта [projectId]. В Linux приложения токен
      * [token] получает только этот процесс Git (окружение гостя, как у выданных секретов,
-     * D-144); на Termux и ПК — вход Git самого target. Итог — строка для экрана.
+     * D-144); на ПК — вход Git самого target. Итог — строка для экрана.
      */
     fun publish(context: Context, model: DemoModel, projectId: String, url: String, token: com.dpsmpx.dpai.core.diagnostics.Secret): Outcome<String> {
         val controller = Controller.get(context.filesDir)

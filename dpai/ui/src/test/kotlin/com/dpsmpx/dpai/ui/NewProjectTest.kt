@@ -45,10 +45,9 @@ class NewProjectTest {
 
     @Test
     fun androidOnlyOnPc() {
-        assertNotNull(NewProject.unavailable(Template.KOTLIN_ANDROID, inApp = true, termux = false))
-        assertNotNull(NewProject.unavailable(Template.KOTLIN_ANDROID, inApp = false, termux = true))
-        assertNull(NewProject.unavailable(Template.KOTLIN_ANDROID, inApp = false, termux = false))
-        assertNull(NewProject.unavailable(Template.CPP_CMAKE, inApp = true, termux = false))
+        assertNotNull(NewProject.unavailable(Template.KOTLIN_ANDROID, inApp = true))
+        assertNull(NewProject.unavailable(Template.KOTLIN_ANDROID, inApp = false))
+        assertNull(NewProject.unavailable(Template.CPP_CMAKE, inApp = true))
     }
 
     @Test

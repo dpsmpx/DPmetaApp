@@ -24,7 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
-/** ПК/Termux по закреплённому SSH: токен только после пробы обновлённого агента (D-175). */
+/** ПК по закреплённому SSH: токен только после пробы обновлённого агента (D-175). */
 internal object RemoteSharedVerify {
     private val awaitingAccount = MutableStateFlow(false)
     /** Только состояние ожидания; сам аккаунт остаётся у оболочки и текущего задания. */

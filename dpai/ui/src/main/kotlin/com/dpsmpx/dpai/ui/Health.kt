@@ -15,7 +15,6 @@ enum class HealthAction(val label: String) {
     OPEN_SECRETS("Секреты"),
     GIT_IDENTITY("Задать автора…"),
     APP_SETTINGS("Разрешения приложения"),
-    TERMUX_GUIDE("Инструкция Termux"),
     OPEN_STORAGE("Хранилище"),
     OPEN_LOG("Журнал"),
 }
@@ -26,9 +25,6 @@ data class HealthItem(val id: String, val level: HealthLevel, val title: String,
 /** Шаг мастера настройки: [done] — сделан ли; `null` — к этому устройству не относится. */
 /** Шаг мастера настройки; [optional] — по желанию: несделанный не держит мастер открытым (`DPmetaApp:D-150`). */
 data class SetupStepItem(val id: String, val title: String, val text: String, val done: Boolean?, val action: HealthAction? = null, val optional: Boolean = false)
-
-/** Состояние Termux-target на этом телефоне (sshd на loopback, D-46). */
-enum class TermuxState { LISTENING, NOT_INSTALLED, NO_RUN_COMMAND, NO_PERMISSION, REQUESTED_NOT_UP, STARTING }
 
 /** Повреждённый пакет Alpine: имя и что именно не так. */
 data class BrokenPackage(val name: String, val why: String)
@@ -63,8 +59,6 @@ data class HealthFacts(
     val loggedIn: Boolean = false,
     val githubToken: Boolean? = null,
     val githubForAi: Boolean? = null,
-    val termux: TermuxState? = null,
-    val termuxPort: Int = 8022,
     val tick: TickFacts? = null,
     val freeBytes: Long? = null,
 )
@@ -129,7 +123,6 @@ object Health {
                 )
             }
         }
-        f.termux?.takeIf { it != TermuxState.LISTENING && it != TermuxState.STARTING }?.let { add(termuxItem(it, f.termuxPort)) }
         f.tick?.takeIf { it.maxMs >= SLOW_TICK_MS }?.let { t ->
             val part = t.slowest?.let { name -> " Дольше всего — $name${t.slowestMs?.let { " (${seconds(it)})" }.orEmpty()}." }.orEmpty()
             add(
@@ -161,7 +154,7 @@ object Health {
         return listOf(
             SetupStepItem(
                 "linux", "Linux в приложении",
-                if (linux == null) "На этом устройстве Linux в приложении не работает (нужен arm64) — используйте ПК или Termux-target."
+                if (linux == null) "На этом устройстве Linux в приложении не работает (нужен arm64) — используйте ПК по SSH."
                 else "Alpine внутри приложения: терминал, IDE и ИИ работают в нём. Около 10 МБ, без сети.",
                 linux?.installed, HealthAction.INSTALL_LINUX.takeIf { linux != null && !installed },
             ),
@@ -262,27 +255,6 @@ object Health {
                 "проверке; нужна сеть.$last",
             listOf(HealthAction.REPAIR_PACKAGES),
         )
-    }
-
-    private fun termuxItem(state: TermuxState, port: Int): HealthItem {
-        val (detail, actions) = when (state) {
-            TermuxState.NOT_INSTALLED ->
-                "Target на 127.0.0.1:$port заведён, а Termux не установлен. Если работаете через Linux в приложении — " +
-                    "уберите этот target на вкладке «Targets»." to listOf(HealthAction.OPEN_TARGETS)
-            TermuxState.NO_RUN_COMMAND ->
-                "Этот Termux (сборка из Google Play) не принимает команды других приложений, и приложение не может само " +
-                    "запустить в нём sshd. Запустите sshd в Termux автозапуском (Termux:Boot, ~/.termux/boot) или виджетом — " +
-                    "или уберите target, если он больше не нужен." to listOf(HealthAction.TERMUX_GUIDE, HealthAction.OPEN_TARGETS)
-            TermuxState.NO_PERMISSION ->
-                "Нет разрешения «Запуск команд в среде Termux» — приложение не может запустить sshd. Дайте его: настройки " +
-                    "приложения → Разрешения → Другие разрешения." to listOf(HealthAction.APP_SETTINGS, HealthAction.OPEN_TARGETS)
-            else ->
-                "Приложение попросило Termux запустить sshd, но порт $port так и не открылся. Обычно в " +
-                    "~/.termux/termux.properties нет строки allow-external-apps = true или система остановила Termux. " +
-                    "Команды — в инструкции Termux; target, который больше не нужен, можно убрать." to
-                    listOf(HealthAction.TERMUX_GUIDE, HealthAction.OPEN_TARGETS)
-        }
-        return HealthItem("termux", HealthLevel.WARNING, "Termux-target недоступен: sshd не слушает порт $port", detail, actions)
     }
 
     private fun seconds(ms: Long): String = if (ms < 1000) "$ms мс" else "${(ms + 500) / 1000} с"

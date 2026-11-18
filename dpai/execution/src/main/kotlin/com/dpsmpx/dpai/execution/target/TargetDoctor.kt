@@ -63,7 +63,7 @@ object TargetDoctor {
         val checks = mutableListOf<DoctorCheck>()
         val rtt = receivedAt - sentAt
         checks += DoctorCheck("связь", CheckStatus.OK, "ответ за ${rtt.inWholeMilliseconds} мс")
-        val agentLine = "dpai ${r.agentVersion}; ${r.os} ${r.arch}; Java ${r.javaVersion}" + if (r.termux) "; Termux" else ""
+        val agentLine = "dpai ${r.agentVersion}; ${r.os} ${r.arch}; Java ${r.javaVersion}"
         checks += if (controllerVersion != null && controllerVersion != r.agentVersion) {
             DoctorCheck("агент", CheckStatus.WARN, "$agentLine; контроллер $controllerVersion — обновить агента")
         } else {
