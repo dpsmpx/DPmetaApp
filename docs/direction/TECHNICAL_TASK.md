@@ -765,8 +765,7 @@ F-42 сняты D-173; его отправки команд и приёмник�
 | `repo.checks.last` | итог раздела «Проверки»: зелёный / красный / неизвестно; возраст | описание PR | состояние, часы | З |
 | `eco.active_projects` | проекты в состоянии «работает» | `repo.activity.state` | шт. | П |
 | `eco.questions_open` | открытые вопросы автору | F-24 | шт. | П |
-| `eco.contracts` / `eco.risks_open` / `eco.sync_queue` | контракты, открытые риски, пункты очереди DPmeta | `DPmeta:docs/CONTRACTS.md`, `RISKS.md`, `SYNC_QUEUE.md` (заголовки `C-`, `RISK-`, `SQ-`, как в `SocialMediaImage:data/progress/scope.yaml`) | шт. | З |
-| `eco.reports` | срезы DPmeta | `DPmeta:docs/reports/` | шт. | З |
+| `eco.contracts` / `eco.risks_open` / `eco.sync_queue` / `eco.reports` | сняты D-173, D-176 (правила 6); прежние точки остаются в истории | новые значения не собираются | шт. | — |
 | `claude.api.tokens.daily` | токены по API-профилю, workspace и модели: вход, выход, запись и чтение кэша | Usage report (Admin) | токены/день | И |
 | `claude.api.cost.daily` | стоимость по API-профилю и workspace | Cost report (Admin) | USD/день | И |
 | `claude.api.rate_limits` | лимиты скорости по моделям | Admin API, лимиты | запросов/мин, токенов/мин | И |

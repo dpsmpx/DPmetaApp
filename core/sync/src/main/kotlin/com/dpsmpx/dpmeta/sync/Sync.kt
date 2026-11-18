@@ -26,7 +26,6 @@ import com.dpsmpx.dpmeta.github.Issue
 import com.dpsmpx.dpmeta.github.PullRequest
 import com.dpsmpx.dpmeta.github.RecentCommit
 import com.dpsmpx.dpmeta.model.Observation
-import com.dpsmpx.dpmeta.formats.DpmetaDocs
 import com.dpsmpx.dpmeta.model.ObservationSource
 import com.dpsmpx.dpmeta.model.ProjectEntry
 import com.dpsmpx.dpmeta.model.Registry
@@ -56,9 +55,6 @@ enum class SourceKind(val code: String) {
 
     /** История из клона (D-66): только у читателя клонов, последней — она тяжелее остальных. */
     HISTORY("history"),
-
-    /** Счётчики документов DPmeta для `eco.*` (ТЗ, §8): только у проекта DPmeta. */
-    DPMETA("dpmeta"),
 }
 
 /** Получено из источника: значение, отпечаток исходного ответа, признак 304. */
@@ -169,7 +165,6 @@ object Sync {
                     SourceKind.ROADMAP -> known[p.name to kind.code]?.let { k -> listOf(k) + (ROADMAP_PATHS - k) } ?: ROADMAP_PATHS
                     SourceKind.README -> listOf("README.md")
                     SourceKind.CHECKLISTS -> p.checklists.ifEmpty { continue }
-                    SourceKind.DPMETA -> if (p.name == DPMETA) listOf(DpmetaDocs.CONTRACTS, DpmetaDocs.RISKS, DpmetaDocs.QUEUE) else continue
                 }
                 if ((p.name to kind.code) !in skip) tasks += SourceTask(p, kind, paths)
             }
@@ -202,7 +197,6 @@ object Sync {
                     val h = reader.history(t.project) ?: continue
                     h.map { g -> historyJson(g.value) to g.rawSha256 }
                 }
-                SourceKind.DPMETA -> dpmeta(t, reader)
                 SourceKind.CHECKLISTS -> checklists(t, reader)
                 SourceKind.ISSUES -> when (val i = reader.issues(t.project) ?: continue) {
                     // Токену не дали Issues (D-176): «нет прав», а не ошибка источника — права по желанию.
@@ -236,7 +230,6 @@ object Sync {
         SourceKind.MERGED -> "github.merged.v1"
         SourceKind.BRANCHES -> "github.branches.v1"
         SourceKind.HISTORY -> HISTORY_SCHEMA
-        SourceKind.DPMETA -> DPMETA_SCHEMA
         SourceKind.CHECKLISTS -> CHECKLISTS_SCHEMA
         SourceKind.ISSUES -> "github.issues.v1"
         SourceKind.COMMITS -> "github.commits.v1"
@@ -342,54 +335,6 @@ object Sync {
             },
         ),
     )
-
-    /** Проект реестра с документами экосистемы (`eco.*`): DPmeta, с 25 октября 2026 — подсистема `dpmeta/`. */
-    const val DPMETA = "DPmeta"
-
-    /** Схема счётчиков документов DPmeta. */
-    const val DPMETA_SCHEMA = "dpmeta.counters.v1"
-
-    /**
-     * Счётчики документов DPmeta (`eco.*`): контракты, риски (всего и
-     * открытых), пункты очереди, срезы (файлы `.md` каталога `docs/reports`). Файла нет —
-     * его поля нет (неизвестно, а не ноль); нет ни одного — отказ «файла нет».
-     */
-    private fun dpmeta(t: SourceTask, reader: SourceReader): Outcome<Pair<JsonObject, ContentHash>> {
-        val out = linkedMapOf<String, JsonValue>("schema" to JsonString(DPMETA_SCHEMA))
-        val raws = StringBuilder()
-        var missing: Outcome.Failure? = null
-        for (path in t.paths) {
-            val text = when (val r = reader.file(t.project, path)) {
-                is Outcome.Failure -> if (r.diagnostics.first().code in NOT_FOUND) {
-                    missing = r
-                    continue
-                } else {
-                    return r
-                }
-                is Outcome.Success -> r.value
-            }
-            raws.append(path).append('\u0000').append(text.rawSha256.toString()).append('\n')
-            when (path) {
-                DpmetaDocs.CONTRACTS -> out["contracts"] = JsonNumber.of(DpmetaDocs.contracts(text.value).toLong())
-                DpmetaDocs.QUEUE -> out["syncQueue"] = JsonNumber.of(DpmetaDocs.queue(text.value).toLong())
-                DpmetaDocs.RISKS -> DpmetaDocs.risks(text.value).let { (all, open) ->
-                    out["risks"] = JsonNumber.of(all.toLong())
-                    out["risksOpen"] = JsonNumber.of(open.toLong())
-                }
-            }
-        }
-        if (out.size == 1) return missing ?: Outcome.failure(DiagCode.GITHUB_NOT_FOUND, "документов DPmeta нет", t.project.name)
-        when (val n = reader.names(t.project, DpmetaDocs.REPORTS)) {
-            null -> Unit
-            is Outcome.Failure -> if (n.diagnostics.first().code !in NOT_FOUND) return n
-            is Outcome.Success -> {
-                val reports = n.value.filter { it.endsWith(".md") }
-                out["reports"] = JsonNumber.of(reports.size.toLong())
-                raws.append(DpmetaDocs.REPORTS).append('\u0000').append(reports.sorted().joinToString(",")).append('\n')
-            }
-        }
-        return Outcome.success(JsonObject(out) to com.dpsmpx.dpai.core.hashing.Hashing.sha256(raws.toString()))
-    }
 
     /** CI коммита (D-176): итог, сколько проверок, упавшие по имени, видно ли токену. */
     fun ciJson(c: CiState): JsonObject = JsonObject(

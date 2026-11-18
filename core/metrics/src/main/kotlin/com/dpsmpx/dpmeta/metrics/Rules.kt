@@ -10,7 +10,7 @@ import kotlin.time.Duration.Companion.minutes
  * `docs/CHANGELOG.md`; прежние точки истории остаются со своей версией.
  */
 object Rules {
-    const val RULES_VERSION: Int = 5
+    const val RULES_VERSION: Int = 6
 
     /** «Кто работает» (F-16, `DPmeta:M-08`): коммит в `main` за это окно. */
     val MAIN_COMMIT_WINDOW: Duration = 6.hours

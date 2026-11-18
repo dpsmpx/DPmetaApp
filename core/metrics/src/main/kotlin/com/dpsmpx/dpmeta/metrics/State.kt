@@ -278,15 +278,6 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
             return if (known.isEmpty()) Measure.unknown("нет ни одного TODO.md") else Measure.observed(known.sum())
         }
 
-    /**
-     * Счётчик документов DPmeta (ТЗ, §8, `eco.*`): поле секции `dpmeta`
-     * (`dpmeta.counters.v1`) проекта DPmeta; секции или поля нет —
-     * неизвестно.
-     */
-    fun dpmetaCount(field: String): Measure<Long> =
-        projects.firstNotNullOfOrNull { (it.sections["dpmeta"]?.payload as? JsonObject)?.get(field) as? JsonNumber }?.toLongExact()
-            ?.let { Measure.observed(it) } ?: Measure.unknown("нет счётчиков DPmeta: $field")
-
     /** Точки истории этого среза: неизвестное — без точки, а не ноль (D-13 подсистемы, D-34). */
     fun points(): List<MetricPoint> {
         val out = mutableListOf<MetricPoint>()
@@ -326,11 +317,6 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
         }
         add("eco.active_projects", "eco", activeProjects)
         add("eco.questions_open", "eco", questionsOpen)
-        // С правил 5: документы DPmeta (контракты, открытые риски, очередь, срезы).
-        add("eco.contracts", "eco", dpmetaCount("contracts"))
-        add("eco.risks_open", "eco", dpmetaCount("risksOpen"))
-        add("eco.sync_queue", "eco", dpmetaCount("syncQueue"))
-        add("eco.reports", "eco", dpmetaCount("reports"))
         add("app.sync.health", "app", syncHealth)
         return out
     }
@@ -350,7 +336,7 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
 
     companion object {
         const val FORMAT = "dpmeta.state"
-        const val VERSION = 1
+        const val VERSION = 2
         private const val DAY_MS = 24 * 60 * 60 * 1000L
         private val NOT_FOUND = setOf(DiagCode.GITHUB_NOT_FOUND, DiagCode.ENTITY_NOT_FOUND)
 
@@ -385,7 +371,10 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                     if (entry.decisions == null) add("decisions")
                 }
                 // Чек-листы сняты пользователем (D-176) — прежняя секция не остаётся навсегда.
-                val kept = if (entry.checklists.isEmpty()) (before + fresh) - "checklists" else before + fresh
+                // Прежний специальный источник DPmeta снят D-173/D-176.
+                // История чисел в журнале остаётся; текущая секция больше не обновляется.
+                val current = (before + fresh) - "dpmeta"
+                val kept = if (entry.checklists.isEmpty()) current - "checklists" else current
                 ProjectState(entry.name, entry.place.code, kept.toSortedMap(), errors, skipped)
             }
             val failed = failures.count { it.diagnostic.code !in NOT_FOUND }
@@ -393,11 +382,11 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
             return EcosystemState(now, Rules.RULES_VERSION, projects, health)
         }
 
-        /** Прежнее состояние из документа: другая версия формата — отказ, а не догадка. */
+        /** v1 сохраняет прежние числа и версию правил; неизвестная версия — отказ. */
         fun fromJson(value: JsonValue): Outcome<EcosystemState> {
             val d = DiagnosticCollector()
             val f = JsonFields.root(value, d) ?: return Outcome.Failure(d.all)
-            FormatHeader.read(f, FORMAT, VERSION..VERSION, d) ?: return Outcome.Failure(d.all)
+            FormatHeader.read(f, FORMAT, 1..VERSION, d) ?: return Outcome.Failure(d.all)
             val asOf = f.long("asOf")
             val rules = f.long("rulesVersion")
             val projects = f.array("projects")
