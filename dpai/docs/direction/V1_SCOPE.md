@@ -25,7 +25,7 @@ V1 обязана поддерживать пять сценариев ТЗ, §1
 ## 2. Подсистемы V1
 
 Все подсистемы ТЗ, §140 в объёме их Definition of Done (ТЗ, §126–§138):
-ядро, хранение, execution targets (local/Termux, SSH, mock), Claude
+ядро, хранение, execution targets (local, SSH, mock, Linux приложения; D-202), Claude
 Runner (CLI; SDK — по решению этапа 4), аккаунты, сессии, планировщик и
 DAG, контекст и handoff, Git и изоляция worktree, проверка, мониторинг,
 уведомления, восстановление, безопасность, Android-оболочка,

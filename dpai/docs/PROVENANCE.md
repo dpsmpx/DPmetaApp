@@ -173,7 +173,7 @@ Sysroot сборки proot — пакеты Alpine 3.24 `main` (в APK из ни
 | Уровни проверки static/affected/full, plan, report | `DP-Verify:README.md` | `tools/verify/`, D-16 |
 | Ссылки `Проект:номер`, общие принципы E-01…E-13 | `DPmeta:docs/NAMING.md`, `DPmeta:docs/PRINCIPLES.md` | `CLAUDE.md`, D-18 |
 | Хук начала сессии с ветками невлитой работы | `DPlang:.claude/hooks/session-start.sh` | `DPmetaApp:.claude/hooks/session-start.sh` (D-55) |
-| Подпись APK ключом автора на телефоне: пароли из `~/.gradle/gradle.properties` только в окружение, сверка сертификата | `~/dppass-build/build.sh` автора (вне репозитория, `DPmetaApp:D-31`), `DPpass:tools/release/sign_apks.py` | `tools/termux/resign-apk.sh` |
+| Подпись APK ключом автора на телефоне: пароли из `~/.gradle/gradle.properties` только в окружение, сверка сертификата | `~/dppass-build/build.sh` автора (вне репозитория, `DPmetaApp:D-31`), `DPpass:tools/release/sign_apks.py` | [resign-apk.sh — прежний код](https://github.com/dpsmpx/DPmetaApp/blob/944db715280cd6aee065e01a3ecc69edfaf24215/dpai/tools/termux/resign-apk.sh) |
 
 ## 6. Идеи из внешних проектов
 

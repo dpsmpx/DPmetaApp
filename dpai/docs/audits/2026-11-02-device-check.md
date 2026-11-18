@@ -8,6 +8,9 @@ APK, архив агента, `claude-proot.sh`, `resign-apk.sh`, `SHA256SUMS`;
 release автор собирает сам. Проход — одним агентом, только чтение. Отчёт
 не правится задним числом (`docs/audits/README.md`).
 
+Примечание 18 ноября 2026 (D-202): удалённые сценарии Termux ниже
+связаны со снимком до удаления; факты и выводы аудита не изменены.
+
 ## 1. Объём и метод
 
 Каждый шаг инструкции сверен с кодом того же коммита: подписи экранов,
@@ -16,7 +19,7 @@ release автор собирает сам. Проход — одним аген
 уведомлений — с `Notifier`, `RequestPresenter`, `ControllerService`,
 `AppDiskProvider`; команды `dpai` и их ключи — с `cli/`
 (`Main.kt`, `ControlCommand.kt`, `AgentCommand.kt`) и `ControlApi`;
-скрипты — с `tools/termux/`; пути — с `CrashRecord`, `LogPane`,
+скрипты — с [сценариями Termux до удаления](https://github.com/dpsmpx/DPmetaApp/tree/944db715280cd6aee065e01a3ecc69edfaf24215/dpai/tools/termux); пути — с `CrashRecord`, `LogPane`,
 `AppDisk`, `EventJournal`, `LinuxEnvironment`. Порядок — §0–§2, §5, §8,
 §15, §16, затем остальное. Gradle и сборки не запускались, сети нет.
 Находка — только с местом в инструкции (строка `DEVICE_CHECK.md`) и в

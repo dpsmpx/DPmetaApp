@@ -1,5 +1,8 @@
 # Claude Code CLI как интерфейс исполнителя
 
+Обновление ссылок 18 ноября 2026 (D-202): снятые сценарии доступны по
+ссылкам на прежний коммит; факты и результаты этого среза не пересматриваются.
+
 Датированные факты о неинтерактивном интерфейсе Claude Code, на которые
 опирается `ClaudeCodeCliRunner` (этап 4) и решение D-04. Факт без даты
 и версии сюда не пишется; изменился интерфейс — новая строка с новой
@@ -231,7 +234,7 @@ proot не проверены; на Redmi Note 13 (HyperOS 2.0) проверка
 
 Проверено **7 октября 2026** на том же Realme C21Y: Claude Code 2.1.292
 (musl-сборка) в `proot-distro` Alpine через обёртку
-`tools/termux/claude-proot.sh`; вход подпиской сделал автор в Termux
+[claude-proot.sh — прежний код](https://github.com/dpsmpx/DPmetaApp/blob/944db715280cd6aee065e01a3ecc69edfaf24215/dpai/tools/termux/claude-proot.sh); вход подпиской сделал автор в Termux
 (`claude`, D-27). `RealClaudeTest` с ПК по SSH (`adb forward`) через
 агента `dpai` в Termux (JDK 21): ход «Ответь ровно одним словом: готово»
 с `--session-id` и второй ход с `--resume` той же сессии — оба

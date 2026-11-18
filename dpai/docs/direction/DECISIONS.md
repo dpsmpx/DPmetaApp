@@ -1319,7 +1319,7 @@ known_hosts приложения, то есть только подтвержд�
 `StrictHostKeyChecking=yes` и `agent doctor` — связка готова, если агент
 ответил. Команда ПК (D-52) больше не ставит Node.js и Claude Code.
 
-**Проверка.** `WorkspaceLinkTest` (разбор ключа, кавычки Windows и POSIX,
+**Проверка.** [WorkspaceLinkTest — прежняя проверка](https://github.com/dpsmpx/DPmetaApp/blob/944db715280cd6aee065e01a3ecc69edfaf24215/dpai/ui/src/test/kotlin/com/dpsmpx/dpai/ui/WorkspaceLinkTest.kt) (снята D-202) (разбор ключа, кавычки Windows и POSIX,
 только строки этого ПК); на устройстве с ПК — не проверено (ПК у автора
 сейчас нет).
 
@@ -1361,7 +1361,7 @@ known_hosts приложения, то есть только подтвержд�
 `RUN_COMMAND` (D-46) не расширяется: Termux из Google Play его не
 поддерживает, команду вставляет человек.
 
-**Проверка.** `TermuxRestoreTest` (команда, код, разбор, слияние,
+**Проверка.** [TermuxRestoreTest — прежняя проверка](https://github.com/dpsmpx/DPmetaApp/blob/944db715280cd6aee065e01a3ecc69edfaf24215/dpai/ui/src/test/kotlin/com/dpsmpx/dpai/ui/TermuxRestoreTest.kt) (снята D-202) (команда, код, разбор, слияние,
 команда для ПК); на устройстве — после переустановки.
 
 ### D-55 — Подсистема «AI» DPmetaApp: код — в `DPmetaApp:dpai/`, DP_AI_Orcestrator заморожен
@@ -1808,8 +1808,8 @@ Wi-Fi с доступом к локальной сети из VPN телефон
 
 **Проверка.** `PcSetupTest.oneLineWithTheKeyFromPrivateNetsOnly` (в
 команде — `PRIVATE_NETS`, без Tailscale, с брандмауэром, адресами ПК и
-подсказкой о «Частной» сети); `SetupGuideTest`, `TermuxRestoreTest`,
-`WorkspaceLinkTest` (строки ключей — с `PRIVATE_NETS`). На ПК — не
+подсказкой о «Частной» сети); `SetupGuideTest`, [TermuxRestoreTest — прежняя проверка](https://github.com/dpsmpx/DPmetaApp/blob/944db715280cd6aee065e01a3ecc69edfaf24215/dpai/ui/src/test/kotlin/com/dpsmpx/dpai/ui/TermuxRestoreTest.kt) (снята D-202),
+[WorkspaceLinkTest — прежняя проверка](https://github.com/dpsmpx/DPmetaApp/blob/944db715280cd6aee065e01a3ecc69edfaf24215/dpai/ui/src/test/kotlin/com/dpsmpx/dpai/ui/WorkspaceLinkTest.kt) (снята D-202) (строки ключей — с `PRIVATE_NETS`). На ПК — не
 проверено (ПК у автора сейчас нет).
 
 ### D-69 — Проба входа: отпечаток аккаунта считает агент на target
@@ -2322,8 +2322,8 @@ Tailscale»), дополняет D-68.
 Адрес ПК в сети раздачи другой, чем дома: target — с другим «Хостом».
 
 **Проверка.** `PcSetupTest.linuxCommandRunsEndToEndInASandbox` (ключ — с
-`PRIVATE_NETS`; адреса ПК — только частные), `WorkspaceLinkTest`,
-`TermuxRestoreTest`, `SetupGuideTest`; на ПК — не проверено.
+`PRIVATE_NETS`; адреса ПК — только частные), [WorkspaceLinkTest — прежняя проверка](https://github.com/dpsmpx/DPmetaApp/blob/944db715280cd6aee065e01a3ecc69edfaf24215/dpai/ui/src/test/kotlin/com/dpsmpx/dpai/ui/WorkspaceLinkTest.kt) (снята D-202),
+[TermuxRestoreTest — прежняя проверка](https://github.com/dpsmpx/DPmetaApp/blob/944db715280cd6aee065e01a3ecc69edfaf24215/dpai/ui/src/test/kotlin/com/dpsmpx/dpai/ui/TermuxRestoreTest.kt) (снята D-202), `SetupGuideTest`; на ПК — не проверено.
 
 ### D-85 — Дробное число — только с явной локалью: текст не зависит от машины
 

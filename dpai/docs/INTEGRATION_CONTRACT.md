@@ -455,8 +455,7 @@ Gradle 9.8.0 — через wrapper со сверкой SHA-256 дистрибу
 модулей — `docs/ARCHITECTURE.md`, §2 (D-21).
 
 Внешние программы — не зависимости сборки, а инструменты на target,
-вызываемые процессами: Claude Code CLI (на телефоне — в `proot-distro`
-Alpine через `tools/termux/claude-proot.sh`, D-33), Java 17+ для агента,
+вызываемые процессами: CLI исполнителя (на телефоне — Linux приложения, D-202), Java 17+ для агента,
 `git`, OpenSSH (клиент `ssh` на JVM, `sshd` на targets), `gh`, команда
 DP-Verify как шаг профиля проверки (D-16).
 

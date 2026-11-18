@@ -620,7 +620,7 @@
 
 ## 22 октября 2026 — переподпись сборок облака ключом автора
 
-- `tools/termux/resign-apk.sh`: на телефоне переподписывает APK облака
+- [resign-apk.sh — прежний код](https://github.com/dpsmpx/DPmetaApp/blob/944db715280cd6aee065e01a3ecc69edfaf24215/dpai/tools/termux/resign-apk.sh): на телефоне переподписывает APK облака
   ключом выпуска автора (свойства `dpai.release.*` из
   `~/.gradle/gradle.properties`, пароли — через окружение), содержимое APK
   не меняется; ставится поверх версии, подписанной ключом автора

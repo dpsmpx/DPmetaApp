@@ -690,7 +690,7 @@ private fun TargetSwitches(model: DemoModel, t: TargetEntry) {
 
 /**
  * Командная строка (D-47): `dpai` с ПК
- * через SSH-туннель) управляет контуром через канал на 127.0.0.1; код
+ * через локальный проброс порта управляет контуром через канал на 127.0.0.1; код
  * сопряжения — здесь, на две минуты.
  */
 @Composable
@@ -857,6 +857,7 @@ internal fun BackupCard(controller: Controller, framed: Boolean = true, onRestor
     }
 }
 
+/** Новое имя слота (target): от 1 до 60 знаков; `null` — отмена. */
 @Composable
 private fun RenameDialog(t: TargetEntry, onDone: (String?) -> Unit) {
     var name by remember { mutableStateOf(t.label) }

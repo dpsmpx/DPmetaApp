@@ -206,7 +206,7 @@ object TargetBook {
             val t = JsonFields(obj, "$.targets[$i]", d)
             val kind = when {
                 version >= 7 -> t.string("kind")
-                version >= 3 -> t.optString("kind")
+                version >= 3 -> if (t.has("kind")) t.string("kind") else null
                 else -> null
             }
             // «В приложении» (v3): только имя и каталог слота — адреса SSH нет.
