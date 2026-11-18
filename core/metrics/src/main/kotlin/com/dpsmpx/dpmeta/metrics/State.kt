@@ -318,7 +318,9 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
             previous: EcosystemState?,
             now: Timestamp,
         ): EcosystemState {
-            val latest = observations
+            val currentObservations = observations.filter { it.kind !in RETIRED_SOURCES }
+            val currentFailures = failures.filter { it.kind !in RETIRED_SOURCES }
+            val latest = currentObservations
                 .groupBy { it.subject to it.kind }
                 .mapValues { (_, list) -> list.maxWith(compareBy<Observation> { it.asOf }.thenBy { it.id.toString() }) }
             val projects = registry.shown.map { entry ->
@@ -326,7 +328,7 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                 val fresh = latest.filterKeys { it.first == entry.name }.values.associate { o ->
                     o.kind to SourceSection(o.kind, o.schema, o.asOf, o.payload)
                 }
-                val errors = failures.filter { it.project == entry.name && it.kind !in RETIRED_SOURCES }
+                val errors = currentFailures.filter { it.project == entry.name }
                     .sortedWith(compareBy({ it.kind }, { it.diagnostic.code.name }, { it.at }))
                     .map { f -> SourceError(f.kind, f.diagnostic.code.name, f.diagnostic.message, f.at) }
                 val skipped = buildSet {
@@ -340,8 +342,8 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                 val kept = if (entry.checklists.isEmpty()) current - "checklists" else current
                 ProjectState(entry.name, entry.place.code, kept.toSortedMap(), errors, skipped)
             }
-            val failed = failures.count { it.diagnostic.code !in NOT_FOUND }
-            val health = (observations.size + failed).takeIf { it > 0 }?.let { observations.size * 100L / it }
+            val failed = currentFailures.count { it.diagnostic.code !in NOT_FOUND }
+            val health = (currentObservations.size + failed).takeIf { it > 0 }?.let { currentObservations.size * 100L / it }
             return EcosystemState(now, Rules.RULES_VERSION, projects, health)
         }
 
