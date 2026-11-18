@@ -448,11 +448,8 @@ private sealed interface Nav {
     /** Правка файла проекта (F-69) — из документа. */
     data class Edit(val project: String, val path: String) : Nav
 
-    /**
-     * Поручение Claude маршрутом (F-22, F-23) — из карточки; ответ на вопрос (F-25) — из
-     * «Вопросов»: [brief] — шаблон, [source] и [question] — его поля.
-     */
-    data class Brief(val project: String, val brief: String?, val source: String?, val question: String?) : Nav
+    /** Поручение Claude маршрутом (F-22, F-23) — из карточки проекта. */
+    data class Brief(val project: String, val brief: String?) : Nav
 
     /** «Спросить Claude» (F-21) — из «Ещё»; из документа — с приложенным файлом [project]:[path]. */
     data class Ask(val project: String?, val path: String?) : Nav
@@ -473,7 +470,7 @@ private sealed interface Nav {
             Journal -> listOf("journal")
             is Branch -> listOf("branch", n.project, n.name)
             is Edit -> listOf("edit", n.project, n.path)
-            is Brief -> listOf("brief", n.project, n.brief.orEmpty(), n.source.orEmpty(), n.question.orEmpty())
+            is Brief -> listOf("brief", n.project, n.brief.orEmpty())
             is Ask -> listOf("ask", n.project.orEmpty(), n.path.orEmpty())
             Commands -> listOf("commands")
         }.joinToString(SEP)
@@ -489,7 +486,7 @@ private sealed interface Nav {
                 "journal" -> Journal
                 "branch" -> if (p.size >= 3) Branch(p[1], p[2]) else null
                 "edit" -> if (p.size >= 3) Edit(p[1], p[2]) else null
-                "brief" -> if (p.size >= 5) Brief(p[1], p[2].ifEmpty { null }, p[3].ifEmpty { null }, p[4].ifEmpty { null }) else null
+                "brief" -> if (p.size >= 3) Brief(p[1], p[2].ifEmpty { null }) else null
                 "ask" -> if (p.size >= 3) Ask(p[1].ifEmpty { null }, p[2].ifEmpty { null }) else null
                 "commands" -> Commands
                 else -> null
@@ -1112,7 +1109,7 @@ private fun CardList(
                 if (user != null) AssistChip(onClick = { pathsOpen = true }, label = { Text("Документы и чек-листы…") })
                 AssistChip(onClick = { open(Nav.Dir(c.name, "")) }, label = { Text("Все файлы") })
                 AssistChip(onClick = { issueOpen = true }, label = { Text("Новый issue…") })
-                AssistChip(onClick = { open(Nav.Brief(c.name, null, null, null)) }, label = { Text("Поручить Claude…") })
+                AssistChip(onClick = { open(Nav.Brief(c.name, null)) }, label = { Text("Поручить Claude…") })
             }
             ideNote?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             if (issueOpen) IssueDialog(c.name, loader) { issueOpen = false }
@@ -1507,10 +1504,6 @@ private fun Pulls(
     }
 }
 
-/**
- * Вопросы автору (F-24, UX-17): по проектам, метка — чипом, касание —
- * `TODO.md` проекта на разделе вопроса.
- */
 /**
  * «Ждут меня» (D-176, п. 4): запросы ИИ — к «AI» на «Запросах», ревью — к экрану PR, назначенные
  * issues — на GitHub. Ревью и issues отбираются по логину владельца токена.
@@ -2500,11 +2493,8 @@ private fun AskScreen(nav: Nav.Ask, hasSnapshot: Boolean, loader: Loader, onBack
     }
 }
 
-/** Шаблон ответа на вопрос (F-25): `config/briefs/answer-question.md`. */
-private const val ANSWER_BRIEF = "answer-question"
-
 /**
- * Поручение Claude (F-22, F-23, F-25; D-07): маршрут, шаблон и его поля → окно «Что
+ * Поручение Claude (F-22, F-23; D-07): маршрут, шаблон и его поля → окно «Что
  * уйдёт» с текстом целиком → «Поручить» (уровень 1). Маршруты — из подсистемы «AI»;
  * итог — ссылка на облачную сессию (открыть — касанием, D-75) и строка журнала действий.
  */
@@ -2525,8 +2515,6 @@ private fun BriefScreen(nav: Nav.Brief, loader: Loader, onBack: () -> Unit) {
     var briefKey by rememberSaveable(nav) { mutableStateOf(nav.brief) }
     val values = remember(nav) {
         mutableStateMapOf<String, String>().apply {
-            nav.source?.let { put("source", it) }
-            nav.question?.let { put("question", it) }
         }
     }
     var pending by remember { mutableStateOf<Triple<com.dpsmpx.dpmeta.actions.ActionCommand, com.dpsmpx.dpmeta.formats.Brief, String>?>(null) }
@@ -2594,7 +2582,7 @@ private fun BriefScreen(nav: Nav.Brief, loader: Loader, onBack: () -> Unit) {
                             val text = (rendered as Outcome.Success).value
                             result = null
                             link = null
-                            pending = Triple(RouteActions.command(route!!, nav.project, repo, brief, text, nav.question.takeIf { brief.key == ANSWER_BRIEF }), brief, text)
+                            pending = Triple(RouteActions.command(route!!, nav.project, repo, brief, text), brief, text)
                         },
                     ) { Text("Дальше: что уйдёт") }
                 }

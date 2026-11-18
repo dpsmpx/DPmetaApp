@@ -53,12 +53,12 @@ class OwnDocumentsTest {
         assertTrue(log.entries.all { it.status != null }, "у каждого решения — статус")
     }
 
-    /** Шаблоны поручений (F-23): шесть из ТЗ на месте, каждый разбирается и собирается без пустых мест. */
+    /** Шаблоны поручений (F-23): после снятия F-25 на месте, каждый разбирается и собирается без пустых мест. */
     @Test
     fun ownBriefsParseAndRender() {
         val files = File(repo, "config/briefs").listFiles { f -> f.extension == "md" }.orEmpty().sortedBy { it.name }
         val keys = files.map { it.nameWithoutExtension }.toSet()
-        for (k in listOf("continue-branch", "roadmap-task", "answer-question", "fix-checks", "dpmeta-pass", "dpmeta-doc-audit")) {
+        for (k in listOf("continue-branch", "roadmap-task", "fix-checks", "dpmeta-pass", "dpmeta-doc-audit")) {
             assertTrue(k in keys, "нет шаблона $k")
         }
         val builtIn = mapOf("project" to "DPmetaApp", "repo" to "dpsmpx/DPmetaApp", "base" to "main")

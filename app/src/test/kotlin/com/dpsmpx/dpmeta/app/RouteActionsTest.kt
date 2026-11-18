@@ -21,7 +21,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.io.TempDir
 
-/** Поручение Claude из пульта (F-22, F-23, F-25; D-07): уровень 1, текст — не в журнале, запуск — показанного текста. */
+/** Поручение Claude из пульта (F-22, F-23; D-07): уровень 1, текст — не в журнале, запуск — показанного текста. */
 class RouteActionsTest {
     @TempDir
     lateinit var dir: Path

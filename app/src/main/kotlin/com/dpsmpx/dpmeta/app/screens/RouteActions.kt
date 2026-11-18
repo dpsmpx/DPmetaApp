@@ -16,7 +16,7 @@ import com.dpsmpx.dpmeta.model.Event
 import com.dpsmpx.dpmeta.model.RepoRef
 
 /**
- * Поручение Claude из пульта (F-22, F-23, F-25; D-07): маршрут, шаблон, поля → текст →
+ * Поручение Claude из пульта (F-22, F-23; D-07): маршрут, шаблон, поля → текст →
  * окно «что уйдёт» → запуск маршрута (уровень 1). Маршруты и их токены ведёт подсистема
  * «AI» (`DP_AI_Orcestrator:D-116`); пульт видит только [Route] и зовёт запуск через
  * оболочку. Текст поручения в журнал не идёт: в команде — его SHA-256 и длина,
@@ -88,10 +88,7 @@ object RouteActions {
     fun pickBrief(briefs: List<Brief>, route: Route?, wanted: String?): Brief? =
         briefs.firstOrNull { it.key == wanted } ?: briefs.firstOrNull { it.key == route?.brief } ?: briefs.firstOrNull()
 
-    /**
-     * [question] — вопрос автору, на который поручен ответ (F-25): его заголовок из `TODO.md`
-     * — в параметрах, чтобы у вопроса показать поручение и PR после него.
-     */
+    /** Запуск ровно того текста, который показан пользователю (D-07). */
     fun command(route: Route, project: String, repo: RepoRef, brief: Brief, text: String): ActionCommand = ActionCommand(
         ActionKind.ROUTE_RUN,
         ActionTarget(repo),
