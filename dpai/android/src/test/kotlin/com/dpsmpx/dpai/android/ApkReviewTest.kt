@@ -3,7 +3,7 @@ package com.dpsmpx.dpai.android
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
 import java.io.File
-import java.nio.file.Files
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -12,7 +12,12 @@ import kotlin.test.assertTrue
 
 /** Окно перед установкой и подписью (D-157, T22): копия, сведения словами, строка журнала. */
 class ApkReviewTest {
-    private val dir: File = Files.createTempDirectory("apkreview").toFile()
+    @org.junit.jupiter.api.io.TempDir lateinit var dir: File
+    private val staged = mutableListOf<File>()
+
+    @AfterTest fun clearReviews() {
+        for (copy in staged) ApkReview.discard(ApkReview.Review(copy, copy, null, "", "", ""))
+    }
 
     private val meta = ApkInstaller.Meta("com.example.app", "1.2", 12, self = false, installed = "1.1")
     private val sig = ApkSign.Signature(verified = true, schemes = listOf("v2", "v3"), certSha256 = "ab".repeat(32), subject = "CN=Автор", problems = emptyList())
@@ -23,9 +28,28 @@ class ApkReviewTest {
         val stage = File(dir, "stage")
         File(stage.apply { mkdirs() }, "старое.apk").writeText("прошлая проверка")
         val copy = assertIs<Outcome.Success<File>>(ApkReview.stage(source, stage)).value
-        assertEquals(listOf("app-debug.apk"), stage.list()!!.toList(), "прежние копии убраны")
+        staged += copy
+        assertFalse(File(stage, "старое.apk").exists(), "неиспользуемая прежняя копия убрана")
+        assertEquals(stage.canonicalPath, copy.parentFile.parentFile.canonicalPath)
         source.writeText("подмена")
         assertEquals("первый", copy.readText())
+    }
+
+    @Test
+    fun twoApksWithSameNameKeepSeparateReviewedBytes() {
+        val first = File(File(dir, "first").apply { mkdirs() }, "app-debug.apk").apply { writeText("первый APK") }
+        val second = File(File(dir, "second").apply { mkdirs() }, "app-debug.apk").apply { writeText("второй APK") }
+        val cache = File(dir, "reviews")
+        val a = assertIs<Outcome.Success<File>>(ApkReview.stage(first, cache)).value
+        staged += a
+        val b = assertIs<Outcome.Success<File>>(ApkReview.stage(second, cache)).value
+        staged += b
+        assertEquals("первый APK", a.readText(), "следующий просмотр не заменяет уже показанные байты")
+        assertEquals("второй APK", b.readText())
+        assertTrue(a.canonicalPath != b.canonicalPath)
+        ApkReview.discard(ApkReview.Review(first, a, null, "", "", ""))
+        assertFalse(a.exists())
+        assertEquals("второй APK", b.readText(), "закрытие одного просмотра не удаляет другой")
     }
 
     @Test
