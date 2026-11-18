@@ -53,7 +53,9 @@ internal object SigningKeys {
     } catch (e: UserNotAuthenticatedException) {
         Outcome.failure(DiagCode.DEVICE_AUTH_REQUIRED, "для ключа подписи нужен новый вход по PIN или отпечатку")
     } catch (e: Exception) {
-        Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "хранилище ключей подписи недоступно", e))
+        if (generateSequence<Throwable>(e) { it.cause }.take(8).any { it is UserNotAuthenticatedException }) {
+            Outcome.failure(DiagCode.DEVICE_AUTH_REQUIRED, "для ключа подписи нужен новый вход по PIN или отпечатку")
+        } else Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "хранилище ключей подписи недоступно", e))
     }
 
     private fun certificate(ks: KeyStore, alias: String): Info? = (ks.getCertificate(alias) as? X509Certificate)?.let {
@@ -65,8 +67,9 @@ internal object SigningKeys {
         when (val r = slots(context).active(project, ks.aliases().toList())) {
             is Outcome.Failure -> r
             is Outcome.Success -> {
-                if (r.value == null) Outcome.success(null, r.diagnostics)
-                else certificate(ks, r.value)?.let { Outcome.success(it, r.diagnostics) }
+                val selected = r.value
+                if (selected == null) Outcome.success(null, r.diagnostics)
+                else certificate(ks, selected)?.let { Outcome.success(it, r.diagnostics) }
                     ?: Outcome.failure(DiagCode.STORAGE_CORRUPTED, "у выбранного ключа подписи нет сертификата")
             }
         }
@@ -206,6 +209,10 @@ internal object SigningKeys {
         if (encoded.length > (MAX_FILE + 2) / 3 * 4) return Outcome.failure(DiagCode.VALUE_INVALID, "копия ключа больше предела")
         val bytes = try { java.util.Base64.getDecoder().decode(encoded) } catch (_: IllegalArgumentException) {
             return Outcome.failure(DiagCode.VALUE_INVALID, "копия ключа подписи не читается")
+        }
+        if (bytes.size > MAX_FILE) {
+            bytes.fill(0)
+            return Outcome.failure(DiagCode.VALUE_INVALID, "копия ключа больше предела")
         }
         return Outcome.success(Material(bytes, password.toCharArray(), alias))
     }
