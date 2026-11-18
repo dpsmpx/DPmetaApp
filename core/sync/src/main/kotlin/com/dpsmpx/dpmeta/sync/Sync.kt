@@ -14,11 +14,7 @@ import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpmeta.formats.Checklist
 import com.dpsmpx.dpmeta.formats.Checks
-import com.dpsmpx.dpmeta.formats.DecisionLog
-import com.dpsmpx.dpmeta.formats.ProcessDocument
-import com.dpsmpx.dpmeta.formats.Roadmap
 import com.dpsmpx.dpmeta.formats.StatusBlocks
-import com.dpsmpx.dpmeta.formats.TodoList
 import com.dpsmpx.dpmeta.github.Branch
 import com.dpsmpx.dpmeta.github.CiState
 import com.dpsmpx.dpmeta.github.CommitInfo
@@ -34,7 +30,7 @@ import com.dpsmpx.dpmeta.model.SourceFailure
 
 /**
  * Вид источника и его приоритет при нехватке бюджета (ТЗ, §6.4): сводка и
- * открытые PR → последние влитые → ветки → файлы процесса.
+ * открытые PR → последние влитые → ветки → документы.
  */
 enum class SourceKind(val code: String) {
     PULLS("pulls"),
@@ -46,9 +42,6 @@ enum class SourceKind(val code: String) {
 
     /** Последние коммиты основной ветки и CI её головы (D-176). */
     COMMITS("commits"),
-    DECISIONS("decisions"),
-    TODO("todo"),
-    ROADMAP("roadmap"),
     README("readme"),
 
     /** Чекбоксы файлов, выбранных пользователем (D-176): все пути проекта одним наблюдением. */
@@ -133,9 +126,6 @@ interface Parallel {
  * откладываются с той же диагностикой («на следующий раз»).
  */
 object Sync {
-    /** Пути ROADMAP по порядку: у репозиториев экосистемы встречаются оба. */
-    val ROADMAP_PATHS: List<String> = listOf("ROADMAP/ROADMAP.md", "docs/direction/ROADMAP/README.md")
-
     /** Источники активности: у подсистем их нет (общие с DPmetaApp), у клонов — тоже. */
     private val ACTIVITY = setOf(SourceKind.PULLS, SourceKind.MERGED, SourceKind.BRANCHES, SourceKind.ISSUES, SourceKind.COMMITS)
 
@@ -151,19 +141,13 @@ object Sync {
     /** «Файла нет» у GitHub и у каталога: следующий путь-кандидат. */
     private val NOT_FOUND = setOf(DiagCode.GITHUB_NOT_FOUND, DiagCode.ENTITY_NOT_FOUND)
 
-    /**
-     * [known] — найденные прежде пути ROADMAP; [skip] — пары «проект → вид»,
-     * которые не спрашиваются в этот раз (файла не было недавно).
-     */
-    fun plan(registry: Registry, known: Map<Pair<String, String>, String> = emptyMap(), skip: Set<Pair<String, String>> = emptySet()): List<SourceTask> {
+    /** [skip] — пары «проект → вид», которых недавно не было. */
+    fun plan(registry: Registry, skip: Set<Pair<String, String>> = emptySet()): List<SourceTask> {
         val tasks = mutableListOf<SourceTask>()
         for (kind in SourceKind.entries) {
             for (p in registry.shown) {
                 val paths = when (kind) {
                     SourceKind.PULLS, SourceKind.MERGED, SourceKind.BRANCHES, SourceKind.ISSUES, SourceKind.COMMITS, SourceKind.HISTORY -> emptyList()
-                    SourceKind.DECISIONS -> p.decisions?.let { listOf(it.path) } ?: continue
-                    SourceKind.TODO -> listOf("TODO.md")
-                    SourceKind.ROADMAP -> known[p.name to kind.code]?.let { k -> listOf(k) + (ROADMAP_PATHS - k) } ?: ROADMAP_PATHS
                     SourceKind.README -> listOf("README.md")
                     SourceKind.CHECKLISTS -> p.checklists.ifEmpty { continue }
                 }
@@ -290,17 +274,7 @@ object Sync {
                 }
                 is Outcome.Success -> r.value
             }
-            val doc: Outcome<ProcessDocument> = when (t.kind) {
-                SourceKind.DECISIONS -> when (val rx = t.project.decisions!!.regex()) {
-                    is Outcome.Failure -> rx
-                    is Outcome.Success -> DecisionLog.parse(got.value, rx.value, "${t.project.name}:$path")
-                }
-                SourceKind.TODO -> TodoList.parse(got.value, "${t.project.name}:$path")
-                SourceKind.ROADMAP -> Roadmap.parse(got.value, "${t.project.name}:$path")
-                SourceKind.README -> StatusBlocks.parse(got.value, "${t.project.name}:$path")
-                else -> error("не файл: ${t.kind}")
-            }
-            return doc.map { d ->
+            return StatusBlocks.parse(got.value, "${t.project.name}:$path").map { d ->
                 JsonObject(LinkedHashMap<String, JsonValue>(d.toJson().fields).apply {
                     put("schema", JsonString(d.schema))
                     put("path", JsonString(path))

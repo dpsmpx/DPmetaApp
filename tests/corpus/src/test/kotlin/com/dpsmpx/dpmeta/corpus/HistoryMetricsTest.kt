@@ -18,7 +18,7 @@ import kotlin.test.assertTrue
 
 /**
  * Метрики из истории клона (D-66, ТЗ, §8): доля ИИ за окно, ветки впереди
- * основной, новые решения за неделю; нет истории или коммитов — неизвестно,
+ * основной; нет истории или коммитов — неизвестно,
  * а не ноль.
  */
 class HistoryMetricsTest {
@@ -55,11 +55,9 @@ class HistoryMetricsTest {
     }
 
     @Test
-    fun branchesAndDecisions() {
+    fun branchesAhead() {
         val p = project(history)
         assertEquals(Measure.observed(2L to 3L), p.branchesAhead)
-        // За 7 дней (с 1 ноября): было 14 на конец 1-го, стало 17.
-        assertEquals(Measure.observed(3L), p.decisionsNew(now))
     }
 
     @Test
@@ -67,26 +65,18 @@ class HistoryMetricsTest {
         val none = project(null)
         assertIs<Measure.Unknown>(none.aiShare(now), "нет истории — неизвестно")
         assertIs<Measure.Unknown>(none.branchesAhead)
-        assertIs<Measure.Unknown>(none.decisionsNew(now))
         val quiet = project("""{"complete":true,"days":[["2026-01-01",5,5,0,5,0,0]],"decisions":[],"ahead":[]}""")
         assertIs<Measure.Unknown>(quiet.aiShare(now), "коммитов за окно нет — не 0 %")
-        assertIs<Measure.Unknown>(quiet.decisionsNew(now), "журнала нет — неизвестно")
         assertEquals(Measure.observed(0L to 0L), quiet.branchesAhead, "веток впереди нет — это ответ, 0")
-    }
-
-    @Test
-    fun journalStartedInsideTheWindowIsAllNew() {
-        val p = project("""{"complete":true,"days":[],"decisions":[["2026-11-06",3]],"ahead":[]}""")
-        assertEquals(Measure.observed(3L), p.decisionsNew(now))
     }
 
     @Test
     fun pointsCarryTheNewMetrics() {
         val state = EcosystemState(now, Rules.RULES_VERSION, listOf(project(history)))
         val names = state.points().map { it.metric }.toSet()
-        for (m in listOf("repo.commits.ai_share", "repo.branches.unmerged", "repo.branches.unmerged.commits", "repo.decisions.new")) {
+        for (m in listOf("repo.commits.ai_share", "repo.branches.unmerged", "repo.branches.unmerged.commits")) {
             assertTrue(m in names, m)
         }
-        assertTrue(state.points().all { it.rulesVersion == 7 }, "новые точки — правила 7; прежние версии проверяются отдельно")
+        assertTrue(state.points().all { it.rulesVersion == 8 }, "новые точки — правила 8; прежние версии проверяются отдельно")
     }
 }

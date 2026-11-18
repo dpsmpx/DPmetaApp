@@ -43,7 +43,7 @@ class AskActionsTest {
     @Test
     fun toolsAreReadOnlyAndWellFormed() {
         val names = AskActions.TOOLS.map { it.name }
-        assertEquals(listOf("ecosystem_summary", "project_card", "pull_requests", "questions_to_author", "recent_events", "metric_history"), names)
+        assertEquals(listOf("ecosystem_summary", "project_card", "pull_requests", "recent_events", "metric_history"), names)
         for (t in AskActions.TOOLS) {
             assertEquals("object", (t.schema["type"] as JsonString).value, t.name)
             assertEquals(JsonBool(false), t.schema["additionalProperties"], "${t.name}: лишние поля запрещены")
@@ -65,7 +65,7 @@ class AskActionsTest {
         val drafts = AskActions.run(s, "pull_requests", input("""{"filter":"drafts"}"""))
         assertTrue("#3 Этап 1" in drafts.first && "PR (Черновики): 1" in drafts.first, drafts.first)
         assertTrue("PR (Ждут автора, Alpha): 0" in AskActions.run(s, "pull_requests", input("""{"filter":"waiting","project":"Alpha"}""")).first)
-        assertTrue("ВОПРОСЫ АВТОРУ" in AskActions.run(s, "questions_to_author", input("{}")).first)
+        assertTrue("ВОПРОСЫ АВТОРУ" in AskActions.run(s, input("{}")).first)
         assertTrue("ЛЕНТА: 0" in AskActions.run(s, "recent_events", input("{}")).first)
         val metric = AskActions.run(s, "metric_history", input("""{"metric":"repo.pr.open","period":"week"}"""))
         assertFalse(metric.second)

@@ -119,33 +119,4 @@ class RouteActionsTest {
         assertTrue("нет" in RouteActions.limitHint(DiagCode.ROUTINE_LIMIT_REACHED, routes.take(2), "acc_2"))
     }
 
-    /** F-25: у вопроса — последнее поручение ответа на него и PR проекта, открытые после поручения. */
-    @Test
-    fun answeredQuestionShowsLaterPulls() {
-        val clock = ManualClock()
-        val log = ActionLog(NioVfs(dir), clock, RandomSource.seeded(1))
-        val actions = Actions(log, clock, RandomSource.seeded(2))
-        val q = Screens.Question("DPmetaApp", "Какой формат?", "М", "TODO.md", "За автором")
-        val c = RouteActions.command(routes[2], "DPmetaApp", repo, brief, "т", question = q.title)
-        assertEquals(q.title, c.params["question"])
-        assertEquals(null, RouteActions.command(routes[2], "DPmetaApp", repo, brief, "т").params["question"], "без вопроса — поля нет")
-        actions.run(c, actions.shown(c)) { Outcome.success(com.dpsmpx.dpmeta.actions.ActionResult("сессия", "https://claude.ai/code/session_1")) }
-        val fired = clock.now().epochMillis
-        val rows = listOf(
-            Screens.PullRow("DPmetaApp", 10, "раньше", false, "a", "x", null, null, false, createdAt = fired - 1),
-            Screens.PullRow("DPmetaApp", 12, "ответ", true, "b", "x", null, null, false, createdAt = fired + 60_000),
-            Screens.PullRow("DPpass", 13, "чужой проект", true, "c", "x", null, null, false, createdAt = fired + 60_000),
-        )
-        val a = RouteActions.answered(log.entries().valueOrNull()!!, rows, q)!!
-        assertEquals("https://claude.ai/code/session_1", a.session)
-        assertEquals(listOf(12L), a.pulls.map { it.number })
-        assertEquals(null, RouteActions.answered(log.entries().valueOrNull()!!, rows, q.copy(title = "Другой вопрос")))
-    }
-
-    @Test
-    fun questionSourceNamesProjectFileAndSection() {
-        val q = Screens.Question("DPpass", "Какой формат?", "М", "TODO.md", "За автором")
-        assertEquals("DPpass:TODO.md, раздел «За автором»", Screens.questionSource(q))
-        assertEquals("DPpass:TODO.md", Screens.questionSource(q.copy(path = null, section = null)))
-    }
 }

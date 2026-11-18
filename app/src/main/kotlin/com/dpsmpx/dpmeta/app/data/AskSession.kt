@@ -157,7 +157,7 @@ object AskSession {
         "ecosystem_summary" -> "сводка и проекты"
         "project_card" -> "карточка проекта"
         "pull_requests" -> "PR"
-        "questions_to_author" -> "вопросы автору"
+        "questions_to_author" -> "вопросы автору (архив)"
         "recent_events" -> "лента событий"
         "metric_history" -> "история числа"
         else -> tool

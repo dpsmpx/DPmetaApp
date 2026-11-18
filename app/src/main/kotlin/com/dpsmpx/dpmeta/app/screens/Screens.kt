@@ -11,7 +11,6 @@ import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.metrics.Feed
 import com.dpsmpx.dpmeta.metrics.FeedEvent
 import com.dpsmpx.dpmeta.metrics.ProjectState
-import com.dpsmpx.dpmeta.metrics.Readiness
 import com.dpsmpx.dpmeta.metrics.Rules
 import com.dpsmpx.dpmeta.model.Place
 import java.time.Instant
@@ -76,12 +75,9 @@ object Screens {
     data class Summary(
         val asOf: String,
         val active: String,
-        val questions: String,
         val pullsWaiting: String,
         val projects: Int,
         val sourceErrors: Int,
-        /** Шлюз готовности (D-64): у скольких проектов «готов закрыть этап» и у скольких он известен. */
-        val gatesReady: String,
         /** Доля удачных источников последней синхронизации (ТЗ, §8, `app.sync.health`). */
         val syncHealth: String,
         /** Открытых PR во всех проектах (D-176). */
@@ -96,18 +92,12 @@ object Screens {
         waiting = waitingCount(waiting(s, me, ai), me),
         asOf = time(s.asOf),
         active = show(s.activeProjects),
-        questions = show(s.questionsOpen),
         // PR ждут автора (ТЗ, S-01, F-39; `repo.pr.waiting_author`): открыт и не черновик — как фильтр «Ждут автора» F-11.
         pullsWaiting = s.projects.map { it.waitingAuthor(s.asOf) }.let { ms ->
             if (ms.all { it is Measure.Unknown }) UNKNOWN else ms.sumOf { it.orNull()?.first ?: 0L }.toString()
         },
         projects = s.projects.size,
         sourceErrors = s.projects.sumOf { it.errors.size },
-        gatesReady = s.projects.map { Readiness.gate(it, s.asOf).ready }.let { gates ->
-            val known = gates.mapNotNull { it.orNull() }
-            val unknown = gates.size - known.size
-            if (known.isEmpty()) UNKNOWN else "${known.count { it }} из ${known.size}" + if (unknown > 0) " (неизвестно — $unknown)" else ""
-        },
         syncHealth = s.syncHealth.orNull()?.let { "$it % источников" } ?: UNKNOWN,
         pullsOpen = s.projects.map { it.openPulls }.let { ms -> if (ms.all { it is Measure.Unknown }) UNKNOWN else ms.sumOf { it.orNull() ?: 0L }.toString() },
         ciRed = ciRed(s),
@@ -179,7 +169,6 @@ object Screens {
         Tile("PR открыто", s.pullsOpen, Goes.PULLS),
         Tile("Красный CI", s.ciRed, Goes.PROJECTS),
         Tile("Ошибок источников", s.sourceErrors.toString(), Goes.PROJECTS),
-        Tile("Шлюз готов", s.gatesReady, Goes.PROJECTS),
         Tile("Синхронизация", s.syncHealth, Goes.SYNC, "app.sync.health"),
     )
 
@@ -265,20 +254,12 @@ object Screens {
 
     // --- Проекты по местам (F-02, F-06) ---
 
-    data class ProjectRow(val name: String, val working: String, val decisions: String, val todo: String, val roadmap: String, val pulls: String, val errors: Int)
+    data class ProjectRow(val name: String, val working: String, val pulls: String, val errors: Int)
 
     data class Group(val title: String, val rows: List<ProjectRow>)
 
-    /**
-     * Вторая строка проекта в списке (UX-18): ROADMAP, PR, TODO — без
-     * «неизвестно» трижды; решения — в карточке. Ничего не известно —
-     * так и сказано одним словом.
-     */
-    fun projectLine(r: ProjectRow): String =
-        listOf("ROADMAP" to r.roadmap, "PR" to r.pulls, "TODO" to r.todo)
-            .filter { it.second != UNKNOWN }
-            .joinToString(" · ") { "${it.first} ${it.second}" }
-            .ifEmpty { "данных пока нет" }
+    /** PR в строке проекта; остальные документы выбирает пользователь (D-176). */
+    fun projectLine(r: ProjectRow): String = if (r.pulls == UNKNOWN) "данных пока нет" else "PR ${r.pulls}"
 
     /** Места старого снимка не фильтруют список пользователя и не меняют его порядок (D-176). */
     fun projects(s: EcosystemState): List<Group> {
@@ -286,9 +267,6 @@ object Screens {
             ProjectRow(
                 name = p.name,
                 working = working(p, s.asOf),
-                decisions = show(p.decisions),
-                todo = show(p.todoOpen),
-                roadmap = show(p.roadmapPercent, " %"),
                 pulls = show(p.openPulls),
                 errors = p.errors.size,
             )
@@ -298,21 +276,16 @@ object Screens {
 
     // --- Карточка проекта (F-06…F-08, F-11, F-14, F-16) ---
 
-    data class Stage(val title: String, val flag: String, val steps: String)
-
-    /** Решение в карточке (F-07): [id] — якорь журнала (касание открывает решение), [text] — строка. */
-    data class Decision(val id: String?, val text: String)
-
     /**
      * Карточка на экране (UX-8): сверху — «Внимание» (ошибки источников,
-     * красные проверки последнего и влитого PR, вопросы за автором), если
+     * красные проверки последнего и влитого PR), если
      * есть что сказать; ниже — разделы свёрнутыми строками с итогом.
      */
     data class CardView(val attention: List<String>, val sections: List<CardSection>)
 
     /** Раздел карточки: [title] — строка с итогом, [lines] — что под раскрытием; [kind] — что рисует экран. */
     data class CardSection(val kind: Kind, val title: String, val lines: List<String>) {
-        enum class Kind { STUDIO, READY, ROADMAP, PULLS, BRANCHES, ISSUES, COMMITS, CHECKLISTS, DECISIONS, TODO, ABOUT }
+        enum class Kind { STUDIO, PULLS, BRANCHES, ISSUES, COMMITS, CHECKLISTS, ABOUT }
     }
 
     fun cardView(c: Card): CardView {
@@ -320,19 +293,15 @@ object Screens {
             if (c.errors.isNotEmpty()) add("Ошибки источников: ${c.errors.size}")
             c.lastPull?.takeIf { it.verdict == verdictTitle("red") }?.let { add("Проверки PR #${it.number} — красные") }
             c.lastMerged?.takeIf { it.verdict == verdictTitle("red") }?.let { add("Проверки влитого PR #${it.number} — красные") }
-            if (c.forAuthor != UNKNOWN && c.forAuthor != "0") add("За автором в TODO: ${c.forAuthor}")
             // CI (D-176): красная голова основной ветки и красные PR — сверху.
             c.headCi?.takeIf { it.verdict == "red" }?.let { add("CI основной ветки — красный" + it.failingLine()) }
             for (p in c.pulls) p.ci?.takeIf { it.verdict == "red" }?.let { add("CI PR #${p.number} — красный" + it.failingLine()) }
         }
         val fresh = c.branches.count { it.recent }
         val pullVerdict = c.lastPull?.let { " · последние проверки: ${it.verdict}" }.orEmpty()
-        val current = c.stages.firstOrNull { it.flag != "сделано" }?.title
         return CardView(
             attention,
             listOf(
-                CardSection(CardSection.Kind.READY, "Готовность: ${c.ready.verdict}", listOf("Этап: ${c.ready.stage}") + c.ready.criteria + "Ход PR: ${c.ready.pulls}"),
-                CardSection(CardSection.Kind.ROADMAP, "ROADMAP ${c.roadmap}" + (current?.let { ": $it" } ?: ""), c.stages.map { s -> "[${s.flag}] ${s.title}" + if (s.steps.isEmpty()) "" else " — ${s.steps}" }),
                 CardSection(
                     CardSection.Kind.PULLS,
                     "PR ${c.pulls.size}$pullVerdict",
@@ -342,8 +311,6 @@ object Screens {
                 // «●» и «○» без легенды не читались (UX-8): свежесть — словом.
                 CardSection(CardSection.Kind.BRANCHES, "Ветки ${c.branches.size}, свежих $fresh", c.branches.map { b -> "${b.name} — ${b.updated}" + if (b.recent) " · свежая" else "" }),
             ) + listOfNotNull(c.issues?.let { issuesSection(it, c.issuesAccess) }, c.commits?.let { commitsSection(it, c.headCi) }, c.checklists?.let(::checklistsSection)) + listOf(
-                CardSection(CardSection.Kind.DECISIONS, "Решений ${c.decisions}", c.lastDecisions.map { it.text }),
-                CardSection(CardSection.Kind.TODO, "TODO ${c.todo}, за автором ${c.forAuthor}", emptyList()),
                 CardSection(CardSection.Kind.ABOUT, "О себе", c.panel.flatMap { listOf("${it.name}:") + it.text.lines().map { l -> "  $l" } }),
             ),
         )
@@ -428,57 +395,10 @@ object Screens {
     /** Блок состояния README — «что проект пишет о себе» (F-10). */
     data class Panel(val name: String, val text: String)
 
-    /**
-     * Готовность (D-64): текущий этап, итог шлюза и критерии строками
-     * («✓», «✗», «?» и причина неизвестного); PR — ждут автора, черновики,
-     * время до вливания (ТЗ, §8).
-     */
-    data class Ready(val stage: String, val verdict: String, val criteria: List<String>, val pulls: String)
-
-    fun ready(p: ProjectState, now: Timestamp): Ready {
-        val gate = Readiness.gate(p, now)
-        val stage = when (val st = gate.stage) {
-            is Measure.Unknown -> "этап неизвестен"
-            is Measure.Known -> st.value.let { s ->
-                "«${s.title}» (${s.number}-й по порядку из ${s.total})" + when {
-                    s.allDone -> " — все этапы закрыты"
-                    s.stepsTotal > 0 -> ", шагов ${s.stepsDone} из ${s.stepsTotal}"
-                    else -> ""
-                }
-            }
-        }
-        val verdict = when (gate.ready.orNull()) {
-            true -> "готов закрыть этап"
-            false -> "не готов (не выполнено ${gate.blocking.size} из ${gate.results.size})"
-            null -> "$UNKNOWN (известно ${gate.results.values.count { it is Measure.Known }} из ${gate.results.size})"
-        }
-        val criteria = gate.results.map { (c, m) ->
-            when (m) {
-                is Measure.Known -> "${if (m.value) "✓" else "✗"} ${c.title}"
-                is Measure.Unknown -> "? ${c.title} — ${m.reason}"
-            }
-        } + gate.notApplicable.map { "· ${it.title} — не применимо" }
-        val waiting = p.waitingAuthor(now).orNull()?.let { (n, oldest) -> "ждут автора $n" + (oldest?.let { ", дольше всех без движения — ${it / DAY_MS} дн" } ?: "") } ?: "ждут автора — $UNKNOWN"
-        val drafts = "черновиков ${show(p.draftPulls)}"
-        val lead = p.leadTime.orNull()?.let { (m, high) -> "до вливания: медиана ${hours(m)}, P${Rules.LEAD_TIME_PERCENTILE} ${hours(high)}" } ?: "до вливания — $UNKNOWN"
-        return Ready(stage, verdict, criteria, "$waiting; $drafts; $lead")
-    }
-
-    private const val DAY_MS = 24 * 60 * 60 * 1000L
-
-    private fun hours(minutes: Long): String = if (minutes < 120) "$minutes мин" else "${minutes / 60} ч"
-
     data class Card(
         val name: String,
         val place: String,
         val working: String,
-        val decisions: String,
-        val lastDecisions: List<Decision>,
-        val todo: String,
-        val forAuthor: String,
-        val roadmap: String,
-        val ready: Ready,
-        val stages: List<Stage>,
         val pulls: List<Pull>,
         val branches: List<BranchRow>,
         val lastPull: Checked?,
@@ -500,20 +420,6 @@ object Screens {
 
     fun card(s: EcosystemState, name: String): Card? {
         val p = s.project(name) ?: return null
-        val decisions = objects(payload(p, "decisions"), "entries")
-        val stages = objects(payload(p, "roadmap"), "stages").map { st ->
-            val total = long(st, "stepsTotal") ?: 0
-            Stage(
-                str(st, "title").orEmpty(),
-                when (str(st, "flag")) {
-                    "done" -> "сделано"
-                    "active" -> "идёт"
-                    "open" -> "нет"
-                    else -> "—"
-                },
-                if (total == 0L) "" else "${long(st, "stepsDone") ?: 0}/$total",
-            )
-        }
         val pulls = objects(payload(p, "pulls"), "pulls").map { o ->
             Pull(long(o, "number") ?: 0, str(o, "title").orEmpty(), (o["draft"] as? JsonBool)?.value ?: false, str(o, "head").orEmpty(), long(o, "updatedAt")?.let { time(Timestamp(it)) }.orEmpty(), str(o, "checks"), ci(o["ci"] as? JsonObject))
         }
@@ -532,21 +438,12 @@ object Screens {
             name = p.name,
             place = Place.of(p.place)?.title ?: p.place,
             working = working(p, s.asOf),
-            decisions = show(p.decisions),
-            lastDecisions = decisions.takeLast(LAST_DECISIONS).reversed().map { o ->
-                Decision(str(o, "id"), listOfNotNull(str(o, "id"), str(o, "title"), str(o, "status")?.let { "($it)" }).joinToString(" "))
-            },
-            todo = show(p.todoOpen),
-            forAuthor = show(p.forAuthor),
-            roadmap = show(p.roadmapPercent, " %"),
-            ready = ready(p, s.asOf),
-            stages = stages,
             pulls = pulls,
             branches = branches,
             lastPull = checked(openPulls.maxByOrNull { long(it, "updatedAt") ?: 0 }, "updatedAt"),
             lastMerged = checked(merged.maxByOrNull { long(it, "mergedAt") ?: 0 }, "mergedAt"),
             panel = objects(payload(p, "readme"), "blocks").map { Panel(str(it, "name").orEmpty(), str(it, "text").orEmpty()) },
-            files = listOf("readme" to "README", "decisions" to "Решения", "todo" to "TODO", "roadmap" to "ROADMAP").mapNotNull { (kind, title) ->
+            files = listOf("readme" to "README").mapNotNull { (kind, title) ->
                 payload(p, kind)?.let { o -> str(o, "path")?.let { title to it } }
             },
             errors = p.errors.map { "${it.kind}: ${com.dpsmpx.dpai.core.text.Words.reason(it.code)} — ${it.message} (${it.code}, ${time(it.at)})" },
@@ -565,7 +462,6 @@ object Screens {
         )
     }
 
-    const val LAST_DECISIONS = 5
 
     fun verdictTitle(code: String?): String = when (code) {
         "green" -> "зелёный"
@@ -686,28 +582,4 @@ object Screens {
     /** Число для плитки «Ждут меня»: логин неизвестен и запросов ИИ нет — неизвестно, а не ноль. */
     fun waitingCount(list: List<Waiting>, me: String?): String = if (me == null && list.isEmpty()) UNKNOWN else list.size.toString()
 
-    // --- Вопросы автору (F-24) ---
-
-    /**
-     * Вопрос автору (F-24, UX-17): [path] и [section] — где он в `TODO.md`
-     * проекта (источник `Проект:TODO.md`); касание открывает файл на разделе.
-     */
-    data class Question(val project: String, val title: String, val label: String?, val path: String? = null, val section: String? = null)
-
-    fun questions(s: EcosystemState): List<Question> = s.projects.flatMap { p ->
-        val todo = payload(p, "todo")
-        val path = todo?.let { str(it, "path") }
-        objects(todo, "sections").filter { (it["forAuthor"] as? JsonBool)?.value == true }.flatMap { sec ->
-            objects(sec, "items").filter { (it["done"] as? JsonBool)?.value != true }.map { i ->
-                Question(p.name, str(i, "title").orEmpty(), str(i, "label"), path, str(sec, "title"))
-            }
-        }
-    }
-
-    /** Где записан вопрос — для поручения «записать ответ» (F-25): `Проект:путь`, раздел. */
-    fun questionSource(q: Question): String =
-        "${q.project}:${q.path ?: "TODO.md"}" + (q.section?.let { ", раздел «$it»" } ?: "")
-
-    /** Вопросы по проектам (UX-17): группа — проект, порядок — как в `TODO.md`. */
-    fun questionGroups(q: List<Question>): List<Pair<String, List<Question>>> = q.groupBy { it.project }.toList()
 }

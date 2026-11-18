@@ -48,31 +48,20 @@ class EcosystemSyncTest {
         assertEquals(listOf("Alpha", "Beta", "Pult", "DPmeta"), state.projects.map { it.name }, "архив не показывается, порядок — реестра")
         // Строка управления (D-46): клон, в котором живут подсистемы, — и сама проект с файлами.
         val pult = state.project("Pult")!!
-        assertEquals(Measure.observed(1L), pult.decisions)
-        assertEquals(Measure.observed(50L), pult.roadmapPercent)
         assertEquals(emptyList(), pult.errors.map { it.kind })
         val alpha = state.project("Alpha")!!
-        assertEquals(Measure.observed(2L), alpha.decisions)
-        assertEquals(Measure.observed(3L), alpha.todoOpen)
-        assertEquals(Measure.observed(2L), alpha.forAuthor)
-        assertEquals(Measure.observed(50L), alpha.roadmapPercent)
         assertEquals(Measure.observed(1L), alpha.openPulls)
         assertEquals(Measure.observed(true), alpha.working(now), "ветка за 24 часа — работает")
         val beta = state.project("Beta")!!
-        assertEquals(Measure.observed(2L), beta.decisions, "шаблон Р\\d+ из реестра")
-        assertEquals(Measure.observed(50L), beta.roadmapPercent, "ROADMAP по второму пути-кандидату")
         assertIs<Measure.Unknown>(beta.working(now), "без веток и PR — неизвестно, а не «свободен»")
         val meta = state.project("DPmeta")!!
-        assertEquals(Measure.observed(1L), meta.decisions, "подсистема читается из каталога DPmetaApp")
-        assertEquals(setOf("readme", "roadmap"), meta.errors.map { it.kind }.toSet())
+        assertEquals(setOf("readme"), meta.errors.map { it.kind }.toSet())
         assertTrue("dpmeta" !in meta.sections, "имя проекта не включает особый источник")
         assertTrue(meta.errors.all { it.code == DiagCode.ENTITY_NOT_FOUND.name })
         assertEquals(Measure.observed(1L), state.activeProjects)
-        assertEquals(Measure.observed(3L), state.questionsOpen)
         assertEquals(0, result.deferred)
         val points = state.points()
         assertTrue(points.none { it.subject == "Beta" && it.metric == "repo.activity.state" }, "неизвестное — без точки")
-        assertTrue(points.any { it.metric == "eco.questions_open" && it.value == 3L })
     }
 
     @Test
@@ -92,11 +81,11 @@ class EcosystemSyncTest {
         val reg = registry()
         val (first, _) = sync()
         val later = Timestamp(now.epochMillis + 3_600_000)
-        val failure = com.dpsmpx.dpmeta.model.SourceFailure("Alpha", "todo", com.dpsmpx.dpai.core.diagnostics.Diagnostic.error(DiagCode.NETWORK_UNREACHABLE, "нет сети", "Alpha"), later)
+        val failure = com.dpsmpx.dpmeta.model.SourceFailure("Alpha", "readme", com.dpsmpx.dpai.core.diagnostics.Diagnostic.error(DiagCode.NETWORK_UNREACHABLE, "нет сети", "Alpha"), later)
         val second = EcosystemState.derive(reg, emptyList(), listOf(failure), first, later)
         val alpha = second.project("Alpha")!!
-        assertEquals(Measure.observed(3L), alpha.todoOpen, "прежнее не перекрыто пустым")
-        assertEquals(listOf("todo"), alpha.errors.map { it.kind })
+        assertEquals(first.project("Alpha")!!.sections["readme"], alpha.sections["readme"], "прежний README не перекрыт пустым")
+        assertEquals(listOf("readme"), alpha.errors.map { it.kind })
     }
 
     @Test
@@ -124,12 +113,12 @@ class EcosystemSyncTest {
             val (state, _) = sync()
             assertIs<Outcome.Success<*>>(store.writeState(state))
             val back = (store.readState() as Outcome.Success).value!!
-            assertEquals(Measure.observed(2L), back.project("Alpha")!!.decisions)
+            assertEquals(state, back)
             val n = (store.appendHistory(state.points()) as Outcome.Success).value
             store.appendHistory(state.points())
             val history = (store.history() as Outcome.Success).value
             assertEquals(2 * n, history.size, "история только добавляется")
-            assertEquals(2, (store.history("eco.questions_open") as Outcome.Success).value.size)
+            assertEquals(2, (store.history("app.sync.health") as Outcome.Success).value.size)
         } finally {
             dir.toFile().deleteRecursively()
         }

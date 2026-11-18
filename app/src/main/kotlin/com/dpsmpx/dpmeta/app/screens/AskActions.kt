@@ -86,7 +86,7 @@ object AskActions {
      * модель берёт инструментами.
      */
     fun system(snap: Snapshot): String = buildString {
-        appendLine("Ты отвечаешь автору экосистемы репозиториев в его личном приложении DP_IDE — пульте над проектами. Отвечай по-русски и по делу. Ответ показывается на телефоне простым текстом: без разметки Markdown, заголовков и таблиц — абзацы и списки через дефис.")
+        appendLine("Ты отвечаешь пользователю студии разработки DP_IDE о его проектах. Отвечай по-русски и по делу. Ответ показывается на телефоне простым текстом: без разметки Markdown, заголовков и таблиц — абзацы и списки через дефис.")
         appendLine()
         val s = snap.state
         if (s == null) {
@@ -142,12 +142,12 @@ object AskActions {
     val TOOLS: List<Tool> = listOf(
         Tool(
             "ecosystem_summary",
-            "Сводка и список проектов: кто работает, ROADMAP, открытые PR, TODO, ошибки источников. Зови первым, когда вопрос о состоянии в целом или неясно, какой проект нужен.",
+            "Сводка и список проектов: кто работает, открытые PR, CI, ошибки источников. Зови первым, когда вопрос о состоянии в целом или неясно, какой проект нужен.",
             schema("""{"type":"object","properties":{},"additionalProperties":false}"""),
         ),
         Tool(
             "project_card",
-            "Карточка одного проекта: готовность и её критерии, этапы ROADMAP, открытые PR и проверки, ветки, решения, TODO, ошибки. Зови, когда вопрос о конкретном проекте.",
+            "Карточка одного проекта: открытые PR и проверки, ветки, issues, коммиты, README, чек-листы пользователя, ошибки. Зови, когда вопрос о конкретном проекте.",
             schema("""{"type":"object","properties":{"project":{"type":"string","description":"Имя проекта, как в списке проектов"}},"required":["project"],"additionalProperties":false}"""),
         ),
         Tool(
@@ -156,13 +156,8 @@ object AskActions {
             schema("""{"type":"object","properties":{"filter":{"type":"string","enum":["all","waiting","drafts","stale"]},"project":{"type":"string","description":"Имя проекта; без него — все проекты"}},"required":["filter"],"additionalProperties":false}"""),
         ),
         Tool(
-            "questions_to_author",
-            "Открытые вопросы автору из разделов «За автором» TODO проектов: текст, метка, где записан.",
-            schema("""{"type":"object","properties":{},"additionalProperties":false}"""),
-        ),
-        Tool(
             "recent_events",
-            "Лента событий между синхронизациями: новые и влитые PR, изменения этапов, вопросов, проверок. Зови на вопросы «что изменилось».",
+            "Лента событий между синхронизациями: коммиты, новые, закрытые и влитые PR; прежние события остаются в архиве. Зови на вопросы «что изменилось».",
             schema("""{"type":"object","properties":{"project":{"type":"string","description":"Имя проекта; без него — все проекты"}},"additionalProperties":false}"""),
         ),
         Tool(
@@ -214,7 +209,6 @@ object AskActions {
                 val rows = Screens.filterPulls(Screens.pulls(s), filter, p)
                 "PR (${filter.title}${p?.let { ", $it" } ?: ""}): ${rows.size}\n" + rows.joinToString("\n") { "#${it.number} ${it.title}\n  ${Screens.pullLine(it, s.asOf)}" }
             }
-            "questions_to_author" -> ScreenText.questions(Screens.questions(s))
             "recent_events" -> {
                 val p = when (val r = project(required = false)) {
                     is Outcome.Failure -> return bad(r)

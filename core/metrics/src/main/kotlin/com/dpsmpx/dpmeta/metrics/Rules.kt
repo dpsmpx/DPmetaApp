@@ -10,7 +10,7 @@ import kotlin.time.Duration.Companion.minutes
  * `docs/CHANGELOG.md`; прежние точки истории остаются со своей версией.
  */
 object Rules {
-    const val RULES_VERSION: Int = 7
+    const val RULES_VERSION: Int = 8
 
     /** «Кто работает» (F-16, `DPmeta:M-08`): коммит в `main` за это окно. */
     val MAIN_COMMIT_WINDOW: Duration = 6.hours
@@ -49,8 +49,7 @@ object Rules {
 
     /**
      * PR ждёт автора (ТЗ, §8, `repo.pr.waiting_author`): открыт и не
-     * черновик — дальше решает автор. Шлюз готовности (D-64): никто не ждёт
-     * дольше этого срока.
+     * черновик — дальше решает пользователь. Дольше этого срока — фильтр «застрявшие».
      */
     val PR_WAITING_LIMIT: Duration = 72.hours
 
@@ -70,6 +69,4 @@ object Rules {
     /** Доля ИИ (`repo.commits.ai_share`) — по коммитам за это число последних дней. */
     const val AI_SHARE_DAYS: Int = 30
 
-    /** Новые решения (`repo.decisions.new`) — прирост записей журнала за это число последних дней. */
-    const val DECISIONS_NEW_DAYS: Int = 7
 }

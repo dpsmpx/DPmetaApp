@@ -60,12 +60,4 @@ object ScreenText {
         for (r in rows) appendLine("  ${r.time} ${r.project} [${r.kind}] ${r.text}")
     }
 
-    /** Вопросы автору (UX-17): по проектам, метка, куда ведёт касание. */
-    fun questions(q: List<Screens.Question>): String = buildString {
-        appendLine("ВОПРОСЫ АВТОРУ: ${q.size}")
-        for ((project, items) in Screens.questionGroups(q)) {
-            appendLine("$project:")
-            for (i in items) appendLine("  ${i.label?.let { "[$it] " } ?: ""}${i.title}" + (i.path?.let { " → $project:$it" + (i.section?.let { s -> " «$s»" } ?: "") } ?: ""))
-        }
-    }
 }

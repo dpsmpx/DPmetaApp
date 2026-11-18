@@ -54,14 +54,6 @@ data class ProjectState(
 ) {
     private fun payload(kind: String): JsonObject? = sections[kind]?.payload as? JsonObject
 
-    private fun long(kind: String, field: String): Measure<Long> =
-        (payload(kind)?.get(field) as? JsonNumber)?.toLongExact()?.let { Measure.observed(it) }
-            ?: Measure.unknown("нет данных источника $kind")
-
-    val decisions: Measure<Long> get() = long("decisions", "count")
-    val todoOpen: Measure<Long> get() = long("todo", "open")
-    val forAuthor: Measure<Long> get() = long("todo", "forAuthor")
-
     val openPulls: Measure<Long>
         get() = (payload("pulls")?.get("pulls") as? JsonArray)?.let { Measure.observed(it.items.size.toLong()) }
             ?: Measure.unknown("нет данных о PR")
@@ -121,17 +113,6 @@ data class ProjectState(
      * Доля отмеченного в ROADMAP, в процентах вниз до целого (ТЗ, §8,
      * `repo.roadmap.progress`): по шагам, а если шагов нет — по этапам.
      */
-    val roadmapPercent: Measure<Long>
-        get() {
-            val steps = long("roadmap", "stepsTotal").orNull() ?: 0L
-            val (done, total) = if (steps > 0) {
-                long("roadmap", "stepsDone").orNull() to steps
-            } else {
-                long("roadmap", "stagesDone").orNull() to long("roadmap", "stagesTotal").orNull()
-            }
-            return if (done == null || total == null || total == 0L) Measure.unknown("нет шагов и этапов ROADMAP") else Measure.observed(done * 100 / total)
-        }
-
     /**
      * «Кто работает» (F-16, `DPmeta:M-08`): коммит в `main` за
      * [Rules.MAIN_COMMIT_WINDOW] или ветка, или открытый PR, обновлённые за
@@ -224,27 +205,6 @@ data class ProjectState(
             return Measure.observed(list.size.toLong() to list.sumOf { (it["commits"] as? JsonNumber)?.toLongExact() ?: 0L })
         }
 
-    /**
-     * Новые решения (ТЗ, §8, `repo.decisions.new`): прирост записей журнала
-     * за [Rules.DECISIONS_NEW_DAYS] последних дней по основной ветке клона.
-     * Журнал появился внутри окна — все его записи новые; журнала в
-     * истории нет — неизвестно.
-     */
-    fun decisionsNew(now: Timestamp): Measure<Long> {
-        val points = (currentHistory()?.get("decisions") as? JsonArray)?.items?.mapNotNull { p ->
-            val a = (p as? JsonArray)?.items ?: return@mapNotNull null
-            val d = (a.getOrNull(0) as? JsonString)?.value ?: return@mapNotNull null
-            val n = (a.getOrNull(1) as? JsonNumber)?.toLongExact() ?: return@mapNotNull null
-            d to n
-        } ?: return Measure.unknown("нет истории из клона")
-        if (points.isEmpty()) return Measure.unknown("журнала решений в истории нет")
-        val today = day(now, 0)
-        val before = day(now, Rules.DECISIONS_NEW_DAYS)
-        val nowCount = points.lastOrNull { it.first <= today }?.second ?: return Measure.unknown("журнала решений ещё нет")
-        val base = points.lastOrNull { it.first <= before }?.second ?: 0L
-        return Measure.observed((nowCount - base).coerceAtLeast(0))
-    }
-
     fun toJson(now: Timestamp): JsonObject = JsonObject(
         linkedMapOf<String, JsonValue>(
             "name" to JsonString(name),
@@ -291,13 +251,6 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
             return if (known.all { it is Measure.Unknown }) Measure.unknown("ни у одного проекта нет данных об активности") else Measure.observed(known.count { it.orNull() == true }.toLong())
         }
 
-    /** Открытые вопросы автору — пункты «За автором» всех `TODO.md` (F-24). */
-    val questionsOpen: Measure<Long>
-        get() {
-            val known = projects.mapNotNull { it.forAuthor.orNull() }
-            return if (known.isEmpty()) Measure.unknown("нет ни одного TODO.md") else Measure.observed(known.sum())
-        }
-
     /** Точки истории этого среза: неизвестное — без точки, а не ноль (D-13 подсистемы, D-34). */
     fun points(): List<MetricPoint> {
         val out = mutableListOf<MetricPoint>()
@@ -308,10 +261,7 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
         for (p in projects) {
             add("repo.pr.open", p.name, p.openPulls)
             add("repo.activity.state", p.name, flag(p.working(asOf)))
-            add("repo.decisions.count", p.name, p.decisions)
-            add("repo.todo.items", p.name, p.todoOpen)
-            add("repo.roadmap.progress", p.name, p.roadmapPercent)
-            // С правил 2 (этап 4, D-64): PR, проверки, стадия и шлюз.
+            // PR и проверки остаются независимыми от снятого шлюза (D-176).
             add("repo.pr.open.drafts", p.name, p.draftPulls)
             p.waitingAuthor(asOf).orNull()?.let { (count, oldest) ->
                 add("repo.pr.waiting_author", p.name, Measure.observed(count))
@@ -323,20 +273,14 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                 add("repo.pr.lead_time.p90", p.name, Measure.observed(high))
             }
             add("repo.checks.last", p.name, flag(p.lastChecksGreen))
-            val gate = Readiness.gate(p, asOf)
-            add("repo.stage", p.name, gate.stage.orNull()?.let { Measure.observed(it.number.toLong()) } ?: Measure.unknown(""))
-            if (gate.anyKnown) add("repo.gate.passed", p.name, Measure.observed(gate.passed.toLong()))
-            add("repo.gate.ready", p.name, flag(gate.ready))
             // С правил 5 (D-66): из истории клона.
             add("repo.commits.ai_share", p.name, p.aiShare(asOf))
             p.branchesAhead.orNull()?.let { (count, commits) ->
                 add("repo.branches.unmerged", p.name, Measure.observed(count))
                 add("repo.branches.unmerged.commits", p.name, Measure.observed(commits))
             }
-            add("repo.decisions.new", p.name, p.decisionsNew(asOf))
         }
         add("eco.active_projects", "eco", activeProjects)
-        add("eco.questions_open", "eco", questionsOpen)
         add("app.sync.health", "app", syncHealth)
         return out
     }
@@ -349,15 +293,15 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
             "projects" to JsonArray(projects.map { it.toJson(asOf) }),
         ).apply {
             activeProjects.orNull()?.let { put("activeProjects", JsonNumber.of(it)) }
-            questionsOpen.orNull()?.let { put("questionsOpen", JsonNumber.of(it)) }
             syncHealthPercent?.let { put("syncHealth", JsonNumber.of(it)) }
         },
     )
 
     companion object {
         const val FORMAT = "dpmeta.state"
-        const val VERSION = 3
+        const val VERSION = 4
         private const val DAY_MS = 24 * 60 * 60 * 1000L
+        private val RETIRED_SOURCES = setOf("dpmeta", "decisions", "todo", "roadmap")
         private val NOT_FOUND = setOf(DiagCode.GITHUB_NOT_FOUND, DiagCode.ENTITY_NOT_FOUND)
 
         /**
@@ -382,18 +326,17 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                 val fresh = latest.filterKeys { it.first == entry.name }.values.associate { o ->
                     o.kind to SourceSection(o.kind, o.schema, o.asOf, o.payload)
                 }
-                val errors = failures.filter { it.project == entry.name }
+                val errors = failures.filter { it.project == entry.name && it.kind !in RETIRED_SOURCES }
                     .sortedWith(compareBy({ it.kind }, { it.diagnostic.code.name }, { it.at }))
                     .map { f -> SourceError(f.kind, f.diagnostic.code.name, f.diagnostic.message, f.at) }
                 val skipped = buildSet {
                     // История подсистемы — в истории DPmetaApp (D-66): своей нет.
                     if (entry.dir != null) addAll(listOf("pulls", "merged", "branches", "history"))
-                    if (entry.decisions == null) add("decisions")
                 }
                 // Чек-листы сняты пользователем (D-176) — прежняя секция не остаётся навсегда.
-                // Прежний специальный источник DPmeta снят D-173/D-176.
+                // Прежние специальные источники и процесс автора сняты D-173/D-176.
                 // История чисел в журнале остаётся; текущая секция больше не обновляется.
-                val current = (before + fresh) - "dpmeta"
+                val current = (before + fresh) - RETIRED_SOURCES
                 val kept = if (entry.checklists.isEmpty()) current - "checklists" else current
                 ProjectState(entry.name, entry.place.code, kept.toSortedMap(), errors, skipped)
             }
@@ -402,7 +345,7 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
             return EcosystemState(now, Rules.RULES_VERSION, projects, health)
         }
 
-        /** v1/v2 сохраняют прежние числа и версию правил; неизвестная версия — отказ. */
+        /** v1/v2/v3 сохраняют прежние числа и версию правил; неизвестная версия — отказ. */
         fun fromJson(value: JsonValue): Outcome<EcosystemState> {
             val d = DiagnosticCollector()
             val f = JsonFields.root(value, d) ?: return Outcome.Failure(d.all)

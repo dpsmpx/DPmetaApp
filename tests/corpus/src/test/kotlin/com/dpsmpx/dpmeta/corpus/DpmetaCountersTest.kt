@@ -64,7 +64,7 @@ class DpmetaCountersTest {
         assertEquals(Rules.RULES_VERSION, fresh.rulesVersion)
         assertTrue("dpmeta" !in fresh.project("DPmeta")!!.sections)
         assertTrue(fresh.points().none { it.metric in oldPoints.map(MetricPoint::metric) }, "снятые метрики не записываются снова")
-        assertEquals(JsonNumber.of(3), fresh.toJson()["version"])
+        assertEquals(JsonNumber.of(4), fresh.toJson()["version"])
         assertIs<Outcome.Success<*>>(store.writeState(fresh))
         assertIs<Outcome.Success<*>>(store.appendHistory(fresh.points()))
         val reopened = Store(vfs, clock, RandomSource.secure())
@@ -76,6 +76,6 @@ class DpmetaCountersTest {
     @Test
     fun unknownStateVersionIsRejected() {
         val doc = EcosystemState(Timestamp(0), Rules.RULES_VERSION, emptyList()).toJson()
-        assertIs<Outcome.Failure>(EcosystemState.fromJson(JsonObject(doc.fields + ("version" to JsonNumber.of(4)))))
+        assertIs<Outcome.Failure>(EcosystemState.fromJson(JsonObject(doc.fields + ("version" to JsonNumber.of(5)))))
     }
 }

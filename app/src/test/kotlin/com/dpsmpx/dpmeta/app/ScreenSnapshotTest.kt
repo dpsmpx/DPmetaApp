@@ -116,9 +116,6 @@ class ScreenSnapshotTest {
     fun cardOfSubsystemWithErrors() = snapshot("card-dpmeta", ScreenText.card(Screens.card(state(), "DPmeta")!!))
 
     @Test
-    fun questions() = snapshot("questions", ScreenText.questions(Screens.questions(state())))
-
-    @Test
     fun feedWithFilters() {
         val events = listOf(
             com.dpsmpx.dpmeta.metrics.FeedEvent(now, "Alpha", "pr.merged", "PR #2 влит: Этап 0"),

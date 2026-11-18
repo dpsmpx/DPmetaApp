@@ -1057,7 +1057,6 @@ private fun CardList(
 ) {
     val view = remember(c) { Screens.cardView(c) }
     val opened = rememberSaveable(c.name, saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() })) { mutableStateListOf<String>() }
-    val decisionsPath = c.files.firstOrNull { it.first == "Решения" }?.second
     var issueOpen by rememberSaveable(c.name) { mutableStateOf(false) }
     var pathsOpen by rememberSaveable(c.name) { mutableStateOf(false) }
     // Документ — в редакторе IDE, если проект рабочий; иначе спросить или читать в пульте (D-177).
@@ -1085,7 +1084,6 @@ private fun CardList(
             ideVersion++
         }
     }
-    val todoPath = c.files.firstOrNull { it.first == "TODO" }?.second
     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         item {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -1132,15 +1130,12 @@ private fun CardList(
             item(key = key) {
                 Text(
                     sec.title + when {
-                        sec.kind == Screens.CardSection.Kind.TODO && todoPath != null -> " ▸"
                         !expandable -> ""
                         expanded -> " ▾"
                         else -> " ▸"
                     },
-                    Modifier.fillMaxWidth().clickable(enabled = expandable || (sec.kind == Screens.CardSection.Kind.TODO && todoPath != null)) {
-                        if (sec.kind == Screens.CardSection.Kind.TODO && todoPath != null) {
-                            open(Nav.Doc(c.name, todoPath, null))
-                        } else if (expanded) {
+                    Modifier.fillMaxWidth().clickable(enabled = expandable) {
+                        if (expanded) {
                             opened.remove(key)
                         } else {
                             opened.add(key)
@@ -1150,16 +1145,7 @@ private fun CardList(
                 )
             }
             if (expanded) {
-                if (sec.kind == Screens.CardSection.Kind.DECISIONS) {
-                    // Решение — касанием к журналу на его якоре (F-07); без id — просто строка.
-                    items(c.lastDecisions) { d ->
-                        val anchor = d.id?.let(Links::slug)
-                        Text(
-                            "  ${d.text}",
-                            Modifier.fillMaxWidth().clickable(enabled = anchor != null && decisionsPath != null) { open(Nav.Doc(c.name, decisionsPath!!, anchor)) }.padding(vertical = 4.dp),
-                        )
-                    }
-                } else if (sec.kind == Screens.CardSection.Kind.PULLS) {
+                if (sec.kind == Screens.CardSection.Kind.PULLS) {
                     // PR — касанием к его экрану с действиями (F-12); строки проверок — как прежде.
                     items(c.pulls) { pr ->
                         Text(

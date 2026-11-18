@@ -80,20 +80,17 @@ class ChecksAndFeedTest {
         fun JsonObject.with(k: String, v: com.dpsmpx.dpai.core.serialization.JsonValue) = JsonObject(LinkedHashMap(fields).apply { put(k, v) })
         val before = alpha.copy(
             sections = alpha.sections + mapOf(
-                "decisions" to edit("decisions") { o -> o.with("entries", JsonArray((o["entries"] as JsonArray).items.dropLast(1))) },
                 "pulls" to edit("pulls") { o -> o.with("pulls", JsonArray(listOf(JsonObject.of("number" to com.dpsmpx.dpai.core.serialization.JsonNumber.of(2), "title" to JsonString("Этап 0"))))) },
                 "branches" to edit("branches") { o ->
                     o.with("branches", JsonArray((o["branches"] as JsonArray).items.map { b -> (b as JsonObject).let { if ((it["name"] as JsonString).value == Rules.MAIN_BRANCH) it.with("sha", JsonString("0".repeat(40))) else it } }))
                 },
-                "roadmap" to edit("roadmap") { o -> o.with("stepsDone", com.dpsmpx.dpai.core.serialization.JsonNumber.of(1)) },
             ),
         )
         val previous = next.copy(projects = next.projects.map { if (it.name == "Alpha") before else it })
         val events = Feed.diff(previous, next)
         val kinds = events.map { it.kind }.toSet()
-        assertEquals(setOf("main", "pr.opened", "pr.merged", "decision", "roadmap"), kinds, events.joinToString("\n"))
+        assertEquals(setOf("main", "pr.opened", "pr.merged"), kinds, events.joinToString("\n"))
         assertTrue(events.any { it.text.startsWith("PR #2 влит") })
-        assertTrue(events.any { it.text.startsWith("новое решение D-02") })
         assertEquals(events, Feed.merge(emptyList(), events + events).let { Feed.merge(it, emptyList()) }, "повтор не дублируется")
         // F-58 (D-161): PR сессии, запущенной маршрутом из пульта, — «от маршрута»; чужая сессия — как обычно.
         val routed = Feed.diff(previous, next, mapOf("session_01AlphaCorpus7Q" to "Ночной"))

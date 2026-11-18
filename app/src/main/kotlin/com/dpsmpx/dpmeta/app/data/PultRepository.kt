@@ -521,14 +521,11 @@ class PultRepository(
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value.toRegistry().also { registry = it }
         }
-        val known = previous?.projects.orEmpty().mapNotNull { p ->
-            ((p.sections["roadmap"]?.payload as? JsonObject)?.get("path") as? JsonString)?.value?.let { (p.name to "roadmap") to it }
-        }.toMap()
         val commits = Sync.knownCommits(previous?.projects.orEmpty().mapNotNull { it.sections["branches"]?.payload })
         val recheckAfter = clock.now() - Rules.MISSING_RECHECK
         val carried = previous?.projects.orEmpty().flatMap { p ->
             // Клоны (D-65) обновляются каждый раз: их отказ не переносится, а пишется заново.
-            p.errors.filter { it.code in MISSING && it.at >= recheckAfter && it.kind != CLONE }.map { e ->
+            p.errors.filter { it.code in MISSING && it.at >= recheckAfter && it.kind != CLONE && it.kind !in setOf("decisions", "todo", "roadmap", "dpmeta") }.map { e ->
                 SourceFailure(p.name, e.kind, Diagnostic.error(DiagCode.valueOf(e.code), e.message, p.name), e.at)
             }
         }
@@ -545,7 +542,7 @@ class PultRepository(
         val sizeOf = { key: String -> RepoRef.parse(key).valueOrNull()?.let { gh.repoSize(it).valueOrNull() } }
         val cloned = cloneAll(reg, clones, reader, token, chosen, sizeOf, progress)
         progress("Источники…")
-        val result = Sync.run(Sync.plan(reg, known, carried.map { it.project to it.kind }.toSet()), reader, clock, commits, parallel)
+        val result = Sync.run(Sync.plan(reg, carried.map { it.project to it.kind }.toSet()), reader, clock, commits, parallel)
         val state = EcosystemState.derive(reg, result.observations, result.failures + cloned.failures + carried, previous, clock.now())
         store.writeState(state).let { if (it is Outcome.Failure) return it }
         store.appendHistory(state.points()).let { if (it is Outcome.Failure) return it }

@@ -28,23 +28,26 @@ object Stats {
      * Метрика для графика: [id] — из ТЗ, §8 и `docs/CHANGELOG.md`, [hue] —
      * смысловой цвет (N-08), один на всех графиках.
      */
-    data class Metric(val id: String, val title: String, val unit: String, val scope: Scope, val hue: Hue = Hue.NEUTRAL)
+    data class Metric(val id: String, val title: String, val unit: String, val scope: Scope, val hue: Hue = Hue.NEUTRAL, val retired: Boolean = false)
 
     /** Смысловые цвета (ТЗ, N-08): у каждого — пара для светлой и тёмной темы в токенах экрана. */
     enum class Hue { NEUTRAL, DECISIONS, VERIFIED, ALERT, AI, HUMAN }
 
+    /** Снятые правила доступны только для чтения накопленной истории (D-176). */
     val CATALOG: List<Metric> = listOf(
-        Metric("repo.roadmap.progress", "ROADMAP", "%", Scope.PROJECT, Hue.VERIFIED),
-        Metric("repo.stage", "Этап ROADMAP", "", Scope.PROJECT),
-        Metric("repo.gate.passed", "Шлюз: выполнено критериев", "", Scope.PROJECT, Hue.VERIFIED),
-        Metric("repo.decisions.count", "Решений", "", Scope.PROJECT, Hue.DECISIONS),
-        Metric("repo.todo.items", "Пунктов TODO", "", Scope.PROJECT),
         Metric("repo.pr.open", "Открытых PR", "", Scope.PROJECT),
         Metric("repo.pr.waiting_author", "PR ждут автора", "", Scope.PROJECT, Hue.ALERT),
         Metric("repo.pr.lead_time.median", "До вливания, медиана", "мин", Scope.PROJECT),
         Metric("eco.active_projects", "Работают проектов", "", Scope.ECO),
-        Metric("eco.questions_open", "Вопросов автору", "", Scope.ECO, Hue.ALERT),
         Metric("app.sync.health", "Удачных источников", "%", Scope.ECO, Hue.VERIFIED),
+        Metric("repo.roadmap.progress", "ROADMAP (архив)", "%", Scope.PROJECT, Hue.VERIFIED, retired = true),
+        Metric("repo.stage", "Этап ROADMAP (архив)", "", Scope.PROJECT, retired = true),
+        Metric("repo.gate.passed", "Шлюз: выполнено критериев (архив)", "", Scope.PROJECT, Hue.VERIFIED, retired = true),
+        Metric("repo.gate.ready", "Шлюз: готовность (архив)", "", Scope.PROJECT, retired = true),
+        Metric("repo.decisions.count", "Решений (архив)", "", Scope.PROJECT, Hue.DECISIONS, retired = true),
+        Metric("repo.decisions.new", "Новых решений (архив)", "", Scope.PROJECT, Hue.DECISIONS, retired = true),
+        Metric("repo.todo.items", "Пунктов TODO (архив)", "", Scope.PROJECT, retired = true),
+        Metric("eco.questions_open", "Вопросов автору (архив)", "", Scope.ECO, Hue.ALERT, retired = true),
     )
 
     fun metric(id: String): Metric? = CATALOG.firstOrNull { it.id == id }
@@ -113,7 +116,7 @@ object Stats {
     /** Плитка сводки (F-34): число, изменение за срок и спарклайн — значения дней за [SPARK_DAYS] дней. */
     data class Tile(val metric: Metric, val value: String, val change: String, val spark: List<Long>)
 
-    fun tiles(history: List<MetricPoint>, now: Timestamp): List<Tile> = CATALOG.filter { it.scope == Scope.ECO }.map { m ->
+    fun tiles(history: List<MetricPoint>, now: Timestamp): List<Tile> = CATALOG.filter { it.scope == Scope.ECO && !it.retired }.map { m ->
         val s = series(history, m.id, ecoSubject(m), Period.MONTH, now).points.takeLast(SPARK_DAYS)
         val last = s.lastOrNull()?.second
         val first = s.firstOrNull()?.second

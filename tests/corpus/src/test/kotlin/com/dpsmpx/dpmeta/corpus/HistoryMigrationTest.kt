@@ -64,7 +64,7 @@ class HistoryMigrationTest {
             assertEquals(2L, row.human)
             assertEquals(null, row.other, "прежняя категория не перекрашивается в прочих")
             val offline = EcosystemState.derive(registry, emptyList(), emptyList(), restored, now)
-            assertEquals(7, offline.rulesVersion)
+            assertEquals(8, offline.rulesVersion)
             assertEquals(payload, offline.project("P")!!.sections.getValue("history").payload)
             assertTrue(offline.points().none { it.metric.startsWith("repo.commits.") || it.metric.startsWith("repo.branches.unmerged") })
             assertIs<Measure.Unknown>(offline.project("P")!!.aiShare(now))
@@ -78,13 +78,13 @@ class HistoryMigrationTest {
             assertEquals(4L, current.project("P")!!.historyDays!!.single().other)
             assertEquals(null, current.project("P")!!.historyDays!!.single().human)
             assertIs<Outcome.Success<*>>(store.writeState(current))
-            assertEquals(JsonNumber.of(3), current.toJson()["version"])
+            assertEquals(JsonNumber.of(4), current.toJson()["version"])
             assertIs<Outcome.Success<*>>(store.appendHistory(current.points()))
             val history = assertIs<Outcome.Success<List<MetricPoint>>>(store.history()).value
             assertEquals(oldPoints, history.take(oldPoints.size))
-            assertEquals(listOf(oldRules, 7), history.filter { it.metric == "repo.commits.ai_share" }.map { it.rulesVersion })
+            assertEquals(listOf(oldRules, 8), history.filter { it.metric == "repo.commits.ai_share" }.map { it.rulesVersion })
             assertEquals(current, assertIs<Outcome.Success<EcosystemState?>>(store.readState()).value)
-            assertEquals(7, Rules.RULES_VERSION)
+            assertEquals(8, Rules.RULES_VERSION)
         }
     }
 
@@ -96,7 +96,6 @@ class HistoryMigrationTest {
         for (p in listOf(unknown, partial)) {
             assertIs<Measure.Unknown>(p.aiShare(now))
             assertIs<Measure.Unknown>(p.branchesAhead)
-            assertIs<Measure.Unknown>(p.decisionsNew(now))
         }
     }
 }

@@ -7,7 +7,7 @@ import com.dpsmpx.dpai.ui.ManualProfileKind
 data class WidgetText(val projects: String, val projectDate: String, val ai: String, val health: String, val runs: String = runs(null)) {
     companion object {
         fun of(projects: Screens.Summary?, ai: Screens.AiCounts?, problems: Int? = null, manual: ManualCounts? = null): WidgetText = WidgetText(
-            projects = projects?.let { "Проекты: ${it.active} · PR: ${it.pullsWaiting} · Вопросы: ${it.questions}" }
+            projects = projects?.let { "Проекты: ${it.projects} · PR: ${it.pullsOpen} · CI: ${it.ciRed}" }
                 ?: "Проекты: неизвестно · PR: неизвестно · Вопросы: неизвестно",
             projectDate = projects?.let { "Срез проектов: ${it.asOf}" } ?: "Нет среза проектов",
             ai = when {
