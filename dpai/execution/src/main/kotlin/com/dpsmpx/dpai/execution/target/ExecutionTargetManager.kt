@@ -124,6 +124,6 @@ class ExecutionTargetManager(
         TargetType.LOCAL -> local
         TargetType.MOCK -> mockHost!!
         TargetType.IN_APP -> inAppHost!!
-        TargetType.TERMUX_LOCAL, TargetType.LINUX_SSH, TargetType.WINDOWS_REMOTE -> sshHost(t.ssh!!, t.platform)
+        TargetType.LINUX_SSH, TargetType.WINDOWS_REMOTE -> sshHost(t.ssh!!, t.platform)
     }
 }

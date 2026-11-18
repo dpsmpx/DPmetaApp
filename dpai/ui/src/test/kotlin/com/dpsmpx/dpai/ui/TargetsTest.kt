@@ -8,6 +8,10 @@ import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonParser
+import com.dpsmpx.dpai.core.serialization.JsonArray
+import com.dpsmpx.dpai.core.serialization.JsonNumber
+import com.dpsmpx.dpai.core.serialization.JsonObject
+import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.execution.target.TargetPlatform
 import com.dpsmpx.dpai.execution.target.TargetType
 import com.dpsmpx.dpai.storage.vfs.NioVfs
@@ -26,7 +30,7 @@ class TargetsTest {
     private val ids = IdGenerator(ManualClock(), RandomSource.seeded(9))
 
     private fun entry(host: String = "127.0.0.1", port: String = "8022", windows: Boolean = false) =
-        TargetForm.validate(ids.next(IdKinds.TARGET), "телефон", host, port, "u0_a224", windows, "/data/data/com.termux/files/home/dpai/bin/dpai")
+        TargetForm.validate(ids.next(IdKinds.TARGET), "SSH", host, port, "builder", windows, "/home/builder/dpai/bin/dpai")
 
     @Test
     fun formRejectsOptionLikeHostAndBadPort() {
@@ -36,8 +40,8 @@ class TargetsTest {
     }
 
     @Test
-    fun typeFollowsHostAndPlatform() {
-        assertEquals(TargetType.TERMUX_LOCAL, entry().valueOrNull()!!.type)
+    fun typeFollowsPlatformWithoutInferringAnAppFromLoopback() {
+        assertEquals(TargetType.LINUX_SSH, entry().valueOrNull()!!.type)
         assertEquals(TargetType.LINUX_SSH, entry(host = "build.lan").valueOrNull()!!.type)
         assertEquals(TargetType.WINDOWS_REMOTE, entry(host = "pc.lan", windows = true).valueOrNull()!!.type)
         assertEquals(TargetPlatform.WINDOWS, entry(host = "pc.lan", windows = true).valueOrNull()!!.platform)
@@ -46,8 +50,45 @@ class TargetsTest {
     @Test
     fun bookRoundTripsThroughCanonicalJson() {
         val list = listOf(entry().valueOrNull()!!, entry(host = "pc.lan", port = "22", windows = true).valueOrNull()!!)
-        val text = CanonicalJson.write(TargetBook.toJson(list))
+        val json = TargetBook.toJson(list)
+        assertEquals(JsonNumber.of(7), json["version"])
+        assertTrue((json["targets"] as JsonArray).items.all { (it as JsonObject)["kind"] == JsonString("ssh") })
+        val text = CanonicalJson.write(json)
         assertEquals(list, TargetBook.fromJson(JsonParser().parse(text).valueOrNull()!!).valueOrNull())
+    }
+
+    @Test
+    fun versionSixLoopbackKeepsTheWholeSshEndpointAndSlot() {
+        for (host in listOf("127.0.0.1", "localhost", "::1")) {
+            val id = ids.next(IdKinds.TARGET)
+            val legacy = """{"format":"dpai.app-targets","version":6,"targets":[{"id":"$id","label":"сохранённый адрес","host":"$host","port":8022,"user":"legacy","platform":"posix","agent":"/legacy/bin/dpai","configDir":"/legacy/slot","executor":"codex","tmux":false,"sessions":3}]}"""
+            val saved = TargetBook.fromJson(JsonParser().parse(legacy).valueOrNull()!!).valueOrNull()!!.single()
+            assertEquals(id, saved.id)
+            assertEquals("сохранённый адрес", saved.label)
+            assertEquals(TargetType.LINUX_SSH, saved.type)
+            val endpoint = saved.toTarget("/kh").ssh!!
+            assertEquals(host, endpoint.host)
+            assertEquals(8022, endpoint.port)
+            assertEquals("legacy", endpoint.user)
+            assertEquals("/legacy/bin/dpai", saved.agent)
+            assertEquals("/legacy/slot", saved.configDir)
+            assertEquals(com.dpsmpx.dpai.core.ids.Executor.CODEX, saved.executor)
+            assertEquals(false, saved.tmux)
+            assertEquals(3, saved.sessions)
+            assertEquals(listOf(saved), TargetBook.fromJson(TargetBook.toJson(listOf(saved))).valueOrNull())
+        }
+    }
+
+    @Test
+    fun versionSevenRequiresKnownExplicitKind() {
+        val valid = TargetBook.toJson(listOf(entry().valueOrNull()!!))
+        val original = (valid["targets"] as JsonArray).items.single() as JsonObject
+        fun document(target: JsonObject, version: Int = 7) = JsonObject(valid.fields + mapOf(
+            "version" to JsonNumber.of(version), "targets" to JsonArray(listOf(target)),
+        ))
+        assertTrue(TargetBook.fromJson(document(JsonObject(original.fields - "kind"))) is Outcome.Failure)
+        assertTrue(TargetBook.fromJson(document(JsonObject(original.fields + ("kind" to JsonString("unknown"))))) is Outcome.Failure)
+        assertTrue(TargetBook.fromJson(document(original, version = 6)) is Outcome.Failure, "kind=ssh появился только в v7")
     }
 
     @Test

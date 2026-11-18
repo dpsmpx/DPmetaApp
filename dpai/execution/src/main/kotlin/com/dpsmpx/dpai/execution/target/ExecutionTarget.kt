@@ -10,7 +10,7 @@ import com.dpsmpx.dpai.core.result.Outcome
  * для тестов ядра без процессов; `IN_APP` — Linux-среда в самом
  * приложении, агент — в его процессе, без SSH (D-75; `docs/EXECUTION_MODEL.md`, §8).
  */
-enum class TargetType { LOCAL, TERMUX_LOCAL, LINUX_SSH, WINDOWS_REMOTE, MOCK, IN_APP }
+enum class TargetType { LOCAL, LINUX_SSH, WINDOWS_REMOTE, MOCK, IN_APP }
 
 /** Оболочка, которой SSH-сервер target исполняет команду (`RemoteShell`). */
 enum class TargetPlatform { POSIX, WINDOWS }
@@ -82,6 +82,6 @@ data class ExecutionTarget(
     }
 }
 
-/** Ходит ли контроллер к target по SSH (D-26): к Termux — на `127.0.0.1`. */
+/** Ходит ли контроллер к target по SSH (D-26, D-202); loopback — обычный SSH-адрес. */
 val TargetType.usesSsh: Boolean
-    get() = this == TargetType.TERMUX_LOCAL || this == TargetType.LINUX_SSH || this == TargetType.WINDOWS_REMOTE
+    get() = this == TargetType.LINUX_SSH || this == TargetType.WINDOWS_REMOTE

@@ -67,12 +67,11 @@ data class TargetEntry(
      */
     val sessions: Int = 1,
 ) {
-    /** Target того же телефона — Termux на `127.0.0.1` (D-26); «в приложении» — Alpine приложения (D-75). */
+    /** Адрес не определяет вид чужого приложения; loopback — обычный SSH (D-202). */
     val type: TargetType
         get() = when {
             inApp -> TargetType.IN_APP
             platform == TargetPlatform.WINDOWS -> TargetType.WINDOWS_REMOTE
-            host == "127.0.0.1" || host == "localhost" -> TargetType.TERMUX_LOCAL
             else -> TargetType.LINUX_SSH
         }
 
@@ -109,7 +108,7 @@ object TargetForm {
         }
         // Команда уходит на target одним аргументом в кавычках: `~` там не раскрывается (ревью 8 октября 2026).
         if (a.startsWith("~")) {
-            return Outcome.failure(DiagCode.VALUE_INVALID, "команда агента — путь без «~»: полный путь, например /data/data/com.termux/files/home/dpai/bin/dpai", "agent")
+            return Outcome.failure(DiagCode.VALUE_INVALID, "команда агента — путь без «~»: полный путь на ПК или команда из его PATH", "agent")
         }
         // Каталог — как его хранит слот (без `/` в конце): иначе после перезапуска слот не найти.
         val dir = configDir?.trim()?.takeIf { it.isNotEmpty() }?.let { Accounts.normalizeDir(it) ?: it }
@@ -148,7 +147,10 @@ object TargetBook {
 
     /** Вид target «в приложении» в формате v3. */
     const val KIND_IN_APP = "in-app"
+    /** Обычный SSH-target, в том числе через локальный туннель (v7, D-202). */
+    const val KIND_SSH = "ssh"
     /**
+     * v7 — явный kind=ssh без определения вида по адресу (D-202);
      * v6 — мест для сессий ИИ (`sessions`, D-180; пишется, только если не 1);
      * v5 — «Держать сессию в tmux» (`tmux`, D-111; пишется только `false`,
      * нет поля — включено); v4 — исполнитель слота (`executor`, D-100;
@@ -156,7 +158,7 @@ object TargetBook {
      * (`"kind": "in-app"`, без адреса SSH; D-75, шаг 5); v2 — каталог Claude
      * слота (`configDir`); v1…v3 читаются как Claude.
      */
-    const val VERSION = 6
+    const val VERSION = 7
 
     fun toJson(entries: List<TargetEntry>): JsonObject = JsonObject(
         linkedMapOf(
@@ -174,6 +176,7 @@ object TargetBook {
                     } else {
                         JsonObject(
                             linkedMapOf(
+                                "kind" to JsonString(KIND_SSH),
                                 "id" to JsonString(e.id.value), "label" to JsonString(e.label), "host" to JsonString(e.host),
                                 "port" to JsonNumber.of(e.port.toLong()), "user" to JsonString(e.user),
                                 "platform" to JsonString(e.platform.name.lowercase()), "agent" to JsonString(e.agent),
@@ -201,9 +204,13 @@ object TargetBook {
                 return@mapIndexedNotNull null
             }
             val t = JsonFields(obj, "$.targets[$i]", d)
+            val kind = when {
+                version >= 7 -> t.string("kind")
+                version >= 3 -> t.optString("kind")
+                else -> null
+            }
             // «В приложении» (v3): только имя и каталог слота — адреса SSH нет.
-            if (version >= 3 && t.has("kind")) {
-                val kind = t.string("kind")
+            if (kind == KIND_IN_APP) {
                 val id = t.string("id")?.let { IdKinds.TARGET.parse(it).valueOrNull() }
                 val label = t.string("label").orEmpty()
                 val dir = t.string("configDir")
@@ -211,7 +218,7 @@ object TargetBook {
                 val tmux = readTmux(t, version)
                 val sessions = readSessions(t, version, "$.targets[$i]", d)
                 t.finish()
-                if (kind != KIND_IN_APP || id == null || dir == null || executor == null) {
+                if (id == null || dir == null || executor == null) {
                     d.error(DiagCode.VALUE_INVALID, "target «в приложении» неполон или вид неизвестен: $kind", "$.targets[$i]")
                     return@mapIndexedNotNull null
                 }
@@ -219,6 +226,10 @@ object TargetBook {
                     is Outcome.Success -> e.value.copy(tmux = tmux, sessions = sessions ?: return@mapIndexedNotNull null)
                     is Outcome.Failure -> null.also { e.diagnostics.forEach { x -> d.error(x.code, x.message, "$.targets[$i]") } }
                 }
+            }
+            if ((version >= 7 && kind != KIND_SSH) || (version in 3..6 && kind != null)) {
+                d.error(DiagCode.VALUE_INVALID, "вид target неизвестен: $kind", "$.targets[$i].kind")
+                return@mapIndexedNotNull null
             }
             val id = t.string("id")?.let { IdKinds.TARGET.parse(it).valueOrNull() }
             val label = t.string("label").orEmpty()
