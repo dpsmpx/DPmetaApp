@@ -793,7 +793,6 @@ def check_gradle(root, java=None, sdk=None, run=gradle_run):
 
 
 COMMANDS = "config/commands.toml"
-REGISTRY = "dpmeta/tools/ecosystem.toml"
 COMMAND_KEYS = {"id", "title", "project", "workdir", "path", "args", "plan", "level", "packages", "expect", "timeout"}
 COMMAND_ID = re.compile(r"[a-z0-9][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)*")
 COMMAND_PART = re.compile(r"[A-Za-z0-9._+-]+")
@@ -805,8 +804,8 @@ def _relative(p):
     return bool(p) and not p.startswith("/") and all(x and x not in (".", "..") and COMMAND_PART.fullmatch(x) for x in p.split("/"))
 
 
-def _command_problems(c, names, homes, repo):
-    """Что не так с одной командой реестра: ключи, значения, проект, файл скрипта в своём репозитории."""
+def _command_problems(c):
+    """Поставляемая команда — для выбранного проекта пользователя (D-176), без привязки к реестру."""
     out = []
     unknown = sorted(set(c) - COMMAND_KEYS)
     if unknown:
@@ -845,22 +844,14 @@ def _command_problems(c, names, homes, repo):
             out.append("программа гостя — из /bin, /usr/bin, /usr/local/bin, без «..»")
     elif not _relative(path):
         out.append("path — путь от workdir без «..» или абсолютный путь гостя")
-    project = c["project"]
-    if project != "*" and project not in names:
-        out.append(f"проекта «{project}» нет в реестре DPmeta (или он в архиве)")
-    # Скрипт подсистемы или самого DPmetaApp лежит здесь — его можно найти; чужой репозиторий — нет.
-    home = homes.get(project)
-    if home is not None and not out:
-        base = "/".join(x for x in (home, workdir) if x)
-        script = path if not path.startswith("/") else next((a for a in args[:1] if _relative(a) and ("/" in a or "." in a)), None)
-        if script and not repo.exists("/".join(x for x in (base, script) if x)):
-            out.append(f"нет файла `{'/'.join(x for x in (base, script) if x)}`")
+    if c["project"] != "*":
+        out.append("project — только *: поставляемая команда работает с выбранным проектом пользователя (D-176)")
     return out
 
 
 def check_commands(repo, r):
     """config.commands — реестр команд `config/commands.toml` разбирается (схема 1, ключи, уровни 0–1,
-    пути без «..»), id не повторяются, проекты — из реестра DPmeta, скрипт подсистемы — на месте (F-43, D-82)."""
+    пути без «..»), id не повторяются, только выбранный проект пользователя (F-43, D-82, D-176)."""
     import tomllib
     if not repo.exists(COMMANDS):
         r.add(COMMANDS, "нет реестра команд (ТЗ, F-40)")
@@ -870,15 +861,6 @@ def check_commands(repo, r):
     except tomllib.TOMLDecodeError as e:
         r.add(COMMANDS, f"не TOML: {e}")
         return
-    try:
-        registry = tomllib.loads(repo.text(REGISTRY) or "") if repo.exists(REGISTRY) else {}
-    except tomllib.TOMLDecodeError as e:
-        r.add(REGISTRY, f"не TOML: {e}")
-        return
-    rows = [x for x in registry.get("repo", []) if isinstance(x, dict) and x.get("place") != "archive"]
-    names = {x.get("name") for x in rows}
-    homes = {x.get("name"): x.get("dir") for x in rows if x.get("dir")}
-    homes.update({x.get("name"): "" for x in rows if x.get("place") == "control"})
     if set(doc) - {"schema", "command"}:
         r.add(COMMANDS, f"неизвестный ключ «{sorted(set(doc) - {'schema', 'command'})[0]}»")
     if doc.get("schema") != 1:
@@ -895,7 +877,7 @@ def check_commands(repo, r):
         if not isinstance(c, dict):
             r.add(where, "команда — не таблица")
             continue
-        for problem in _command_problems(c, names, homes, repo):
+        for problem in _command_problems(c):
             r.add(where, problem)
         if c.get("id") in seen:
             r.add(where, f"id «{c.get('id')}» — уже был")

@@ -68,18 +68,10 @@ CLEAN = {
         "package core\n\nsealed interface Outcome<out T>\nclass OperationResult<out T>\nclass Diagnostic\n"
         "enum class DiagCode { A }\nclass Secret(private val v: String)\ninterface Clock\n"),
     "dpai/core/src/main/kotlin/Use.kt": "package core\n\nclass ManualClock : Clock\nval x: Outcome<Int>? = null\n",
-    # Реестр команд (F-43, D-82): проект подсистемы — из реестра DPmeta, его скрипт — на месте.
-    "dpmeta/tools/ecosystem.toml": (
-        'schema = 1\n\n[[repo]]\nname = "DPmetaApp"\nslug = "dpsmpx/DPmetaApp"\nplace = "control"\n\n'
-        '[[repo]]\nname = "DPmeta"\nslug = "dpsmpx/DPmeta"\nplace = "sync"\ndir = "dpmeta"\n\n'
-        '[[repo]]\nname = "Old"\nslug = "dpsmpx/Old"\nplace = "archive"\n\n'
-        '[[repo]]\nname = "DPlearn"\nslug = "dpsmpx/DPlearn"\nplace = "core"\n'),
+    # Команды пульта универсальны: выбранный проект пользователя, без реестра DPmeta (D-176).
     "dpmeta/tools/check.sh": "#!/bin/sh\nexit 0\n",
     "config/commands.toml": (
-        'schema = 1\n\n[[command]]\nid = "dpmeta.check"\ntitle = "Проверки"\nproject = "DPmeta"\npath = "/bin/bash"\n'
-        'args = ["tools/check.sh"]\nplan = "background"\nlevel = 0\npackages = ["bash"]\n\n'
-        '[[command]]\nid = "dplearn.next"\ntitle = "План"\nproject = "DPlearn"\npath = "tools/dpl"\nplan = "background"\nlevel = 0\n\n'
-        '[[command]]\nid = "repo.ff"\ntitle = "Догнать"\nproject = "*"\npath = "/usr/bin/git"\n'
+        'schema = 1\n\n[[command]]\nid = "repo.ff"\ntitle = "Догнать"\nproject = "*"\npath = "/usr/bin/git"\n'
         'args = ["merge", "--ff-only", "@{upstream}"]\nplan = "background"\nlevel = 1\ntimeout = 2\n'),
 }
 # Wrapper Gradle: копия в корне — та же, что в dpai/ (D-28); пакетный файл — с CRLF, как его пишет Gradle.
@@ -171,7 +163,7 @@ class LayoutTest(CheckCase):
         self.assertCatches(self.sample({".github/workflows/ci.yml": "on: push\n"}).run("repo.layout"), "D-13")
 
 
-COMMAND = ('[[command]]\nid = "x.y"\ntitle = "Т"\nproject = "DPmeta"\npath = "/bin/bash"\nargs = ["tools/check.sh"]\n'
+COMMAND = ('[[command]]\nid = "x.y"\ntitle = "Т"\nproject = "*"\npath = "/bin/bash"\nargs = ["tools/check.sh"]\n'
            'plan = "background"\nlevel = 0\n')
 
 
@@ -183,6 +175,14 @@ class CommandsTest(CheckCase):
 
     def test_clean_registry(self):
         self.assertClean(self.commands(COMMAND))
+
+    def test_bundled_commands_do_not_fix_user_projects(self):
+        self.assertCatches(self.commands(COMMAND.replace('project = "*"', 'project = "DPmeta"')), "project — только *")
+
+    def test_generic_commands_do_not_read_dpmeta_registry(self):
+        generic = COMMAND
+        self.assertClean(self.sample({"config/commands.toml": "schema = 1\n\n" + generic,
+                                      "dpmeta/tools/ecosystem.toml": "сломанный [ TOML"}).run("config.commands"))
 
     def test_missing_registry(self):
         self.assertCatches(self.sample(remove=("config/commands.toml",)).run("config.commands"), "нет реестра команд")
@@ -196,12 +196,12 @@ class CommandsTest(CheckCase):
     def test_duplicate_id(self):
         self.assertCatches(self.commands(COMMAND + "\n" + COMMAND), "уже был")
 
-    def test_project_not_in_registry_or_archived(self):
-        self.assertCatches(self.commands(COMMAND.replace('"DPmeta"', '"Nope"')), "нет в реестре")
-        self.assertCatches(self.commands(COMMAND.replace('"DPmeta"', '"Old"')), "нет в реестре")
+    def test_any_fixed_project_is_forbidden(self):
+        for name in ("Nope", "Old", "DPmeta"):
+            self.assertCatches(self.commands(COMMAND.replace('project = "*"', f'project = "{name}"')), "project — только *")
 
-    def test_subsystem_script_must_exist(self):
-        self.assertCatches(self.commands(COMMAND.replace("tools/check.sh", "tools/gone.sh")), "нет файла `dpmeta/tools/gone.sh`")
+    def test_script_is_resolved_in_selected_project(self):
+        self.assertClean(self.commands(COMMAND.replace("tools/check.sh", "tools/verify.sh")))
 
     def test_paths_stay_inside(self):
         self.assertCatches(self.commands(COMMAND + 'workdir = "../x"\n'), "workdir")
