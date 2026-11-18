@@ -77,6 +77,6 @@ class HistoryMetricsTest {
         for (m in listOf("repo.commits.ai_share", "repo.branches.unmerged", "repo.branches.unmerged.commits", "repo.decisions.new")) {
             assertTrue(m in names, m)
         }
-        assertTrue(state.points().all { it.rulesVersion == 5 }, "правила 5")
+        assertTrue(state.points().all { it.rulesVersion == 6 }, "новые точки — правила 6; прежние проверяет DpmetaCountersTest")
     }
 }
