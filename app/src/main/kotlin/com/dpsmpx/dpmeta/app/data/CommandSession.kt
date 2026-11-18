@@ -32,8 +32,8 @@ object CommandSession {
     private val main = Handler(Looper.getMainLooper())
     private val stops = java.util.concurrent.ConcurrentHashMap<String, () -> Unit>()
 
-    /** Ключ запуска: команда, проект и место — у Termux свой запуск рядом с запуском в Linux-среде. */
-    fun key(id: String, project: String, termux: Boolean = false): String = "$id@$project" + if (termux) "@termux" else ""
+    /** Ключ запуска команды в Linux-среде приложения. */
+    fun key(id: String, project: String): String = "$id@$project"
 
     fun running(key: String): Boolean = runs[key]?.running == true
 

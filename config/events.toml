@@ -315,7 +315,7 @@ fields = ["platform", "account"]
 
 [[event]]
 type = "termux.command.done"
-title = "Команда Termux завершилась"
+title = "Команда Termux завершилась (мост удалён)"
 source = ["app"]
 channel = "dev"
 fields = ["command"]
@@ -323,7 +323,7 @@ numbers = ["code"]
 
 [[event]]
 type = "termux.command.failed"
-title = "Команда Termux не удалась"
+title = "Команда Termux не удалась (мост удалён)"
 source = ["app"]
 channel = "dev"
 fields = ["command"]

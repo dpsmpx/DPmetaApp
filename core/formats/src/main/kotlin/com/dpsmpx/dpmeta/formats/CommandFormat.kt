@@ -26,7 +26,7 @@ data class CommandSpec(
     val expect: String?,
     val timeoutMinutes: Int,
 ) {
-    /** План — для моста Termux (F-41); в Linux-среде запуск один (D-82). */
+    /** Прежний план моста читается для совместимости schema=1; в Linux-среде запуск один (D-82, D-173). */
     enum class Plan(val code: String) {
         FOREGROUND("foreground"),
         BACKGROUND("background"),

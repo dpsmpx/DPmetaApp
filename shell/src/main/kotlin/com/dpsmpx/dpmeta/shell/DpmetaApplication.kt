@@ -48,7 +48,7 @@ class DpmetaApplication : DpaiApplication() {
             com.dpsmpx.dpai.android.AppBackups.Section(
                 "pult", "Пульт", "часовой пояс, тихие часы и приватность, отмеченные клоны, фоновое обновление, свои правила тревог, сводка и «Отложить»",
                 prefs = listOf(
-                    com.dpsmpx.dpai.android.AppBackups.PrefsSpec("dpmeta.settings"),
+                    com.dpsmpx.dpai.android.AppBackups.PrefsSpec("dpmeta.settings") { it == "termux_folder" },
                     com.dpsmpx.dpai.android.AppBackups.PrefsSpec("dpmeta.clones") { it == "flat-removed" },
                     com.dpsmpx.dpai.android.AppBackups.PrefsSpec("dpmeta.background") { it == "last" },
                 ),

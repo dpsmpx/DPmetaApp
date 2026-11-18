@@ -6,7 +6,7 @@
 # args — строки без оболочки и подстановок; plan — foreground | background.
 # level — 0 (чтение) или 1 (правка дерева); packages — пакеты Alpine.
 # expect — ожидаемый вывод; timeout — минуты, 1…30.
-# Те же команды доступны мосту Termux до его удаления по D-173.
+# Мост Termux снят D-173; plan читается для совместимости прежнего schema=1.
 # Новая команда — правка файла с проверкой tools/check (config.commands).
 
 schema = 1

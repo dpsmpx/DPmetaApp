@@ -14,7 +14,7 @@ import com.dpsmpx.dpmeta.model.RepoRef
 
 /**
  * Команды реестра в Linux-среде приложения (F-40, F-43; D-82): где команда идёт,
- * готова ли она — по шагам, как F-42 у Termux, — и как уровень 1 проходит
+ * готова ли она — по шагам — и как уровень 1 проходит
  * `:core:actions` (D-07). Запуск — мостом оболочки к Linux-среде подсистемы «AI»;
  * здесь — только смысл. Чистый Kotlin.
  */
@@ -73,24 +73,18 @@ object CommandActions {
     /** Реестр команд для экрана: команды, реестр проектов и проекты для команды «любой проект». */
     data class Catalog(val commands: List<CommandSpec>, val registry: Registry, val anyProjects: List<String>)
 
-    /** Где идёт команда: Linux-среда приложения (D-82) или Termux — мостом (F-41; D-84). */
-    enum class Where { LINUX, TERMUX }
-
     /**
-     * Команда на месте: где идёт, рабочее дерево клона, готовность по шагам и каких пакетов
-     * нет. У Termux — его каталог [dir] и готовый вызов [termux]; рабочего дерева пульта нет:
-     * клон Termux — свой.
+     * Команда в Linux-среде приложения: рабочее дерево клона, готовность по
+     * шагам и каких пакетов нет. Мост Termux снят D-173.
      */
     data class Checked(
         val spot: Spot,
         val tree: Clones.Worktree?,
         val steps: List<Step>,
         val missing: List<String> = emptyList(),
-        val where: Where = Where.LINUX,
-        val dir: String = spot.guestDir,
-        val termux: TermuxActions.Call? = null,
     ) {
-        val ready: Boolean get() = ready(steps) && (where == Where.LINUX || termux != null)
+        val ready: Boolean get() = ready(steps)
+        val dir: String get() = spot.guestDir
     }
 
     /** Состояние Linux-среды приложения. */
@@ -105,7 +99,7 @@ object CommandActions {
     /** Шаг готовности: что проверено, прошло ли и что сделать, если нет. */
     data class Step(val title: String, val ok: Boolean, val hint: String? = null)
 
-    /** Готовность по шагам (D-82, как F-42): первый непройденный шаг объясняет, что сделать. */
+    /** Готовность по шагам (D-82): первый непройденный шаг объясняет, что сделать. */
     fun readiness(spec: CommandSpec, spot: Spot, f: Facts): List<Step> = listOf(
         when (f.linux) {
             Linux.READY -> Step("Linux в приложении установлен", true)
@@ -151,10 +145,9 @@ object CommandActions {
 
     /**
      * Команда журнала для уровня 1 (D-07, D-82): какая команда, где и на каком коммите
-     * рабочего дерева; вывода и аргументов от человека нет — их и не бывает (F-40). В
-     * Termux (D-84) — его каталог и `place = termux`; коммита клона Termux пульт не знает.
+     * рабочего дерева; вывода и аргументов от человека нет — их и не бывает (F-40).
      */
-    fun command(spec: CommandSpec, spot: Spot, tree: Clones.Worktree?, where: Where = Where.LINUX, dir: String = spot.guestDir): ActionCommand {
+    fun command(spec: CommandSpec, spot: Spot, tree: Clones.Worktree?): ActionCommand {
         require(spec.level == 1) { "в журнал — только команды уровня 1" }
         return ActionCommand(
             ActionKind.COMMAND_RUN,
@@ -162,20 +155,19 @@ object CommandActions {
             linkedMapOf(
                 "command" to spec.id,
                 "project" to spot.project,
-                "dir" to dir,
+                "dir" to spot.guestDir,
                 "line" to spec.line,
-            ) + (if (where == Where.TERMUX) mapOf("place" to "termux") else emptyMap()) +
-                (tree?.sha?.takeIf { where == Where.LINUX }?.let { mapOf("before" to it) } ?: emptyMap()),
+            ) + (tree?.sha?.let { mapOf("before" to it) } ?: emptyMap()),
         )
     }
 
     /** Окно «что изменится» (уровень 1): что, где и чего ждать. */
-    fun preview(spec: CommandSpec, spot: Spot, tree: Clones.Worktree?, where: Where = Where.LINUX, dir: String = spot.guestDir): List<String> = listOfNotNull(
-        "«${spec.title}» в $dir" + (if (where == Where.TERMUX) " (Termux)." else "."),
+    fun preview(spec: CommandSpec, spot: Spot, tree: Clones.Worktree?): List<String> = listOfNotNull(
+        "«${spec.title}» в ${spot.guestDir}.",
         "Команда: ${spec.line}",
-        if (where == Where.LINUX) treeLine(tree) else "Рабочее дерево — клон Termux; его ветку и коммит пульт не видит.",
+        treeLine(tree),
         spec.expect?.let { "Ждать: $it." },
-        if (where == Where.LINUX) "Меняется только рабочее дерево клона на телефоне; GitHub не меняется." else "Меняется только рабочее дерево клона в Termux; GitHub не меняется.",
+        "Меняется только рабочее дерево клона на телефоне; GitHub не меняется.",
     )
 
     /** Итог запуска: код возврата (`null` — процесс остановлен), остановлен ли человеком или пределом времени. */
