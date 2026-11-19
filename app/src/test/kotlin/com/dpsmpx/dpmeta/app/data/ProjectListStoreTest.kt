@@ -54,4 +54,21 @@ class ProjectListStoreTest {
         assertIs<Outcome.Failure>(r.saveProjectPaths("bob/app", listOf("/etc/passwd"), emptyList()))
         assertIs<Outcome.Failure>(r.saveProjectPaths("carol", emptyList(), emptyList()))
     }
+    @Test
+    fun cachedRowsFollowTheCurrentSelectionWithoutDeletingHistory() {
+        val r = repo()
+        r.saveProjectList(ProjectList().add(ref("alice/App")).valueOrNull()!!)
+        val clock = com.dpsmpx.dpai.core.clock.ManualClock()
+        val store = com.dpsmpx.dpmeta.metrics.Store(NioVfs(dir), clock, RandomSource.secure())
+        val now = clock.now()
+        val rows = listOf("App", "Gone").map { com.dpsmpx.dpmeta.metrics.ProjectState(it, emptyMap(), emptyList()) }
+        store.writeState(com.dpsmpx.dpmeta.metrics.EcosystemState(now, 9, rows))
+        val points = listOf(com.dpsmpx.dpmeta.metrics.MetricPoint("repo.pr.open", "Gone", 2, now, 8))
+        store.appendHistory(points)
+        assertEquals(listOf("App"), r.state().valueOrNull()!!.projects.map { it.name })
+        r.saveProjectList(ProjectList())
+        assertTrue(r.state().valueOrNull()!!.projects.isEmpty())
+        assertEquals(points, store.history().valueOrNull())
+    }
+
 }
