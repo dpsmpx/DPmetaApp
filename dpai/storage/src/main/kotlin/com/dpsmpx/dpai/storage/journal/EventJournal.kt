@@ -239,7 +239,7 @@ class EventJournal private constructor(
             }
         }
         val record = build(position + 1, lastHash, event)
-        val line = (CanonicalJson.write(record.second) + "\n").toByteArray(Charsets.UTF_8)
+        val line = record.second.toByteArray(Charsets.UTF_8)
         return try {
             write(line)
             records += record.first
@@ -278,7 +278,7 @@ class EventJournal private constructor(
                 continue
             }
             val record = build(position + fresh.size + 1, prev, event)
-            bytes.write((CanonicalJson.write(record.second) + "\n").toByteArray(Charsets.UTF_8))
+            bytes.write(record.second.toByteArray(Charsets.UTF_8))
             fresh += record.first
             seen[event.id] = record.first.position
             prev = record.first.hash
@@ -562,18 +562,21 @@ class EventJournal private constructor(
             return position to prev
         }
 
-        private fun build(position: Long, prev: ContentHash, event: EventEnvelope): Pair<JournalRecord, JsonObject> {
-            val body = JsonObject(
-                linkedMapOf(
-                    *FormatHeader.write(FORMAT, VERSION),
-                    "position" to JsonNumber.of(position),
-                    "prev" to JsonString(prev.toString()),
-                    "event" to event.toJson(),
-                ),
-            )
-            val hash = Hashing.sha256(body)
-            val full = JsonObject(LinkedHashMap(body.fields).apply { put("hash", JsonString(hash.toString())) })
-            return JournalRecord(position, event, hash) to full
+        /**
+         * Каноническая строка схемы v1, в том же порядке полей, что у общего кодека.
+         * Событие кодируется один раз для хеша и строки. FORMAT, версия и хеши —
+         * безопасные ASCII, позиция — Long; пользовательские данные кодирует CanonicalJson.
+         * Побайтовую совместимость проверяет EventJournalTest по общему кодеку.
+         */
+        private fun build(position: Long, prev: ContentHash, event: EventEnvelope): Pair<JournalRecord, String> {
+            val encodedEvent = CanonicalJson.write(event.toJson())
+            val head = "{\"event\":$encodedEvent,\"format\":\"$FORMAT\","
+            val tail = "\"position\":$position,\"prev\":\"$prev\",\"version\":$VERSION}"
+            val hash = Hashing.sha256(head + tail)
+            val line = buildString(head.length + tail.length + 96) {
+                append(head); append("\"hash\":\""); append(hash); append("\","); append(tail); append('\n')
+            }
+            return JournalRecord(position, event, hash) to line
         }
 
         /** Запись цела: формат, номер подряд, хеш предыдущей, свой хеш, событие. Иначе — `null`. */

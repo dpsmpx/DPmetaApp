@@ -17,6 +17,44 @@ class EventJournalTest {
         assertIs<Outcome.Success<EventJournal>>(EventJournal.open(vfs, path, quarantine)).value
 
     @Test
+    fun encodedLinesAndHashesMatchTheOriginalGenericV1Codec() {
+        val factory = EventFactory()
+        val events = List(4) { index ->
+            factory.next().copy(payload = com.dpsmpx.dpai.core.serialization.JsonObject.of(
+                "text" to com.dpsmpx.dpai.core.serialization.JsonString("строка $index\n😀\"\\\u0000".repeat(80)),
+                "hash" to com.dpsmpx.dpai.core.serialization.JsonString("это поле внутри события"),
+                "position" to com.dpsmpx.dpai.core.serialization.JsonNumber.of(Long.MAX_VALUE),
+                "nested" to com.dpsmpx.dpai.core.serialization.JsonArray(listOf(
+                    com.dpsmpx.dpai.core.serialization.JsonNumber("1e22"),
+                    com.dpsmpx.dpai.core.serialization.JsonString("雪"),
+                )),
+            ))
+        }
+        var previous = EventJournal.GENESIS
+        val reference = buildString {
+            for ((index, event) in events.withIndex()) {
+                val body = com.dpsmpx.dpai.core.serialization.JsonObject.of(
+                    *com.dpsmpx.dpai.core.serialization.FormatHeader.write(EventJournal.FORMAT, EventJournal.VERSION),
+                    "position" to com.dpsmpx.dpai.core.serialization.JsonNumber.of(index + 1),
+                    "prev" to com.dpsmpx.dpai.core.serialization.JsonString(previous.toString()),
+                    "event" to event.toJson(),
+                )
+                previous = com.dpsmpx.dpai.core.hashing.Hashing.sha256(body)
+                val full = com.dpsmpx.dpai.core.serialization.JsonObject(body.fields +
+                    ("hash" to com.dpsmpx.dpai.core.serialization.JsonString(previous.toString())))
+                append(com.dpsmpx.dpai.core.serialization.CanonicalJson.write(full)); append('\n')
+            }
+        }
+        val vfs = SimulatedVfs()
+        val journal = open(vfs)
+        assertTrue(journal.append(events.first()).isSuccess)
+        assertTrue(journal.appendAll(events.drop(1)).isSuccess)
+        assertEquals(reference, vfs.read(path)!!.toString(Charsets.UTF_8))
+        assertEquals(previous, journal.lastHash)
+        assertEquals(events, open(vfs).records().map { it.event })
+    }
+
+    @Test
     fun appendAndReopenKeepsChain() {
         val vfs = SimulatedVfs()
         val f = EventFactory()

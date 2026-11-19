@@ -21,6 +21,18 @@ class JsonTest {
         assertIs<Outcome.Failure>(p.parse(text)).errors.single().code
 
     @Test
+    fun rawAndEscapedStringRunsKeepUnicodeAndRejectBrokenSurrogates() {
+        val text = "\"prefix😀\\n\\u0061\\\\\\\"suffix😀\""
+        assertEquals(JsonString("prefix😀\na\\\"suffix😀"), ok(text))
+        val large = "x".repeat(8192) + "😀" + "\n" + "z".repeat(8192)
+        assertEquals(JsonString(large), ok(CanonicalJson.write(JsonString(large))))
+        for (broken in listOf("\uD800", "\uDC00", "\u0000")) {
+            assertEquals(DiagCode.JSON_SYNTAX, code("\"before" + broken + "after\""))
+            assertEquals(DiagCode.JSON_SYNTAX, code("\"before\\n" + broken + "after\""))
+        }
+    }
+
+    @Test
     fun parsesValues() {
         assertEquals(JsonObject.of("a" to json(1), "b" to JsonArray(listOf(JsonBool(true), JsonNull))), ok("""{"a":1,"b":[true,null]}"""))
         assertEquals(json("é\n\"\u0001😀"), ok("\"\\u00e9\\n\\\"\\u0001\\ud83d\\ude00\""))

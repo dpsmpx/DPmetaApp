@@ -160,27 +160,33 @@ class JsonParser(private val limits: Limits = Limits()) {
 
         fun string(): String {
             i++ // "
-            val sb = StringBuilder()
+            val start = i
+            var from = i
+            var sb: StringBuilder? = null
             while (true) {
                 if (atEnd()) fail(DiagCode.JSON_SYNTAX, "незакрытая строка")
                 val c = s[i]
                 when {
                     c == '"' -> {
+                        val end = i
                         i++
-                        return sb.toString()
+                        val builder = sb ?: return s.substring(start, end)
+                        return builder.append(s, from, end).toString()
                     }
                     c == '\\' -> {
+                        val out = sb ?: StringBuilder().also { sb = it }
+                        out.append(s, from, i)
                         i++
                         if (atEnd()) fail(DiagCode.JSON_SYNTAX, "незакрытая строка")
                         when (s[i]) {
-                            '"' -> sb.append('"')
-                            '\\' -> sb.append('\\')
-                            '/' -> sb.append('/')
-                            'b' -> sb.append('\b')
-                            'f' -> sb.append('\u000C')
-                            'n' -> sb.append('\n')
-                            'r' -> sb.append('\r')
-                            't' -> sb.append('\t')
+                            '"' -> out.append('"')
+                            '\\' -> out.append('\\')
+                            '/' -> out.append('/')
+                            'b' -> out.append('\b')
+                            'f' -> out.append('\u000C')
+                            'n' -> out.append('\n')
+                            'r' -> out.append('\r')
+                            't' -> out.append('\t')
                             'u' -> {
                                 val cp = hex4(i + 1)
                                 i += 4
@@ -188,29 +194,28 @@ class JsonParser(private val limits: Limits = Limits()) {
                                     if (!(s.startsWith("\\u", i + 1))) fail(DiagCode.JSON_SYNTAX, "одиночный суррогат")
                                     val low = hex4(i + 3)
                                     if (!Character.isLowSurrogate(low)) fail(DiagCode.JSON_SYNTAX, "одиночный суррогат")
-                                    sb.append(cp).append(low)
+                                    out.append(cp).append(low)
                                     i += 6
                                 } else if (Character.isLowSurrogate(cp)) {
                                     fail(DiagCode.JSON_SYNTAX, "одиночный суррогат")
                                 } else {
-                                    sb.append(cp)
+                                    out.append(cp)
                                 }
                             }
                             else -> fail(DiagCode.JSON_SYNTAX, "неизвестное экранирование")
                         }
                         i++
+                        from = i
                     }
                     c < ' ' -> fail(DiagCode.JSON_SYNTAX, "управляющий символ в строке")
                     Character.isHighSurrogate(c) -> {
                         if (i + 1 >= s.length || !Character.isLowSurrogate(s[i + 1])) {
                             fail(DiagCode.JSON_SYNTAX, "одиночный суррогат")
                         }
-                        sb.append(c).append(s[i + 1])
                         i += 2
                     }
                     Character.isLowSurrogate(c) -> fail(DiagCode.JSON_SYNTAX, "одиночный суррогат")
                     else -> {
-                        sb.append(c)
                         i++
                     }
                 }
