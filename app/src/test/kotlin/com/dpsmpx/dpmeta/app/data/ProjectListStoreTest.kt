@@ -59,7 +59,7 @@ class ProjectListStoreTest {
         val r = repo()
         r.saveProjectList(ProjectList().add(ref("alice/App")).valueOrNull()!!)
         val clock = com.dpsmpx.dpai.core.clock.ManualClock()
-        val store = com.dpsmpx.dpmeta.metrics.Store(NioVfs(dir), clock, RandomSource.secure())
+        val store = com.dpsmpx.dpmeta.metrics.Store(NioVfs(java.io.File(root, "state").toPath()), clock, com.dpsmpx.dpai.core.clock.RandomSource.secure())
         val now = clock.now()
         val rows = listOf("App", "Gone").map { com.dpsmpx.dpmeta.metrics.ProjectState(it, emptyMap(), emptyList()) }
         store.writeState(com.dpsmpx.dpmeta.metrics.EcosystemState(now, 9, rows))
