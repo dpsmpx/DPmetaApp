@@ -432,9 +432,9 @@ open class PultActivity : ComponentActivity() {
                         val kept = chosen.mapNotNull { bySlug[it.lowercase()]?.slug }.toSet()
                         // Отмеченные, которых в списке больше нет (нет доступа, переименован, в архиве), — видны отмеченными: их можно снять.
                         // Их клоны занимают место — размер и «Удалить…» и у них (проверка PR #173); размер — уже посчитан в фоне.
-                        val gone = goneSizes.map { (s, b) -> com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(s, registry = false, private = true, gone = true, bytes = b) }
+                        val gone = goneSizes.map { (s, b) -> com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(s, inProjects = false, private = true, gone = true, bytes = b) }
                             .filter { it.slug.lowercase() !in bySlug }
-                        val checked = if (first || !clonesAsked()) r.value.filter { it.registry }.map { it.slug }.toSet() else kept + gone.map { it.slug }
+                        val checked = if (first || !clonesAsked()) r.value.filter { it.inProjects }.map { it.slug }.toSet() else kept + gone.map { it.slug }
                         view.value = view.value.copy(busy = false, statusDetails = "", status = "", clonePrompt = ClonePrompt(r.value + gone, checked, first))
                     }
                     is Outcome.Failure -> {
@@ -950,7 +950,7 @@ open class PultActivity : ComponentActivity() {
             }
             when (parsed) {
                 is Outcome.Failure -> parsed
-                is Outcome.Success -> when (val reg = repo.commandRegistry()) {
+                is Outcome.Success -> when (val reg = repo.commandProjects()) {
                     is Outcome.Failure -> reg
                     is Outcome.Success -> Outcome.success(
                         com.dpsmpx.dpmeta.app.screens.CommandActions.Catalog(
@@ -966,7 +966,7 @@ open class PultActivity : ComponentActivity() {
         /** Готовность команды на месте (D-82): Linux, пакеты, клон, каталог, скрипт — и рабочее дерево. */
         override fun commandCheck(
             spec: com.dpsmpx.dpmeta.formats.CommandSpec,
-            registry: com.dpsmpx.dpmeta.model.Registry,
+            registry: com.dpsmpx.dpmeta.model.ProjectCatalog,
             project: String?,
             done: (Outcome<com.dpsmpx.dpmeta.app.screens.CommandActions.Checked>) -> Unit,
         ) = background({

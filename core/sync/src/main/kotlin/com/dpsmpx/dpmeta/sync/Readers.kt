@@ -15,7 +15,7 @@ import com.dpsmpx.dpmeta.github.CommitInfo
 import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.github.PullRequest
 import com.dpsmpx.dpmeta.model.ObservationSource
-import com.dpsmpx.dpmeta.model.ProjectEntry
+import com.dpsmpx.dpmeta.model.SyncProject
 import com.dpsmpx.dpmeta.model.RepoRef
 import java.io.IOException
 import java.nio.file.Files
@@ -35,37 +35,37 @@ private fun checkPath(path: String): Outcome<Unit> =
  * каталога; её PR и ветки — общие с DPmetaApp, поэтому «кто работает» у
  * подсистемы не выводится (неизвестно, а не «свободен»).
  */
-class GitHubReader(private val gh: GitHub, private val host: RepoRef) : SourceReader {
+class GitHubReader(private val gh: GitHub) : SourceReader {
     override val source: ObservationSource = ObservationSource.GITHUB
 
-    override fun hasActivity(project: ProjectEntry): Boolean = project.dir == null
+    override fun hasActivity(project: SyncProject): Boolean = true
 
-    override fun pulls(project: ProjectEntry): Outcome<Got<List<PullRequest>>> = when (val r = gh.pulls(project.slug)) {
+    override fun pulls(project: SyncProject): Outcome<Got<List<PullRequest>>> = when (val r = gh.pulls(project.repo)) {
         is Outcome.Failure -> r
         is Outcome.Success -> Outcome.success(Got(r.value.value, r.value.fetched.rawSha256, r.value.fetched.notModified))
     }
 
-    override fun closed(project: ProjectEntry): Outcome<Got<List<PullRequest>>> = when (val r = gh.closedPulls(project.slug)) {
+    override fun closed(project: SyncProject): Outcome<Got<List<PullRequest>>> = when (val r = gh.closedPulls(project.repo)) {
         is Outcome.Failure -> r
         is Outcome.Success -> Outcome.success(Got(r.value.value, r.value.fetched.rawSha256, r.value.fetched.notModified))
     }
 
-    override fun branches(project: ProjectEntry): Outcome<Got<List<Branch>>> = when (val r = gh.branches(project.slug)) {
+    override fun branches(project: SyncProject): Outcome<Got<List<Branch>>> = when (val r = gh.branches(project.repo)) {
         is Outcome.Failure -> r
         is Outcome.Success -> Outcome.success(Got(r.value.value, r.value.fetched.rawSha256, r.value.fetched.notModified))
     }
 
-    override fun commit(project: ProjectEntry, sha: String): Outcome<CommitInfo> = gh.commit(project.slug, sha)
+    override fun commit(project: SyncProject, sha: String): Outcome<CommitInfo> = gh.commit(project.repo, sha)
 
     // Issues, коммиты и CI (D-176) — у репозитория проекта; у подсистемы их нет (они у DPmetaApp).
-    override fun issues(project: ProjectEntry): Outcome<Got<List<com.dpsmpx.dpmeta.github.Issue>>>? =
-        if (project.dir != null) null else gh.issues(project.slug).map { Got(it.value, it.fetched.rawSha256, it.fetched.notModified) }
+    override fun issues(project: SyncProject): Outcome<Got<List<com.dpsmpx.dpmeta.github.Issue>>>? =
+        gh.issues(project.repo).map { Got(it.value, it.fetched.rawSha256, it.fetched.notModified) }
 
-    override fun recentCommits(project: ProjectEntry): Outcome<Got<List<com.dpsmpx.dpmeta.github.RecentCommit>>>? =
-        if (project.dir != null) null else gh.recentCommits(project.slug).map { Got(it.value, it.fetched.rawSha256, it.fetched.notModified) }
+    override fun recentCommits(project: SyncProject): Outcome<Got<List<com.dpsmpx.dpmeta.github.RecentCommit>>>? =
+        gh.recentCommits(project.repo).map { Got(it.value, it.fetched.rawSha256, it.fetched.notModified) }
 
-    override fun ci(project: ProjectEntry, sha: String): Outcome<Got<com.dpsmpx.dpmeta.github.CiState>>? =
-        if (project.dir != null) null else gh.ci(project.slug, sha).map { Got(it.value, it.fetched.rawSha256) }
+    override fun ci(project: SyncProject, sha: String): Outcome<Got<com.dpsmpx.dpmeta.github.CiState>>? =
+        gh.ci(project.repo, sha).map { Got(it.value, it.fetched.rawSha256) }
 
     private inline fun <T, R> Outcome<T>.map(f: (T) -> R): Outcome<R> = when (this) {
         is Outcome.Failure -> this
@@ -73,9 +73,9 @@ class GitHubReader(private val gh: GitHub, private val host: RepoRef) : SourceRe
     }
 
     /** Где лежат файлы проекта: репозиторий и каталог в нём (подсистема — в DPmetaApp). */
-    fun where(project: ProjectEntry): Pair<RepoRef, String> = project.dir?.let { host to "$it/" } ?: (project.slug to "")
+    fun where(project: SyncProject): Pair<RepoRef, String> = project.repo to ""
 
-    override fun file(project: ProjectEntry, path: String): Outcome<Got<String>> {
+    override fun file(project: SyncProject, path: String): Outcome<Got<String>> {
         val (repo, prefix) = where(project)
         val r = gh.file(repo, prefix + path)
         return when (r) {
@@ -92,17 +92,13 @@ class GitHubReader(private val gh: GitHub, private val host: RepoRef) : SourceRe
  * `pulls.json` и `branches.json` каталога проекта, если они есть (корпус):
  * у клонов их нет, и «кто работает» неизвестно.
  */
-class DirectoryReader(private val root: Path, private val hostDir: String = "dpmetaapp") : SourceReader {
+class DirectoryReader(private val root: Path) : SourceReader {
     override val source: ObservationSource = ObservationSource.DIRECTORY
     private val json = JsonParser()
 
-    /** Клон DPmetaApp: `hostDir` или имя репозитория — сессии кладут клоны и так, и так. */
-    private val host: Path by lazy { listOf(hostDir, "DPmetaApp").map(root::resolve).firstOrNull(Files::isDirectory) ?: root.resolve(hostDir) }
+    private fun dir(project: SyncProject): Path = root.resolve(project.repo.owner.lowercase()).resolve(project.repo.name.lowercase())
 
-    private fun dir(project: ProjectEntry): Path = project.dir?.let { host.resolve(it) }
-        ?: root.resolve(project.clone ?: project.name)
-
-    override fun hasActivity(project: ProjectEntry): Boolean = Files.isRegularFile(dir(project).resolve(PULLS))
+    override fun hasActivity(project: SyncProject): Boolean = Files.isRegularFile(dir(project).resolve(PULLS))
 
     private fun read(path: Path, subject: String): Outcome<Pair<String, ByteArray>> = try {
         if (!Files.isRegularFile(path)) {
@@ -115,7 +111,7 @@ class DirectoryReader(private val root: Path, private val hostDir: String = "dpm
         Outcome.failure(DiagCode.STORAGE_IO_FAILED, "файл не читается: ${e.javaClass.simpleName}", subject)
     }
 
-    private fun array(project: ProjectEntry, name: String): Outcome<Pair<List<JsonObject>, ByteArray>> {
+    private fun array(project: SyncProject, name: String): Outcome<Pair<List<JsonObject>, ByteArray>> {
         val (text, bytes) = when (val r = read(dir(project).resolve(name), "${project.name}:$name")) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
@@ -128,7 +124,7 @@ class DirectoryReader(private val root: Path, private val hostDir: String = "dpm
         return Outcome.success(items to bytes)
     }
 
-    private fun bad(project: ProjectEntry, name: String) = Outcome.failure(DiagCode.FORMAT_UNRECOGNIZED, "ожидался массив объектов", "${project.name}:$name")
+    private fun bad(project: SyncProject, name: String) = Outcome.failure(DiagCode.FORMAT_UNRECOGNIZED, "ожидался массив объектов", "${project.name}:$name")
 
     private fun time(o: JsonObject, k: String): Timestamp? = (o[k] as? JsonString)?.value?.let {
         try {
@@ -138,13 +134,13 @@ class DirectoryReader(private val root: Path, private val hostDir: String = "dpm
         }
     }
 
-    override fun pulls(project: ProjectEntry): Outcome<Got<List<PullRequest>>> = pullsFrom(project, PULLS)
+    override fun pulls(project: SyncProject): Outcome<Got<List<PullRequest>>> = pullsFrom(project, PULLS)
 
     /** `merged.json` — те же поля и `mergedAt`; нет файла — пусто (в корпусе не у всех). */
-    override fun closed(project: ProjectEntry): Outcome<Got<List<PullRequest>>> =
+    override fun closed(project: SyncProject): Outcome<Got<List<PullRequest>>> =
         if (Files.isRegularFile(dir(project).resolve(MERGED))) pullsFrom(project, MERGED) else Outcome.success(Got(emptyList(), Hashing.sha256(ByteArray(0))))
 
-    private fun pullsFrom(project: ProjectEntry, name: String): Outcome<Got<List<PullRequest>>> {
+    private fun pullsFrom(project: SyncProject, name: String): Outcome<Got<List<PullRequest>>> {
         val (items, bytes) = when (val r = array(project, name)) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
@@ -165,7 +161,7 @@ class DirectoryReader(private val root: Path, private val hostDir: String = "dpm
         return Outcome.success(Got(out, Hashing.sha256(bytes)))
     }
 
-    private fun commits(project: ProjectEntry): Outcome<Pair<List<Pair<Branch, CommitInfo>>, ByteArray>> {
+    private fun commits(project: SyncProject): Outcome<Pair<List<Pair<Branch, CommitInfo>>, ByteArray>> {
         val (items, bytes) = when (val r = array(project, BRANCHES)) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
@@ -178,18 +174,18 @@ class DirectoryReader(private val root: Path, private val hostDir: String = "dpm
         return Outcome.success(out to bytes)
     }
 
-    override fun branches(project: ProjectEntry): Outcome<Got<List<Branch>>> = when (val r = commits(project)) {
+    override fun branches(project: SyncProject): Outcome<Got<List<Branch>>> = when (val r = commits(project)) {
         is Outcome.Failure -> r
         is Outcome.Success -> Outcome.success(Got(r.value.first.map { it.first }, Hashing.sha256(r.value.second)))
     }
 
-    override fun commit(project: ProjectEntry, sha: String): Outcome<CommitInfo> = when (val r = commits(project)) {
+    override fun commit(project: SyncProject, sha: String): Outcome<CommitInfo> = when (val r = commits(project)) {
         is Outcome.Failure -> r
         is Outcome.Success -> r.value.first.firstOrNull { it.second.sha == sha }?.second?.let { Outcome.success(it) }
             ?: Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "коммита нет в branches.json", "${project.name}@$sha")
     }
 
-    override fun file(project: ProjectEntry, path: String): Outcome<Got<String>> {
+    override fun file(project: SyncProject, path: String): Outcome<Got<String>> {
         checkPath(path).let { if (it is Outcome.Failure) return it }
         return when (val r = read(dir(project).resolve(path), "${project.name}:$path")) {
             is Outcome.Failure -> r
@@ -198,7 +194,7 @@ class DirectoryReader(private val root: Path, private val hostDir: String = "dpm
     }
 
     /** Имена файлов каталога проекта на диске (корпус, клоны); каталога нет — «нет». */
-    override fun names(project: ProjectEntry, dir: String): Outcome<List<String>>? {
+    override fun names(project: SyncProject, dir: String): Outcome<List<String>>? {
         checkPath(dir).let { if (it is Outcome.Failure) return it }
         val d = dir(project).resolve(dir)
         if (!Files.isDirectory(d)) return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "каталога нет", "${project.name}:$dir")
@@ -228,7 +224,6 @@ class DirectoryReader(private val root: Path, private val hostDir: String = "dpm
 class CloneReader(
     private val clones: com.dpsmpx.dpmeta.git.Clones,
     private val rest: SourceReader,
-    private val host: RepoRef,
     private val excluded: (String) -> Boolean,
     private val history: HistoryRules? = null,
     private val selected: (String) -> Boolean = { true },
@@ -245,22 +240,21 @@ class CloneReader(
     /** Головы веток последнего чтения: `commit` по ним не спрашивает ни клон, ни REST. */
     private val heads = java.util.concurrent.ConcurrentHashMap<String, CommitInfo>()
 
-    override fun hasActivity(project: ProjectEntry): Boolean = rest.hasActivity(project)
+    override fun hasActivity(project: SyncProject): Boolean = rest.hasActivity(project)
 
-    override fun pulls(project: ProjectEntry): Outcome<Got<List<PullRequest>>> = rest.pulls(project)
+    override fun pulls(project: SyncProject): Outcome<Got<List<PullRequest>>> = rest.pulls(project)
 
-    override fun closed(project: ProjectEntry): Outcome<Got<List<PullRequest>>> = rest.closed(project)
+    override fun closed(project: SyncProject): Outcome<Got<List<PullRequest>>> = rest.closed(project)
 
     // Issues, коммиты и CI (D-176) — с GitHub, как PR: в клоне их нет или они не свежие.
-    override fun issues(project: ProjectEntry) = rest.issues(project)
+    override fun issues(project: SyncProject) = rest.issues(project)
 
-    override fun recentCommits(project: ProjectEntry) = rest.recentCommits(project)
+    override fun recentCommits(project: SyncProject) = rest.recentCommits(project)
 
-    override fun ci(project: ProjectEntry, sha: String) = rest.ci(project, sha)
+    override fun ci(project: SyncProject, sha: String) = rest.ci(project, sha)
 
-    override fun branches(project: ProjectEntry): Outcome<Got<List<Branch>>> {
+    override fun branches(project: SyncProject): Outcome<Got<List<Branch>>> {
         // У подсистемы своих веток нет: ветки DPmetaApp — его, как у GitHubReader (hasActivity — нет).
-        if (project.dir != null) return rest.branches(project)
         val key = key(project)
         if (!selected(key) || clones.main(key) == null) {
             return when (val r = rest.branches(project)) {
@@ -279,13 +273,13 @@ class CloneReader(
         }
     }
 
-    override fun commit(project: ProjectEntry, sha: String): Outcome<CommitInfo> = heads[sha]?.let { Outcome.success(it) } ?: rest.commit(project, sha)
+    override fun commit(project: SyncProject, sha: String): Outcome<CommitInfo> = heads[sha]?.let { Outcome.success(it) } ?: rest.commit(project, sha)
 
-    override fun file(project: ProjectEntry, path: String): Outcome<Got<String>> {
+    override fun file(project: SyncProject, path: String): Outcome<Got<String>> {
         checkPath(path).let { if (it is Outcome.Failure) return it }
         val key = key(project)
         val main = clones.main(key)?.takeIf { selected(key) } ?: return rest.file(project, path)
-        val full = project.dir?.let { "$it/$path" } ?: path
+        val full = path
         return when (val r = clones.file(key, main, full)) {
             is Outcome.Failure -> r
             is Outcome.Success -> r.value?.let { bytes -> Outcome.success(Got(bytes.toString(Charsets.UTF_8), Hashing.sha256(bytes))) }
@@ -299,16 +293,11 @@ class CloneReader(
      * тоже (`null`: задача пропускается, а не отказ). Журнал решений — по
      * шаблону номера из реестра.
      */
-    override fun history(project: ProjectEntry): Outcome<Got<com.dpsmpx.dpmeta.git.CommitHistory>>? {
+    override fun history(project: SyncProject): Outcome<Got<com.dpsmpx.dpmeta.git.CommitHistory>>? {
         val rules = history ?: return null
-        if (project.dir != null) return null
         val key = key(project)
         val main = clones.main(key)?.takeIf { selected(key) } ?: return null
-        val journal = project.decisions?.let { ids ->
-            val rx = (ids.regex() as? Outcome.Success)?.value ?: return@let null
-            ids.path to { text: String -> (com.dpsmpx.dpmeta.formats.DecisionLog.parse(text, rx, "${project.name}:${ids.path}") as? Outcome.Success)?.value?.entries?.size }
-        }
-        return when (val r = clones.history(key, main, rules.zone, rules.ai, excluded, journal)) {
+        return when (val r = clones.history(key, main, rules.zone, rules.ai, excluded)) {
             is Outcome.Failure -> r
             is Outcome.Success -> {
                 val json = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(Sync.historyJson(r.value))
@@ -318,11 +307,11 @@ class CloneReader(
     }
 
     /** Имена в каталоге [dir] проекта из основной ветки клона; клона нет — у REST каталогов нет (`null`). */
-    override fun names(project: ProjectEntry, dir: String): Outcome<List<String>>? {
+    override fun names(project: SyncProject, dir: String): Outcome<List<String>>? {
         checkPath(dir).let { if (it is Outcome.Failure) return it }
         val key = key(project)
         val main = clones.main(key)?.takeIf { selected(key) } ?: return null
-        val full = project.dir?.let { "$it/$dir" } ?: dir
+        val full = dir
         return when (val r = clones.list(key, main, full)) {
             is Outcome.Failure -> r
             is Outcome.Success -> r.value?.let { l -> Outcome.success(l.filter { !it.dir }.map { it.name }) }
@@ -331,5 +320,5 @@ class CloneReader(
     }
 
     /** Клон проекта: подсистема — клон DPmetaApp, остальные — свой. */
-    fun key(project: ProjectEntry): String = if (project.dir != null) host.toString() else project.slug.toString()
+    fun key(project: SyncProject): String = project.repo.toString()
 }

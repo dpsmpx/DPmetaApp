@@ -8,10 +8,9 @@ import com.dpsmpx.dpai.core.measure.Measure
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.storage.vfs.NioVfs
-import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.metrics.Store
-import com.dpsmpx.dpmeta.model.Registry
+import com.dpsmpx.dpmeta.model.ProjectCatalog
 import com.dpsmpx.dpmeta.sync.DirectoryReader
 import com.dpsmpx.dpmeta.sync.SourceKind
 import com.dpsmpx.dpmeta.sync.Sync
@@ -34,7 +33,7 @@ class EcosystemSyncTest {
     private val root = File(System.getProperty("corpus.ecosystem") ?: error("нет corpus.ecosystem")).toPath()
     private val now = Timestamp(Instant.parse("2026-11-01T10:00:00Z").toEpochMilli())
 
-    private fun registry(): Registry = (RegistryFormat.parse(Files.readString(root.resolve("registry.toml"))) as Outcome.Success).value
+    private fun registry(): ProjectCatalog = corpusProjects(root)
 
     private fun sync(): Pair<EcosystemState, com.dpsmpx.dpmeta.sync.SyncResult> {
         val reg = registry()
@@ -94,7 +93,7 @@ class EcosystemSyncTest {
         val reader = object : com.dpsmpx.dpmeta.sync.SourceReader by DirectoryReader(root) {
             var calls = 0
 
-            override fun file(project: com.dpsmpx.dpmeta.model.ProjectEntry, path: String) =
+            override fun file(project: com.dpsmpx.dpmeta.model.SyncProject, path: String) =
                 if (++calls > 2) Outcome.failure(DiagCode.RUN_BUDGET_EXHAUSTED, "бюджет", project.name) else DirectoryReader(root).file(project, path)
         }
         val tasks = Sync.plan(reg)

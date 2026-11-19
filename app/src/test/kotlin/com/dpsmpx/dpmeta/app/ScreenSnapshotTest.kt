@@ -8,7 +8,6 @@ import com.dpsmpx.dpmeta.app.screens.Export
 import com.dpsmpx.dpmeta.app.screens.ScreenText
 import com.dpsmpx.dpmeta.app.screens.Screens
 import com.dpsmpx.dpmeta.app.screens.Stats
-import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.metrics.MetricPoint
 import com.dpsmpx.dpmeta.sync.DirectoryReader
@@ -39,7 +38,7 @@ class ScreenSnapshotTest {
     private val now = Timestamp(Instant.parse("2026-11-01T10:00:00Z").toEpochMilli())
 
     private fun state(): EcosystemState {
-        val reg = (RegistryFormat.parse(Files.readString(corpus.resolve("registry.toml"))) as Outcome.Success).value
+        val reg = corpusProjects(corpus)
         val r = Sync.run(Sync.plan(reg), DirectoryReader(corpus), ManualClock(now))
         return EcosystemState.derive(reg, r.observations, r.failures, null, now)
     }
@@ -205,7 +204,7 @@ class ScreenSnapshotTest {
             "pulls" to com.dpsmpx.dpmeta.metrics.SourceSection("pulls", "github.pulls.v1", now, pulls),
             "issues" to com.dpsmpx.dpmeta.metrics.SourceSection("issues", "github.issues.v1", now, issues),
         )
-        val s = EcosystemState(now, 1, listOf(com.dpsmpx.dpmeta.metrics.ProjectState("app", "user", sections, emptyList())))
+        val s = EcosystemState(now, 1, listOf(com.dpsmpx.dpmeta.metrics.ProjectState("app", sections, emptyList())))
         val ai = Screens.AiCounts(true, Measure.observed(2L), Measure.observed(0L), Measure.observed(0L))
         val list = Screens.waiting(s, "alice", ai)
         assertEquals(listOf("Запросы ИИ ждут ответа: 2", "Ревью PR #8: Ревью мне", "Issue #3: Мой баг"), list.map { it.title })

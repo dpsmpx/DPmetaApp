@@ -389,7 +389,7 @@ interface Loader {
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "команд здесь нет", "commands"))
 
     /** Готовность команды на месте: шаги, рабочее дерево клона. */
-    fun commandCheck(spec: CommandSpec, registry: com.dpsmpx.dpmeta.model.Registry, project: String?, done: (Outcome<CommandActions.Checked>) -> Unit) =
+    fun commandCheck(spec: CommandSpec, registry: com.dpsmpx.dpmeta.model.ProjectCatalog, project: String?, done: (Outcome<CommandActions.Checked>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "команд здесь нет", spec.id))
 
     /** Поставить пакеты Alpine в Linux-среду. */
@@ -1087,7 +1087,7 @@ private fun CardList(
                 TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") }
             }
         }
-        item { Text("${c.name} — ${c.place}, ${c.working}", style = MaterialTheme.typography.titleMedium) }
+        item { Text("${c.name} — ${c.working}", style = MaterialTheme.typography.titleMedium) }
         if (view.attention.isNotEmpty()) {
             item {
                 Card(Modifier.fillMaxWidth()) {
@@ -1705,7 +1705,7 @@ fun ClonesDialog(prompt: ClonePrompt, onDone: (Set<String>?) -> Unit, onDelete: 
                             Column(Modifier.weight(1f).padding(start = 6.dp)) {
                                 Text(o.slug, style = MaterialTheme.typography.bodyMedium)
                                 val marks = listOfNotNull(
-                                    "реестр".takeIf { o.registry },
+                                    "в пульте".takeIf { o.inProjects },
                                     "закрытый".takeIf { o.private },
                                     o.bytes?.let { "склонирован · " + if (it < 1_048_576) "меньше 1 МБ" else "${it / 1_048_576} МБ" },
                                 )
@@ -1782,7 +1782,7 @@ fun ProjectsDialog(prompt: ProjectsPrompt, onDone: (List<String>?) -> Unit) {
                             is com.dpsmpx.dpai.core.result.Outcome.Success -> {
                                 val slug = r.value.toString()
                                 if (options.none { it.slug.equals(slug, ignoreCase = true) }) {
-                                    options = options + com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(slug, registry = false, private = false, gone = true)
+                                    options = options + com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(slug, inProjects = false, private = false, gone = true)
                                 }
                                 val known = options.first { it.slug.equals(slug, ignoreCase = true) }.slug
                                 if (checked.none { it.equals(known, ignoreCase = true) }) checked = checked + known
@@ -2097,7 +2097,7 @@ private fun CommandDetail(spec: CommandSpec, catalog: CommandActions.Catalog, lo
     LaunchedEffect(spec.id, project, round) {
         checked = null
         project?.let { p ->
-            loader.commandCheck(spec, catalog.registry, p) { checked = it }
+            loader.commandCheck(spec, catalog.catalog, p) { checked = it }
         }
     }
     var installing by remember { mutableStateOf(false) }

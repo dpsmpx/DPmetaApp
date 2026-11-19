@@ -24,8 +24,8 @@ import com.dpsmpx.dpmeta.github.RecentCommit
 import com.dpsmpx.dpmeta.model.Observation
 import com.dpsmpx.dpmeta.model.HistorySchema
 import com.dpsmpx.dpmeta.model.ObservationSource
-import com.dpsmpx.dpmeta.model.ProjectEntry
-import com.dpsmpx.dpmeta.model.Registry
+import com.dpsmpx.dpmeta.model.SyncProject
+import com.dpsmpx.dpmeta.model.ProjectCatalog
 import com.dpsmpx.dpmeta.model.SourceFailure
 
 /**
@@ -63,44 +63,44 @@ interface SourceReader {
     val source: ObservationSource
 
     /** Есть ли у проекта PR и ветки в этом источнике; нет — «кто работает» неизвестно, а не «свободен». */
-    fun hasActivity(project: ProjectEntry): Boolean
+    fun hasActivity(project: SyncProject): Boolean
 
-    fun pulls(project: ProjectEntry): Outcome<Got<List<PullRequest>>>
+    fun pulls(project: SyncProject): Outcome<Got<List<PullRequest>>>
 
     /** Последние закрытые PR (влитые — с [PullRequest.mergedAt]). */
-    fun closed(project: ProjectEntry): Outcome<Got<List<PullRequest>>>
+    fun closed(project: SyncProject): Outcome<Got<List<PullRequest>>>
 
-    fun branches(project: ProjectEntry): Outcome<Got<List<Branch>>>
+    fun branches(project: SyncProject): Outcome<Got<List<Branch>>>
 
-    fun commit(project: ProjectEntry, sha: String): Outcome<CommitInfo>
+    fun commit(project: SyncProject, sha: String): Outcome<CommitInfo>
 
-    fun file(project: ProjectEntry, path: String): Outcome<Got<String>>
+    fun file(project: SyncProject, path: String): Outcome<Got<String>>
 
     /** Открытые issues (D-176); `null` — у этого источника их нет: задача пропускается молча. */
-    fun issues(project: ProjectEntry): Outcome<Got<List<Issue>>>? = null
+    fun issues(project: SyncProject): Outcome<Got<List<Issue>>>? = null
 
     /** Последние коммиты основной ветки (D-176); `null` — у этого источника их нет. */
-    fun recentCommits(project: ProjectEntry): Outcome<Got<List<RecentCommit>>>? = null
+    fun recentCommits(project: SyncProject): Outcome<Got<List<RecentCommit>>>? = null
 
     /** CI коммита [sha] (D-176); `null` — у этого источника CI нет (тогда его поля нет — неизвестно). */
-    fun ci(project: ProjectEntry, sha: String): Outcome<Got<CiState>>? = null
+    fun ci(project: SyncProject, sha: String): Outcome<Got<CiState>>? = null
 
     /**
      * История проекта из клона (D-66); `null` — у этого источника её нет
      * (REST, корпус, подсистема, клона нет): задача пропускается молча, без
      * отказа в «Ошибках источников».
      */
-    fun history(project: ProjectEntry): Outcome<Got<com.dpsmpx.dpmeta.git.CommitHistory>>? = null
+    fun history(project: SyncProject): Outcome<Got<com.dpsmpx.dpmeta.git.CommitHistory>>? = null
 
     /**
      * Имена файлов каталога [dir] проекта (от корня проекта); `null` — этот
      * источник каталоги не показывает (тогда счёт по каталогу неизвестен).
      */
-    fun names(project: ProjectEntry, dir: String): Outcome<List<String>>? = null
+    fun names(project: SyncProject, dir: String): Outcome<List<String>>? = null
 }
 
 /** Задача плана: проект, вид источника, пути-кандидаты файла (первый найденный). */
-data class SourceTask(val project: ProjectEntry, val kind: SourceKind, val paths: List<String>)
+data class SourceTask(val project: SyncProject, val kind: SourceKind, val paths: List<String>)
 
 /** Итог прогона: наблюдения, отказы по паре «проект → вид», отложенное из-за бюджета. */
 class SyncResult(val observations: List<Observation>, val failures: List<SourceFailure>, val deferred: Int)
@@ -142,10 +142,10 @@ object Sync {
     private val NOT_FOUND = setOf(DiagCode.GITHUB_NOT_FOUND, DiagCode.ENTITY_NOT_FOUND)
 
     /** [skip] — пары «проект → вид», которых недавно не было. */
-    fun plan(registry: Registry, skip: Set<Pair<String, String>> = emptySet()): List<SourceTask> {
+    fun plan(registry: ProjectCatalog, skip: Set<Pair<String, String>> = emptySet()): List<SourceTask> {
         val tasks = mutableListOf<SourceTask>()
         for (kind in SourceKind.entries) {
-            for (p in registry.shown) {
+            for (p in registry.projects) {
                 val paths = when (kind) {
                     SourceKind.PULLS, SourceKind.MERGED, SourceKind.BRANCHES, SourceKind.ISSUES, SourceKind.COMMITS, SourceKind.HISTORY -> emptyList()
                     SourceKind.README -> listOf("README.md")

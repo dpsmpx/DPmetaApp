@@ -26,7 +26,7 @@ class HistoryMetricsTest {
     private val now = Timestamp(Instant.parse("2026-11-08T09:00:00Z").toEpochMilli())
 
     private fun project(json: String?, schema: String = HistorySchema.CURRENT) = ProjectState(
-        "P", "core",
+        "P",
         json?.let { mapOf("history" to SourceSection("history", schema, now, (JsonParser().parse(it) as Outcome.Success).value as JsonObject)) }.orEmpty().toSortedMap(),
         emptyList(),
     )
@@ -77,6 +77,6 @@ class HistoryMetricsTest {
         for (m in listOf("repo.commits.ai_share", "repo.branches.unmerged", "repo.branches.unmerged.commits")) {
             assertTrue(m in names, m)
         }
-        assertTrue(state.points().all { it.rulesVersion == 8 }, "новые точки — правила 8; прежние версии проверяются отдельно")
+        assertTrue(state.points().all { it.rulesVersion == 9 }, "новые точки — правила 9; прежние версии проверяются отдельно")
     }
 }

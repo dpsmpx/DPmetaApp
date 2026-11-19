@@ -32,11 +32,11 @@ class ProjectListTest {
     }
 
     @Test
-    fun registryNamesAreRepoNamesUnlessTheyClash() {
-        val r = list("alice/app", "bob/app", "bob/lib").toRegistry()
+    fun catalogKeepsExistingSubjectNamesWhenReposClash() {
+        val r = list("alice/app", "bob/app", "bob/lib").forSync()
         assertEquals(listOf("alice/app", "bob/app", "lib"), r.projects.map { it.name })
-        assertTrue(r.projects.all { it.place == Place.USER && it.dir == null && it.decisions == null })
-        assertEquals(r.projects, r.shown)
+        assertEquals(listOf("alice/app", "bob/app", "bob/lib"), r.projects.map { it.repo.toString() })
+        assertEquals("bob/lib", r.byName("lib")!!.repo.toString())
     }
 
     @Test
@@ -77,8 +77,8 @@ class ProjectListTest {
         val ok = l.withPaths(ref("Alice/App"), listOf(" docs/plan.md ", "", "docs/plan.md"), listOf("TODO.md")).valueOrNull()!!
         assertEquals(UserProject(ref("alice/app"), listOf("docs/plan.md"), listOf("TODO.md")), ok.projects.first())
         assertEquals(l.projects[1], ok.projects[1], "другой проект не тронут")
-        assertEquals(listOf("docs/plan.md"), ok.toRegistry().projects.first().docs)
-        assertEquals(listOf("TODO.md"), ok.toRegistry().projects.first().checklists)
+        assertEquals(listOf("docs/plan.md"), ok.forSync().projects.first().docs)
+        assertEquals(listOf("TODO.md"), ok.forSync().projects.first().checklists)
         assertIs<Outcome.Failure>(l.withPaths(ref("alice/app"), listOf("../x.md"), emptyList()))
         assertIs<Outcome.Failure>(l.withPaths(ref("carol/none"), emptyList(), emptyList()))
         assertIs<Outcome.Failure>(l.withPaths(ref("alice/app"), emptyList(), (0..ProjectList.MAX_PATHS).map { "f$it.md" }))

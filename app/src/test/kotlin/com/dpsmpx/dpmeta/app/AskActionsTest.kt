@@ -10,7 +10,6 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpmeta.app.screens.AskActions
-import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.sync.DirectoryReader
 import com.dpsmpx.dpmeta.sync.Sync
@@ -33,7 +32,7 @@ class AskActionsTest {
     private val now = Timestamp(Instant.parse("2026-11-01T10:00:00Z").toEpochMilli())
 
     private fun snapshot(): AskActions.Snapshot {
-        val reg = (RegistryFormat.parse(Files.readString(corpus.resolve("registry.toml"))) as Outcome.Success).value
+        val reg = corpusProjects(corpus)
         val r = Sync.run(Sync.plan(reg), DirectoryReader(corpus), ManualClock(now))
         return AskActions.Snapshot(EcosystemState.derive(reg, r.observations, r.failures, null, now), emptyList(), emptyList(), now)
     }

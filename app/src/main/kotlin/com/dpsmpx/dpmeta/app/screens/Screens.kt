@@ -12,7 +12,6 @@ import com.dpsmpx.dpmeta.metrics.Feed
 import com.dpsmpx.dpmeta.metrics.FeedEvent
 import com.dpsmpx.dpmeta.metrics.ProjectState
 import com.dpsmpx.dpmeta.metrics.Rules
-import com.dpsmpx.dpmeta.model.Place
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -397,7 +396,6 @@ object Screens {
 
     data class Card(
         val name: String,
-        val place: String,
         val working: String,
         val pulls: List<Pull>,
         val branches: List<BranchRow>,
@@ -436,7 +434,6 @@ object Screens {
         val merged = objects(payload(p, "merged"), "pulls")
         return Card(
             name = p.name,
-            place = Place.of(p.place)?.title ?: p.place,
             working = working(p, s.asOf),
             pulls = pulls,
             branches = branches,

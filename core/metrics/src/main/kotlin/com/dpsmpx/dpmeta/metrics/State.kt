@@ -15,7 +15,7 @@ import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpmeta.model.Observation
 import com.dpsmpx.dpmeta.model.HistorySchema
-import com.dpsmpx.dpmeta.model.Registry
+import com.dpsmpx.dpmeta.model.ProjectCatalog
 import com.dpsmpx.dpmeta.model.SourceFailure
 
 /**
@@ -46,11 +46,8 @@ data class SourceError(val kind: String, val code: String, val message: String, 
 /** Состояние проекта: секции источников и отказы последнего прогона. */
 data class ProjectState(
     val name: String,
-    val place: String,
     val sections: Map<String, SourceSection>,
     val errors: List<SourceError>,
-    /** Виды источников, которых у проекта нет по реестру (D-64): PR подсистемы — у DPmetaApp, журнала решений нет в реестре. */
-    val skipped: Set<String> = emptySet(),
 ) {
     private fun payload(kind: String): JsonObject? = sections[kind]?.payload as? JsonObject
 
@@ -208,11 +205,9 @@ data class ProjectState(
     fun toJson(now: Timestamp): JsonObject = JsonObject(
         linkedMapOf<String, JsonValue>(
             "name" to JsonString(name),
-            "place" to JsonString(place),
             "sections" to JsonArray(sections.keys.sorted().map { sections.getValue(it).toJson() }),
             "errors" to JsonArray(errors.map { it.toJson() }),
         ).apply {
-            if (skipped.isNotEmpty()) put("skipped", JsonArray(skipped.sorted().map(::JsonString)))
             working(now).orNull()?.let { put("working", JsonBool(it)) }
         },
     )
@@ -299,7 +294,7 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
 
     companion object {
         const val FORMAT = "dpmeta.state"
-        const val VERSION = 4
+        const val VERSION = 5
         private const val DAY_MS = 24 * 60 * 60 * 1000L
         private val RETIRED_SOURCES = setOf("dpmeta", "decisions", "todo", "roadmap")
         private val NOT_FOUND = setOf(DiagCode.GITHUB_NOT_FOUND, DiagCode.ENTITY_NOT_FOUND)
@@ -312,7 +307,7 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
          * зависит от порядка наблюдений (N-01).
          */
         fun derive(
-            registry: Registry,
+            registry: ProjectCatalog,
             observations: List<Observation>,
             failures: List<SourceFailure>,
             previous: EcosystemState?,
@@ -323,7 +318,7 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
             val latest = currentObservations
                 .groupBy { it.subject to it.kind }
                 .mapValues { (_, list) -> list.maxWith(compareBy<Observation> { it.asOf }.thenBy { it.id.toString() }) }
-            val projects = registry.shown.map { entry ->
+            val projects = registry.projects.map { entry ->
                 val before = previous?.project(entry.name)?.sections.orEmpty()
                 val fresh = latest.filterKeys { it.first == entry.name }.values.associate { o ->
                     o.kind to SourceSection(o.kind, o.schema, o.asOf, o.payload)
@@ -331,16 +326,12 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                 val errors = currentFailures.filter { it.project == entry.name }
                     .sortedWith(compareBy({ it.kind }, { it.diagnostic.code.name }, { it.at }))
                     .map { f -> SourceError(f.kind, f.diagnostic.code.name, f.diagnostic.message, f.at) }
-                val skipped = buildSet {
-                    // История подсистемы — в истории DPmetaApp (D-66): своей нет.
-                    if (entry.dir != null) addAll(listOf("pulls", "merged", "branches", "history"))
-                }
                 // Чек-листы сняты пользователем (D-176) — прежняя секция не остаётся навсегда.
                 // Прежние специальные источники и процесс автора сняты D-173/D-176.
                 // История чисел в журнале остаётся; текущая секция больше не обновляется.
                 val current = (before + fresh) - RETIRED_SOURCES
                 val kept = if (entry.checklists.isEmpty()) current - "checklists" else current
-                ProjectState(entry.name, entry.place.code, kept.toSortedMap(), errors, skipped)
+                ProjectState(entry.name, kept.toSortedMap(), errors)
             }
             val failed = currentFailures.count { it.diagnostic.code !in NOT_FOUND }
             val health = (currentObservations.size + failed).takeIf { it > 0 }?.let { currentObservations.size * 100L / it }
@@ -363,7 +354,6 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
             val out = projects.items.map { p ->
                 val o = p as? JsonObject ?: return Outcome.failure(DiagCode.FIELD_TYPE, "проект — не объект", "projects")
                 val name = (o["name"] as? JsonString)?.value ?: return Outcome.failure(DiagCode.FIELD_MISSING, "нет имени проекта", "projects")
-                val place = (o["place"] as? JsonString)?.value ?: return Outcome.failure(DiagCode.FIELD_MISSING, "нет места проекта", name)
                 val sections = (o["sections"] as? JsonArray)?.items.orEmpty().map { s ->
                     val so = s as? JsonObject ?: return Outcome.failure(DiagCode.FIELD_TYPE, "секция — не объект", name)
                     SourceSection(
@@ -382,8 +372,7 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                         Timestamp((eo["at"] as? JsonNumber)?.toLongExact() ?: return Outcome.failure(DiagCode.FIELD_MISSING, "нет времени отказа", name)),
                     )
                 }
-                val skipped = (o["skipped"] as? JsonArray)?.items.orEmpty().mapNotNull { (it as? JsonString)?.value }.toSet()
-                ProjectState(name, place, sections.associateBy { it.kind }.toSortedMap(), errors, skipped)
+                ProjectState(name, sections.associateBy { it.kind }.toSortedMap(), errors)
             }
             return Outcome.success(EcosystemState(Timestamp(asOf), rules.toInt(), out, health))
         }

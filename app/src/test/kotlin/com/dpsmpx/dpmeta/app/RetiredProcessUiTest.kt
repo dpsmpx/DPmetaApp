@@ -25,7 +25,7 @@ class RetiredProcessUiTest {
     fun legacyPayloadDoesNotRestoreReadinessOrQuestionsOnScreens() {
         fun section(kind: String, json: String) = kind to SourceSection(kind, "legacy.test.v1", now,
             (JsonParser().parse(json) as Outcome.Success).value as JsonObject)
-        val old = EcosystemState(now, 7, listOf(ProjectState("P", "user", mapOf(
+        val old = EcosystemState(now, 7, listOf(ProjectState("P", mapOf(
             section("todo", """{"path":"TODO.md","open":2,"forAuthor":1,"sections":[{"title":"За автором","forAuthor":true,"items":[{"title":"Старый вопрос"}]}]}"""),
             section("decisions", """{"path":"DECISIONS.md","count":1,"entries":[]}"""),
             section("roadmap", """{"path":"ROADMAP.md","stages":[{"title":"Этап","flag":"active"}]}"""),

@@ -13,10 +13,9 @@ import com.dpsmpx.dpmeta.metrics.ProjectState
 import com.dpsmpx.dpmeta.metrics.Rules
 import com.dpsmpx.dpmeta.metrics.SourceSection
 import com.dpsmpx.dpmeta.metrics.Store
-import com.dpsmpx.dpmeta.model.Place
-import com.dpsmpx.dpmeta.model.ProjectEntry
+import com.dpsmpx.dpmeta.model.SyncProject
 import com.dpsmpx.dpmeta.model.RepoRef
-import com.dpsmpx.dpmeta.model.Registry
+import com.dpsmpx.dpmeta.model.ProjectCatalog
 import com.dpsmpx.dpmeta.sync.Sync
 import java.nio.file.Path
 import kotlin.test.Test
@@ -29,14 +28,11 @@ import org.junit.jupiter.api.io.TempDir
 class DpmetaCountersTest {
     @TempDir lateinit var dir: Path
 
-    private fun project(name: String) = ProjectEntry(
-        name, RepoRef.parse("example/$name").valueOrNull()!!, null, Place.USER,
-        emptyList(), emptyList(), null, emptyList(),
-    )
+    private fun project(name: String) = SyncProject(name, RepoRef.parse("example/$name").valueOrNull()!!)
 
     @Test
     fun projectNameNeverSchedulesPrivateProcessDocuments() {
-        val plan = Sync.plan(Registry(1, listOf(project("DPmeta"), project("Other"))))
+        val plan = Sync.plan(ProjectCatalog(listOf(project("DPmeta"), project("Other"))))
         val byName = plan.groupBy { it.project.name }.mapValues { (_, tasks) -> tasks.map { it.kind.code to it.paths } }
         assertEquals(byName["Other"], byName["DPmeta"], "имя не добавляет источник или путь")
         assertTrue(plan.none { it.kind.code == "dpmeta" })
@@ -55,16 +51,16 @@ class DpmetaCountersTest {
         )
         assertIs<Outcome.Success<*>>(store.appendHistory(oldPoints))
         val legacySection = SourceSection("dpmeta", "dpmeta.counters.v1", at, JsonObject.of("contracts" to JsonNumber.of(7)))
-        val old = EcosystemState(at, 5, listOf(ProjectState("DPmeta", "sync", mapOf("dpmeta" to legacySection), emptyList())))
+        val old = EcosystemState(at, 5, listOf(ProjectState("DPmeta", mapOf("dpmeta" to legacySection), emptyList())))
         // Корпус прежней записи v1: числа, схема секции и версия правил не переосмысляются при чтении.
         val v1 = JsonObject(old.toJson().fields + ("version" to JsonNumber.of(1)))
         val restored = assertIs<Outcome.Success<EcosystemState>>(EcosystemState.fromJson(v1)).value
         assertEquals(old, restored)
-        val fresh = EcosystemState.derive(Registry(1, listOf(project("DPmeta"))), emptyList(), emptyList(), restored, Timestamp(2_000))
+        val fresh = EcosystemState.derive(ProjectCatalog(listOf(project("DPmeta"))), emptyList(), emptyList(), restored, Timestamp(2_000))
         assertEquals(Rules.RULES_VERSION, fresh.rulesVersion)
         assertTrue("dpmeta" !in fresh.project("DPmeta")!!.sections)
         assertTrue(fresh.points().none { it.metric in oldPoints.map(MetricPoint::metric) }, "снятые метрики не записываются снова")
-        assertEquals(JsonNumber.of(4), fresh.toJson()["version"])
+        assertEquals(JsonNumber.of(5), fresh.toJson()["version"])
         assertIs<Outcome.Success<*>>(store.writeState(fresh))
         assertIs<Outcome.Success<*>>(store.appendHistory(fresh.points()))
         val reopened = Store(vfs, clock, RandomSource.secure())
@@ -76,6 +72,6 @@ class DpmetaCountersTest {
     @Test
     fun unknownStateVersionIsRejected() {
         val doc = EcosystemState(Timestamp(0), Rules.RULES_VERSION, emptyList()).toJson()
-        assertIs<Outcome.Failure>(EcosystemState.fromJson(JsonObject(doc.fields + ("version" to JsonNumber.of(5)))))
+        assertIs<Outcome.Failure>(EcosystemState.fromJson(JsonObject(doc.fields + ("version" to JsonNumber.of(6)))))
     }
 }

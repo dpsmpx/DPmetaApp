@@ -40,7 +40,7 @@ object ScreenText {
 
     /** Карточка (UX-8): то, что рисует экран, — «Внимание», документы, разделы с итогом и их содержимое. */
     fun card(c: Screens.Card): String = buildString {
-        appendLine("${c.name} — ${c.place}, ${c.working}")
+        appendLine("${c.name} — ${c.working}")
         val v = Screens.cardView(c)
         if (v.attention.isNotEmpty()) {
             appendLine("ВНИМАНИЕ:")

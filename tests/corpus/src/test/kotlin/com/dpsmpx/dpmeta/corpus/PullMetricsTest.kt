@@ -6,7 +6,6 @@ import com.dpsmpx.dpai.core.measure.Measure
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonObject
-import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.metrics.ProjectState
 import com.dpsmpx.dpmeta.metrics.Rules
@@ -30,7 +29,7 @@ class PullMetricsTest {
     private fun section(kind: String, json: String) = kind to SourceSection(kind, "test", now, (JsonParser().parse(json) as Outcome.Success).value as JsonObject)
 
     private fun project(vararg sections: Pair<String, SourceSection>, errors: List<SourceError> = emptyList()) =
-        ProjectState("P", "core", sections.toMap().toSortedMap(), errors)
+        ProjectState("P", sections.toMap().toSortedMap(), errors)
 
     @Test
     fun pullMetricsFromTheSameResponses() {
@@ -52,7 +51,7 @@ class PullMetricsTest {
     @Test
     fun corpusStateCarriesNewPointsAndSyncHealth() {
         val root = File(System.getProperty("corpus.ecosystem") ?: error("нет corpus.ecosystem")).toPath()
-        val reg = (RegistryFormat.parse(Files.readString(root.resolve("registry.toml"))) as Outcome.Success).value
+        val reg = corpusProjects(root)
         val result = Sync.run(Sync.plan(reg), DirectoryReader(root), ManualClock(now))
         val state = EcosystemState.derive(reg, result.observations, result.failures, null, now)
         val alpha = state.project("Alpha")!!
@@ -61,10 +60,8 @@ class PullMetricsTest {
         val points = state.points().filter { it.subject == "Alpha" }.associate { it.metric to it.value }
         assertEquals(1L, points["repo.pr.open.drafts"])
         assertEquals(100L, state.syncHealth.orNull(), "404 подсистемы — ответ, а не неудача")
-        assertEquals(setOf("pulls", "merged", "branches", "history"), state.project("DPmeta")!!.skipped, "подсистема: PR, ветки и история (D-66) — у DPmetaApp")
         val back = (EcosystemState.fromJson(state.toJson()) as Outcome.Success).value
         assertEquals(state.syncHealth, back.syncHealth, "доля переживает запись состояния")
-        assertEquals(state.project("DPmeta")!!.skipped, back.project("DPmeta")!!.skipped, "неприменимое переживает запись состояния")
         assertTrue(state.points().all { it.rulesVersion == Rules.RULES_VERSION })
     }
 }

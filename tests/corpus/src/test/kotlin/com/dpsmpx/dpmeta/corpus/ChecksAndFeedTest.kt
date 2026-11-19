@@ -7,7 +7,6 @@ import com.dpsmpx.dpai.core.serialization.JsonArray
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpmeta.formats.Checks
-import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.formats.SessionLink
 import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.metrics.Feed
@@ -52,7 +51,7 @@ class ChecksAndFeedTest {
     }
 
     private fun state(): EcosystemState {
-        val reg = (RegistryFormat.parse(Files.readString(root.resolve("registry.toml"))) as Outcome.Success).value
+        val reg = corpusProjects(root)
         val r = Sync.run(Sync.plan(reg), DirectoryReader(root), ManualClock(now))
         return EcosystemState.derive(reg, r.observations, r.failures, null, now)
     }

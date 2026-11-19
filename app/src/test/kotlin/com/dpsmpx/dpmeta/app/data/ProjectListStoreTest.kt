@@ -3,7 +3,6 @@ package com.dpsmpx.dpmeta.app.data
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.storage.vfs.NioVfs
-import com.dpsmpx.dpmeta.model.Place
 import com.dpsmpx.dpmeta.model.ProjectList
 import com.dpsmpx.dpmeta.model.RepoRef
 import java.nio.file.Files
@@ -37,9 +36,9 @@ class ProjectListStoreTest {
     fun commandsSeeTheListWithoutNetwork() {
         val r = repo()
         r.saveProjectList(ProjectList().add(ref("alice/app")).valueOrNull()!!)
-        val reg = r.commandRegistry().valueOrNull()!!
+        val reg = r.commandProjects().valueOrNull()!!
         assertEquals(listOf("app"), reg.projects.map { it.name })
-        assertTrue(reg.projects.all { it.place == Place.USER })
+        assertEquals(listOf("alice/app"), reg.projects.map { it.repo.toString() })
     }
 
     @Test
@@ -51,7 +50,7 @@ class ProjectListStoreTest {
         val again = repo()
         assertEquals(listOf("docs/plan.md"), again.userProject("bob/app")!!.docs)
         assertEquals(emptyList(), again.userProject("alice/app")!!.checklists)
-        assertEquals(listOf("TODO.md"), again.commandRegistry().valueOrNull()!!.projects.single { it.name == "bob/app" }.checklists)
+        assertEquals(listOf("TODO.md"), again.commandProjects().valueOrNull()!!.projects.single { it.name == "bob/app" }.checklists)
         assertIs<Outcome.Failure>(r.saveProjectPaths("bob/app", listOf("/etc/passwd"), emptyList()))
         assertIs<Outcome.Failure>(r.saveProjectPaths("carol", emptyList(), emptyList()))
     }

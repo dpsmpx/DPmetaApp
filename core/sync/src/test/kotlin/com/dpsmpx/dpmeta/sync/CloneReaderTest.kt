@@ -9,8 +9,7 @@ import com.dpsmpx.dpmeta.github.Branch
 import com.dpsmpx.dpmeta.github.CommitInfo
 import com.dpsmpx.dpmeta.github.PullRequest
 import com.dpsmpx.dpmeta.model.ObservationSource
-import com.dpsmpx.dpmeta.model.Place
-import com.dpsmpx.dpmeta.model.ProjectEntry
+import com.dpsmpx.dpmeta.model.SyncProject
 import com.dpsmpx.dpmeta.model.RepoRef
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.lib.PersonIdent
@@ -45,22 +44,21 @@ class CloneReaderTest {
         val calls = mutableListOf<String>()
         override val source = ObservationSource.GITHUB
 
-        override fun hasActivity(project: ProjectEntry) = true
+        override fun hasActivity(project: SyncProject) = true
 
-        override fun pulls(project: ProjectEntry): Outcome<Got<List<PullRequest>>> = Outcome.success(Got(emptyList<PullRequest>(), Hashing.sha256("p"))).also { calls += "pulls" }
+        override fun pulls(project: SyncProject): Outcome<Got<List<PullRequest>>> = Outcome.success(Got(emptyList<PullRequest>(), Hashing.sha256("p"))).also { calls += "pulls" }
 
-        override fun closed(project: ProjectEntry): Outcome<Got<List<PullRequest>>> = Outcome.success(Got(emptyList<PullRequest>(), Hashing.sha256("c"))).also { calls += "closed" }
+        override fun closed(project: SyncProject): Outcome<Got<List<PullRequest>>> = Outcome.success(Got(emptyList<PullRequest>(), Hashing.sha256("c"))).also { calls += "closed" }
 
-        override fun branches(project: ProjectEntry): Outcome<Got<List<Branch>>> =
+        override fun branches(project: SyncProject): Outcome<Got<List<Branch>>> =
             Outcome.success(Got(listOf(Branch("main", "r".repeat(40)), Branch("apk_debug", "s".repeat(40))), Hashing.sha256("b"))).also { calls += "branches" }
 
-        override fun commit(project: ProjectEntry, sha: String): Outcome<CommitInfo> = Outcome.success(CommitInfo(sha, Timestamp(0), null)).also { calls += "commit" }
+        override fun commit(project: SyncProject, sha: String): Outcome<CommitInfo> = Outcome.success(CommitInfo(sha, Timestamp(0), null)).also { calls += "commit" }
 
-        override fun file(project: ProjectEntry, path: String): Outcome<Got<String>> = Outcome.success(Got("rest:$path", Hashing.sha256(path))).also { calls += "file" }
+        override fun file(project: SyncProject, path: String): Outcome<Got<String>> = Outcome.success(Got("rest:$path", Hashing.sha256(path))).also { calls += "file" }
     }
 
-    private fun project(slug: String, dir: String? = null) =
-        ProjectEntry(slug.substringAfter('/'), RepoRef.parse(slug).valueOrNull()!!, null, Place.CORE, emptyList(), emptyList(), null, emptyList(), dir)
+    private fun project(slug: String) = SyncProject(slug.substringAfter('/'), RepoRef.parse(slug).valueOrNull()!!)
 
     /** «GitHub» проекта: main с файлами, рабочая ветка и ветка сборок. */
     private fun remote(name: String, files: Map<String, String>): java.net.URI {
@@ -94,7 +92,7 @@ class CloneReaderTest {
         // Клон взял и ветку сборок (excluded — { false }): читатель её отсеивает сам.
         clones.sync("dpsmpx/Alpha", remote("alpha", mapOf("TODO.md" to "- [ ] пункт\n")), null, { false })
         val rest = Rest()
-        val r = CloneReader(clones, rest, host, build)
+        val r = CloneReader(clones, rest, build)
         val branches = (r.branches(alpha) as Outcome.Success).value.value
         assertEquals(listOf("main", "work"), branches.map { it.name }, "ветка сборок — мимо")
         val info = (r.commit(alpha, branches.first().sha) as Outcome.Success).value
@@ -106,18 +104,18 @@ class CloneReaderTest {
     }
 
     @Test
-    fun subsystemReadsTheHostCloneInItsDirectory() {
+    fun eachProjectUsesItsOwnCloneEvenWhenAnotherRepoHasASameNamedDirectory() {
         val clones = Clones(File(tmp, "clones"), { Outcome.success(Unit) }, setOf("file"))
-        clones.sync(host.toString(), remote("host", mapOf("dpai/TODO.md" to "- [ ] «AI»\n", "TODO.md" to "- [ ] корень\n", "dpai/docs/reports/2026-11-01-xref.md" to "# срез\n")), null, build)
-        val r = CloneReader(clones, Rest(), host, build)
-        val ai = project("dpsmpx/DP_AI_Orcestrator", dir = "dpai")
-        assertEquals("dpsmpx/DPmetaApp", r.key(ai))
-        assertEquals("- [ ] «AI»\n", (r.file(ai, "TODO.md") as Outcome.Success).value.value)
-        assertTrue(r.file(ai, "../TODO.md") is Outcome.Failure, "путь вне каталога подсистемы — отказ")
-        // Каталог подсистемы — из клона DPmetaApp (срезы DPmeta, eco.reports).
-        assertEquals(listOf("2026-11-01-xref.md"), (r.names(ai, "docs/reports") as Outcome.Success).value)
-        assertTrue(r.names(ai, "nope") is Outcome.Failure, "каталога нет — «нет»")
-        assertEquals(null, r.names(project("dpsmpx/Beta"), "docs"), "клона нет — каталоги не показываются")
+        clones.sync(host.toString(), remote("host", mapOf("engine/TODO.md" to "чужой\n")), null, build)
+        clones.sync("example/Engine", remote("engine", mapOf("TODO.md" to "свой\n", "docs/reports/report.md" to "# срез\n")), null, build)
+        val r = CloneReader(clones, Rest(), build)
+        val engine = project("example/Engine")
+        assertEquals("example/Engine", r.key(engine))
+        assertEquals("свой\n", (r.file(engine, "TODO.md") as Outcome.Success).value.value)
+        assertTrue(r.file(engine, "../TODO.md") is Outcome.Failure)
+        assertEquals(listOf("report.md"), (r.names(engine, "docs/reports") as Outcome.Success).value)
+        assertTrue(r.names(engine, "nope") is Outcome.Failure)
+        assertEquals(null, r.names(project("example/Beta"), "docs"))
     }
 
     @Test
@@ -126,7 +124,7 @@ class CloneReaderTest {
         clones.sync("dpsmpx/Alpha", remote("alpha", mapOf("TODO.md" to "- [ ] из клона\n")), null, build)
         val rest = Rest()
         // Автор снял отметку (D-70): клон, где может быть работа ИИ, остаётся, но пульт читает GitHub.
-        val r = CloneReader(clones, rest, host, build, selected = { false })
+        val r = CloneReader(clones, rest, build, selected = { false })
         assertEquals("rest:TODO.md", (r.file(project("dpsmpx/Alpha"), "TODO.md") as Outcome.Success).value.value)
         assertEquals(listOf("main"), (r.branches(project("dpsmpx/Alpha")) as Outcome.Success).value.value.map { it.name })
         assertTrue(File(clones.dir("dpsmpx/Alpha"), ".git").isDirectory, "клон не удалён")
@@ -139,20 +137,20 @@ class CloneReaderTest {
         clones.sync(host.toString(), remote("host", mapOf("dpai/TODO.md" to "- [ ] «AI»\n")), null, build)
         val rules = CloneReader.HistoryRules(java.time.ZoneOffset.ofHours(3), setOf("Claude"))
         val alpha = project("dpsmpx/Alpha")
-        val h = (CloneReader(clones, Rest(), host, build, rules).history(alpha) as Outcome.Success).value.value
+        val h = (CloneReader(clones, Rest(), build, rules).history(alpha) as Outcome.Success).value.value
         assertEquals(2, h.days.sumOf { it.commits }, "main и work, без ветки сборок")
         assertEquals(listOf("work"), h.ahead.map { it.name })
-        assertEquals(null, CloneReader(clones, Rest(), host, build).history(alpha), "без правил — истории нет")
-        assertEquals(null, CloneReader(clones, Rest(), host, build, rules, selected = { false }).history(alpha), "клон не отмечен — истории нет")
-        assertEquals(null, CloneReader(clones, Rest(), host, build, rules).history(project("dpsmpx/DP_AI_Orcestrator", dir = "dpai")), "подсистема — в истории DPmetaApp")
-        assertEquals(null, CloneReader(clones, Rest(), host, build, rules).history(project("dpsmpx/Beta")), "клона нет — истории нет, без отказа")
+        assertEquals(null, CloneReader(clones, Rest(), build).history(alpha), "без правил — истории нет")
+        assertEquals(null, CloneReader(clones, Rest(), build, rules, selected = { false }).history(alpha), "клон не отмечен — истории нет")
+        assertEquals(null, CloneReader(clones, Rest(), build, rules).history(project("example/Engine")), "чужой каталог не заменяет собственный клон")
+        assertEquals(null, CloneReader(clones, Rest(), build, rules).history(project("dpsmpx/Beta")), "клона нет — истории нет, без отказа")
     }
 
     @Test
     fun withoutACloneTheAnswerIsRestsWithoutBuildBranches() {
         val clones = Clones(File(tmp, "clones"), { Outcome.success(Unit) }, setOf("file"))
         val rest = Rest()
-        val r = CloneReader(clones, rest, host, build)
+        val r = CloneReader(clones, rest, build)
         val beta = project("dpsmpx/Beta")
         assertEquals("rest:TODO.md", (r.file(beta, "TODO.md") as Outcome.Success).value.value)
         assertEquals(listOf("main"), (r.branches(beta) as Outcome.Success).value.value.map { it.name }, "ветки сборок мимо и у REST")

@@ -45,7 +45,7 @@ class RetiredPlacesTest {
             val old = listOf(MetricPoint("repo.pr.open", "P", 3, now, 8))
             assertIs<Outcome.Success<*>>(store.appendHistory(old))
             val previous = assertIs<Outcome.Success<EcosystemState?>>(store.readState()).value!!
-            val current = EcosystemState.derive(projects.toRegistry(), emptyList(), emptyList(), previous, now)
+            val current = EcosystemState.derive(projects.forSync(), emptyList(), emptyList(), previous, now)
             assertEquals(listOf("P"), current.projects.map { it.name })
             val row = (current.toJson()["projects"] as JsonArray).items.single() as JsonObject
             assertTrue("place" !in row.fields, "место автора не переносится в новый формат")

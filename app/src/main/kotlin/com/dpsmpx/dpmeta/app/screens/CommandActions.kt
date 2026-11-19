@@ -8,8 +8,7 @@ import com.dpsmpx.dpmeta.actions.ActionResult
 import com.dpsmpx.dpmeta.actions.ActionTarget
 import com.dpsmpx.dpmeta.formats.CommandSpec
 import com.dpsmpx.dpmeta.git.Clones
-import com.dpsmpx.dpmeta.model.Place
-import com.dpsmpx.dpmeta.model.Registry
+import com.dpsmpx.dpmeta.model.ProjectCatalog
 import com.dpsmpx.dpmeta.model.RepoRef
 
 /**
@@ -41,21 +40,16 @@ object CommandActions {
      * реестра и не из архива; «любой» — только проект со своим репозиторием (у
      * подсистемы рабочее дерево — DPmetaApp, его догоняет строка DPmetaApp).
      */
-    fun spot(spec: CommandSpec, registry: Registry, chosen: String?): Outcome<Spot> {
+    fun spot(spec: CommandSpec, catalog: ProjectCatalog, chosen: String?): Outcome<Spot> {
         val name = if (spec.anyProject) chosen ?: return Outcome.failure(DiagCode.FIELD_MISSING, "выберите проект", spec.id) else spec.project
-        val entry = registry.byName(name)?.takeIf { it.place.shown }
-            ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "проекта «$name» нет в реестре", spec.id)
-        val dir = entry.dir
-        if (dir == null) return Outcome.success(Spot(name, entry.slug, spec.workdir.orEmpty()))
-        if (spec.anyProject) return Outcome.failure(DiagCode.VALUE_INVALID, "«$name» — подсистема: её рабочее дерево — клон DPmetaApp", spec.id)
-        val host = registry.projects.firstOrNull { it.place == Place.CONTROL }
-            ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "в реестре нет репозитория управления", spec.id)
-        return Outcome.success(Spot(name, host.slug, listOfNotNull(dir, spec.workdir).joinToString("/")))
+        val entry = catalog.byName(name)
+            ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "проекта нет в списке пользователя", name)
+        return Outcome.success(Spot(name, entry.repo, spec.workdir.orEmpty()))
     }
 
-    /** Проекты для команды «любой проект»: свои репозитории реестра (не архив, не подсистемы) с клоном. */
-    fun anyProjects(registry: Registry, hasClone: (RepoRef) -> Boolean): List<String> =
-        registry.shown.filter { it.dir == null && hasClone(it.slug) }.map { it.name }
+    /** Проекты из списка пользователя с локальным клоном. */
+    fun anyProjects(catalog: ProjectCatalog, hasClone: (RepoRef) -> Boolean): List<String> =
+        catalog.projects.filter { hasClone(it.repo) }.map { it.name }
 
     /** Командная строка гостя: программа из клона без «/» — от каталога (`./`), а не из `PATH`. */
     fun argv(spec: CommandSpec): List<String> =
@@ -71,7 +65,7 @@ object CommandActions {
     }
 
     /** Реестр команд для экрана: команды, реестр проектов и проекты для команды «любой проект». */
-    data class Catalog(val commands: List<CommandSpec>, val registry: Registry, val anyProjects: List<String>)
+    data class Catalog(val commands: List<CommandSpec>, val catalog: ProjectCatalog, val anyProjects: List<String>)
 
     /**
      * Команда в Linux-среде приложения: рабочее дерево клона, готовность по

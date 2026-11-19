@@ -27,7 +27,7 @@ import com.dpsmpx.dpmeta.metrics.Feed
 import com.dpsmpx.dpmeta.metrics.FeedEvent
 import com.dpsmpx.dpmeta.model.Observation
 import com.dpsmpx.dpmeta.model.ObservationSource
-import com.dpsmpx.dpmeta.model.ProjectEntry
+import com.dpsmpx.dpmeta.model.SyncProject
 import com.dpsmpx.dpmeta.model.SourceFailure
 import com.dpsmpx.dpmeta.sync.DirectoryReader
 import com.dpsmpx.dpmeta.sync.SourceReader
@@ -45,12 +45,12 @@ class RetiredProcessTest {
     private val now = Timestamp(1_800_000_000_000)
     private val retired = setOf("decisions", "todo", "roadmap")
     private val oldMetrics = setOf("repo.stage", "repo.gate.passed", "repo.gate.ready", "repo.decisions.count", "repo.decisions.new", "repo.todo.items", "repo.roadmap.progress", "eco.questions_open")
-    private val registry = ProjectList(listOf(UserProject(RepoRef.parse("example/P").valueOrNull()!!, checklists = listOf("TODO.md", "ROADMAP/ROADMAP.md")))).toRegistry()
+    private val registry = ProjectList(listOf(UserProject(RepoRef.parse("example/P").valueOrNull()!!, checklists = listOf("TODO.md", "ROADMAP/ROADMAP.md")))).forSync()
 
     private fun section(kind: String, text: String) = kind to SourceSection(kind, "process.test.v1", now,
         assertIs<Outcome.Success<*>>(JsonParser().parse(text)).value as JsonObject)
 
-    private fun legacy() = EcosystemState(now, 7, listOf(ProjectState("P", "user", mapOf(
+    private fun legacy() = EcosystemState(now, 7, listOf(ProjectState("P", mapOf(
         section("decisions", """{"count":3}"""),
         section("todo", """{"open":2,"forAuthor":1,"sections":[]}"""),
         section("roadmap", """{"stepsDone":1,"stepsTotal":2,"stages":[{"title":"Этап","flag":"active","stepsDone":1,"stepsTotal":2}]}"""),
@@ -66,7 +66,7 @@ class RetiredProcessTest {
         assertEquals(listOf("README.md"), plan.single { it.kind.code == "readme" }.paths)
         val body = "## За автором\n- [ ] Пункт\n"
         val reader = object : SourceReader by DirectoryReader(dir) {
-            override fun file(project: ProjectEntry, path: String) = Outcome.success(Got(body, Hashing.sha256(body)))
+            override fun file(project: SyncProject, path: String) = Outcome.success(Got(body, Hashing.sha256(body)))
         }
         val result = Sync.run(plan.filter { it.kind.code == "checklists" }, reader, ManualClock(now))
         assertTrue(result.failures.isEmpty())
@@ -88,7 +88,7 @@ class RetiredProcessTest {
         assertTrue("readme" in current.project("P")!!.sections)
         assertTrue(current.points().none { it.metric in oldMetrics })
         assertTrue("questionsOpen" !in current.toJson().fields)
-        assertEquals(8, current.rulesVersion)
+        assertEquals(9, current.rulesVersion)
     }
 
     @Test
@@ -108,8 +108,8 @@ class RetiredProcessTest {
             assertIs<Outcome.Success<*>>(store.appendHistory(current.points()))
             val history = assertIs<Outcome.Success<List<MetricPoint>>>(store.history()).value
             assertEquals(points, history.filter { it.metric in oldMetrics })
-            assertEquals(JsonNumber.of(4), current.toJson()["version"])
-            assertEquals(8, Rules.RULES_VERSION)
+            assertEquals(JsonNumber.of(5), current.toJson()["version"])
+            assertEquals(9, Rules.RULES_VERSION)
             assertEquals(current, assertIs<Outcome.Success<EcosystemState?>>(store.readState()).value)
         }
     }

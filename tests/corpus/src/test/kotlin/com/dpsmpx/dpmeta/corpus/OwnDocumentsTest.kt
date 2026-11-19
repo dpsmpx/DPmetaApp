@@ -6,11 +6,9 @@ import com.dpsmpx.dpmeta.formats.BriefFormat
 import com.dpsmpx.dpmeta.formats.AlertFormat
 import com.dpsmpx.dpmeta.formats.CommandFormat
 import com.dpsmpx.dpmeta.formats.EventCatalogFormat
-import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.formats.Roadmap
 import com.dpsmpx.dpmeta.formats.StatusBlocks
 import com.dpsmpx.dpmeta.formats.TodoList
-import com.dpsmpx.dpmeta.model.Place
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -33,19 +31,8 @@ class OwnDocumentsTest {
     }
 
     @Test
-    fun registryOfDpmetaParses() {
-        val r = RegistryFormat.parse(text("dpmeta/tools/ecosystem.toml")).ok("реестр DPmeta")
-        val app = r.byName("DPmetaApp") ?: fail("в реестре нет DPmetaApp")
-        assertEquals(Place.CONTROL, app.place)
-        assertEquals("dpsmpx/DPmetaApp", app.slug.toString())
-        assertTrue(r.projects.size >= 10, "проектов в реестре: ${r.projects.size}")
-    }
-
-    @Test
-    fun ownDecisionLogParsesWithRegistryPattern() {
-        val r = RegistryFormat.parse(text("dpmeta/tools/ecosystem.toml")).ok("реестр DPmeta")
-        val source = r.byName("DPmetaApp")!!.decisions ?: fail("у DPmetaApp в реестре нет журнала")
-        val log = DecisionLog.parse(text(source.path), source.regex().ok("шаблон")).ok("журнал решений")
+    fun ownDecisionLogParsesWithProjectPattern() {
+        val log = DecisionLog.parse(text("docs/direction/DECISIONS.md"), Regex("D-\\d+")).ok("журнал решений")
         val ids = log.entries.map { it.id }
         assertEquals("D-01", ids.first())
         val numbers = ids.map { it.removePrefix("D-").toInt() }

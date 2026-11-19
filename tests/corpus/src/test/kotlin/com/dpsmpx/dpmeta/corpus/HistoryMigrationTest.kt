@@ -21,9 +21,8 @@ import com.dpsmpx.dpmeta.metrics.Store
 import com.dpsmpx.dpmeta.model.HistorySchema
 import com.dpsmpx.dpmeta.model.Observation
 import com.dpsmpx.dpmeta.model.ObservationSource
-import com.dpsmpx.dpmeta.model.Place
-import com.dpsmpx.dpmeta.model.ProjectEntry
-import com.dpsmpx.dpmeta.model.Registry
+import com.dpsmpx.dpmeta.model.SyncProject
+import com.dpsmpx.dpmeta.model.ProjectCatalog
 import com.dpsmpx.dpmeta.model.RepoRef
 import com.dpsmpx.dpmeta.sync.Sync
 import java.nio.file.Path
@@ -41,11 +40,11 @@ class HistoryMigrationTest {
     private val payload = assertIs<Outcome.Success<*>>(JsonParser().parse("""
         {"complete":true,"days":[["2026-11-08",4,2,2,3,1,0]],"decisions":[],"ahead":[{"name":"work","commits":1,"last":${now.epochMillis}}]}
     """.trimIndent())).value as JsonObject
-    private val entry = ProjectEntry("P", RepoRef.parse("example/P").valueOrNull()!!, null, Place.USER, emptyList(), emptyList(), null, emptyList())
-    private val registry = Registry(1, listOf(entry))
+    private val entry = SyncProject("P", RepoRef.parse("example/P").valueOrNull()!!)
+    private val registry = ProjectCatalog(listOf(entry))
 
     private fun project(schema: String, body: JsonObject = payload) =
-        ProjectState("P", "user", mapOf("history" to SourceSection("history", schema, now, body)), emptyList())
+        ProjectState("P", mapOf("history" to SourceSection("history", schema, now, body)), emptyList())
 
     @Test
     fun legacyStateVersionsKeepNumbersButNeedFreshHistoryForNewPoints() {
@@ -64,7 +63,7 @@ class HistoryMigrationTest {
             assertEquals(2L, row.human)
             assertEquals(null, row.other, "прежняя категория не перекрашивается в прочих")
             val offline = EcosystemState.derive(registry, emptyList(), emptyList(), restored, now)
-            assertEquals(8, offline.rulesVersion)
+            assertEquals(9, offline.rulesVersion)
             assertEquals(payload, offline.project("P")!!.sections.getValue("history").payload)
             assertTrue(offline.points().none { it.metric.startsWith("repo.commits.") || it.metric.startsWith("repo.branches.unmerged") })
             assertIs<Measure.Unknown>(offline.project("P")!!.aiShare(now))
@@ -78,13 +77,13 @@ class HistoryMigrationTest {
             assertEquals(4L, current.project("P")!!.historyDays!!.single().other)
             assertEquals(null, current.project("P")!!.historyDays!!.single().human)
             assertIs<Outcome.Success<*>>(store.writeState(current))
-            assertEquals(JsonNumber.of(4), current.toJson()["version"])
+            assertEquals(JsonNumber.of(5), current.toJson()["version"])
             assertIs<Outcome.Success<*>>(store.appendHistory(current.points()))
             val history = assertIs<Outcome.Success<List<MetricPoint>>>(store.history()).value
             assertEquals(oldPoints, history.take(oldPoints.size))
-            assertEquals(listOf(oldRules, 8), history.filter { it.metric == "repo.commits.ai_share" }.map { it.rulesVersion })
+            assertEquals(listOf(oldRules, 9), history.filter { it.metric == "repo.commits.ai_share" }.map { it.rulesVersion })
             assertEquals(current, assertIs<Outcome.Success<EcosystemState?>>(store.readState()).value)
-            assertEquals(8, Rules.RULES_VERSION)
+            assertEquals(9, Rules.RULES_VERSION)
         }
     }
 
