@@ -44,10 +44,10 @@ class RetiredPlacesTest {
         val v5 = JsonObject(old.toJson().fields + ("version" to JsonNumber.of(5)))
         assertIs<Outcome.Success<*>>(DocumentStore(NioVfs(dir), "dpmeta/state").write(Store.STATE_KEY, v5))
         val restored = assertIs<Outcome.Success<EcosystemState?>>(store.readState()).value!!
-        assertEquals(setOf("readme"), restored.project("P")!!.sections.keys)
+        assertEquals(setOf("readme", "history"), restored.project("P")!!.sections.keys)
         assertIs<Measure.Unknown>(restored.syncHealth)
         val failedSync = EcosystemState.derive(projects, emptyList(), emptyList(), old, now)
-        assertEquals(setOf("readme"), failedSync.project("P")!!.sections.keys)
+        assertEquals(setOf("readme", "history"), failedSync.project("P")!!.sections.keys)
         assertEquals(listOf(point), assertIs<Outcome.Success<List<MetricPoint>>>(store.history()).value)
     }
 

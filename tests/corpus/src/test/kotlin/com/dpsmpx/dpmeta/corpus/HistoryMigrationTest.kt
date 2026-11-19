@@ -54,11 +54,11 @@ class HistoryMigrationTest {
 
     @Test
     fun legacyStateVersionsKeepNumbersButNeedFreshHistoryForNewPoints() {
-        for (version in 1..2) {
+        for (version in 1..5) {
             val vfs = NioVfs(dir.resolve("v$version"))
             val store = Store(vfs, ManualClock(now), RandomSource.secure())
             val oldRules = if (version == 1) 5 else 6
-            val original = EcosystemState(now, oldRules, listOf(project(HistorySchema.LEGACY)))
+            val original = EcosystemState(now, oldRules, listOf(project(if (version <= 2) HistorySchema.LEGACY else HistorySchema.FILTERED_BRANCHES)))
             val document = userLayout(JsonObject(original.toJson().fields + ("version" to JsonNumber.of(version))))
             assertIs<Outcome.Success<*>>(DocumentStore(vfs, "dpmeta/state").write(Store.STATE_KEY, document))
             val oldPoints = listOf(MetricPoint("repo.commits.ai_share", "P", 50, now, oldRules), MetricPoint("repo.branches.unmerged", "P", 1, now, oldRules))
@@ -66,10 +66,10 @@ class HistoryMigrationTest {
             val restored = assertIs<Outcome.Success<EcosystemState?>>(store.readState()).value!!
             assertEquals(original, restored)
             val row = restored.project("P")!!.historyDays!!.single()
-            assertEquals(2L, row.human)
-            assertEquals(null, row.other, "прежняя категория не перекрашивается в прочих")
+            assertEquals(2L.takeIf { version <= 2 }, row.human)
+            assertEquals(2L.takeIf { version > 2 }, row.other, "прежняя категория не перекрашивается")
             val offline = EcosystemState.derive(registry, emptyList(), emptyList(), restored, now)
-            assertEquals(9, offline.rulesVersion)
+            assertEquals(10, offline.rulesVersion)
             assertEquals(payload, offline.project("P")!!.sections.getValue("history").payload)
             assertTrue(offline.points().none { it.metric.startsWith("repo.commits.") || it.metric.startsWith("repo.branches.unmerged") })
             assertIs<Measure.Unknown>(offline.project("P")!!.aiShare(now))
@@ -83,19 +83,19 @@ class HistoryMigrationTest {
             assertEquals(4L, current.project("P")!!.historyDays!!.single().other)
             assertEquals(null, current.project("P")!!.historyDays!!.single().human)
             assertIs<Outcome.Success<*>>(store.writeState(current))
-            assertEquals(JsonNumber.of(5), current.toJson()["version"])
+            assertEquals(JsonNumber.of(6), current.toJson()["version"])
             assertIs<Outcome.Success<*>>(store.appendHistory(current.points()))
             val history = assertIs<Outcome.Success<List<MetricPoint>>>(store.history()).value
             assertEquals(oldPoints, history.take(oldPoints.size))
-            assertEquals(listOf(oldRules, 9), history.filter { it.metric == "repo.commits.ai_share" }.map { it.rulesVersion })
+            assertEquals(listOf(oldRules, 10), history.filter { it.metric == "repo.commits.ai_share" }.map { it.rulesVersion })
             assertEquals(current, assertIs<Outcome.Success<EcosystemState?>>(store.readState()).value)
-            assertEquals(9, Rules.RULES_VERSION)
+            assertEquals(10, Rules.RULES_VERSION)
         }
     }
 
     @Test
     fun unknownOrIncompleteHistoryDoesNotInventZeroOrAFullShare() {
-        val unknown = project("clone.history.v3")
+        val unknown = project("clone.history.v4")
         assertEquals(null, unknown.historyDays)
         val partial = project(HistorySchema.CURRENT, JsonObject(payload.fields + ("complete" to com.dpsmpx.dpai.core.serialization.JsonBool(false))))
         for (p in listOf(unknown, partial)) {

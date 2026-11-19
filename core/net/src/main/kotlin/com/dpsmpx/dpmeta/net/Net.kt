@@ -36,8 +36,7 @@ fun interface Transport {
 
 /**
  * Список разрешённых адресов (ТЗ, §6.8; D-10). Только HTTPS; HTTP — только
- * для адресов [plainHttp] и без секрета (исключение на время для сайта,
- * A-09).
+ * для явно заданных адресов [plainHttp] и без секрета. В [CORE] таких адресов нет.
  */
 class AllowList(val hosts: Set<String>, val plainHttp: Set<String> = emptySet()) {
     fun check(request: HttpRequest): Outcome<Unit> {

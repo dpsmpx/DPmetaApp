@@ -668,7 +668,6 @@ class PultRepository(
          */
         fun cloneNeed(githubBytes: Long?): Long? = githubBytes?.let { it * 2 }
 
-
         /** Ключ списка проектов пульта (D-176) в настройках пульта. */
         private const val PROJECTS = "projects"
 

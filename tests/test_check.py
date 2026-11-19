@@ -231,7 +231,9 @@ class UniversalPultTest(CheckCase):
         self.assertCatches(self.package({"assets/briefs/work.md": "Работа"}), "нет DEX")
         with self.assertRaises(ValueError):
             self.package({"classes.dex": b"broken"})
-        self.assertCatches(check.check_pult_packages(self.sample().root), "ожидался один APK")
+        self.assertCatches(check.check_pult_packages(self.sample().root, sdk="sdk"), "ожидался один APK")
+        unavailable = check.check_pult_packages(self.sample().root, sdk="")
+        self.assertTrue(unavailable.skipped)
 
 
 class CommandsTest(CheckCase):

@@ -8,7 +8,7 @@ import com.dpsmpx.dpmeta.model.RepoRef
 import com.dpsmpx.dpmeta.sync.CloneReader
 import com.dpsmpx.dpmeta.sync.DirectoryReader
 import com.dpsmpx.dpmeta.sync.Got
-import com.dpsmpx.dpmeta.model.Branch
+import com.dpsmpx.dpmeta.github.Branch
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test

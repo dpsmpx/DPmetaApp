@@ -931,7 +931,7 @@ def check_files(repo, r):
 # D-176: имена пакетов/applicationId и ключи старых данных сохраняются;
 # адреса автора, предметные шаблоны и его соглашения о ветках не поставляются.
 PERSONAL_PULT = re.compile(
-    r"(?<![A-Za-z0-9_./])dpsmpx/(?!dpai/|dpmeta/)[A-Za-z0-9_.-]+|"
+    r"(?<![A-Za-z0-9_./])dpsmpx/[A-Za-z0-9_.-]+|"
     r"(?:www\.)?dpsmpx\.com|"
     r"(?<![A-Za-z0-9_])(?:DPmeta|DPpass|DPvisualisation|Galdhold|DPlang|SocialMediaImage|DPprofile)(?![A-Za-z0-9_])|"
     r"windows-debug-build|win_debug_builds|apk-builds|linux-debug"
@@ -954,7 +954,7 @@ def check_pult_universal(repo, r):
         if not (config or source):
             continue
         r.scanned += 1
-        if config:
+        if config or not rel.endswith((".kt", ".java")):
             values = [rel, text]
         else:
             # Комментарии и пространства имён не являются настройками приложения.
@@ -1019,8 +1019,11 @@ def check_pult_apk(path, r):
                     r.add(f"{path}:{name}", "предметные настройки проектов автора не поставляются")
 
 
-def check_pult_packages(root):
+def check_pult_packages(root, sdk=None):
     r = Result("pult.apk")
+    if not (android_sdk(root) if sdk is None else sdk):
+        r.skipped.append("нет Android SDK — состав APK не проверен")
+        return r
     import glob
     for variant in ("debug", "release"):
         directory = os.path.join(root, "shell/build/outputs/apk", variant)

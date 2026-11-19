@@ -45,7 +45,7 @@ class OwnDocumentsTest {
     fun ownBriefsParseAndRender() {
         val files = File(repo, "config/briefs").listFiles { f -> f.extension == "md" }.orEmpty().sortedBy { it.name }
         val keys = files.map { it.nameWithoutExtension }.toSet()
-        for (k in listOf("continue-branch", "roadmap-task", "fix-checks")) {
+        for (k in listOf("continue-branch", "roadmap-task", "fix-checks", "review-project", "review-docs")) {
             assertTrue(k in keys, "нет шаблона $k")
         }
         val builtIn = mapOf("project" to "Example", "repo" to "example/Example", "base" to "main")
@@ -82,7 +82,7 @@ class OwnDocumentsTest {
         assertEquals(named + ai, catalog.types.map { it.type }.toSet(), "каталог — ровно типы ТЗ, §8.1 и дополнение D-142; обязательных категорий в нём нет")
         for (t in com.dpsmpx.dpmeta.metrics.Feed.TYPES.values) assertTrue(catalog.type(t) != null, "вид ленты $t — не в каталоге")
         val rules = AlertFormat.parse(text("config/alerts.toml"), catalog, "config/alerts.toml").ok("config/alerts.toml").rules
-        assertEquals(20, rules.size, "12 правил F-37 после снятия ntfy D-173, 6 правил ИИ D-142, чат и PR D-161")
+        assertEquals(13, rules.size, "правила студии без сайта, соцсетей и вопросов процесса автора D-173/D-176")
         assertTrue(rules.any { it.id == "chat.done" && it.on == "chat.answer.done" } && rules.any { it.id == "routine.pr" && it.on == "pr.opened" }, "правила F-58 (D-161)")
         assertTrue(rules.all { it.enabled })
         assertTrue(rules.none { it.id in setOf("claude.input", "claude.done", "app.claude") }, "стандартных правил снятых источников D-173 нет")
