@@ -342,7 +342,7 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
         fun fromJson(value: JsonValue): Outcome<EcosystemState> {
             val d = DiagnosticCollector()
             val f = JsonFields.root(value, d) ?: return Outcome.Failure(d.all)
-            FormatHeader.read(f, FORMAT, 1..VERSION, d) ?: return Outcome.Failure(d.all)
+            val version = FormatHeader.read(f, FORMAT, 1..VERSION, d) ?: return Outcome.Failure(d.all)
             val asOf = f.long("asOf")
             val rules = f.long("rulesVersion")
             val projects = f.array("projects")
@@ -351,6 +351,7 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
             val health = f.optLong("syncHealth")
             f.finish()
             if (d.hasErrors || asOf == null || rules == null || projects == null) return Outcome.Failure(d.all)
+            var discardedCache = false
             val out = projects.items.map { p ->
                 val o = p as? JsonObject ?: return Outcome.failure(DiagCode.FIELD_TYPE, "проект — не объект", "projects")
                 val name = (o["name"] as? JsonString)?.value ?: return Outcome.failure(DiagCode.FIELD_MISSING, "нет имени проекта", "projects")
@@ -372,9 +373,14 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                         Timestamp((eo["at"] as? JsonNumber)?.toLongExact() ?: return Outcome.failure(DiagCode.FIELD_MISSING, "нет времени отказа", name)),
                     )
                 }
-                ProjectState(name, sections.associateBy { it.kind }.toSortedMap(), errors)
+                // У прежней роли/подсистемы источником мог быть чужой host-каталог.
+                // Без доказанного соответствия репозиторию нужен свежий запрос, не новый ярлык.
+                val reusable = version == VERSION || ((o["place"] as? JsonString)?.value == "user" &&
+                    (o["skipped"] as? JsonArray)?.items.isNullOrEmpty())
+                if (!reusable) discardedCache = true
+                ProjectState(name, if (reusable) sections.associateBy { it.kind }.toSortedMap() else emptyMap(), if (reusable) errors else emptyList())
             }
-            return Outcome.success(EcosystemState(Timestamp(asOf), rules.toInt(), out, health))
+            return Outcome.success(EcosystemState(Timestamp(asOf), rules.toInt(), out, health.takeUnless { discardedCache }))
         }
     }
 }

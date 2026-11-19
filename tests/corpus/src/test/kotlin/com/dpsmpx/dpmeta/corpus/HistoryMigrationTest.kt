@@ -7,6 +7,8 @@ import com.dpsmpx.dpai.core.hashing.Hashing
 import com.dpsmpx.dpai.core.measure.Measure
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.JsonNumber
+import com.dpsmpx.dpai.core.serialization.JsonArray
+import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.storage.document.DocumentStore
@@ -46,6 +48,10 @@ class HistoryMigrationTest {
     private fun project(schema: String, body: JsonObject = payload) =
         ProjectState("P", mapOf("history" to SourceSection("history", schema, now, body)), emptyList())
 
+    private fun userLayout(value: JsonObject): JsonObject = JsonObject(value.fields + ("projects" to JsonArray(
+        (value["projects"] as JsonArray).items.map { item -> JsonObject((item as JsonObject).fields + ("place" to JsonString("user"))) },
+    )))
+
     @Test
     fun legacyStateVersionsKeepNumbersButNeedFreshHistoryForNewPoints() {
         for (version in 1..2) {
@@ -53,7 +59,7 @@ class HistoryMigrationTest {
             val store = Store(vfs, ManualClock(now), RandomSource.secure())
             val oldRules = if (version == 1) 5 else 6
             val original = EcosystemState(now, oldRules, listOf(project(HistorySchema.LEGACY)))
-            val document = JsonObject(original.toJson().fields + ("version" to JsonNumber.of(version)))
+            val document = userLayout(JsonObject(original.toJson().fields + ("version" to JsonNumber.of(version))))
             assertIs<Outcome.Success<*>>(DocumentStore(vfs, "dpmeta/state").write(Store.STATE_KEY, document))
             val oldPoints = listOf(MetricPoint("repo.commits.ai_share", "P", 50, now, oldRules), MetricPoint("repo.branches.unmerged", "P", 1, now, oldRules))
             assertIs<Outcome.Success<*>>(store.appendHistory(oldPoints))

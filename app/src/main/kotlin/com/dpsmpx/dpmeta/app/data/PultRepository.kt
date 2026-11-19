@@ -107,7 +107,16 @@ class PultRepository(
         )
     }
 
-    fun state(): Outcome<EcosystemState?> = store.readState()
+    fun state(): Outcome<EcosystemState?> = when (val stored = store.readState()) {
+        is Outcome.Failure -> stored
+        is Outcome.Success -> when (val selected = catalog()) {
+            is Outcome.Failure -> selected
+            is Outcome.Success -> Outcome.success(stored.value?.let { state ->
+                val rows = selected.value.projects.mapNotNull { state.project(it.name) }
+                state.copy(projects = rows, syncHealthPercent = state.syncHealthPercent.takeIf { rows == state.projects })
+            })
+        }
+    }
 
     fun feed(): Outcome<List<FeedEvent>> = store.readFeed()
 

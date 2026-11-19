@@ -5,6 +5,8 @@ import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.JsonNumber
+import com.dpsmpx.dpai.core.serialization.JsonArray
+import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpmeta.metrics.EcosystemState
@@ -30,6 +32,10 @@ class DpmetaCountersTest {
 
     private fun project(name: String) = SyncProject(name, RepoRef.parse("example/$name").valueOrNull()!!)
 
+    private fun userLayout(value: JsonObject): JsonObject = JsonObject(value.fields + ("projects" to JsonArray(
+        (value["projects"] as JsonArray).items.map { item -> JsonObject((item as JsonObject).fields + ("place" to JsonString("user"))) },
+    )))
+
     @Test
     fun projectNameNeverSchedulesPrivateProcessDocuments() {
         val plan = Sync.plan(ProjectCatalog(listOf(project("DPmeta"), project("Other"))))
@@ -53,7 +59,7 @@ class DpmetaCountersTest {
         val legacySection = SourceSection("dpmeta", "dpmeta.counters.v1", at, JsonObject.of("contracts" to JsonNumber.of(7)))
         val old = EcosystemState(at, 5, listOf(ProjectState("DPmeta", mapOf("dpmeta" to legacySection), emptyList())))
         // Корпус прежней записи v1: числа, схема секции и версия правил не переосмысляются при чтении.
-        val v1 = JsonObject(old.toJson().fields + ("version" to JsonNumber.of(1)))
+        val v1 = userLayout(JsonObject(old.toJson().fields + ("version" to JsonNumber.of(1))))
         val restored = assertIs<Outcome.Success<EcosystemState>>(EcosystemState.fromJson(v1)).value
         assertEquals(old, restored)
         val fresh = EcosystemState.derive(ProjectCatalog(listOf(project("DPmeta"))), emptyList(), emptyList(), restored, Timestamp(2_000))

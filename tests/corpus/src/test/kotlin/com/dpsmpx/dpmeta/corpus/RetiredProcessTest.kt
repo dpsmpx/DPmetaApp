@@ -5,6 +5,8 @@ import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.JsonNumber
+import com.dpsmpx.dpai.core.serialization.JsonArray
+import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.storage.document.DocumentStore
@@ -58,6 +60,10 @@ class RetiredProcessTest {
         section("pulls", """{"pulls":[]}"""),
     ), emptyList())))
 
+    private fun userLayout(value: JsonObject): JsonObject = JsonObject(value.fields + ("projects" to JsonArray(
+        (value["projects"] as JsonArray).items.map { item -> JsonObject((item as JsonObject).fields + ("place" to JsonString("user"))) },
+    )))
+
     @Test
     fun userProjectPlanDoesNotProbeAuthorProcessFiles() {
         val plan = Sync.plan(registry)
@@ -97,7 +103,7 @@ class RetiredProcessTest {
             val storeVfs = NioVfs(dir.resolve("v$version"))
             val store = Store(storeVfs, ManualClock(now), RandomSource.secure())
             val old = legacy()
-            val document = JsonObject(old.toJson().fields + ("version" to JsonNumber.of(version)) + ("questionsOpen" to JsonNumber.of(1)))
+            val document = userLayout(JsonObject(old.toJson().fields + ("version" to JsonNumber.of(version)) + ("questionsOpen" to JsonNumber.of(1))))
             assertIs<Outcome.Success<*>>(DocumentStore(storeVfs, "dpmeta/state").write(Store.STATE_KEY, document))
             val points = oldMetrics.sorted().map { MetricPoint(it, if (it.startsWith("eco.")) "eco" else "P", 2, now, 7) }
             assertIs<Outcome.Success<*>>(store.appendHistory(points))
