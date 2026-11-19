@@ -76,8 +76,8 @@ class HistoryMigrationTest {
             assertIs<Measure.Unknown>(offline.project("P")!!.branchesAhead)
             val fresh = CommitHistory("2026-11-08", listOf(CommitHistory.Day("2026-11-08", 6, 2, 4, 4, 2, 0)), emptyList(), listOf(CommitHistory.Ahead("work", 2, now)), complete = true)
             val observation = assertIs<Outcome.Success<Observation>>(Observation.of(ObservationSource.GITHUB, "P", "history", now, Sync.HISTORY_SCHEMA, Sync.historyJson(fresh), Hashing.sha256("fresh"))).value
-            assertEquals("clone.history.v2", observation.schema)
-            assertEquals(com.dpsmpx.dpai.core.serialization.JsonString("clone.history.v2"), (observation.payload as JsonObject)["schema"])
+            assertEquals("clone.history.v3", observation.schema)
+            assertEquals(com.dpsmpx.dpai.core.serialization.JsonString("clone.history.v3"), (observation.payload as JsonObject)["schema"])
             val current = EcosystemState.derive(registry, listOf(observation), emptyList(), offline, now)
             assertEquals(Measure.observed(33L), current.project("P")!!.aiShare(now))
             assertEquals(4L, current.project("P")!!.historyDays!!.single().other)

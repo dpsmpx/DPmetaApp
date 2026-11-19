@@ -28,6 +28,8 @@ import subprocess
 import sys
 import time
 import traceback
+import struct
+import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SHOW = 5
@@ -926,6 +928,114 @@ def check_files(repo, r):
             r.add(rel, "обязательный файл процесса отсутствует")
 
 
+# D-176: имена пакетов/applicationId и ключи старых данных сохраняются;
+# адреса автора, предметные шаблоны и его соглашения о ветках не поставляются.
+PERSONAL_PULT = re.compile(
+    r"(?<![A-Za-z0-9_./])dpsmpx/(?!dpai/|dpmeta/)[A-Za-z0-9_.-]+|"
+    r"(?:www\.)?dpsmpx\.com|"
+    r"(?<![A-Za-z0-9_])(?:DPmeta|DPpass|DPvisualisation|Galdhold|DPlang|SocialMediaImage|DPprofile)(?![A-Za-z0-9_])|"
+    r"windows-debug-build|win_debug_builds|apk-builds|linux-debug"
+)
+RETIRED_PULT_CLASSES = (
+    "model/Registry", "model/ProjectEntry", "model/Place", "model/IdSource",
+    "formats/RegistryFormat", "formats/DecisionLog", "formats/TodoList", "formats/Roadmap", "metrics/Readiness",
+)
+
+
+def personal_pult(text):
+    return sorted({m.group() for m in PERSONAL_PULT.finditer(text)})
+
+
+def check_pult_universal(repo, r):
+    """pult.universal — поставляемые настройки и литералы пульта без проектов автора."""
+    for rel, text in repo.texts():
+        config = rel.startswith("config/")
+        source = rel.split("/", 1)[0] in {"app", "core", "shell"} and "/src/main/" in rel
+        if not (config or source):
+            continue
+        r.scanned += 1
+        if config:
+            values = [rel, text]
+        else:
+            # Комментарии и пространства имён не являются настройками приложения.
+            values = re.findall(r'"""[\s\S]*?"""|"(?:\\.|[^"\\\n])*"', text)
+        for value in values:
+            for found in personal_pult(value):
+                r.add(rel, f"личная привязка в поставляемом пульте: {found}")
+        if rel.startswith("config/briefs/dpmeta-") or rel.startswith("config/projects/"):
+            r.add(rel, "предметные настройки проектов автора не поставляются")
+
+
+def dex_strings(data):
+    """Таблица строк DEX; дескрипторы классов не принимаются за адрес репозитория."""
+    if len(data) < 112 or not re.fullmatch(rb"dex\n0[0-9]{2}\x00", data[:8]):
+        raise ValueError("неверный заголовок DEX")
+    size, offset = struct.unpack_from("<II", data, 56)
+    if offset < 112 or offset + size * 4 > len(data):
+        raise ValueError("таблица строк за границами DEX")
+    for i in range(size):
+        start = struct.unpack_from("<I", data, offset + i * 4)[0]
+        if start >= len(data):
+            raise ValueError("адрес строки за границами DEX")
+        for _ in range(5):
+            if start >= len(data):
+                raise ValueError("обрезанная длина строки DEX")
+            byte = data[start]
+            start += 1
+            if byte < 128:
+                break
+        else:
+            raise ValueError("неверная длина строки DEX")
+        end = data.find(b"\0", start)
+        if end < 0:
+            raise ValueError("обрезанная строка DEX")
+        # Ищутся ASCII-маркеры; MUTF-8 прочих символов не влияет на них.
+        yield data[start:end].decode("utf-8", errors="replace")
+
+
+def check_pult_apk(path, r):
+    """Проверяется реальная упаковка, включая устаревшие generated assets."""
+    with zipfile.ZipFile(path) as apk:
+        names = apk.namelist()
+        dex = [n for n in names if re.fullmatch(r"classes[0-9]*\.dex", n)]
+        if not dex:
+            r.add(str(path), "в APK нет DEX")
+        for name in dex:
+            r.scanned += 1
+            for value in dex_strings(apk.read(name)):
+                for found in personal_pult(value):
+                    r.add(f"{path}:{name}", f"личная привязка: {found}")
+                for old in RETIRED_PULT_CLASSES:
+                    if re.search(re.escape("Lcom/dpsmpx/dpmeta/" + old) + r"[;$]", value):
+                        r.add(f"{path}:{name}", f"снятый runtime-класс: {old}")
+        for name in names:
+            if name.startswith(("assets/briefs/", "assets/projects/")) or name in {
+                "assets/commands.toml", "assets/events.toml", "assets/alerts.toml",
+            }:
+                r.scanned += 1
+                for found in personal_pult(apk.read(name).decode("utf-8")):
+                    r.add(f"{path}:{name}", f"личная привязка: {found}")
+                if name.startswith(("assets/projects/", "assets/briefs/dpmeta-")):
+                    r.add(f"{path}:{name}", "предметные настройки проектов автора не поставляются")
+
+
+def check_pult_packages(root):
+    r = Result("pult.apk")
+    import glob
+    for variant in ("debug", "release"):
+        directory = os.path.join(root, "shell/build/outputs/apk", variant)
+        paths = glob.glob(os.path.join(directory, "*.apk"))
+        if len(paths) != 1:
+            r.add(directory, "ожидался один APK для проверки состава")
+            continue
+        path = paths[0]
+        try:
+            check_pult_apk(path, r)
+        except (OSError, ValueError, zipfile.BadZipFile, struct.error) as e:
+            r.add(path, f"не удалось проверить APK: {e}")
+    return r
+
+
 CHECKS = [
     ("repo.layout", check_layout),
     ("format.text", check_format),
@@ -945,6 +1055,7 @@ CHECKS = [
     ("build.wrapper", check_wrapper),
     ("build.verification", check_verification),
     ("config.commands", check_commands),
+    ("pult.universal", check_pult_universal),
     ("about.licenses", check_about),
 ]
 
@@ -1046,6 +1157,7 @@ def main(argv):
         results.append(selftest(ROOT))
         results.extend(check_subsystems(ROOT))
         results.append(check_gradle(ROOT))
+        results.append(check_pult_packages(ROOT))
     return report(results, level, verbose, time.monotonic() - t0, strict)
 
 

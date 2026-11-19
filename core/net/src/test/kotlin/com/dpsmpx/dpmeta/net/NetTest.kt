@@ -65,16 +65,15 @@ class NetTest {
     fun refusesHostsNotInListAndPlainHttpWithSecrets() {
         val server = FakeServer()
         val net = Net(server)
-        for (url in listOf("https://example.org/", "http://api.github.com/", "https://user@api.github.com/", "ftp://dpsmpx.com/")) {
+        for (url in listOf("https://example.org/", "http://api.github.com/", "https://user@api.github.com/", "ftp://dpsmpx.com/", "http://dpsmpx.com/", "https://dpsmpx.com/", "https://www.dpsmpx.com/")) {
             val r = net.get(URI(url))
             assertIs<Outcome.Failure>(r, url)
             assertEquals(DiagCode.HOST_NOT_ALLOWED, r.diagnostics.single().code, url)
         }
-        assertIs<Outcome.Success<*>>(net.get(URI("http://dpsmpx.com/")), "сайт по http — исключение на время (A-09)")
         val withSecret = net.get(URI("http://dpsmpx.com/"), auth = Secret("t"))
         assertEquals(DiagCode.HOST_NOT_ALLOWED, (withSecret as Outcome.Failure).diagnostics.single().code)
-        assertEquals(1, server.seen.size, "отказанные запросы в сеть не ушли")
-        assertEquals(5, net.stats.refused)
+        assertEquals(0, server.seen.size, "отказанные запросы в сеть не ушли")
+        assertEquals(8, net.stats.refused)
     }
 
     @Test

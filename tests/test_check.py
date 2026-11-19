@@ -9,6 +9,8 @@ import stat
 import subprocess
 import tempfile
 import unittest
+import struct
+import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _spec = importlib.util.spec_from_file_location("dpmetaapp_check", os.path.join(ROOT, "tools", "check", "check.py"))
@@ -165,6 +167,71 @@ class LayoutTest(CheckCase):
 
 COMMAND = ('[[command]]\nid = "x.y"\ntitle = "Т"\nproject = "*"\npath = "/bin/bash"\nargs = ["tools/check.sh"]\n'
            'plan = "background"\nlevel = 0\n')
+
+
+class UniversalPultTest(CheckCase):
+    def test_clean_user_projects_and_stable_package_identity(self):
+        self.assertClean(self.sample({
+            "config/briefs/work.md": "Проверь {{repo}} по правилам проекта.",
+            "app/src/main/kotlin/Identity.kt": 'val id = "com.dpsmpx.dpmeta"\nval key = "dpmeta.state"\n',
+            "docs/PROVENANCE.md": "Источник https://github.com/dpsmpx/DPmetaApp\n",
+        }).run("pult.universal"))
+
+    def test_catches_author_repo_domain_template_and_build_branch(self):
+        for path, text in (
+            ("app/src/main/kotlin/Host.kt", 'val host = "dpsmpx/DPmetaApp"'),
+            ("core/net/src/main/kotlin/Host.kt", 'val host = "dpsmpx.com"'),
+            ("config/briefs/work.md", "Сделай проход DPmeta"),
+            ("config/briefs/dpmeta-pass.md", "Поручение"),
+            ("core/metrics/src/main/kotlin/Rules.kt", 'val branch = "windows-debug-build"'),
+        ):
+            with self.subTest(path=path):
+                self.assertCatches(self.sample({path: text}).run("pult.universal"), path)
+
+    @staticmethod
+    def dex(values):
+        data = bytearray(112 + len(values) * 4)
+        data[:8] = b"dex\n039\0"
+        struct.pack_into("<II", data, 56, len(values), 112)
+        for i, value in enumerate(values):
+            encoded = value.encode("utf-8")
+            assert len(encoded) < 128
+            struct.pack_into("<I", data, 112 + 4 * i, len(data))
+            data += bytes([len(value)]) + encoded + b"\0"
+        return data
+
+    def package(self, entries):
+        sample = self.sample()
+        path = os.path.join(sample.root, "sample.apk")
+        with zipfile.ZipFile(path, "w") as apk:
+            for name, data in entries.items():
+                apk.writestr(name, data)
+        result = check.Result("pult.apk")
+        check.check_pult_apk(path, result)
+        return result
+
+    def test_clean_apk_retains_package_and_archive_identifiers(self):
+        self.assertClean(self.package({
+            "classes.dex": self.dex(["Lcom/dpsmpx/dpmeta/app/PultActivity;", "dpmeta.state", "dpmeta.report.new"]),
+            "assets/briefs/work.md": "Проверь {{repo}}",
+            "assets/about/PROVENANCE.md": "Источник dpsmpx/DPmetaApp",
+        }))
+
+    def test_apk_catches_stale_assets_and_dex_in_every_file(self):
+        for name, data, fragment in (
+            ("classes2.dex", self.dex(["dpsmpx/DPmetaApp"]), "личная привязка"),
+            ("classes2.dex", self.dex(["Lcom/dpsmpx/dpmeta/model/Registry$Companion;"]), "снятый runtime-класс"),
+            ("assets/briefs/dpmeta-pass.md", "Проход", "предметные настройки"),
+            ("assets/events.toml", 'title = "Срез DPmeta"', "личная привязка"),
+        ):
+            with self.subTest(name=name):
+                self.assertCatches(self.package({"classes.dex": self.dex(["dpmeta.state"]), name: data}), fragment)
+
+    def test_missing_or_malformed_dex_does_not_pass(self):
+        self.assertCatches(self.package({"assets/briefs/work.md": "Работа"}), "нет DEX")
+        with self.assertRaises(ValueError):
+            self.package({"classes.dex": b"broken"})
+        self.assertCatches(check.check_pult_packages(self.sample().root), "ожидался один APK")
 
 
 class CommandsTest(CheckCase):

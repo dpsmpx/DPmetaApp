@@ -45,10 +45,10 @@ class OwnDocumentsTest {
     fun ownBriefsParseAndRender() {
         val files = File(repo, "config/briefs").listFiles { f -> f.extension == "md" }.orEmpty().sortedBy { it.name }
         val keys = files.map { it.nameWithoutExtension }.toSet()
-        for (k in listOf("continue-branch", "roadmap-task", "fix-checks", "dpmeta-pass", "dpmeta-doc-audit")) {
+        for (k in listOf("continue-branch", "roadmap-task", "fix-checks")) {
             assertTrue(k in keys, "нет шаблона $k")
         }
-        val builtIn = mapOf("project" to "DPmetaApp", "repo" to "dpsmpx/DPmetaApp", "base" to "main")
+        val builtIn = mapOf("project" to "Example", "repo" to "example/Example", "base" to "main")
         for (f in files) {
             val b = BriefFormat.parse(f.readText(), f.nameWithoutExtension, "config/briefs/${f.name}").ok(f.name)
             val text = b.render(builtIn, b.fields.associate { it.name to "значение ${it.name}" }).ok("${f.name}: сборка")

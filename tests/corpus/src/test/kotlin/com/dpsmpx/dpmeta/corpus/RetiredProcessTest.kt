@@ -94,7 +94,7 @@ class RetiredProcessTest {
         assertTrue("readme" in current.project("P")!!.sections)
         assertTrue(current.points().none { it.metric in oldMetrics })
         assertTrue("questionsOpen" !in current.toJson().fields)
-        assertEquals(9, current.rulesVersion)
+        assertEquals(Rules.RULES_VERSION, current.rulesVersion)
     }
 
     @Test
@@ -114,8 +114,8 @@ class RetiredProcessTest {
             assertIs<Outcome.Success<*>>(store.appendHistory(current.points()))
             val history = assertIs<Outcome.Success<List<MetricPoint>>>(store.history()).value
             assertEquals(points, history.filter { it.metric in oldMetrics })
-            assertEquals(JsonNumber.of(5), current.toJson()["version"])
-            assertEquals(9, Rules.RULES_VERSION)
+            assertEquals(JsonNumber.of(6), current.toJson()["version"])
+            assertEquals(10, Rules.RULES_VERSION)
             assertEquals(current, assertIs<Outcome.Success<EcosystemState?>>(store.readState()).value)
         }
     }

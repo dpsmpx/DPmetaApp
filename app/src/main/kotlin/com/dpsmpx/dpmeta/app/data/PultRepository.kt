@@ -32,10 +32,10 @@ import com.dpsmpx.dpmeta.sync.Sync
 import java.util.concurrent.ExecutorService
 
 /**
- * Данные пульта (этап 3, только чтение): синхронизация с GitHub по реестру
- * DPmeta из репозитория DPmetaApp (D-05, D-50), состояние и история — на
+ * Данные пульта: синхронизация выбранных пользователем репозиториев GitHub
+ * (D-176), состояние и история — на
  * `dpai/storage` в каталоге приложения (D-34). Запускается по кнопке; фон по
- * расписанию — этап 7 (WorkManager, D-18).
+ * расписанию — JobScheduler (D-149).
  */
 class PultRepository(
     private val vfs: Vfs,
@@ -83,7 +83,7 @@ class PultRepository(
 
     /**
      * Репозитории для окна выбора клонов (D-70): все, что видны токену, без
-     * архивных; репозитории реестра (и DPmetaApp — его подсистем) — сверху.
+     * архивных; выбранные пользователем репозитории — сверху.
      */
     fun cloneOptions(token: Secret): Outcome<List<CloneOption>> {
         val (gh, etags) = client(token)
@@ -96,7 +96,6 @@ class PultRepository(
             is Outcome.Success -> r.value
         }
         etags.save()
-        val host = RepoRef.parse(HOST).valueOrNull()!!
         // Адрес реестра и `full_name` GitHub сверяются без регистра: в реестре могут написать иначе.
         val ours = reg.projects.map { (it.repo.toString()).lowercase() }.toSet()
         return Outcome.success(
@@ -387,7 +386,7 @@ class PultRepository(
     /** Имена, прежние имена и другие написания проектов → имя: ссылки `Проект:путь` (F-09). */
     fun names(): Map<String, String> = catalog?.projects.orEmpty().flatMap { p -> (listOf(p.name, p.repo.toString())).map { it to p.name } }.toMap()
 
-    /** Каталог проекта (F-09): пути — от корня проекта, у подсистемы — без её каталога в DPmetaApp. */
+    /** Каталог проекта (F-09): пути — от корня его собственного репозитория. */
     fun directory(token: Secret, project: String, dir: String): Outcome<List<GitHub.Entry>> {
         val (gh, etags) = client(token)
         val reg = when (val r = catalog()) {
@@ -395,7 +394,6 @@ class PultRepository(
             is Outcome.Success -> r.value
         }
         val entry = reg.byName(project) ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "проекта нет в списке пользователя", project)
-        val host = RepoRef.parse(HOST).valueOrNull()!!
         val (repo, prefix) = GitHubReader(gh).where(entry)
         val r = gh.dir(repo, (prefix + dir).trimEnd('/'))
         etags.save()
@@ -413,7 +411,6 @@ class PultRepository(
             is Outcome.Success -> r.value
         }
         val entry = reg.byName(project) ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "проекта нет в списке пользователя", project)
-        val host = RepoRef.parse(HOST).valueOrNull()!!
         val (repo, prefix) = GitHubReader(gh).where(entry)
         val r = gh.file(repo, prefix + path, store = Links.cacheable(path))
         etags.save()
@@ -423,17 +420,15 @@ class PultRepository(
         }
     }
 
-    /** Клон проекта для чтения: ключ клона, путь подсистемы в нём, основная ветка. */
+    /** Клон проекта для чтения: ключ клона, префикс пути, основная ветка. */
     private class Local(val clones: com.dpsmpx.dpmeta.git.Clones, val key: String, val prefix: String, val main: String)
 
     /**
      * Склонированный и отмеченный автором репозиторий проекта (D-65, D-70);
-     * `null` — клона нет, он не отмечен или реестра нет ни в памяти, ни в
-     * отмеченном клоне DPmetaApp: тогда — REST.
+     * `null` — клона нет, он не отмечен или проекта нет в списке: тогда — REST.
      */
     private fun local(project: String, selected: Set<String>): Local? {
         val clones = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList())
-        val host = RepoRef.parse(HOST).valueOrNull() ?: return null
         val reg = catalog().valueOrNull() ?: return null
         val entry = reg.byName(project) ?: return null
         val key = entry.repo.toString()
@@ -473,8 +468,7 @@ class PultRepository(
 
     /** Ключ клона по `full_name` GitHub: у репозитория реестра — написание реестра (каталог клона создан по нему). */
     private fun cloneKey(slug: String): String {
-        val host = RepoRef.parse(HOST).valueOrNull()?.toString()
-        val keys = catalog?.projects.orEmpty().map { it.repo.toString() } + listOfNotNull(host)
+        val keys = catalog?.projects.orEmpty().map { it.repo.toString() }
         return keys.firstOrNull { it.equals(slug, ignoreCase = true) } ?: slug
     }
 
@@ -523,7 +517,6 @@ class PultRepository(
         val etags = StoredEtagCache(DocumentStore(vfs, "dpmeta/cache"))
         val net = Net(UrlTransport(), cache = etags)
         val gh = GitHub(net, token)
-        val host = RepoRef.parse(HOST).valueOrNull() ?: return Outcome.failure(DiagCode.INTERNAL_ERROR, "адрес DPmetaApp", HOST)
         // Проекты — список пользователя (D-176), а не реестр DPmeta с GitHub (D-05).
         val reg = when (val r = projectList()) {
             is Outcome.Failure -> return r
@@ -540,12 +533,12 @@ class PultRepository(
         val parallel = object : Parallel {
             override fun <T> all(jobs: List<() -> T>): List<T> = jobs.map { job -> pool.submit<T> { job() } }.map { it.get() }
         }
-        // Клоны (D-65): каждый репозиторий реестра — клонировать или обновить; подсистемы — в клоне DPmetaApp.
+        // Выбранные пользователем репозитории — клонировать или обновить (D-65, D-176).
         val clones = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList())
         // Выбор записан как `full_name` GitHub, ключи клонов реестра — как в реестре: один каталог на репозиторий, сверка без регистра.
         val regKeys = reg.projects.map { it.repo.toString() }.toSet()
         val chosen = selected.map { s -> regKeys.firstOrNull { it.equals(s, ignoreCase = true) } ?: s }.toSet()
-        val reader = CloneReader(clones, GitHubReader(gh), Rules::isBuildBranch, CloneReader.HistoryRules(Rules.HISTORY_ZONE, Rules.AI_AUTHORS)) { it in chosen }
+        val reader = CloneReader(clones, GitHubReader(gh), Rules::isExcludedBranch, CloneReader.HistoryRules(Rules.HISTORY_ZONE, Rules.AI_AUTHORS)) { it in chosen }
         // Размер нового клона — по ответу GitHub; не ответил — оценка вида работы (D-113).
         val sizeOf = { key: String -> RepoRef.parse(key).valueOrNull()?.let { gh.repoSize(it).valueOrNull() } }
         val cloned = cloneAll(reg, clones, reader, token, chosen, sizeOf, progress)
@@ -613,7 +606,7 @@ class PultRepository(
                     (spaceCheck(key, cloneNeed(sizeOf(key))) as? Outcome.Failure)?.let { return@submit key to it }
                 }
                 // Сбой одного клона — его отказ, а не исключение из get(): иначе остальные клоны шли бы без защиты running.
-                val synced = runCatching { clones.sync(key, com.dpsmpx.dpmeta.git.Clones.github(key), token, Rules::isBuildBranch) }
+                val synced = runCatching { clones.sync(key, com.dpsmpx.dpmeta.git.Clones.github(key), token, Rules::isExcludedBranch) }
                     .getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "клон: ${it.javaClass.simpleName}", key) }
                 // Чистое рабочее дерево без своих коммитов догоняет GitHub само (D-123); иначе — не трогается.
                 if (synced is Outcome.Success && synced.value.action == com.dpsmpx.dpmeta.git.Clones.Action.FETCHED) {
@@ -675,7 +668,6 @@ class PultRepository(
          */
         fun cloneNeed(githubBytes: Long?): Long? = githubBytes?.let { it * 2 }
 
-        const val HOST = "dpsmpx/DPmetaApp"
 
         /** Ключ списка проектов пульта (D-176) в настройках пульта. */
         private const val PROJECTS = "projects"

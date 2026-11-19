@@ -1,7 +1,8 @@
 package com.dpsmpx.dpmeta.model
 
-/** Смысл счётчиков истории (D-176): v1 — личный список авторов, v2 — все авторы, ИИ и прочие. */
+/** D-176: v1 — личные авторы, v2 — все авторы с фильтром веток, v3 — все ветки пользователя. */
 object HistorySchema {
     const val LEGACY = "clone.history.v1"
-    const val CURRENT = "clone.history.v2"
+    const val FILTERED_BRANCHES = "clone.history.v2"
+    const val CURRENT = "clone.history.v3"
 }

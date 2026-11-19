@@ -1,23 +1,35 @@
 package com.dpsmpx.dpmeta.corpus
 
+import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpmeta.git.Clones
 import com.dpsmpx.dpmeta.metrics.Rules
+import com.dpsmpx.dpmeta.model.ProjectList
+import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpmeta.sync.CloneReader
+import com.dpsmpx.dpmeta.sync.DirectoryReader
+import com.dpsmpx.dpmeta.sync.Got
+import com.dpsmpx.dpmeta.model.Branch
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.Test
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import org.junit.jupiter.api.io.TempDir
 
-/** Ветки сборок экосистемы (D-65, D-33): мимо клонов и веток проекта — все платформы и прежние по версиям. */
+/** D-176: ветки пользователя не скрываются по соглашениям автора. */
 class BuildBranchesTest {
-    @Test
-    fun buildBranchesOfEveryPlatformAndOldVersionsAreBuilds() {
-        for (b in listOf("apk_debug", "linux_debug", "windows_debug", "linux-debug", "apk-build", "apk-builds", "apk-0.1.0-dev.1-a1b2c3d", "windows-debug-build", "win_debug_builds")) {
-            assertTrue(Rules.isBuildBranch(b), b)
-        }
-    }
+    @TempDir lateinit var root: Path
 
     @Test
-    fun workBranchesAreNotBuilds() {
-        for (b in listOf("main", "ccr-d89d85c4-h08aww", "dpmeta/fix-links", "apk", "debug", "linux-debug-fix", "feature_debugger")) {
-            assertFalse(Rules.isBuildBranch(b), b)
-        }
+    fun allUserBranchNamesReachSynchronization() {
+        val names = listOf("main", "feature", "apk_debug", "linux_debug", "windows_debug", "linux-debug", "apk-build", "apk-builds", "windows-debug-build", "win_debug_builds")
+        val directory = Files.createDirectories(root.resolve("example/p"))
+        Files.writeString(directory.resolve("branches.json"), names.mapIndexed { i, name ->
+            """{"name":"$name","sha":"$i","date":"2026-11-01T00:00:00Z"}"""
+        }.joinToString(",", "[", "]"))
+        val project = ProjectList().add(RepoRef.parse("example/P").valueOrNull()!!).valueOrNull()!!.forSync().projects.single()
+        val reader = CloneReader(Clones(root.resolve("clones").toFile(), Clones.allowList()), DirectoryReader(root), Rules::isExcludedBranch)
+        val result = assertIs<Outcome.Success<Got<List<Branch>>>>(reader.branches(project)).value
+        assertEquals(names, result.value.map { it.name })
     }
 }

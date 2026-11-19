@@ -14,6 +14,7 @@ import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.metrics.MetricPoint
 import com.dpsmpx.dpmeta.metrics.SourceSection
+import com.dpsmpx.dpmeta.metrics.Rules
 import com.dpsmpx.dpmeta.metrics.Store
 import com.dpsmpx.dpmeta.model.ProjectList
 import com.dpsmpx.dpmeta.model.RepoRef
@@ -27,6 +28,28 @@ import org.junit.jupiter.api.io.TempDir
 class RetiredPlacesTest {
     @TempDir lateinit var dir: Path
     private val now = Timestamp(1_800_000_000_000)
+
+    @Test
+    fun filteredBranchCacheCannotBecomeNewAllBranchMetrics() {
+        val projects = ProjectList().add(RepoRef.parse("example/P").valueOrNull()!!).valueOrNull()!!.forSync()
+        val sections = mapOf(
+            "readme" to SourceSection("readme", "readme.status.v1", now, JsonObject.of("blocks" to JsonArray(emptyList()))),
+            "branches" to SourceSection("branches", "github.branches.v1", now, JsonObject.of("branches" to JsonArray(emptyList()))),
+            "history" to SourceSection("history", "clone.history.v2", now, JsonObject.of("complete" to com.dpsmpx.dpai.core.serialization.JsonBool(true))),
+        )
+        val old = EcosystemState(now, 9, listOf(com.dpsmpx.dpmeta.metrics.ProjectState("P", sections, emptyList())), 100)
+        val store = Store(NioVfs(dir), ManualClock(now), RandomSource.secure())
+        val point = MetricPoint("repo.branches.unmerged", "P", 2, now, 9)
+        assertIs<Outcome.Success<*>>(store.appendHistory(listOf(point)))
+        val v5 = JsonObject(old.toJson().fields + ("version" to JsonNumber.of(5)))
+        assertIs<Outcome.Success<*>>(DocumentStore(NioVfs(dir), "dpmeta/state").write(Store.STATE_KEY, v5))
+        val restored = assertIs<Outcome.Success<EcosystemState?>>(store.readState()).value!!
+        assertEquals(setOf("readme"), restored.project("P")!!.sections.keys)
+        assertIs<Measure.Unknown>(restored.syncHealth)
+        val failedSync = EcosystemState.derive(projects, emptyList(), emptyList(), old, now)
+        assertEquals(setOf("readme"), failedSync.project("P")!!.sections.keys)
+        assertEquals(listOf(point), assertIs<Outcome.Success<List<MetricPoint>>>(store.history()).value)
+    }
 
     @Test
     fun legacyPlacesDoNotReturnToNewStateOrChangeNumericHistory() {
@@ -57,8 +80,8 @@ class RetiredPlacesTest {
             val row = (current.toJson()["projects"] as JsonArray).items.single() as JsonObject
             assertTrue("place" !in row.fields, "место автора не переносится в новый формат")
             assertTrue("skipped" !in row.fields, "репозиторий пользователя не наследует роль подсистемы")
-            assertEquals(JsonNumber.of(5), current.toJson()["version"])
-            assertEquals(9, current.rulesVersion)
+            assertEquals(JsonNumber.of(6), current.toJson()["version"])
+            assertEquals(Rules.RULES_VERSION, current.rulesVersion)
             assertIs<Outcome.Success<*>>(store.writeState(current))
             assertEquals(old, assertIs<Outcome.Success<List<MetricPoint>>>(store.history()).value)
             assertEquals(current, assertIs<Outcome.Success<EcosystemState?>>(store.readState()).value)

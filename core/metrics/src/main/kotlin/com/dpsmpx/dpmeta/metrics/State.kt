@@ -160,7 +160,7 @@ data class ProjectState(
             val source = sections["history"] ?: return null
             val current = when (source.schema) {
                 HistorySchema.LEGACY -> false
-                HistorySchema.CURRENT -> true
+                HistorySchema.FILTERED_BRANCHES, HistorySchema.CURRENT -> true
                 else -> return null
             }
             return ((source.payload as? JsonObject)?.get("days") as? JsonArray)?.items?.mapNotNull { d ->
@@ -294,7 +294,8 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
 
     companion object {
         const val FORMAT = "dpmeta.state"
-        const val VERSION = 5
+        const val VERSION = 6
+        private val FILTERED_BRANCH_SOURCES = setOf("branches", "history")
         private const val DAY_MS = 24 * 60 * 60 * 1000L
         private val RETIRED_SOURCES = setOf("dpmeta", "decisions", "todo", "roadmap")
         private val NOT_FOUND = setOf(DiagCode.GITHUB_NOT_FOUND, DiagCode.ENTITY_NOT_FOUND)
@@ -319,7 +320,10 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                 .groupBy { it.subject to it.kind }
                 .mapValues { (_, list) -> list.maxWith(compareBy<Observation> { it.asOf }.thenBy { it.id.toString() }) }
             val projects = registry.projects.map { entry ->
-                val before = previous?.project(entry.name)?.sections.orEmpty()
+                val old = previous?.project(entry.name)?.sections.orEmpty()
+                // Правила до 10 скрывали ветки по соглашениям автора. Старый
+                // неполный набор не становится новой метрикой при отказе запроса.
+                val before = if (previous != null && previous.rulesVersion < 10) old - FILTERED_BRANCH_SOURCES else old
                 val fresh = latest.filterKeys { it.first == entry.name }.values.associate { o ->
                     o.kind to SourceSection(o.kind, o.schema, o.asOf, o.payload)
                 }
@@ -378,9 +382,11 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                 val skips = o["skipped"]
                 val noSubsystemFlags = skips == null || (skips is JsonArray &&
                     skips.items.all { (it as? JsonString)?.value == "decisions" })
-                val reusable = version == VERSION || ((o["place"] as? JsonString)?.value == "user" && noSubsystemFlags)
+                val reusable = version >= 5 || ((o["place"] as? JsonString)?.value == "user" && noSubsystemFlags)
                 if (!reusable) discardedCache = true
-                ProjectState(name, if (reusable) sections.associateBy { it.kind }.toSortedMap() else emptyMap(), if (reusable) errors else emptyList())
+                val kept = if (reusable) sections.filter { rules >= 10 || it.kind !in FILTERED_BRANCH_SOURCES } else emptyList()
+                if (kept.size != sections.size) discardedCache = true
+                ProjectState(name, kept.associateBy { it.kind }.toSortedMap(), if (reusable) errors else emptyList())
             }
             return Outcome.success(EcosystemState(Timestamp(asOf), rules.toInt(), out, health.takeUnless { discardedCache }))
         }

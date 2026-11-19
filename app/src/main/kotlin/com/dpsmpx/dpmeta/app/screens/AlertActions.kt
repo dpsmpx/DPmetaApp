@@ -17,10 +17,20 @@ import java.time.ZoneId
  * блокировки, правила с «что сработало бы за 7 дней». Чистый Kotlin.
  */
 object AlertActions {
-    /** Контентные события сохраняются в общих исходных файлах до выноса, но не входят в студию. */
+    /** Старые коды остаются для чтения правил и истории; источники удалены (D-173, D-176). */
+    private val RETIRED_TYPES = setOf(
+        "decision.new", "roadmap.step.done", "todo.author.new", "question.new",
+        "dpmeta.report.new", "dpmeta.risk.changed", "app.notification",
+        "claude.turn.done", "claude.needs_input", "claude.turn.failed", "claude.session.ended",
+    )
+
     fun studioCatalog(catalog: EventCatalog): EventCatalog = catalog.copy(types = catalog.types.filter {
-        it.channel != com.dpsmpx.dpmeta.model.AlertChannel.SITE && it.channel != com.dpsmpx.dpmeta.model.AlertChannel.SOCIAL
+        it.channel != com.dpsmpx.dpmeta.model.AlertChannel.SITE && it.channel != com.dpsmpx.dpmeta.model.AlertChannel.SOCIAL &&
+            !it.type.startsWith("termux.") && it.type !in RETIRED_TYPES
     })
+
+    fun studioRules(rules: AlertRules, catalog: EventCatalog): AlertRules =
+        rules.copy(rules = rules.rules.filter { catalog.matching(it.on).isNotEmpty() })
 
     /** Время пользовательской ночи; одинаковые границы не маскируются под включённый режим. */
     fun quiet(from: String, to: String, days: Set<java.time.DayOfWeek>): com.dpsmpx.dpai.core.result.Outcome<QuietHours> {

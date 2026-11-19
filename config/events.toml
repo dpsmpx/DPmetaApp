@@ -131,14 +131,14 @@ fields = ["source"]
 
 [[event]]
 type = "dpmeta.report.new"
-title = "Новый срез DPmeta"
+title = "Прежний срез проекта (источник удалён)"
 source = ["sync"]
 channel = "dev"
 fields = ["number"]
 
 [[event]]
 type = "dpmeta.risk.changed"
-title = "Изменился статус риска DPmeta"
+title = "Прежний статус риска (источник удалён)"
 source = ["sync"]
 channel = "dev"
 fields = ["number"]

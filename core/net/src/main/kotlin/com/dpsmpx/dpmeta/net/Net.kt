@@ -54,10 +54,9 @@ class AllowList(val hosts: Set<String>, val plainHttp: Set<String> = emptySet())
     }
 
     companion object {
-        /** Адреса ядра (ТЗ, §6.8); площадки добавляются по списку соцсетей на этапе 6. */
+        /** Адреса пульта: GitHub и API ИИ; личных сайтов автора нет (D-176). */
         val CORE: AllowList = AllowList(
-            hosts = setOf("api.github.com", "github.com", "api.anthropic.com", "dpsmpx.com", "www.dpsmpx.com"),
-            plainHttp = setOf("dpsmpx.com"),
+            hosts = setOf("api.github.com", "github.com", "api.anthropic.com"),
         )
 
     }

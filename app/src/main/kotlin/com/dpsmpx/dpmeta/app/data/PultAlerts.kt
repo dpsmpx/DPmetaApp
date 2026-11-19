@@ -75,7 +75,7 @@ object PultAlerts {
     val issue: StateFlow<String> = policyIssue
 
     /** Каталог и правила из APK. */
-    data class Config(val catalog: EventCatalog, val rules: AlertRules)
+    data class Config(val catalog: EventCatalog, val rules: AlertRules, val validationCatalog: EventCatalog = catalog)
 
     @Volatile
     private var cachedDefaults: Outcome<Config>? = null
@@ -97,7 +97,7 @@ object PultAlerts {
                 is Outcome.Failure -> a
                 is Outcome.Success -> {
                     val catalog = AlertActions.studioCatalog(c.value)
-                    Outcome.success(Config(catalog, a.value.copy(rules = a.value.rules.filter { catalog.matching(it.on).isNotEmpty() })))
+                    Outcome.success(Config(catalog, AlertActions.studioRules(a.value, catalog), c.value))
                 }
             }
         }
@@ -109,7 +109,11 @@ object PultAlerts {
 
     /** Повреждённая личная настройка даёт отказ; включённые правила из APK не подставляются молча. */
     fun config(context: Context): Outcome<Config> = defaults(context).then { base ->
-        user(context).effective(base.rules, base.catalog).map { Config(base.catalog, it) }
+        // Совместимость старых правил проверяется до отбора активных типов.
+        // Исходный пользовательский текст не перезаписывается и не теряется при экспорте.
+        user(context).effective(base.rules, base.validationCatalog).map {
+            Config(base.catalog, AlertActions.studioRules(it, base.catalog), base.validationCatalog)
+        }
     }
 
     fun catalog(context: Context): Outcome<EventCatalog> = defaults(context).map { it.catalog }
@@ -118,7 +122,7 @@ object PultAlerts {
 
     fun defaultsText(context: Context): Outcome<String> = defaults(context).then { AlertFormat.write(it.rules) }
 
-    fun saveRules(context: Context, text: String): Outcome<Unit> = defaults(context).then { user(context).save(text, it.catalog) }
+    fun saveRules(context: Context, text: String): Outcome<Unit> = defaults(context).then { user(context).save(text, it.validationCatalog) }
     fun resetRules(context: Context): Outcome<Unit> = user(context).reset()
 
     /** Настройки уведомлений: тихие часы (`null` — выкл) и приватность экрана блокировки. */
