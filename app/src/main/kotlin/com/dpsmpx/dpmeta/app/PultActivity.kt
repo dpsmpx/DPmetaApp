@@ -491,7 +491,7 @@ open class PultActivity : ComponentActivity() {
                         val inList = list.projects.map { it.repo.toString() }
                         val listed = r.value.map { it.slug.lowercase() }.toSet()
                         val gone = inList.filter { it.lowercase() !in listed }
-                            .map { com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(it, registry = true, private = true, gone = true) }
+                            .map { com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(it, inProjects = true, private = true, gone = true) }
                         val checked = if (inList.isEmpty() && first) {
                             r.value.filter { o -> o.slug.substringAfter('/').lowercase() in earlier || clones.any { it.equals(o.slug, ignoreCase = true) } }.map { it.slug }
                         } else inList

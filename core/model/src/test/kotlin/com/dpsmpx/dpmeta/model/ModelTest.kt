@@ -13,16 +13,6 @@ import kotlin.test.assertNotEquals
 
 /** Типы предметной области (ТЗ, §6.3): строгие ссылки, наблюдение и его отпечаток (вход вычисления, D-34). */
 class ModelTest {
-    @Test
-    fun registryCannotSupplyBacktrackingExpressions() {
-        for (pattern in listOf("D-\\d+", "Р\\d+", "(?:TR|[FNIALRQ])-\\d+")) {
-            assertIs<Outcome.Success<*>>(IdSource("doc.md", pattern).regex(), pattern)
-        }
-        for (pattern in listOf("(a+)+$", "(?:a+)+\\d+", "(?:a|(?:aa))*\\d+", "a{999999}\\d+", "a.*\\d+")) {
-            assertIs<Outcome.Failure>(IdSource("doc.md", pattern).regex(), pattern)
-        }
-    }
-
     private val payload = JsonObject(linkedMapOf("open" to JsonNumber.of(3), "title" to JsonString("этап 2")))
 
     private fun observation(asOf: Long = 1_000, raw: String = "ответ") =

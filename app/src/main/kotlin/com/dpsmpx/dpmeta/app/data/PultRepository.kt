@@ -11,7 +11,6 @@ import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpai.storage.vfs.Vfs
 import com.dpsmpx.dpmeta.app.screens.Links
-import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.metrics.Feed
