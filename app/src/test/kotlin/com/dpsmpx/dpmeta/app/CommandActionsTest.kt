@@ -75,11 +75,11 @@ class CommandActionsTest {
     private val ff = commands.byId("repo.ff")!!
 
     @Test
-    fun subsystemRunsInItsDirOfTheControlClone() {
+    fun commandUsesItsOwnRepositoryAndRelativeWorkdir() {
         val s = CommandActions.spot(check, registry, null).valueOrNull()!!
-        assertEquals("example/Hub", "${s.repo}")
+        assertEquals("example/Engine", "${s.repo}")
         assertEquals("/root/projects/example/Engine/tools", s.guestDir)
-        assertEquals("dpmeta/tools/check.sh", CommandActions.scriptInClone(check, s))
+        assertEquals("tools/check.sh", CommandActions.scriptInClone(check, s))
         assertEquals(listOf("/bin/bash", "check.sh"), CommandActions.argv(check))
         val own = CommandActions.spot(next, registry, null).valueOrNull()!!
         assertEquals("/root/projects/example/Tools", own.guestDir)
@@ -110,7 +110,7 @@ class CommandActionsTest {
         val noClone = CommandActions.readiness(check, s, ok.copy(clone = false, workdir = false, script = false))
         assertTrue(noClone.first { !it.ok }.hint!!.contains("Клоны"))
         val noScript = CommandActions.readiness(check, s, ok.copy(script = false))
-        assertEquals("Скрипта dpmeta/tools/check.sh нет", noScript.single { !it.ok }.title)
+        assertEquals("Скрипта tools/check.sh нет", noScript.single { !it.ok }.title)
     }
 
     @Test

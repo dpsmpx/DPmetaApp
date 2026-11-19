@@ -35,11 +35,7 @@ object CommandActions {
         val guestDir: String get() = "$GUEST_ROOT/$repo" + if (inClone.isEmpty()) "" else "/$inClone"
     }
 
-    /**
-     * Место команды [spec]; у команды для любого проекта — [chosen]. Проект — из
-     * реестра и не из архива; «любой» — только проект со своим репозиторием (у
-     * подсистемы рабочее дерево — DPmetaApp, его догоняет строка DPmetaApp).
-     */
+    /** Команда запускается в собственном клоне выбранного проекта (D-176). */
     fun spot(spec: CommandSpec, catalog: ProjectCatalog, chosen: String?): Outcome<Spot> {
         val name = if (spec.anyProject) chosen ?: return Outcome.failure(DiagCode.FIELD_MISSING, "выберите проект", spec.id) else spec.project
         val entry = catalog.byName(name)

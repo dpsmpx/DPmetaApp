@@ -30,11 +30,7 @@ private fun checkPath(path: String): Outcome<Unit> =
         Outcome.success(Unit)
     }
 
-/**
- * GitHub вживую. Подсистема читается из репозитория DPmetaApp, из своего
- * каталога; её PR и ветки — общие с DPmetaApp, поэтому «кто работает» у
- * подсистемы не выводится (неизвестно, а не «свободен»).
- */
+/** GitHub проекта пользователя: все источники читаются из его собственного репозитория. */
 class GitHubReader(private val gh: GitHub) : SourceReader {
     override val source: ObservationSource = ObservationSource.GITHUB
 
@@ -72,7 +68,7 @@ class GitHubReader(private val gh: GitHub) : SourceReader {
         is Outcome.Success -> Outcome.success(f(value), diagnostics)
     }
 
-    /** Где лежат файлы проекта: репозиторий и каталог в нём (подсистема — в DPmetaApp). */
+    /** Собственный репозиторий проекта; префиксов подсистем больше нет (D-176). */
     fun where(project: SyncProject): Pair<RepoRef, String> = project.repo to ""
 
     override fun file(project: SyncProject, path: String): Outcome<Got<String>> {
@@ -86,11 +82,9 @@ class GitHubReader(private val gh: GitHub) : SourceReader {
 }
 
 /**
- * Каталог на диске: синтетический корпус или
- * клоны репозиториев (`--clones`). Каталог проекта — `clone` из реестра,
- * иначе имя; подсистема — в каталоге клона DPmetaApp. PR и ветки — из
- * `pulls.json` и `branches.json` каталога проекта, если они есть (корпус):
- * у клонов их нет, и «кто работает» неизвестно.
+ * Файловый источник для синтетического корпуса: каталог `владелец/репозиторий`
+ * в нижнем регистре. PR и ветки читаются из pulls.json/branches.json, если они есть.
+ * Имена проектов не задают каталоги, ролей и перенаправлений нет (D-176).
  */
 class DirectoryReader(private val root: Path) : SourceReader {
     override val source: ObservationSource = ObservationSource.DIRECTORY
@@ -287,12 +281,7 @@ class CloneReader(
         }
     }
 
-    /**
-     * История из клона (D-66): у подсистемы — нет (её коммиты — в истории
-     * DPmetaApp), у клона, не отмеченного автором или без основной ветки, —
-     * тоже (`null`: задача пропускается, а не отказ). Журнал решений — по
-     * шаблону номера из реестра.
-     */
+    /** История только собственного отмеченного клона; без основной ветки источник пропускается. */
     override fun history(project: SyncProject): Outcome<Got<com.dpsmpx.dpmeta.git.CommitHistory>>? {
         val rules = history ?: return null
         val key = key(project)
@@ -319,6 +308,6 @@ class CloneReader(
         }
     }
 
-    /** Клон проекта: подсистема — клон DPmetaApp, остальные — свой. */
+    /** Ключ собственного клона проекта. */
     fun key(project: SyncProject): String = project.repo.toString()
 }

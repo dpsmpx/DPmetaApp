@@ -98,11 +98,11 @@ class ScreenSnapshotTest {
     @Test
     fun projects() = snapshot("projects", ScreenText.projects(Screens.projects(state())))
 
-    /** D-176: старое место «архив» и неизвестное место не скрывают выбранный пользователем проект. */
+    /** D-176: выбранные проекты не группируются и не скрываются по именам. */
     @Test
-    fun projectListKeepsOrderAndIgnoresLegacyPlaces() {
+    fun projectListKeepsSelectionOrderWithoutRoleGroups() {
         val base = state()
-        val selected = listOf(base.projects.last().copy(place = "archive"), base.projects.first().copy(place = "custom"))
+        val selected = listOf(base.projects.last().copy(name = "Archive"), base.projects.first().copy(name = "Custom"))
         val rows = Screens.projects(base.copy(projects = selected)).flatMap { it.rows }
         assertEquals(selected.map { it.name }, rows.map { it.name })
         assertTrue(Screens.projects(base.copy(projects = emptyList())).isEmpty())
