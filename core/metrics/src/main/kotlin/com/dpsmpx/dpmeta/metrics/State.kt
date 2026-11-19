@@ -375,8 +375,10 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                 }
                 // У прежней роли/подсистемы источником мог быть чужой host-каталог.
                 // Без доказанного соответствия репозиторию нужен свежий запрос, не новый ярлык.
-                val reusable = version == VERSION || ((o["place"] as? JsonString)?.value == "user" &&
-                    (o["skipped"] as? JsonArray)?.items.isNullOrEmpty())
+                val skips = o["skipped"]
+                val noSubsystemFlags = skips == null || (skips is JsonArray &&
+                    skips.items.all { (it as? JsonString)?.value == "decisions" })
+                val reusable = version == VERSION || ((o["place"] as? JsonString)?.value == "user" && noSubsystemFlags)
                 if (!reusable) discardedCache = true
                 ProjectState(name, if (reusable) sections.associateBy { it.kind }.toSortedMap() else emptyMap(), if (reusable) errors else emptyList())
             }

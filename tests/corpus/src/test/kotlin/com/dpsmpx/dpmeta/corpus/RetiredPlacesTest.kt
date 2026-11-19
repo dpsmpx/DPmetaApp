@@ -66,13 +66,14 @@ class RetiredPlacesTest {
     }
 
     @Test
-    fun userListCacheFromV4RemainsReadableWithoutRoleFields() {
+    fun userListCacheWithLegacyDecisionMarkerRemainsReadableWithoutRoleFields() {
         val section = SourceSection("readme", "readme.status.v1", now, JsonObject.of("blocks" to JsonArray(emptyList())))
         val value = JsonObject.of(
             "format" to JsonString("dpmeta.state"), "version" to JsonNumber.of(4),
             "asOf" to JsonNumber.of(now.epochMillis), "rulesVersion" to JsonNumber.of(8),
             "projects" to JsonArray(listOf(JsonObject.of(
                 "name" to JsonString("P"), "place" to JsonString("user"),
+                "skipped" to JsonArray(listOf(JsonString("decisions"))),
                 "sections" to JsonArray(listOf(section.toJson())), "errors" to JsonArray(emptyList()),
             ))),
         )
