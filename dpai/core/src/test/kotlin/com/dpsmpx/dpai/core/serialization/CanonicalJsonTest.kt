@@ -8,6 +8,36 @@ import kotlin.test.assertEquals
 
 class CanonicalJsonTest {
     @Test
+    fun integerFactoriesKeepTheCanonicalBytesAndExactLimits() {
+        val values = listOf(Long.MIN_VALUE, Long.MIN_VALUE + 1, -1_000_000_000L, -1L, 0L, 1L, 1_000_000_000L, Long.MAX_VALUE - 1, Long.MAX_VALUE)
+        for (value in values) {
+            val parsed = JsonNumber(value.toString())
+            val number = JsonNumber.of(value)
+            assertEquals(parsed.canonical, number.canonical)
+            assertEquals(parsed, number)
+            assertEquals(parsed.hashCode(), number.hashCode())
+            assertEquals(value, number.toLongExact())
+            assertEquals(value, parsed.toLongExact())
+        }
+        for (literal in listOf("-0", "1.0", "1e2", "9223372036854775808", "-9223372036854775809", "1.5", "1e9999", "1e-9999")) {
+            val number = JsonNumber(literal)
+            val expected = try { number.toBigDecimal().longValueExact() } catch (_: ArithmeticException) { null }
+            assertEquals(expected, number.toLongExact(), literal)
+        }
+    }
+
+    @Test
+    fun escapedRunsKeepControlsUnicodeAndLongUnescapedText() {
+        val text = "a".repeat(8192) + (0..31).map(Int::toChar).joinToString("") + "\\\"😀é" + "z".repeat(8192)
+        val encoded = CanonicalJson.write(JsonString(text))
+        assertEquals(JsonString(text), JsonParser().parse(encoded).valueOrNull())
+        assertEquals(encoded, CanonicalJson.write(JsonParser().parse(encoded).valueOrNull()!!))
+        for (code in listOf(0, 1, 7, 11, 14, 31)) {
+            assertEquals("\"\\u00" + "0123456789abcdef"[code shr 4] + "0123456789abcdef"[code and 15] + "\"", CanonicalJson.write(JsonString(code.toChar().toString())))
+        }
+    }
+
+    @Test
     fun keysSortedNoWhitespaceMinimalEscapes() {
         val v = JsonParser().parse("""{ "b" : [1.50, "é\u0007"], "a": {"z": true, "A": null}, "€": -0 }""").valueOrNull()!!
         assertEquals("""{"a":{"A":null,"z":true},"b":[1.5,"é\u0007"],"€":0}""", CanonicalJson.write(v))

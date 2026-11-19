@@ -46,18 +46,30 @@ object CanonicalJson {
 
     internal fun appendString(sb: StringBuilder, s: String) {
         sb.append('"')
-        for (c in s) {
-            when (c) {
-                '"' -> sb.append("\\\"")
-                '\\' -> sb.append("\\\\")
-                '\b' -> sb.append("\\b")
-                '\u000C' -> sb.append("\\f")
-                '\n' -> sb.append("\\n")
-                '\r' -> sb.append("\\r")
-                '\t' -> sb.append("\\t")
-                else -> if (c < ' ') sb.append("\\u").append("%04x".format(c.code)) else sb.append(c)
+        var from = 0
+        for (i in s.indices) {
+            val c = s[i]
+            val escaped = when (c) {
+                '"' -> "\\\""
+                '\\' -> "\\\\"
+                '\b' -> "\\b"
+                '\u000C' -> "\\f"
+                '\n' -> "\\n"
+                '\r' -> "\\r"
+                '\t' -> "\\t"
+                else -> null
+            }
+            if (escaped != null || c < ' ') {
+                // Неэкранируемый участок копируется целиком, без append на каждый символ.
+                sb.append(s, from, i)
+                if (escaped != null) sb.append(escaped)
+                else sb.append("\\u00").append(HEX[c.code shr 4]).append(HEX[c.code and 15])
+                from = i + 1
             }
         }
+        sb.append(s, from, s.length)
         sb.append('"')
     }
+
+    private const val HEX = "0123456789abcdef"
 }
