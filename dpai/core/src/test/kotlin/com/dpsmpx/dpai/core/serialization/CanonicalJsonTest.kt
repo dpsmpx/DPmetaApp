@@ -24,6 +24,9 @@ class CanonicalJsonTest {
             val expected = try { number.toBigDecimal().longValueExact() } catch (_: ArithmeticException) { null }
             assertEquals(expected, number.toLongExact(), literal)
         }
+        for (literal in listOf("", "+0", "+1", "00", "01", "-01", " 1", "1 ", "-", "--1", "1a")) {
+            kotlin.test.assertFailsWith<IllegalArgumentException>(literal) { JsonNumber(literal) }
+        }
     }
 
     @Test

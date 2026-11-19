@@ -27,7 +27,7 @@ data class JsonString(val value: String) : JsonValue {
  * ([CanonicalJson]): `1`, `1.0` и `1e0` — одно число.
  */
 class JsonNumber private constructor(val literal: String, private val knownCanonical: String?) : JsonValue {
-    constructor(literal: String) : this(literal, null)
+    constructor(literal: String) : this(literal, integerCanonical(literal))
 
     init {
         if (knownCanonical == null) require(GRAMMAR.matches(literal) && literal.length <= 1000) { "не число JSON" }
@@ -61,6 +61,14 @@ class JsonNumber private constructor(val literal: String, private val knownCanon
     override fun toString(): String = canonical
 
     companion object {
+        private fun integerCanonical(literal: String): String? {
+            val value = literal.toLongOrNull() ?: return null
+            val canonical = value.toString()
+            // toLongOrNull принимает +1 и ведущие нули, JSON — нет.
+            // Только точное совпадение (либо допустимый -0) обходит общую грамматику.
+            return canonical.takeIf { literal == it || literal == "-0" }
+        }
+
         fun of(v: Long): JsonNumber = v.toString().let { JsonNumber(it, it) }
 
         fun of(v: Int): JsonNumber = of(v.toLong())
