@@ -261,7 +261,8 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
                 Outcome.failure(DiagCode.ACCOUNT_LEASE_CONFLICT, "сессия уже арендует слот ${s.id} для другой задачи", "session $session")
             }
         }
-        val ticked = tick(state, now)
+        val active = activeBySubscription(state)
+        val ticked = tick(state, now, active)
         val s1 = ticked.fold(state, ::apply)
         // Подписка задачи у этого исполнителя (D-100): переход к другому исполнителю — у предела или
         // ревьюером по выбору — не переход подписки D-57, его правила к нему не применяются.
@@ -294,12 +295,11 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
                 )
             }
         }
-        val active = activeBySubscription(s1)
         // Больше запаса — раньше (D-57): известная загрузка окон десятками процентов, неизвестная — после
         // известной (D-13: не ноль); внутри одного десятка — меньше сессий, как раньше.
         val load = { slot: SlotState -> s1.subscriptions.getValue(slot.subscriptionId).let { sub -> LimitWindow.entries.mapNotNull { sub.window(it).utilization }.maxOrNull() } }
         val chosen = pool.minWith(
-            compareBy<SlotState>({ load(it) == null }, { load(it)?.let { u -> (u * 10).toInt() } ?: 0 }, { active[it.subscriptionId] ?: 0 }, { it.sessions.size }, { it.id.value }),
+            compareBy<SlotState>({ load(it) == null }, { load(it)?.let { u -> (u * 10).toInt() } ?: 0 }, { active[it.subscriptionId.value] ?: 0 }, { it.sessions.size }, { it.id.value }),
         )
         val facts = buildList {
             add(SessionLeased(chosen.id, session, task, now))
@@ -335,6 +335,10 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
 
     /** Такт: сбросы окон по времени, конец пауз (§3, §5). */
     fun tick(state: AccountsState, now: Timestamp): List<AccountEvent> {
+        return tick(state, now, activeBySubscription(state))
+    }
+
+    private fun tick(state: AccountsState, now: Timestamp, active: Map<String, Int>): List<AccountEvent> {
         val facts = mutableListOf<AccountEvent>()
         for (sub in state.subscriptions.values.sortedBy { it.id.value }) {
             for (w in LimitWindow.entries) {
@@ -343,7 +347,7 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
                 if (clears <= now) facts += LimitReset(sub.id, w, if (ws.resetAt != null) ResetEvidence.TIME else ResetEvidence.WINDOW_EXPIRED, now)
             }
         }
-        return finish(state, facts, now)
+        return facts + normalize(facts.fold(state, ::apply), now, active)
     }
 
     /** Когда планировщику вызвать [tick]: ближайший сброс окна или конец паузы; нечего ждать — `null`. */
@@ -372,42 +376,53 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
 
     /** Смены состояний слотов, которые следуют из фактов; путь — только по таблице `AccountLifecycle`. */
     /** Активные сессии каждой подписки — за один проход по слотам. */
-    private fun activeBySubscription(state: AccountsState): Map<SubscriptionId, Int> {
-        val m = HashMap<SubscriptionId, Int>()
-        for (slot in state.slots.values) m.merge(slot.subscriptionId, slot.sessions.size, Int::plus)
+    private fun activeBySubscription(state: AccountsState): Map<String, Int> {
+        // Внутренний индекс по неизменяемому значению ID: без упаковки inline ID на каждом слоте.
+        val m = HashMap<String, Int>()
+        for (slot in state.slots.values) m.merge(slot.subscriptionId.value, slot.sessions.size, Int::plus)
         return m
     }
 
     fun normalize(state: AccountsState, now: Timestamp): List<AccountEvent> {
-        var s = state
+        return normalize(state, now, activeBySubscription(state))
+    }
+
+    private fun normalize(state: AccountsState, now: Timestamp, active: Map<String, Int>): List<AccountEvent> {
+        val availability = state.subscriptions.values.associate { sub ->
+            sub.id.value to when {
+                sub.limitedAt(now) -> AccountState.RATE_LIMITED
+                (active[sub.id.value] ?: 0) >= sub.maxParallelSessions -> AccountState.BUSY
+                else -> AccountState.AVAILABLE
+            }
+        }
+        val changes = state.slots.values.mapNotNull { slot ->
+            val want = desired(slot, now, availability)
+            if (want == slot.state) null else slot to want
+        }.sortedBy { it.first.id.value }
         val out = mutableListOf<AccountEvent>()
-        // Смена состояния слота не меняет числа сессий: считается один раз (этап 17, замер выбора слота).
-        val active = activeBySubscription(state)
-        for (id in s.slots.keys.sortedBy { it.value }) {
-            val slot = s.slots.getValue(id)
-            val want = desired(slot, s, now, active)
-            if (want == slot.state) continue
+        // Смена состояния слота не меняет вход, аренды и окна подписки:
+        // повторно применять её ко всему состоянию ради следующего слота не нужно.
+        for ((slot, want) in changes) {
+            val id = slot.id
             for ((a, b) in path(slot.state, want).zipWithNext()) {
                 val e = SlotStateChanged(id, a, b, now)
                 out += e
-                s = apply(s, e)
             }
         }
         return out
     }
 
-    private fun desired(slot: SlotState, state: AccountsState, now: Timestamp, active: Map<SubscriptionId, Int>): AccountState {
+    private fun desired(slot: SlotState, now: Timestamp, availability: Map<String, AccountState>): AccountState {
         if (slot.disabled) return AccountState.DISABLED
         return when (slot.login) {
             LoginStatus.UNKNOWN, LoginStatus.REQUIRED -> AccountState.AUTH_REQUIRED
             LoginStatus.FORBIDDEN_METHOD, LoginStatus.IDENTITY_MISMATCH, LoginStatus.DUPLICATE_SUBSCRIPTION -> AccountState.ERROR
             LoginStatus.OK -> {
-                val sub = state.subscriptions.getValue(slot.subscriptionId)
+                val subscriptionState = availability.getValue(slot.subscriptionId.value)
                 when {
-                    sub.limitedAt(now) -> AccountState.RATE_LIMITED
+                    subscriptionState == AccountState.RATE_LIMITED -> AccountState.RATE_LIMITED
                     slot.cooldownUntil != null && now < slot.cooldownUntil -> AccountState.COOLDOWN
-                    (active[sub.id] ?: 0) >= sub.maxParallelSessions -> AccountState.BUSY
-                    else -> AccountState.AVAILABLE
+                    else -> subscriptionState
                 }
             }
         }

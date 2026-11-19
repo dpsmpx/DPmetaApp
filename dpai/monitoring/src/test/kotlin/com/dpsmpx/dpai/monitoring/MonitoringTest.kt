@@ -41,6 +41,24 @@ class MonitoringTest {
     }
 
     @Test
+    fun rowAndAttentionOrderDoNotDependOnMapOrderOrStaleDisplayState() {
+        val stale = record(SessionState.RUNNING, 47.minutes)
+        val waiting = record(SessionState.WAITING, 10.seconds)
+        val blocked = List(2) { record(SessionState.BLOCKED, 10.seconds) }
+        val done = record(SessionState.COMPLETED, 10.seconds)
+        val records = listOf(done, blocked[1], waiting, blocked[0], stale)
+        fun build(records: List<SessionRecord>) = Dashboard.build(SessionsState(records.associateBy { it.id }),
+            TasksState.EMPTY, AccountsState.EMPTY, emptyMap(), Measure.observed(0), sessions, clock.now())
+        val view = build(records)
+        assertEquals(view, build(records.reversed()))
+        assertEquals(listOf(stale, waiting, *blocked.sortedBy { it.id.value }.toTypedArray(), done).map { it.id }, view.rows.map { it.session })
+        assertEquals(listOf("session-blocked", "session-blocked", "session-stale"), view.attention.map { it.kind })
+        assertEquals(2, view.activeSessions)
+        assertEquals(2, view.blocked)
+        assertEquals(DisplayState.STALE, view.rows.first().state)
+    }
+
+    @Test
     fun silentRunningSessionIsStaleNotRunning() {
         val fresh = record(SessionState.RUNNING, 10.seconds)
         val silent = record(SessionState.RUNNING, 47.minutes)

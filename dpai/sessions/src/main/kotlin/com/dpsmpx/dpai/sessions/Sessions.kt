@@ -152,8 +152,17 @@ class Sessions(val policy: SessionPolicy = SessionPolicy()) {
         private val REVIEW_ROLE = Regex("[A-Z][A-Z_]{0,31}")
 
         /** Свёртка события в состояние; недопустимый переход в журнале — несовместимость, а не тихая правка. */
-        fun apply(state: SessionsState, e: SessionEvent): SessionsState {
+        fun apply(state: SessionsState, e: SessionEvent): SessionsState = applyAll(state, listOf(e))
+
+        /** Одна приватная копия карты на пачку; исходное состояние не меняется даже при отказе перехода. */
+        fun applyAll(state: SessionsState, events: List<SessionEvent>): SessionsState {
+            if (events.isEmpty()) return state
             val sessions = state.sessions.toMutableMap()
+            for (e in events) applyTo(sessions, e)
+            return SessionsState(sessions)
+        }
+
+        private fun applyTo(sessions: MutableMap<SessionId, SessionRecord>, e: SessionEvent) {
             when (e) {
                 is SessionEvent.Created -> sessions[e.session] = SessionRecord(
                     e.session, e.key, e.task, e.slot, e.subscription, e.target, e.configDir, e.provider, e.continues,
@@ -173,9 +182,6 @@ class Sessions(val policy: SessionPolicy = SessionPolicy()) {
                 is SessionEvent.TurnUsage -> sessions.computeIfPresent(e.session) { _, r -> r.copy(usage = r.usage.plus(e.usage), updatedAt = e.at) }
                 is SessionEvent.TurnTools -> sessions.computeIfPresent(e.session) { _, r -> r.copy(usage = r.usage.plus(e.tools), updatedAt = e.at) }
             }
-            return SessionsState(sessions)
         }
-
-        fun applyAll(state: SessionsState, events: List<SessionEvent>): SessionsState = events.fold(state, ::apply)
     }
 }

@@ -16,6 +16,21 @@ import kotlin.time.Duration.Companion.minutes
 
 /** Сценарии `docs/ACCOUNT_MODEL.md`: режим одной подписки — первым. */
 class AccountsTest {
+    @Test
+    fun sharedCapacityChangesAreOrderedWithoutMutatingTheEarlierState() {
+        val f = Fixture()
+        val sub = f.subscription(max = 1)
+        val slots = List(3) { f.slot(sub).also { f.login(it) } }
+        f.state = f.state.copy(slots = f.state.slots.entries.reversed().associate { it.toPair() })
+        val before = f.state
+        val (_, result) = f.lease(f.task())
+        val events = kotlin.test.assertIs<Outcome.Success<Accounts.Lease>>(result).value.events
+        assertEquals(slots.sortedBy { it.value }, events.filterIsInstance<AccountEvent.SlotStateChanged>().map { it.slot })
+        assertTrue(f.state.slots.values.all { it.state == AccountState.BUSY })
+        assertTrue(f.accounts.normalize(f.state, f.now).isEmpty())
+        assertTrue(before.slots.values.all { it.state == AccountState.AVAILABLE && it.sessions.isEmpty() })
+    }
+
     private fun Fixture.stateOf(slot: com.dpsmpx.dpai.core.ids.AccountId) = state.slots.getValue(slot).state
 
     private fun failure(r: Outcome<*>): DiagCode = assertIs<Outcome.Failure>(r).errors.single().code

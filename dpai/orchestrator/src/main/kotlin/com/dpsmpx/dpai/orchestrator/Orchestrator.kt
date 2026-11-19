@@ -670,12 +670,19 @@ class Orchestrator(
             }
         }
         // Выключенный target новых сессий не получает; идущие на нём доигрывают (D-42, п. 5).
+        val activeByTarget = HashMap<ExecutionTargetId, Int>()
+        var ownActive = 0
+        for (session in sessions.sessions.values) if (!session.terminal) {
+            activeByTarget.merge(session.target, 1, Int::plus)
+            ownActive++
+        }
         val offers = targets.map { t ->
-            val free = if (t.id in control.disabledTargets) 0 else (t.maxSessions - activeOn(t.id)).coerceAtLeast(0)
+            val active = (activeByTarget[t.id] ?: 0) + neighbours.sessions(t.id)
+            val free = if (t.id in control.disabledTargets) 0 else (t.maxSessions - active).coerceAtLeast(0)
             Tasks.TargetOffer(t.id, t.capabilities, free)
         }
         // Общий предел сессий контура (D-42, п. 6) — поверх предела каждого target.
-        val room = control.maxSessions?.let { (it - activeTotal()).coerceAtLeast(0) } ?: Int.MAX_VALUE
+        val room = control.maxSessions?.let { (it - ownActive - neighbours.total()).coerceAtLeast(0) } ?: Int.MAX_VALUE
         // Перенесённая задача (D-77) — только на target, где есть слот, кроме исключённого: иначе план ставил бы
         // её на тот же target, и она ждала бы там, хотя на другом место есть.
         val elsewhere = { t: com.dpsmpx.dpai.tasks.TaskRecord, target: ExecutionTargetId ->

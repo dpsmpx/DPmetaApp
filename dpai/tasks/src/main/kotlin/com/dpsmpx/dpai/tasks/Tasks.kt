@@ -50,7 +50,7 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
         return state.tasks.values.filter { !it.terminal && normalize(it.title) == t && normalize(it.objective) == o }.minByOrNull { it.id.value }?.id
     }
 
-    private fun normalize(s: String) = s.trim().lowercase().replace(Regex("\\s+"), " ")
+    private fun normalize(s: String) = s.trim().lowercase().replace(SPACES, " ")
 
     /** Новая зависимость; если она замыкает цикл — `DEPENDENCY_CYCLE` с перечнем задач цикла (ТЗ, §120). */
     fun addDependency(state: TasksState, task: TaskId, dependsOn: TaskId, now: Timestamp): Outcome<List<TaskEvent>> {
@@ -181,16 +181,24 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
      * `DONE`, — `READY`; у которых зависимость упала или отменена —
      * `BLOCKED` (`DEPENDENCY_FAILED`).
      */
-    fun promote(state: TasksState, now: Timestamp): List<TaskEvent> =
-        state.tasks.values.filter { it.state == TaskState.QUEUED }.sortedBy { it.id.value }.mapNotNull { t ->
-            val deps = t.dependencies.map { state.tasks.getValue(it).state }
-            when {
-                deps.any { it == TaskState.FAILED || it == TaskState.CANCELLED } ->
-                    TaskEvent.StateChanged(t.id, t.state, TaskState.BLOCKED, DiagCode.DEPENDENCY_FAILED, null, now)
-                deps.all { it == TaskState.DONE } -> TaskEvent.StateChanged(t.id, t.state, TaskState.READY, null, t.notBefore, now)
-                else -> null
+    fun promote(state: TasksState, now: Timestamp): List<TaskEvent> {
+        val changes = ArrayList<TaskEvent>()
+        for (task in state.tasks.values) {
+            if (task.state != TaskState.QUEUED) continue
+            var ready = true
+            var failed = false
+            for (id in task.dependencies) {
+                val dependency = state.tasks.getValue(id).state
+                if (dependency != TaskState.DONE) ready = false
+                if (dependency == TaskState.FAILED || dependency == TaskState.CANCELLED) failed = true
             }
+            if (failed) changes += TaskEvent.StateChanged(task.id, task.state, TaskState.BLOCKED, DiagCode.DEPENDENCY_FAILED, null, now)
+            else if (ready) changes += TaskEvent.StateChanged(task.id, task.state, TaskState.READY, null, task.notBefore, now)
         }
+        // Порядок событий прежний; ждать зависимостей не требует сортировки всей очереди.
+        changes.sortBy { it.task.value }
+        return changes
+    }
 
     /** Ключ упорядочивания (`docs/SCHEDULER.md`, §3): меньше — раньше. */
     fun orderKey(state: TasksState, t: TaskRecord, now: Timestamp): List<Comparable<*>> = orderKey(t, now, state.blockingImpact(t.id))
@@ -479,13 +487,24 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
     private fun notFound(id: TaskId) = Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $id")
 
     companion object {
+        private val SPACES = Regex("\\s+")
+
         /** Где политику задачи ещё можно менять: ход не идёт и не начат. */
         /** Ещё не идёт и ждёт запуска — у неё есть смысл «Запустить первой» (D-77). */
         private val WAITS_TO_RUN = setOf(TaskState.QUEUED, TaskState.READY, TaskState.WAITING)
         private val EDITABLE = setOf(TaskState.BACKLOG, TaskState.QUEUED, TaskState.READY, TaskState.WAITING, TaskState.BLOCKED, TaskState.FAILED, TaskState.CANCELLED)
 
-        fun apply(state: TasksState, e: TaskEvent): TasksState {
+        fun apply(state: TasksState, e: TaskEvent): TasksState = applyAll(state, listOf(e))
+
+        /** Одна приватная копия карты на пачку; исходное состояние не меняется даже при отказе перехода. */
+        fun applyAll(state: TasksState, events: List<TaskEvent>): TasksState {
+            if (events.isEmpty()) return state
             val tasks = state.tasks.toMutableMap()
+            for (e in events) applyTo(tasks, e)
+            return TasksState(tasks)
+        }
+
+        private fun applyTo(tasks: MutableMap<TaskId, TaskRecord>, e: TaskEvent) {
             when (e) {
                 is TaskEvent.Created -> tasks[e.task] = TaskRecord(e.task, e.title, e.objective, e.priority, e.dependencies, e.capabilities, e.policy, e.at)
                 is TaskEvent.DependenciesChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(dependencies = e.dependencies, updatedAt = e.at) }
@@ -520,10 +539,7 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                 is TaskEvent.ReviewRecorded -> tasks.computeIfPresent(e.task) { _, t -> t.copy(reviews = t.reviews + (e.record.role to e.record), updatedAt = e.at) }
                 is TaskEvent.SlotExcluded -> tasks.computeIfPresent(e.task) { _, t -> t.copy(excludedSlot = e.slot, updatedAt = e.at) }
             }
-            return TasksState(tasks)
         }
-
-        fun applyAll(state: TasksState, events: List<TaskEvent>): TasksState = events.fold(state, ::apply)
 
         private val SCOPE_PATH = Regex("[A-Za-z0-9._@+-]+(/[A-Za-z0-9._@+-]+)*")
 
