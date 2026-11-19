@@ -677,8 +677,8 @@ class Orchestrator(
             ownActive++
         }
         val offers = targets.map { t ->
-            val active = (activeByTarget[t.id] ?: 0) + neighbours.sessions(t.id)
-            val free = if (t.id in control.disabledTargets) 0 else (t.maxSessions - active).coerceAtLeast(0)
+            val free = if (t.id in control.disabledTargets) 0 else
+                (t.maxSessions - (activeByTarget[t.id] ?: 0) - neighbours.sessions(t.id)).coerceAtLeast(0)
             Tasks.TargetOffer(t.id, t.capabilities, free)
         }
         // Общий предел сессий контура (D-42, п. 6) — поверх предела каждого target.
