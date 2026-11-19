@@ -931,7 +931,7 @@ def check_files(repo, r):
 # D-176: имена пакетов/applicationId и ключи старых данных сохраняются;
 # адреса автора, предметные шаблоны и его соглашения о ветках не поставляются.
 PERSONAL_PULT = re.compile(
-    r"(?<![A-Za-z0-9_./])dpsmpx/[A-Za-z0-9_.-]+|"
+    r"(?<![A-Za-z0-9_./])(?:https?://(?:api\.)?github\.com/(?:repos/)?)?dpsmpx/[A-Za-z0-9_.-]+|"
     r"(?:www\.)?dpsmpx\.com|"
     r"(?<![A-Za-z0-9_])(?:DPmeta|DPpass|DPvisualisation|Galdhold|DPlang|SocialMediaImage|DPprofile)(?![A-Za-z0-9_])|"
     r"windows-debug-build|win_debug_builds|apk-builds|linux-debug"

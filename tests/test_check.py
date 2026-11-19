@@ -180,6 +180,8 @@ class UniversalPultTest(CheckCase):
     def test_catches_author_repo_domain_template_and_build_branch(self):
         for path, text in (
             ("app/src/main/kotlin/Host.kt", 'val host = "dpsmpx/DPmetaApp"'),
+            ("app/src/main/kotlin/Host.kt", 'val host = "https://github.com/dpsmpx/DPmetaApp"'),
+            ("app/src/main/kotlin/Host.kt", 'val host = "https://api.github.com/repos/dpsmpx/DPmetaApp"'),
             ("core/net/src/main/kotlin/Host.kt", 'val host = "dpsmpx.com"'),
             ("config/briefs/work.md", "Сделай проход DPmeta"),
             ("config/briefs/dpmeta-pass.md", "Поручение"),
