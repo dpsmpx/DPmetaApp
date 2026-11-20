@@ -66,7 +66,7 @@ SUBSYSTEMS = {
 # итог прогона («✓ static пройден», «✓ tools/check.sh: всё зелёное») — не шаг.
 SUBSYSTEM_STEP = re.compile(r"^(?:(?:- |  )([✓✗]) (.+)|([✓✗]) (\S+ (?:— |\().+))$", re.M)
 # Единое ядро (D-28): эти типы объявлены один раз — в ядре подсистемы dpai.
-CORE_TYPES = ("Outcome", "OperationResult", "Diagnostic", "DiagCode", "Secret", "Clock")
+CORE_TYPES = ("Outcome", "OperationResult", "Diagnostic", "DiagCode", "Secret", "Clock", "ActionLevel")
 CORE_HOME = "dpai/core/src/main/"
 CORE_DECL = re.compile(r"^[ \t]*(?:(?:public|internal|private|sealed|data|value|enum|abstract|open|fun|inline)\s+)*"
                        r"(?:class|interface|object|typealias)\s+(" + "|".join(CORE_TYPES) + r")\b", re.M)

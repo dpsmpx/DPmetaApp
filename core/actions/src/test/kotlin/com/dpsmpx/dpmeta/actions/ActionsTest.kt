@@ -7,7 +7,7 @@ import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.storage.vfs.NioVfs
-import com.dpsmpx.dpmeta.model.ActionLevel
+import com.dpsmpx.dpai.core.operations.ActionLevel
 import com.dpsmpx.dpmeta.model.RepoRef
 import java.nio.file.Path
 import kotlin.test.Test

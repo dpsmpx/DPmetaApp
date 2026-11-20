@@ -11,7 +11,7 @@ import com.dpsmpx.dpmeta.actions.Actions
 import com.dpsmpx.dpmeta.app.screens.RouteActions
 import com.dpsmpx.dpmeta.app.screens.Screens
 import com.dpsmpx.dpmeta.formats.BriefFormat
-import com.dpsmpx.dpmeta.model.ActionLevel
+import com.dpsmpx.dpai.core.operations.ActionLevel
 import com.dpsmpx.dpmeta.model.RepoRef
 import java.nio.file.Path
 import kotlin.test.Test

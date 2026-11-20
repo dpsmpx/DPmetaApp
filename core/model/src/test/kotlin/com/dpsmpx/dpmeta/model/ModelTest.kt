@@ -1,5 +1,7 @@
 package com.dpsmpx.dpmeta.model
 
+import com.dpsmpx.dpai.core.operations.ActionLevel
+
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.hashing.Hashing
 import com.dpsmpx.dpai.core.result.Outcome

@@ -16,7 +16,7 @@ import com.dpsmpx.dpmeta.formats.CommandFormat
 import com.dpsmpx.dpmeta.model.ProjectList
 import com.dpsmpx.dpmeta.model.RepoRef
 import com.dpsmpx.dpmeta.git.Clones
-import com.dpsmpx.dpmeta.model.ActionLevel
+import com.dpsmpx.dpai.core.operations.ActionLevel
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals

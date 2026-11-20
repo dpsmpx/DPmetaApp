@@ -1,6 +1,7 @@
 package com.dpsmpx.dpmeta.model
 
 import com.dpsmpx.dpai.core.clock.Timestamp
+import com.dpsmpx.dpai.core.operations.ActionLevel
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.hashing.ContentHash
 import com.dpsmpx.dpai.core.hashing.Hashing
@@ -35,27 +36,6 @@ data class RepoRef private constructor(val owner: String, val name: String) {
             return of(parts[0], parts[1])
         }
     }
-}
-
-/**
- * Уровень действия (ТЗ, §6.5; D-07, D-37). Уровень 3 — опасное и
- * необратимое: доступно с красным экраном и вводом имени (D-37, заменило
- * «уровня 3 в коде нет» D-07). Что по-прежнему запрещено (мутирующие вызовы
- * Admin API, скрейпинг площадок и др.) — не уровень, а отсутствие в
- * каталоге действий `:core:actions`.
- */
-enum class ActionLevel(val code: Int, val confirmation: String) {
-    /** Чтение: без подтверждения. */
-    READ(0, "без подтверждения"),
-
-    /** Обратимое, видимое: одно нажатие с показом, что уйдёт. */
-    REVERSIBLE(1, "одно нажатие с показом, что уйдёт"),
-
-    /** Значимое: экран «что изменится» и биометрия или PIN устройства. */
-    SIGNIFICANT(2, "экран «что изменится» и биометрия или PIN"),
-
-    /** Опасное, необратимое: красный экран «что будет потеряно» и ввод имени, без биометрии (D-37). */
-    DANGEROUS(3, "красный экран «что будет потеряно» и ввод имени"),
 }
 
 /** Откуда получено наблюдение (ТЗ, §6.4). */

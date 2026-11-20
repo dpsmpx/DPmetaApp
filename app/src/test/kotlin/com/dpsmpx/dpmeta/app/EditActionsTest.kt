@@ -14,7 +14,7 @@ import com.dpsmpx.dpmeta.app.screens.EditActions
 import com.dpsmpx.dpmeta.app.screens.LineDiff
 import com.dpsmpx.dpmeta.github.FileBlob
 import com.dpsmpx.dpmeta.github.GitHubWrite
-import com.dpsmpx.dpmeta.model.ActionLevel
+import com.dpsmpx.dpai.core.operations.ActionLevel
 import com.dpsmpx.dpmeta.model.RepoRef
 import com.dpsmpx.dpmeta.net.HttpResponse
 import com.dpsmpx.dpmeta.net.Net

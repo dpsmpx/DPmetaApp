@@ -68,7 +68,7 @@ CLEAN = {
     # Ядро подсистемы dpai (D-28): каждый тип ядра объявлен один раз.
     "dpai/core/src/main/kotlin/Core.kt": (
         "package core\n\nsealed interface Outcome<out T>\nclass OperationResult<out T>\nclass Diagnostic\n"
-        "enum class DiagCode { A }\nclass Secret(private val v: String)\ninterface Clock\n"),
+        "enum class DiagCode { A }\nclass Secret(private val v: String)\ninterface Clock\nenum class ActionLevel { READ }\n"),
     "dpai/core/src/main/kotlin/Use.kt": "package core\n\nclass ManualClock : Clock\nval x: Outcome<Int>? = null\n",
     # Команды пульта универсальны: выбранный проект пользователя, без реестра DPmeta (D-176).
     "config/commands.toml": (
@@ -307,6 +307,10 @@ class SubsystemScopeTest(CheckCase):
 
 
 class CoreSingleTest(CheckCase):
+    def test_action_levels_cannot_be_redeclared_in_the_dashboard(self):
+        s = self.sample({"core/model/src/main/kotlin/Again.kt": "package m\n\nenum class ActionLevel { READ }\n"})
+        self.assertCatches(s.run("core.single"), "ActionLevel объявлен вне")
+
     def test_core_type_outside_core(self):
         s = self.sample({"core/model/src/main/kotlin/Result.kt": "package m\n\nsealed class Outcome\n"})
         self.assertCatches(s.run("core.single"), "Outcome объявлен вне")
