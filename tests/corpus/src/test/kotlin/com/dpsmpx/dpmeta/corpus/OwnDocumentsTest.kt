@@ -17,7 +17,7 @@ import kotlin.test.fail
 
 /**
  * Свои документы DPmetaApp разбираются теми же разборщиками (ТЗ, I-01,
- * I-06): реестр подсистемы DPmeta, журнал решений, `TODO.md`, ROADMAP и
+ * I-06): журнал решений, `TODO.md`, ROADMAP и
  * блок состояния README. Падение — формат ушёл от разборщика.
  */
 class OwnDocumentsTest {

@@ -71,7 +71,6 @@ CLEAN = {
         "enum class DiagCode { A }\nclass Secret(private val v: String)\ninterface Clock\n"),
     "dpai/core/src/main/kotlin/Use.kt": "package core\n\nclass ManualClock : Clock\nval x: Outcome<Int>? = null\n",
     # Команды пульта универсальны: выбранный проект пользователя, без реестра DPmeta (D-176).
-    "dpmeta/tools/check.sh": "#!/bin/sh\nexit 0\n",
     "config/commands.toml": (
         'schema = 1\n\n[[command]]\nid = "repo.ff"\ntitle = "Догнать"\nproject = "*"\npath = "/usr/bin/git"\n'
         'args = ["merge", "--ff-only", "@{upstream}"]\nplan = "background"\nlevel = 1\ntimeout = 2\n'),
@@ -298,16 +297,9 @@ class SubsystemScopeTest(CheckCase):
     def test_moved_out_projects_are_not_subsystems(self):
         # SocialMediaImage и DPprofile (D-154), DPpass (D-174), DPvisualisation (D-173) живут только
         # в своём репозитории: каталог в корне — находка.
-        for d in ("socialmediaimage", "dpprofile", "dppass", "dpvisualisation"):
+        for d in ("socialmediaimage", "dpprofile", "dppass", "dpvisualisation", "dpmeta"):
             with self.subTest(d):
                 self.assertCatches(self.sample({f"{d}/docs/X.md": "# X\n"}).run("repo.layout"), d)
-
-    def test_dpmeta_is_a_subsystem_too(self):
-        # DPmeta — подсистема со своим процессом (D-43): её номера M-NN без имени проекта — её проверкам.
-        s = self.sample({"dpmeta/docs/X.md": "# X\r\nСм. M-14, `docs/NOPE.md`.\n"})
-        for cid in ("repo.layout", "format.text", "docs.links", "docs.refs"):
-            with self.subTest(cid):
-                self.assertClean(s.run(cid))
 
     def test_secrets_are_searched_in_subsystem_too(self):
         token = "ghp" + "_" + "C3d4" * 9
@@ -533,21 +525,6 @@ class SubsystemChecksTest(CheckCase):
         # Код 0 нарочно: находку должен дать разбор строки «✗ id (…)», а не запасной хвост вывода.
         out = "printf '✓ process.decisions (0.0 с)\\n✗ docs.refs (0.0 с)\\n    a.md:1: D-9 нигде не определён\\n'"
         self.assertCatches(self.run_sub(f"#!/bin/sh\n{out}\n"), "docs.refs")
-
-    def test_dpmeta_lines_are_steps(self):
-        # Вывод tools/check.sh DPmeta (D-43): «✓ шаг: …»; «○ … пропущено» и итог «✓ DPmeta: …» — не шаги.
-        out = ("printf '✓ документы: ссылки, свои номера, корень\\n✓ самотесты инструментов\\n"
-               "○ ссылки — пропущено: рядом нет клонов\\n✓ DPmeta: всё зелёное\\n'")
-        s = self.sample({"dpmeta/tools/check.sh": f"#!/bin/sh\n{out}\n"})
-        r = check.check_subsystems(s.root, {"dpmeta": ("dpmeta/tools/check.sh",)})[0]
-        self.assertClean(r)
-        self.assertEqual(2, r.scanned)
-
-    def test_dpmeta_failing_step_is_reported(self):
-        # Код 0 нарочно: находку должен дать разбор строки «✗ шаг», а не запасной хвост вывода.
-        out = "printf '✓ самотесты инструментов\\n✗ документы: ссылки, свои номера, корень\\n    a.md:1: нет файла\\n'"
-        s = self.sample({"dpmeta/tools/check.sh": f"#!/bin/sh\n{out}\n"})
-        self.assertCatches(check.check_subsystems(s.root, {"dpmeta": ("dpmeta/tools/check.sh",)})[0], "документы")
 
     def test_dp_verify_failing_check_is_reported(self):
         out = "printf '  ✓ docs.links    ссылок 10\\n  ✗ docs.refs     находок: 1\\n      a.md:1  D-9 не определено\\n'"

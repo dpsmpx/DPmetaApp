@@ -1,8 +1,8 @@
 # Архитектура DPmetaApp
 
 Границы от 11 ноября 2026: D-86…D-90,
-`docs/direction/PROJECT_ROLES.md`. dpai — ядро студии; DPmeta — карта
-основных активных проектов. SocialMediaImage и DPprofile вынесены с
+`docs/direction/PROJECT_ROLES.md`. dpai — ядро студии; DPmeta — отдельная
+карта основных активных проектов (`dpsmpx/DPmeta`, D-178). SocialMediaImage и DPprofile вынесены с
 историей в `dpsmpx/SocialMediaImage` (D-154).
 DP-Verify — изменяемая общая папка на target. DPpass вернулся в свой
 репозиторий `dpsmpx/DPpass` (D-174); канал к ПК — SSH поверх включённого VPN,
@@ -25,18 +25,16 @@ DPmetaApp/                        сборка Gradle из корня: ./gradlew
 │   │   monitoring connectors analytics orchestrator   ← контур «AI»
 │   ├── ui cli jsch               представление без платформы, команда dpai, SSH на JVM
 │   └── android                   оболочка Android — библиотека (DP_AI_Orcestrator:D-103)
-├── dpmeta/                       подсистема DPmeta (D-43): реестр экосистемы, контракты, очередь, свой процесс
 ├── core/ app/               модули DPmetaApp на ядре dpai/ (ТЗ, §6.2); app — пульт
 ├── shell/                        приложение DPmetaApp — один APK: пульт и «AI» (D-53)
 ├── config/briefs/                шаблоны поручений Claude (F-23)
 ├── docs/ ROADMAP/ TODO.md        процесс приложения целиком
-└── tools/check/                  проверки корня; подсистемы — dpai/tools/verify/, dpmeta/tools/check.sh
+└── tools/check/                  проверки корня; подсистема — dpai/tools/verify/
 ```
 
-Сейчас в сборке корня только `dpai/`: модули DPmetaApp из ТЗ, §6.2
-появятся на этапе 1 и дальше, остальные подсистемы — в фазе B (D-25).
-DPmeta — документы и инструменты на Python; в сборку корня и APK он не
-входит, его проверки — шаг `subsystem.dpmeta` (D-43), до выноса (D-173).
+Сборка корня включает `dpai/`, модули пульта и APK `shell`.
+DPmeta — документы и инструменты на Python в самостоятельном репозитории
+(D-178); его код, реестр и проверки в сборке DP_IDE не участвуют.
 SocialMediaImage и DPprofile — только в `dpsmpx/SocialMediaImage` (D-154);
 DPpass и DPvisualisation — в своих репозиториях (D-174, D-173).
 

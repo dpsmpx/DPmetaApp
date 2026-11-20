@@ -48,7 +48,7 @@ ROOT_ALLOW = {
     ".claude", ".github", "docs", "ROADMAP", "tools", "tests",
     "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
     "gradle", "build-logic", "app", "shell", "core", "cli", "config",
-    "dpai", "dpmeta",
+    "dpai",
 }
 # Пакетный файл Windows создан Gradle с CRLF — так и хранится (`.gitattributes`).
 CRLF_ALLOWED = {"gradlew.bat"}
@@ -60,14 +60,11 @@ WRAPPER_SOURCE = "dpai/"
 # строка — команда с аргументом `static`, кортеж — команда со своими аргументами.
 SUBSYSTEMS = {
     "dpai": "dpai/tools/verify/run.sh",
-    "dpmeta": ("dpmeta/tools/check.sh",),
 }
 # Строка шага в выводе команды подсистемы: «- ✓ шаг» (dpai), «  ✓ id  итог» (DP Verify),
 # «✓ id — что проверено» (SocialMediaImage) или «✓ id (0.0 с)»;
 # итог прогона («✓ static пройден», «✓ tools/check.sh: всё зелёное») — не шаг.
 SUBSYSTEM_STEP = re.compile(r"^(?:(?:- |  )([✓✗]) (.+)|([✓✗]) (\S+ (?:— |\().+))$", re.M)
-# Свой вид строки шага: у DPmeta шаг — «✓ документы: ссылки, …», итог — «✓ DPmeta: всё зелёное» (D-43).
-SUBSYSTEM_STEP_OWN = {"dpmeta": re.compile(r"^([✓✗]) (?!DPmeta: )(.+)$", re.M)}
 # Единое ядро (D-28): эти типы объявлены один раз — в ядре подсистемы dpai.
 CORE_TYPES = ("Outcome", "OperationResult", "Diagnostic", "DiagCode", "Secret", "Clock")
 CORE_HOME = "dpai/core/src/main/"
@@ -716,7 +713,7 @@ def check_subsystems(root, subsystems=None):
             r.add(cmd, "нет команды проверок подсистемы")
         else:
             p = subprocess.run(["bash", path, *args], cwd=root, capture_output=True, text=True)
-            found = SUBSYSTEM_STEP_OWN.get(name, SUBSYSTEM_STEP).findall(p.stdout)
+            found = SUBSYSTEM_STEP.findall(p.stdout)
             steps = [(m[0] or m[2], m[1] or m[3]) if len(m) == 4 else m for m in found]
             r.scanned = len(steps)
             r.findings.extend(f"{cmd}: {what}" for mark, what in steps if mark == "✗")

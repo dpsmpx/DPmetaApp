@@ -8,7 +8,7 @@
 | Репозиторий | Сохранённая запись/работа |
 |---|---|
 | DPmetaApp | D-86…D-90, карта ролей, ТЗ, мастер-ТЗ, ROADMAP, TODO; [PR #183](https://github.com/dpsmpx/DPmetaApp/pull/183) |
-| DPmeta | DPmeta:M-17 и полная карта в `dpmeta/`; [запись в прежнем репозитории](https://github.com/dpsmpx/DPmeta/blob/dpmeta/mobile-studio-roles/docs/PROJECT_ROLES.md), `e5b8426`, без возобновления второго источника |
+| DPmeta | Самостоятельный репозиторий: [DPmeta:M-19 и история переноса](https://github.com/dpsmpx/DPmeta/blob/bc09dfb59fde4c074fc09c8a6feac7714609db97/docs/reports/2026-11-20-RETURN.md), `bc09dfb`; прежний main, выделенные 28 коммитов и ветка ролей сохранены (D-178) |
 | SocialMediaImage + DPprofile | [PR #33](https://github.com/dpsmpx/SocialMediaImage/pull/33), `a30c0fd` (дополнение 14 ноября): актуальная контентная система и компонент с обеими исходными историями, требования будущего приложения, без новой функциональности |
 | DP-Verify | [Документ в main](https://github.com/dpsmpx/DP-Verify/blob/main/docs/DP_META_APP.md), `4e19caf`: DP-Verify:V-23, общая папка, обновление в простое, проверенный прямой main без PR |
 | dp_termux_setup | [Роль](https://github.com/dpsmpx/dp_termux_setup/blob/dpmeta/mobile-studio-roles/docs/direction/DP_META_APP.md), `3011978` |
