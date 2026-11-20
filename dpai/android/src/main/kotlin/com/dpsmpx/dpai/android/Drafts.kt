@@ -212,6 +212,33 @@ object Drafts {
         }
     }
 
+    /** Окно подтверждения блокирует ввод; чистые вкладки получают записанные файлы и новую базу. */
+    fun reloadWorkspace(location: com.dpsmpx.dpai.ui.WorkspaceLocation, tree: com.dpsmpx.dpai.files.FileTree, inApp: Boolean): Outcome<Unit> {
+        val prefix = "file:workspace:${location.key}\u0001"
+        val absolute = location.path.trimEnd('/') + "/"
+        for ((key, draft) in files.toMap()) {
+            val path = when {
+                key.startsWith(prefix) -> key.removePrefix(prefix)
+                inApp && draft.guestPath?.startsWith(absolute) == true -> draft.guestPath.removePrefix(absolute)
+                else -> continue
+            }
+            if (draft.editor.dirty) continue
+            val bytes = when (val r = tree.read(path, TextFile.MAX_EDIT_BYTES)) {
+                is Outcome.Failure -> return r
+                is Outcome.Success -> r.value
+            }
+            val text = when (val r = TextFile.decode(bytes)) {
+                is Outcome.Failure -> return r
+                is Outcome.Success -> r.value
+            }
+            if (files[key] !== draft || draft.editor.dirty) continue
+            draft.editor.edit(text, draft.editor.state.selection)
+            val saved = savedFile(key, draft, bytes, text)
+            if (saved is Outcome.Failure) return saved
+        }
+        return Outcome.success(Unit)
+    }
+
     fun get(key: String): String? = map[key]
     fun set(key: String, text: String?) { if (text.isNullOrEmpty()) map.remove(key) else map[key] = text }
     fun chat(session: String): String = "chat:$session"

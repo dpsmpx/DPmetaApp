@@ -6,4 +6,18 @@
     <string name="request_confirm_label">Точно: %1$s?</string>
     <string name="request_open_for_login">Открываю приложение: вход по PIN. Не открылось — откройте его сами: запрос на экране «Запросы»</string>
     <string name="request_failed">Не принято: %1$s</string>
+    <string name="project_edit_title">Проектная правка: файлов %1$d, замен %2$d</string>
+    <string name="project_edit_copy">До записи создаётся зашифрованная копия. При внешних изменениях запись отменяется.</string>
+    <string name="project_edit_save">Сохранить во все файлы</string>
+    <string name="project_edit_recovery">Восстановление проектной правки</string>
+    <string name="project_edit_interrupted">Запись прервана. Можно вернуть исходные файлы или завершить правку. Новые внешние изменения не перезаписываются. ИИ и сборки ждут восстановления.</string>
+    <string name="project_edit_undo_hint">Отменить последнюю проектную правку? При внешних изменениях отмена не выполняется.</string>
+    <string name="project_edit_restore">Вернуть исходные файлы</string>
+    <string name="project_edit_complete">Завершить правку</string>
+    <string name="project_edit_undo">Отменить проектную правку…</string>
+    <string name="project_edit_stale">Текст изменился; повторите запрос службы</string>
+    <string name="project_edit_empty">Служба не предложила правок</string>
+    <string name="project_edit_rename_hint">Изменения всех файлов будут показаны перед сохранением. Сначала сохраните или отмените ручные правки.</string>
+    <string name="project_edit_need_index">Для переименования по проекту сначала включите индекс C++ в строке службы.</string>
+    <string name="project_edit_saved">Файлы сохранены; отмена проектной правки — в списке файлов проекта</string>
 </resources>

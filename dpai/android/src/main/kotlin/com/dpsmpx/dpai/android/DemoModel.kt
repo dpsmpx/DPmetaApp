@@ -568,7 +568,8 @@ class DemoModel(
         }
         return com.dpsmpx.dpai.ui.ProjectWorkspaceView.of(p, targets, o != null,
             o?.tasks?.tasks?.values.orEmpty(), o?.sessions ?: com.dpsmpx.dpai.sessions.SessionsState.EMPTY,
-            o?.tasks?.tasks?.keys?.mapNotNull { t -> o.taskWorktree(t)?.let { t to it } }?.toMap().orEmpty()).copy(paused = controller.manualProfiles.blocked)
+            o?.tasks?.tasks?.keys?.mapNotNull { t -> o.taskWorktree(t)?.let { t to it } }?.toMap().orEmpty()).copy(
+                paused = controller.manualProfiles.blocked, pendingEdit = controller.workspaceChanges.blocked(p.project.value))
     }
 
     private val workspaceWriteGate = com.dpsmpx.dpai.ui.WorkspaceWriteGate(lock) { controller.project()?.let(::workspaceLocked) }
@@ -719,8 +720,21 @@ class DemoModel(
                 is Outcome.Success -> action()
             }
         }
-        return workspaceWriteGate.perform(p, location, action)
+        return workspaceWriteGate.perform(p, location, action = action)
     }
+
+    /** Весь набор под тем же замком, что запуск хода; recovery снимает только свою durable паузу. */
+    fun workspaceChange(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, recovering: Boolean = false,
+        action: (com.dpsmpx.dpai.ui.WorkspaceChanges) -> Outcome<Unit>): Outcome<Unit> =
+        workspaceWriteGate.perform(p, location, recoveringEdit = recovering) {
+            if ((built as? LiveSystem)?.orchestrator?.manualProfileFree() != true) return@perform Outcome.failure(DiagCode.WORKTREE_OWNED, "контур занят; дождитесь завершения сессий и команд")
+            val target = controller.targets().firstOrNull { it.id == location.target }
+                ?: return@perform Outcome.failure(DiagCode.STATE_CONFLICT, "target удалён")
+            if (!Drafts.recovery.value.ready || Drafts.dirtyIn(location, target.inApp)) return@perform Outcome.failure(DiagCode.STATE_CONFLICT, "сначала сохраните или отмените правки редактора в этом дереве")
+            action(com.dpsmpx.dpai.ui.WorkspaceChanges(controller.workspaceChanges))
+        }
+
+    fun workspaceCopy(project: ProjectEntry) = controller.workspaceChanges.load(project.project.value)
 
     /** PR проекта через `gh` на его target (D-108): `null` — контур не запущен или у него нет проекта с репозиторием. */
     fun github(): com.dpsmpx.dpai.orchestrator.github.GitHubDesk? = runCatching { (built as? LiveSystem)?.github }.getOrNull()

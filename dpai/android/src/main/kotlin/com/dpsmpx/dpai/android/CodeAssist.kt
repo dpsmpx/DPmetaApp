@@ -72,6 +72,9 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
     val language = LanguageServers.languageId(guestPath) ?: return
     val title = LanguageServers.language(guestPath)?.title ?: return
     val context = LocalContext.current.applicationContext
+    val projectEdits = LocalProjectEdits.current
+    var projectPlan by remember { mutableStateOf<com.dpsmpx.dpai.ui.WorkspaceEditPlan?>(null) }
+    var projectApplying by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val session = remember(guestPath, editorRootKey, guestRoot) { CodeService.session(guestPath, editorRootKey, guestRoot, relativePath) }
     var note by remember { mutableStateOf<String?>(null) }
@@ -159,6 +162,22 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
 
     /** Правка службы для этого файла: другие файлы — отказ целиком; текст ушёл вперёд — повторить. */
     fun applyWorkspace(edit: WorkspaceEdit, before: String, cursor: Int, done: String) {
+        if (projectEdits != null) {
+            val client = session.ready() ?: return
+            scope.launch {
+                busy = true
+                try {
+                    val prepared = withContext(Dispatchers.IO) { projectEdits.prepare(edit, client) }
+                    note = when {
+                        buffer.text != before -> context.getString(R.string.project_edit_stale)
+                        prepared is Outcome.Failure -> prepared.diagnostics.first().message
+                        prepared is Outcome.Success && prepared.value.files.isEmpty() -> context.getString(R.string.project_edit_empty)
+                        else -> { projectPlan = (prepared as Outcome.Success).value; null }
+                    }
+                } finally { busy = false }
+            }
+            return
+        }
         when (val mine = Assist.editsForFile(edit, session.uri)) {
             is Outcome.Failure -> note = mine.diagnostics.first().message
             is Outcome.Success -> when {
@@ -456,11 +475,30 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
             }) { Text("Принимаю, поставить") } },
             dismissButton = { TextButton(onClick = { license = null }) { Text("Не принимаю") } })
     }
+    projectPlan?.let { plan ->
+        ProjectEditPreview(plan, projectApplying, note, onApply = {
+            val place = projectEdits ?: return@ProjectEditPreview
+            projectApplying = true
+            scope.launch {
+                val result = withContext(Dispatchers.IO) { place.apply(plan) }
+                if (result is Outcome.Success) {
+                    val client = session.ready()
+                    val synced = withContext(Dispatchers.IO) {
+                        client?.filesChanged(plan.files.associate { it.uri to it.after })
+                    }
+                    projectPlan = null
+                    note = if (synced is Outcome.Failure) synced.diagnostics.first().message else context.getString(R.string.project_edit_saved)
+                } else note = (result as Outcome.Failure).diagnostics.first().message
+                projectApplying = false
+                place.changed()
+            }
+        }, onClose = { projectPlan = null; note = null })
+    }
     renaming?.let { initial ->
         var name by remember(initial) { mutableStateOf(initial) }
         AlertDialog(onDismissRequest = { renaming = null }, title = { Text("Переименовать") },
             text = { Column {
-                Text("Только символ этого файла: другие файлы проекта служба без индекса не видит.", style = MaterialTheme.typography.bodySmall)
+                Text(if (projectEdits == null) "Только символ этого файла: другие файлы проекта служба без индекса не видит." else context.getString(R.string.project_edit_rename_hint), style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(name, { if (it.length <= 255) name = it.trim() }, label = { Text("Новое имя") }, singleLine = true,
                     isError = name.isNotEmpty() && !Assist.validName(name))
             } },
@@ -471,6 +509,10 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                     val cursor = buffer.state.selection.end.coerceIn(0, before.length)
                     val r = withClient { c, t, at ->
                         val place = LineIndex(t).position(at)
+                        if (projectEdits != null) {
+                            if (language in setOf("c", "cpp") && !indexEnabled) return@withClient Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, context.getString(R.string.project_edit_need_index))
+                            return@withClient c.rename(session.uri, place, name)
+                        }
                         val places = when (val d = c.declaration(session.uri, place)) {
                             is Outcome.Failure -> return@withClient d
                             is Outcome.Success -> d.value + ((c.definition(session.uri, place) as? Outcome.Success)?.value.orEmpty())

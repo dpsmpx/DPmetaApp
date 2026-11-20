@@ -109,6 +109,8 @@ class LspClient(
     }
 
     /** Открыть документ или заменить его текст, если он уже открыт. */
+    fun document(uri: String): Pair<Int, String>? = synchronized(lock) { documents[uri]?.let { it.version to it.text } }
+
     fun open(uri: String, languageId: String, text: String): Outcome<Unit> = synchronized(lock) {
         ready()?.let { return it }
         if (documents.containsKey(uri)) return update(uri, text)
@@ -151,6 +153,11 @@ class LspClient(
     }
 
     /** Версия открытого документа у службы; `null` — не открыт. */
+    fun filesChanged(uris: Set<String>): Outcome<Unit> = synchronized(lock) {
+        ready()?.let { return it }
+        peer.notify("workspace/didChangeWatchedFiles", JsonObject.of("changes" to JsonArray(uris.map { JsonObject.of("uri" to json(it), "type" to json(2)) })))
+    }
+
     fun version(uri: String): Int? = synchronized(lock) { documents[uri]?.version }
 
     fun completion(uri: String, at: Position, trigger: Char? = null, timeout: Duration = REQUEST_TIMEOUT): Outcome<CompletionList> {

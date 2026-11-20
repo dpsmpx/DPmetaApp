@@ -193,6 +193,8 @@ object KeystoreKey {
 class Controller(private val root: File, val version: String?) {
     private val vfs = NioVfs(root.toPath())
     private val docs = DocumentStore(vfs, "docs")
+    val workspaceChanges = com.dpsmpx.dpai.ui.WorkspaceChangeStore(
+        NioVfs(File(root.parentFile, "workspace-changes").toPath()), DraftEncryption)
 
     val manualProfiles = com.dpsmpx.dpai.ui.ManualProfiles(
         DocumentStore(NioVfs(File(root.parentFile, "manual-profiles").toPath()), "docs"), IdGenerator(Clock.SYSTEM, RandomSource.secure()), Clock.SYSTEM)
@@ -399,7 +401,7 @@ class Controller(private val root: File, val version: String?) {
             quarantineConfirmed = confirmed,
             inAppHost = inAppHost,
             inAppGuest = inAppGuest,
-            externalPause = { manualProfiles.blocked },
+            externalPause = { manualProfiles.blocked || project?.let { workspaceChanges.blocked(it.project.value) } == true },
             neighbours = neighbours,
         ).also { if (confirmed) runCatching { dir.delete(QUARANTINE_CONFIRMED) } }
     }

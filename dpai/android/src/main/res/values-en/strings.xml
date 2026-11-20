@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="project_edit_title">Project edit: %1$d files, %2$d changes</string>
+    <string name="project_edit_copy">An encrypted recovery copy is saved before writing. External changes cancel the write.</string>
+    <string name="project_edit_save">Save all files</string>
+    <string name="project_edit_recovery">Project edit recovery</string>
+    <string name="project_edit_interrupted">The write was interrupted. Restore the original files or complete the edit. New external changes are preserved. AI and builds wait for recovery.</string>
+    <string name="project_edit_undo_hint">Undo the last project edit? External changes prevent undo.</string>
+    <string name="project_edit_restore">Restore original files</string>
+    <string name="project_edit_complete">Complete edit</string>
+    <string name="project_edit_undo">Undo project edit…</string>
+    <string name="project_edit_stale">The text changed; request the edit again</string>
+    <string name="project_edit_empty">The server returned no edits</string>
+    <string name="project_edit_rename_hint">Review all affected files before saving. Save or discard manual edits first.</string>
+    <string name="project_edit_need_index">Enable the C++ project index in the server toolbar before a project rename.</string>
+    <string name="project_edit_saved">Files saved; project undo is available in the project file list</string>
+</resources>
