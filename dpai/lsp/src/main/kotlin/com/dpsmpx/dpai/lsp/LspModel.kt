@@ -60,7 +60,7 @@ data class Signature(val label: String, val documentation: String?, val paramete
 data class SignatureHelp(val signatures: List<Signature>, val active: Int, val activeParameter: Int?)
 
 /** Правки по файлам: адрес → правки в координатах текущего текста файла. */
-data class WorkspaceEdit(val changes: Map<String, List<TextEdit>>)
+data class WorkspaceEdit(val changes: Map<String, List<TextEdit>>, val versions: Map<String, Int?> = emptyMap())
 
 /**
  * Символ документа (`textDocument/documentSymbol`): функция, класс, поле…
@@ -253,17 +253,32 @@ internal object LspParse {
 
     /** `changes` и `documentChanges` с правками текста; создание, переименование и удаление файлов — `null`: не поддержано. */
     fun workspaceEdit(v: JsonValue?): WorkspaceEdit? {
+        if (v == null || v == JsonNull) return WorkspaceEdit(emptyMap())
         val o = v as? JsonObject ?: return null
         val out = linkedMapOf<String, List<TextEdit>>()
+        if (o["changes"] != null && o["changes"] != JsonNull && o["changes"] !is JsonObject) return null
+        if (o["documentChanges"] != null && o["documentChanges"] != JsonNull && o["documentChanges"] !is JsonArray) return null
         (o["changes"] as? JsonObject)?.fields?.forEach { (uri, edits) -> out[uri] = out[uri].orEmpty() + (textEdits(edits) ?: return null) }
+        val versions = linkedMapOf<String, Int?>()
         (o["documentChanges"] as? JsonArray)?.items?.forEach { change ->
             val co = change as? JsonObject ?: return null
             if (co["kind"] != null) return null
-            val uri = str((co["textDocument"] as? JsonObject)?.get("uri")) ?: return null
+            val document = co["textDocument"] as? JsonObject ?: return null
+            val uri = str(document["uri"]) ?: return null
+            val version = when (val number = document["version"]) {
+                null, JsonNull -> null
+                is JsonNumber -> number.toLongExact()?.takeIf { it in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong() }?.toInt() ?: return null
+                else -> return null
+            }
+            if (uri in versions && versions[uri] != version) return null
+            // Версионированные правки этого адреса главнее changes; два представления
+            // одной замены не применяются дважды. Разные файлы прежних ответов сохранены.
+            if (uri !in versions) out.remove(uri)
+            versions[uri] = version
             out[uri] = out[uri].orEmpty() + (textEdits(co["edits"]) ?: return null)
         }
         if (out.size > MAX_ITEMS) return null
-        return WorkspaceEdit(out)
+        return WorkspaceEdit(out, versions)
     }
 
     fun codeActions(v: JsonValue?): List<CodeAction>? {
