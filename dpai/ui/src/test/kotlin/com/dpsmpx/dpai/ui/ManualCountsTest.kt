@@ -37,4 +37,15 @@ class ManualCountsTest {
         val broken = Outcome.failure(DiagCode.STORAGE_CORRUPTED, "история испорчена")
         assertEquals(ManualCounts(null, null, null), ManualCounts.of(null, listOf(Outcome.success(emptyList()), broken), now))
     }
+
+    @Test
+    fun dependencyRunsNeverBecomeBuildOrCheckResults() {
+        val profile = build.copy(kind = ManualProfileKind.DEPENDENCIES)
+        val run = ManualRun(ids.next(IdKinds.SESSION), project, target, "/root/repo", "main", profile)
+        val history = listOf(entry(ManualProfileKind.DEPENDENCIES, 1, ManualOutcome.OK),
+            entry(ManualProfileKind.DEPENDENCIES, 2, ManualOutcome.FAILED), entry(ManualProfileKind.BUILD, 3, ManualOutcome.OK))
+        assertEquals(ManualCounts(null, 1, 0), ManualCounts.of(run, listOf(Outcome.success(history)), now))
+        val broken = Outcome.failure(DiagCode.STORAGE_CORRUPTED, "история испорчена")
+        assertEquals(ManualCounts(null, null, null), ManualCounts.of(run, listOf(broken), now))
+    }
 }

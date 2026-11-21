@@ -26,6 +26,8 @@ data class WidgetText(val projects: String, val projectDate: String, val ai: Str
         fun runs(m: ManualCounts?): String {
             val now = when (m?.running) {
                 null -> null
+                // D-181: зависимости имеют отдельную историю, не считаются сборкой/проверкой.
+                ManualProfileKind.DEPENDENCIES -> null
                 ManualProfileKind.BUILD -> "идёт сборка"
                 ManualProfileKind.CHECK -> "идёт проверка"
             }
