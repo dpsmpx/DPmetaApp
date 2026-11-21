@@ -331,11 +331,14 @@ internal object CodeService {
                     override fun stopped(reason: Diagnostic) = stop(key, "${launch.name} остановилась: ${reason.message}", generation)
                 },
                 settings = launch.settings,
+                initializationOptions = launch.initializationOptions,
             )
             clients += client
             when (val r = client.start(if (language == CodeLanguage.KOTLIN) 3.minutes else LspClient.START_TIMEOUT)) {
                 is Outcome.Failure -> return abandon("${launch.name} не ответила: ${r.diagnostics.first().message}")
-                is Outcome.Success -> Unit
+                is Outcome.Success -> if (!KotlinLsp.acceptsIndexDirectory(launch.initializationOptions, r.value.indexDirectory)) {
+                    return abandon(context.getString(R.string.kotlin_index_unmanaged))
+                }
             }
         }
         val pulls = clients.filterIndexed { i, _ -> launches[i].pull }.toSet()

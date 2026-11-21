@@ -24,6 +24,7 @@ object CodeServerSetup {
     const val KOTLIN_HOME: String = "$HOME/kotlin-lsp/${KotlinLsp.PINNED_BUILD}"
     const val KOTLIN_SYSTEM_BASE: String = "$HOME/kotlin-lsp-system"
     const val KOTLIN_SYSTEM: String = "$KOTLIN_SYSTEM_BASE/${KotlinLsp.PINNED_BUILD}"
+    const val KOTLIN_LEGACY_INDEX_BASE: String = "/root/.cache/JetBrains/IntelliJServer/workspaces"
 
     /** Каталог IntelliJ нельзя одновременно открывать двум процессам разных проектов. */
     fun kotlinSystem(projectRoot: String): String = "$KOTLIN_SYSTEM/${Hashing.sha256(projectRoot).hex}"

@@ -44,6 +44,16 @@ class LanguageSessionTest {
         error("не дождались: $what")
     }
 
+    @Test fun explicitIndexDirectoryIsSentAndTheServersDirectoryIsObservable() {
+        val fake = FakeServer { method, _ -> if (method == "initialize") parse("""{"capabilities":{"experimental":{"indexDir":"/managed/indexes"}}}""") else JsonNull }
+        val options = JsonObject.of("indexDir" to json("/managed/indexes"))
+        val client = LspClient(fake.clientIn, fake.clientOut, "file:///p", Quiet, initializationOptions = options)
+        val info = (client.start() as Outcome.Success).value
+        assertEquals(options, fake.params("initialize")["initializationOptions"])
+        assertEquals("/managed/indexes", info.indexDirectory)
+        client.stop()
+    }
+
     @Test
     fun settingsAnswerConfigurationBySectionAndAreAnnounced() {
         val settings = PythonServers.pylsp("/root/.local/share/dpai/projects/k/python/bin/python").settings

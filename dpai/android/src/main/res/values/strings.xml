@@ -47,4 +47,5 @@
 
     <string name="lsp_command_unsupported">Команда службы пока не поддержана; текст не изменён</string>
     <string name="lsp_action_empty">Служба не вернула правок</string>
+    <string name="kotlin_index_unmanaged">Служба не подтвердила управляемый каталог индекса; обновите kotlin-lsp</string>
 </resources>

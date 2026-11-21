@@ -114,7 +114,7 @@ data class ServerCapabilities(
 )
 
 /** Имя и версия службы, если она их назвала. */
-data class ServerInfo(val name: String?, val version: String?, val capabilities: ServerCapabilities)
+data class ServerInfo(val name: String?, val version: String?, val capabilities: ServerCapabilities, val indexDirectory: String? = null)
 
 /**
  * Разбор ответов службы. Служба — чужая программа: поле не того типа —

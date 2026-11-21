@@ -93,15 +93,17 @@ class KotlinAndroidLiveTest {
             home, java, File(dir, ".kls").path, arch, heapMb = 1536))
         val environment = hostEnvironment() + KotlinLsp.environment(sdk) + ("JAVA_HOME" to gradleJava)
         val process = ok(LocalStreamHost().open(ProcessSpec(command, workDir = dir.path, environment = environment)))
+        val options = KotlinLsp.launch(command, sdk).initializationOptions
         val client = LspClient(process.stdout, process.stdin, DocumentUri.ofPath(dir.path), object : LspClient.Listener {
             override fun diagnostics(uri: String, version: Int?, items: List<LspDiagnostic>) = Unit
             override fun stopped(reason: Diagnostic) = Unit
-        })
+        }, initializationOptions = options)
         val session = LanguageSession(client, pull = setOf(client))
         val tree = LocalTree(dir.toPath())
         val uri = DocumentUri.ofPath(File(dir, source).path)
         try {
-            ok(client.start(2.minutes))
+            val info = ok(client.start(2.minutes))
+            assertTrue(KotlinLsp.acceptsIndexDirectory(options, info.indexDirectory), "сервер не подтвердил indexDir")
             ok(session.open(uri, "kotlin", text.replace("packageName", "missingStudioMember")))
             var errors = emptyList<LspDiagnostic>()
             repeat(90) {
@@ -154,6 +156,7 @@ class KotlinAndroidLiveTest {
             session.stop()
             process.stop(5.seconds)
         }
+        assertTrue(File(File(dir, ".kls"), "indexes").walkTopDown().any { it.isFile && it.extension == "sst" }, "индекс должен находиться внутри каталога проекта/сборки службы")
         // Сборка после закрытия backend: не нагружаем одновременно LSP и компилятор.
         val built = ok(LocalProcessHost().run(ProcessSpec(listOf(File(dir, "gradlew").path, ":app:assembleDebug", "--no-daemon", "--no-parallel", "--max-workers=1"),
             workDir = dir.path, environment = environment), 10.minutes))

@@ -113,10 +113,16 @@ class LanguageServersTest {
 
     @Test
     fun kotlinLaunchPullsDiagnosticsAndGivesGradleAJdk() {
-        val launch = KotlinLsp.launch(listOf("java"), "/root/android-sdk")
+        val launch = KotlinLsp.launch(listOf("java", "--system-path=/managed/project"), "/root/android-sdk")
         assertTrue(launch.pull)
+        assertEquals(com.dpsmpx.dpai.core.serialization.json("/managed/project/indexes"), launch.initializationOptions["indexDir"])
+        assertTrue(KotlinLsp.acceptsIndexDirectory(launch.initializationOptions, "/managed/project/indexes"))
+        assertTrue(!KotlinLsp.acceptsIndexDirectory(launch.initializationOptions, null))
+        assertTrue(!KotlinLsp.acceptsIndexDirectory(launch.initializationOptions, "/managed/project/indexes/../other"))
+        assertTrue(!KotlinLsp.acceptsIndexDirectory(launch.initializationOptions, "/home/cache"))
+        assertTrue(!KotlinLsp.acceptsIndexDirectory(JsonObject.of("indexDir" to json(3)), null))
         assertEquals("/usr/lib/jvm/java-21-openjdk", launch.environment["JAVA_HOME"])
         assertEquals("/root/android-sdk", launch.environment["ANDROID_HOME"])
-        assertEquals(null, KotlinLsp.launch(listOf("java"), null).environment["ANDROID_HOME"])
+        assertEquals(null, KotlinLsp.launch(listOf("java", "--system-path=/managed/project"), null).environment["ANDROID_HOME"])
     }
 }

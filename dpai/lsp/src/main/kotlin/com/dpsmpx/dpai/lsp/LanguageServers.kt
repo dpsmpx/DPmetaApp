@@ -23,6 +23,7 @@ data class ServerLaunch(
     val settings: JsonObject = JsonObject(emptyMap()),
     val environment: Map<String, String> = emptyMap(),
     val pull: Boolean = false,
+    val initializationOptions: JsonObject = JsonObject(emptyMap()),
 )
 
 /** Какой язык и какой `languageId` LSP у файла — по имени. */
@@ -252,7 +253,20 @@ object KotlinLsp {
     }
 
     /** Запуск службы командой [command] ([KotlinLsp.command]); диагностику она отдаёт по запросу. */
-    fun launch(command: List<String>, androidHome: String?): ServerLaunch = ServerLaunch("kotlin-lsp", command, environment = environment(androidHome), pull = true)
+    fun launch(command: List<String>, androidHome: String?): ServerLaunch {
+        val system = command.lastOrNull { it.startsWith("--system-path=") }?.substringAfter('=')
+        require(system != null && system.startsWith('/') && system.none { it.isISOControl() }) { "нет управляемого каталога kotlin-lsp" }
+        return ServerLaunch("kotlin-lsp", command, environment = environment(androidHome), pull = true,
+            initializationOptions = JsonObject.of("indexDir" to json("${system.trimEnd('/')}/indexes")))
+    }
+
+    /** Сервер должен подтвердить управляемый каталог, а не молча выбрать общий кеш пользователя. */
+    fun acceptsIndexDirectory(options: JsonObject, actual: String?): Boolean {
+        val configured = options["indexDir"] ?: return true
+        val expected = LspParse.str(configured)?.takeIf { it.startsWith('/') && it.none(Char::isISOControl) } ?: return false
+        if (actual == null || actual.length > 4096 || actual.any { it.isISOControl() } || actual.split('/').any { it == "." || it == ".." }) return false
+        return actual.trimEnd('/') == expected || actual.startsWith("$expected/")
+    }
 
     /** Та же JVM и classpath, но вместо службы — `license status`: срок сборки EAP без запуска протокола. */
     fun statusCommand(command: List<String>): List<String> {

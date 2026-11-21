@@ -60,4 +60,5 @@
 
     <string name="lsp_command_unsupported">This server command is not supported yet; no text was changed</string>
     <string name="lsp_action_empty">The server returned no edits</string>
+    <string name="kotlin_index_unmanaged">The server did not confirm the managed index directory; update kotlin-lsp</string>
 </resources>

@@ -40,6 +40,7 @@ class LspClient(
     private val listener: Listener,
     maxBody: Int = LspReader.DEFAULT_MAX_BODY,
     private val settings: JsonObject = JsonObject(emptyMap()),
+    private val initializationOptions: JsonObject = JsonObject(emptyMap()),
 ) {
     interface Listener {
         /** Диагностика файла целиком: новый список заменяет прежний. [version] — версия текста, к которой он относится, если служба её назвала. */
@@ -132,7 +133,9 @@ class LspClient(
             }
         }
         val about = reply["serverInfo"] as? JsonObject
-        val result = ServerInfo(LspParse.str(about?.get("name"))?.take(100), LspParse.str(about?.get("version"))?.take(200), LspParse.capabilities(reply["capabilities"]))
+        val caps = reply["capabilities"] as? JsonObject
+        val result = ServerInfo(LspParse.str(about?.get("name"))?.take(100), LspParse.str(about?.get("version"))?.take(200), LspParse.capabilities(caps),
+            LspParse.str((caps?.get("experimental") as? JsonObject)?.get("indexDir")))
         peer.notify("initialized", JsonObject(emptyMap())).let { if (it is Outcome.Failure) return it }
         if (settings.fields.isNotEmpty()) peer.notify("workspace/didChangeConfiguration", JsonObject.of("settings" to settings)).let { if (it is Outcome.Failure) return it }
         server = result
@@ -470,7 +473,7 @@ class LspClient(
                     "didChangeConfiguration" to JsonObject(emptyMap()),
                 ),
             ),
-        )
+        ).let { params -> if (initializationOptions.fields.isEmpty()) params else JsonObject(params.fields + ("initializationOptions" to initializationOptions)) }
     }
 
     companion object {

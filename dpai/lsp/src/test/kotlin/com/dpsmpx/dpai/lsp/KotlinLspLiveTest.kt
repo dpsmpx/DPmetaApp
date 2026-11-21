@@ -70,11 +70,12 @@ class KotlinLspLiveTest {
             object : LspClient.Listener {
                 override fun diagnostics(uri: String, version: Int?, items: List<LspDiagnostic>) = Unit
                 override fun stopped(reason: Diagnostic) = Unit
-            },
+            }, initializationOptions = launch.initializationOptions,
         )
         val session = LanguageSession(client, pull = setOf(client))
         try {
             val info = ok(client.start(2.minutes))
+            assertTrue(KotlinLsp.acceptsIndexDirectory(launch.initializationOptions, info.indexDirectory))
             assertTrue(info.capabilities.pullDiagnostics && info.capabilities.rename && info.capabilities.signatureHelp, info.toString())
             val uri = DocumentUri.ofPath(File(src, "Main.kt").path)
             val broken = main.replace("println(twice(total))", "println(twice(totl))")
