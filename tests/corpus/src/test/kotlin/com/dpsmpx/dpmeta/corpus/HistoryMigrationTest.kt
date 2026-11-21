@@ -25,7 +25,7 @@ import com.dpsmpx.dpmeta.model.Observation
 import com.dpsmpx.dpmeta.model.ObservationSource
 import com.dpsmpx.dpmeta.model.SyncProject
 import com.dpsmpx.dpmeta.model.ProjectCatalog
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import com.dpsmpx.dpmeta.sync.Sync
 import java.nio.file.Path
 import java.time.Instant

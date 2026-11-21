@@ -17,7 +17,7 @@ import com.dpsmpx.dpmeta.github.RecentCommit
 import com.dpsmpx.dpmeta.model.ObservationSource
 import com.dpsmpx.dpmeta.model.SyncProject
 import com.dpsmpx.dpmeta.model.ProjectList
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import com.dpsmpx.dpmeta.sync.Got
 import com.dpsmpx.dpmeta.sync.SourceKind
 import com.dpsmpx.dpmeta.sync.SourceReader

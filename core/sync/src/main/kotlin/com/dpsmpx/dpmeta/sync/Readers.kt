@@ -16,7 +16,7 @@ import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.github.PullRequest
 import com.dpsmpx.dpmeta.model.ObservationSource
 import com.dpsmpx.dpmeta.model.SyncProject
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path

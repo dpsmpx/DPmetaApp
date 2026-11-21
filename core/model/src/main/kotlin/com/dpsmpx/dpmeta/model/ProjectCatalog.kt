@@ -1,5 +1,7 @@
 package com.dpsmpx.dpmeta.model
 
+import com.dpsmpx.dpai.core.git.RepoRef
+
 /** Проект синхронизации из списка пользователя: собственный репозиторий и выбранные пути. */
 data class SyncProject(
     val name: String,

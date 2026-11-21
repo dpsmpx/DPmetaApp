@@ -1,5 +1,7 @@
 package com.dpsmpx.dpmeta.model
 
+import com.dpsmpx.dpai.core.git.RepoRef
+
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.JsonArray

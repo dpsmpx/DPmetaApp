@@ -13,7 +13,7 @@ import com.dpsmpx.dpmeta.formats.Brief
 import com.dpsmpx.dpmeta.formats.SessionLink
 import com.dpsmpx.dpmeta.metrics.FeedEvent
 import com.dpsmpx.dpmeta.model.Event
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 
 /**
  * Поручение Claude из пульта (F-22, F-23; D-07): маршрут, шаблон, поля → текст →

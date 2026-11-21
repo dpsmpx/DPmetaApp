@@ -4,7 +4,7 @@ import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpmeta.model.ProjectList
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import java.nio.file.Files
 import java.util.concurrent.Executors
 import kotlin.test.Test

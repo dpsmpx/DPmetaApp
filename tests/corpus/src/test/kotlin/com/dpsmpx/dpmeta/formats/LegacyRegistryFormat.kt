@@ -10,7 +10,7 @@ import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpmeta.model.IdSource
 import com.dpsmpx.dpmeta.model.Place
 import com.dpsmpx.dpmeta.model.ProjectEntry
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import com.dpsmpx.dpmeta.model.Registry
 
 /**

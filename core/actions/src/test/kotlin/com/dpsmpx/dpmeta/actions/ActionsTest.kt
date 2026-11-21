@@ -8,7 +8,7 @@ import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.core.operations.ActionLevel
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals

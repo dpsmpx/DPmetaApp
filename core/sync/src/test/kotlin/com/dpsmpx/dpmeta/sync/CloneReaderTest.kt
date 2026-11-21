@@ -10,7 +10,7 @@ import com.dpsmpx.dpmeta.github.CommitInfo
 import com.dpsmpx.dpmeta.github.PullRequest
 import com.dpsmpx.dpmeta.model.ObservationSource
 import com.dpsmpx.dpmeta.model.SyncProject
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.lib.PersonIdent
 import java.io.File

@@ -14,7 +14,7 @@ import com.dpsmpx.dpmeta.app.screens.CommandActions.Facts
 import com.dpsmpx.dpmeta.app.screens.CommandActions.Linux
 import com.dpsmpx.dpmeta.formats.CommandFormat
 import com.dpsmpx.dpmeta.model.ProjectList
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import com.dpsmpx.dpmeta.git.Clones
 import com.dpsmpx.dpai.core.operations.ActionLevel
 import java.nio.file.Path

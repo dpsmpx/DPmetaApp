@@ -327,7 +327,7 @@ interface Loader {
         Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "проектов пульта здесь нет", project)
 
     /** PR перед действием (F-12): репозиторий проекта и свежий PR с GitHub. */
-    fun pull(project: String, number: Int, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, PullDetail>>) -> Unit) =
+    fun pull(project: String, number: Int, done: (Outcome<Pair<com.dpsmpx.dpai.core.git.RepoRef, PullDetail>>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "действий с PR здесь нет", project))
 
     /** Карточка PR (F-11): коммиты, файлы, обсуждение — по кнопке, свежие с GitHub. */
@@ -347,7 +347,7 @@ interface Loader {
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "публикации здесь нет", project.name))
 
     /** Репозиторий проекта — для действий над ним (issue, F-26). */
-    fun repo(project: String, done: (Outcome<com.dpsmpx.dpmeta.model.RepoRef>) -> Unit) =
+    fun repo(project: String, done: (Outcome<com.dpsmpx.dpai.core.git.RepoRef>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "действий здесь нет", project))
 
     /** Файл к правке (F-69): с основной ветки, с блобом — свежий. */
@@ -381,7 +381,7 @@ interface Loader {
     fun briefs(done: (Outcome<List<com.dpsmpx.dpmeta.formats.Brief>>) -> Unit) = done(Outcome.success(emptyList()))
 
     /** Репозиторий проекта и основная ветка — места шаблона (F-23). */
-    fun base(project: String, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, String>>) -> Unit) =
+    fun base(project: String, done: (Outcome<Pair<com.dpsmpx.dpai.core.git.RepoRef, String>>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "поручений здесь нет", project))
 
     /** Реестр команд (F-40; D-82): команды, реестр проектов, проекты с клоном; без оболочки — отказ. */
@@ -1777,7 +1777,7 @@ fun ProjectsDialog(prompt: ProjectsPrompt, onDone: (List<String>?) -> Unit) {
                         isError = typedError != null, supportingText = typedError?.let { e -> { Text(e) } }, modifier = Modifier.weight(1f),
                     )
                     TextButton(onClick = {
-                        when (val r = com.dpsmpx.dpmeta.model.RepoRef.parse(typed)) {
+                        when (val r = com.dpsmpx.dpai.core.git.RepoRef.parse(typed)) {
                             is com.dpsmpx.dpai.core.result.Outcome.Failure -> typedError = "нужно «владелец/имя»"
                             is com.dpsmpx.dpai.core.result.Outcome.Success -> {
                                 val slug = r.value.toString()
@@ -1895,7 +1895,7 @@ private fun PullCardView(project: String, p: PullDetail, loader: Loader) {
  */
 @Composable
 private fun PullScreen(project: String, number: Int, checks: String?, loader: Loader, onBack: () -> Unit) {
-    var loaded by remember(project, number) { mutableStateOf<Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, PullDetail>>?>(null) }
+    var loaded by remember(project, number) { mutableStateOf<Outcome<Pair<com.dpsmpx.dpai.core.git.RepoRef, PullDetail>>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
     LaunchedEffect(project, number, reload) {
         loaded = null
@@ -2502,7 +2502,7 @@ private fun AskScreen(nav: Nav.Ask, hasSnapshot: Boolean, loader: Loader, onBack
 private fun BriefScreen(nav: Nav.Brief, loader: Loader, onBack: () -> Unit) {
     var routes by remember(nav) { mutableStateOf<List<RouteActions.Route>?>(null) }
     var briefs by remember(nav) { mutableStateOf<Outcome<List<com.dpsmpx.dpmeta.formats.Brief>>?>(null) }
-    var base by remember(nav) { mutableStateOf<Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, String>>?>(null) }
+    var base by remember(nav) { mutableStateOf<Outcome<Pair<com.dpsmpx.dpai.core.git.RepoRef, String>>?>(null) }
     var journal by remember(nav) { mutableStateOf<List<ActionEntry>>(emptyList()) }
     var reloadJournal by remember(nav) { mutableIntStateOf(0) }
     LaunchedEffect(nav) {

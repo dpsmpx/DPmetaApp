@@ -348,7 +348,7 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
      * отказ.
      */
     fun fileAt(project: String, commit: String, path: String): Outcome<ByteArray?> {
-        if (!Regex("[0-9a-f]{40}").matches(commit)) return failure(DiagCode.VALUE_INVALID, "не SHA коммита", project)
+        if (!com.dpsmpx.dpai.core.git.GitNames.sha(commit)) return failure(DiagCode.VALUE_INVALID, "не SHA коммита", project)
         val parts = path.trim('/').split('/').filter { it.isNotEmpty() }
         if (parts.isEmpty()) return Outcome.success(null)
         return withRepo(project) { repo ->

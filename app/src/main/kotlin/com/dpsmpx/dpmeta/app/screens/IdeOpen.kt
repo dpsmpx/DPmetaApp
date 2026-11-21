@@ -1,6 +1,6 @@
 package com.dpsmpx.dpmeta.app.screens
 
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 
 /**
  * Документ проекта пульта в IDE (D-177): по клону и рабочему проекту — открыть в редакторе,

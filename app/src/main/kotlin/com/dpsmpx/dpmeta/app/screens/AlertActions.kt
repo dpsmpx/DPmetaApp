@@ -9,7 +9,7 @@ import com.dpsmpx.dpmeta.model.AlertRules
 import com.dpsmpx.dpmeta.model.EventCatalog
 import com.dpsmpx.dpmeta.notify.Alerts
 import com.dpsmpx.dpmeta.notify.Decision
-import com.dpsmpx.dpmeta.notify.QuietHours
+import com.dpsmpx.dpai.notifications.QuietHours
 import java.time.ZoneId
 
 /**

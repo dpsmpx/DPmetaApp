@@ -57,8 +57,8 @@ open class DpaiApplication : Application() {
     open fun parentIntent(): Intent? = null
 
     /** Обычное сообщение по политике оболочки; callback — под её guard приватности (D-176). */
-    open fun presentNotice(notice: com.dpsmpx.dpai.notifications.Notification, render: (com.dpsmpx.dpai.ui.NoticePresentation) -> Boolean) {
-        render(com.dpsmpx.dpai.ui.NoticePresentation())
+    open fun presentNotice(notice: com.dpsmpx.dpai.notifications.Notification, render: (com.dpsmpx.dpai.notifications.NoticePresentation) -> Boolean) {
+        render(com.dpsmpx.dpai.notifications.NoticePresentation())
     }
 
     /** Аккаунт предоставляет оболочка; подсистема не знает ни хранилища, ни токена пульта (D-125). */

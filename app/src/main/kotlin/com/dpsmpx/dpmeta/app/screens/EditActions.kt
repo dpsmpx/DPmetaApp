@@ -5,7 +5,7 @@ import com.dpsmpx.dpmeta.actions.ActionCommand
 import com.dpsmpx.dpmeta.actions.ActionKind
 import com.dpsmpx.dpmeta.actions.ActionTarget
 import com.dpsmpx.dpmeta.github.FileBlob
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneOffset

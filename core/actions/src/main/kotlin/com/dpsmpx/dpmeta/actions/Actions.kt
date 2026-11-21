@@ -12,7 +12,7 @@ import com.dpsmpx.dpai.security.Approval
 import com.dpsmpx.dpai.security.ApprovalLedger
 import com.dpsmpx.dpai.security.Proposal
 import com.dpsmpx.dpai.core.operations.ActionLevel
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 

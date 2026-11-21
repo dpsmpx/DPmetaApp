@@ -3,7 +3,7 @@ package com.dpsmpx.dpmeta.app.screens
 import com.dpsmpx.dpmeta.actions.ActionCommand
 import com.dpsmpx.dpmeta.actions.ActionKind
 import com.dpsmpx.dpmeta.actions.ActionTarget
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 
 /**
  * «Опубликовать на GitHub» (D-150): проект с устройства получает закрытый репозиторий

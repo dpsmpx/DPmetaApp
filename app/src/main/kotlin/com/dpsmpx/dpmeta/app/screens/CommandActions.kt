@@ -9,7 +9,7 @@ import com.dpsmpx.dpmeta.actions.ActionTarget
 import com.dpsmpx.dpmeta.formats.CommandSpec
 import com.dpsmpx.dpmeta.git.Clones
 import com.dpsmpx.dpmeta.model.ProjectCatalog
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 
 /**
  * Команды реестра в Linux-среде приложения (F-40, F-43; D-82): где команда идёт,
