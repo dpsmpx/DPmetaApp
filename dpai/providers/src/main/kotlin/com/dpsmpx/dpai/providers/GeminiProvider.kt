@@ -8,6 +8,7 @@ import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonArray
 import com.dpsmpx.dpai.core.serialization.JsonBool
 import com.dpsmpx.dpai.core.serialization.JsonNumber
+import com.dpsmpx.dpai.core.serialization.JsonNull
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonValue
 import java.net.URLEncoder
@@ -126,7 +127,8 @@ class GeminiProvider(profile: ApiProfile, key: Secret?, transport: Transport) : 
             for (part in parts) {
                 val call = part.obj()?.get("functionCall").obj() ?: continue
                 val name = call["name"].str()
-                val args = call["args"].obj()
+                // Gemini может не прислать args у функции без обязательных аргументов.
+                val args = if (call["args"] == null || call["args"] == JsonNull) JsonObject.of() else call["args"].obj()
                 if (name == null || args == null) return@turn Outcome.failure(DiagCode.PROVIDER_REPLY_INVALID, "неверный вызов функции Gemini")
                 val suppliedId = call["id"].str()
                 if (suppliedId != null && (suppliedId.isEmpty() || !seenIds.add(suppliedId))) return@turn Outcome.failure(DiagCode.PROVIDER_REPLY_INVALID, "повторный id функции Gemini")

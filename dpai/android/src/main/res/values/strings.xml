@@ -74,4 +74,5 @@
     <string name="api_work_interrupted">Ход API прерван перезапуском приложения. Файлы могли измениться: проверьте изменения и последнюю копию на рабочем экране проекта. Команда автоматически не повторяется.</string>
     <string name="api_work_key_saved">Новый API-ключ — только если нужно заменить сохранённый</string>
     <string name="api_work_cancel">Остановить проверку</string>
+    <string name="api_work_local_stopped">Сервер llama.cpp на телефоне остановлен. Запустите его в разделе Linux и снова откройте мастер.</string>
 </resources>

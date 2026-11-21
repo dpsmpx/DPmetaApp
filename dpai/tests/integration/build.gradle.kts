@@ -6,6 +6,8 @@ plugins {
 dependencies {
     testImplementation(project(":orchestrator"))
     testImplementation(project(":testkit"))
+    testImplementation(project(":ui"))
+    testImplementation(project(":providers"))
 }
 
 // mustRunAfter внутри подсистемы не упорядочивает задачи включающей сборки

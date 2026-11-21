@@ -130,7 +130,8 @@ class OpenAiCompatibleProvider(profile: ApiProfile, key: Secret?, transport: Tra
             val body = linkedMapOf<String, JsonValue>("model" to jstr(request.model), "store" to JsonBool(false), "stream" to JsonBool(false),
                 "include" to JsonArray(listOf(jstr("reasoning.encrypted_content"))),
                 "input" to JsonArray(history.flatMap { if (it is JsonArray) it.items else listOf(it) }),
-                "tools" to JsonArray(tools.map { t -> JsonObject(ToolLoop.schema(t).fields + ("type" to jstr("function"))) }))
+                // В схемах есть необязательные поля: Responses не должен включать strict по умолчанию.
+                "tools" to JsonArray(tools.map { t -> JsonObject(ToolLoop.schema(t).fields + mapOf("type" to jstr("function"), "strict" to JsonBool(false))) }))
             request.system?.let { body["instructions"] = jstr(it) }
             request.maxOutputTokens?.let { body["max_output_tokens"] = JsonNumber.of(it) }
             val reply = when (val r = json(HttpCall("POST", url("/responses"), headers, CanonicalJson.write(JsonObject(body)).toByteArray(Charsets.UTF_8), secret()), cancel)) {

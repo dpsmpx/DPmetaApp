@@ -87,4 +87,5 @@
     <string name="api_work_interrupted">The API turn was interrupted by an app restart. Files may have changed: review changes and the last backup in the workspace. Commands are not automatically repeated.</string>
     <string name="api_work_key_saved">New API key — only to replace the saved key</string>
     <string name="api_work_cancel">Stop checking</string>
+    <string name="api_work_local_stopped">The phone’s llama.cpp server is stopped. Start it in Linux, then reopen the wizard.</string>
 </resources>

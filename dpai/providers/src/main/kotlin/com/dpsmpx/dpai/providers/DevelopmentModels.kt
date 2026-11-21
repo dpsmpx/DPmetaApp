@@ -4,7 +4,7 @@ package com.dpsmpx.dpai.providers
 object DevelopmentModels {
     fun eligible(models: List<ModelInfo>): List<ModelInfo> = models.filter { model ->
         val id = model.id.lowercase()
-        model.supportsTools != false && listOf("embed", "rerank", "whisper", "dall-e", "gpt-image", "tts-", "imagen", "veo-", "moderation", "transcribe", "babbage", "davinci").none { it in id }
+        model.supportsTools != false && listOf("embed", "rerank", "whisper", "dall-e", "image", "realtime", "audio", "tts-", "veo-", "moderation", "transcribe", "babbage", "davinci").none { it in id }
     }.distinctBy { it.id }.sortedBy { it.id }
 
     fun preferred(models: List<ModelInfo>, saved: String?): String? {

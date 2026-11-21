@@ -9,5 +9,4 @@ dependencies {
     api(project(":lsp"))
     api(project(":files"))
     testImplementation(project(":testkit"))
-    testImplementation(project(":providers"))
 }

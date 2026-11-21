@@ -105,6 +105,8 @@ internal fun ApiQuickStartWizard(onOpen: (Conversation) -> Unit, onAdvanced: () 
         scope.launch {
             val result = withContext(Dispatchers.IO) { try {
                 val base = existing ?: ApiProfiles.form(newId, preset.first, preset.second, preset.third, "", null, false).valueOrNull()!!
+                // Старый loopback-порт мог занять другой процесс: не отдавать ему ключ остановленного llama.cpp (T18).
+                if (LocalModel.isOwn(context, base) && !LocalModel.usable(base)) return@withContext Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, context.getString(R.string.api_work_local_stopped))
                 val provider = if (capturedKey == null && existing != null) ModelsStore.provider(base) else Providers.of(base, capturedKey)
                 when (val r = provider.models(cancel)) {
                     is Outcome.Failure -> r
@@ -127,7 +129,7 @@ internal fun ApiQuickStartWizard(onOpen: (Conversation) -> Unit, onAdvanced: () 
             busy = false
         }
     }
-    LaunchedEffect(selectedProfile) { if (!busy && existing != null && ModelsStore.hasKey(existing.id)) connect() }
+    LaunchedEffect(selectedProfile) { if (!busy && existing != null) connect() }
     fun start() {
         val choice = selected ?: return
         val base = checked ?: existing ?: return
@@ -172,12 +174,13 @@ internal fun ApiQuickStartWizard(onOpen: (Conversation) -> Unit, onAdvanced: () 
                 FilterChip(selected = selectedProfile == null, onClick = { if (!busy) { selectedProfile = null; changedProfile() } }, label = { Text(stringResource(R.string.api_work_new_profile)) })
             }
             if (existing == null) Row(Modifier.horizontalScroll(rememberScrollState())) { for (p in presets) FilterChip(selected = preset == p, onClick = { if (!busy) { preset = p; changedProfile() } }, label = { Text(p.first) }) }
-            val needsKey = existing == null || !ModelsStore.hasKey(existing.id)
+            val keyOptional = existing?.let { it.kind == ProviderKind.OPENAI_COMPATIBLE && it.customHostAllowed } == true
+            val needsKey = existing == null || !ModelsStore.hasKey(existing.id) && !keyOptional
             OutlinedTextField(key, { key = it; checked = null; models = emptyList() }, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(if (needsKey) R.string.api_work_key else R.string.api_work_key_saved)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true, enabled = !busy)
             TextButton(enabled = !busy && (!needsKey || key.isNotBlank()), onClick = ::connect) { Text(stringResource(R.string.api_work_check_key)) }
             if (models.isNotEmpty()) {
                 Text(stringResource(R.string.api_work_model))
-                LazyColumn(Modifier.height(150.dp)) { items(models, key = { it.id }) { m -> FilterChip(selected = m.id == selectedModel, onClick = { selectedModel = m.id }, label = { Text(m.name ?: m.id, maxLines = 1) }) } }
+                LazyColumn(Modifier.height(150.dp)) { items(models, key = { it.id }) { m -> FilterChip(selected = m.id == selectedModel, onClick = { if (!busy) selectedModel = m.id }, label = { Text(m.name ?: m.id, maxLines = 1) }) } }
             } else existing?.model?.takeIf { it.isNotBlank() }?.let { Text(it) }
             Text(stringResource(R.string.api_work_consent), style = MaterialTheme.typography.bodySmall)
             note?.let { Text(it, color = if (busy) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error) }

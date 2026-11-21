@@ -30,6 +30,7 @@ class ProjectToolsProviderTest {
         assertEquals(Measure.observed(7L), answer.usage.input)
         assertEquals("https://api.openai.com/v1/responses", t.last.url.toString())
         assertTrue(t.bodyOf().contains("\"store\":false"))
+        assertTrue(t.bodyOf().contains("\"strict\":false"))
         assertTrue(t.bodyOf().contains("encrypted_content"))
         assertTrue(t.bodyOf().contains("function_call_output"))
         assertTrue(!t.bodyOf().contains("previous_response_id"))
@@ -121,5 +122,19 @@ class ProjectToolsProviderTest {
         val calls = arrayListOf<String>()
         assertIs<Outcome.Failure>(p.chatWithTools(request, tools, cancel, {}) { calls += it.name; cancel.cancel(); ToolResult("ok") })
         assertEquals(listOf("read_file"), calls)
+    }
+
+    @Test fun geminiAcceptsOmittedArgsAndDoesNotInventProviderIds() {
+        for (args in listOf("", ",\"args\":null")) {
+            var n = 0
+            val first = """{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"read_file"$args}}]},"finishReason":"STOP"}]}"""
+            val last = """{"candidates":[{"content":{"role":"model","parts":[{"text":"Готово"}]},"finishReason":"STOP"}]}"""
+            val t = FakeTransport { FakeReply(200, if (n++ == 0) first else last) }
+            val p = Providers.of(profile(ProviderKind.GEMINI), Secret(sampleKey("api")), t) as ToolChat
+            var invoked = 0
+            assertIs<Outcome.Success<*>>(p.chatWithTools(request, tools, Cancel(), {}) { invoked++; assertEquals(JsonObject.of(), it.input); ToolResult("файл") })
+            assertEquals(1, invoked)
+            assertTrue(!t.bodyOf().contains("gemini-"))
+        }
     }
 }

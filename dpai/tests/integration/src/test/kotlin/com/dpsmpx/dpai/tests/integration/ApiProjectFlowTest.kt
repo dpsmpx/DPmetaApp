@@ -1,4 +1,4 @@
-package com.dpsmpx.dpai.ui
+package com.dpsmpx.dpai.tests.integration
 
 import com.dpsmpx.dpai.accounts.ApiProfiles
 import com.dpsmpx.dpai.accounts.ProviderKind
@@ -25,6 +25,14 @@ import com.dpsmpx.dpai.providers.ToolResult
 import com.dpsmpx.dpai.providers.ToolSpec
 import com.dpsmpx.dpai.providers.Transport
 import com.dpsmpx.dpai.storage.vfs.NioVfs
+import com.dpsmpx.dpai.ui.ApiProjectFiles
+import com.dpsmpx.dpai.ui.ApiQuickStart
+import com.dpsmpx.dpai.ui.DraftCipher
+import com.dpsmpx.dpai.ui.ProjectWorkspaceView
+import com.dpsmpx.dpai.ui.TargetForm
+import com.dpsmpx.dpai.ui.WorkspaceChangeStore
+import com.dpsmpx.dpai.ui.WorkspaceChanges
+import com.dpsmpx.dpai.ui.WorkspaceWriteGate
 import java.nio.file.Path
 import java.security.GeneralSecurityException
 import java.util.concurrent.locks.ReentrantLock
