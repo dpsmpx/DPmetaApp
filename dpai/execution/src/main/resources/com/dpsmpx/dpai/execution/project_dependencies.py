@@ -176,6 +176,8 @@ def python(mode):
 def conan(mode):
     if not any(target(p).is_file() for p in ("conanfile.py", "conanfile.txt")):
         raise ValueError("нет conanfile.py или conanfile.txt; CMake сам не закрепляет сторонние библиотеки")
+    # Conan пишет штатный lock напрямую; ссылка могла бы изменить файл вне проекта.
+    target("conan.lock")
     if mode == "pin":
         run(["conan", "lock", "create", ".", "--lockfile-out=conan.lock"])
     else:

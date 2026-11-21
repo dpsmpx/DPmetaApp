@@ -74,6 +74,19 @@ class DependencyToolsTest {
         assertTrue(outside.listFiles().orEmpty().isEmpty())
     }
 
+    @Test fun conanLockCannotWriteThroughProjectSymlink(@TempDir dir: File, @TempDir outside: File) {
+        enabled()
+        File(dir, "conanfile.txt").writeText("[requires]\n")
+        val lock = File(outside, "protected.lock").apply { writeText("{ \"version\": \"0.5\", \"requires\": [] }\n") }
+        val before = lock.readBytes()
+        java.nio.file.Files.createSymbolicLink(File(dir, "conan.lock").toPath(), lock.toPath())
+        val result = tool(dir, Manager.CONAN, Mode.PIN)
+        // Причина обязательна: отсутствие Conan в PATH не должно давать ложный успех теста.
+        assertTrue(result.first != 0 && "ссылк" in result.second, result.second)
+        assertTrue(before.contentEquals(lock.readBytes()))
+        assertTrue(java.nio.file.Files.isSymbolicLink(File(dir, "conan.lock").toPath()))
+    }
+
     @Test fun gradleGraphIncludesTransitiveVersionAndRegularBuildHonorsLock(@TempDir dir: File) {
         enabled()
         val repo = File(checkNotNull(System.getProperty("dpai.repoRoot")))
