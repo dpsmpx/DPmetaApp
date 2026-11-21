@@ -132,7 +132,7 @@ class WorkspaceChanges(private val store: WorkspaceChangeStore) {
     }
 
     private fun save(tree: FileTree, path: String, before: ByteArray?, after: ByteArray?): Outcome<Unit> {
-        if (before != null && after != null) return TextFileEdit.saveBytes(tree, path, before, after)
+        if (before != null && after != null) return when (val r = TextFileEdit.saveBytes(tree, path, before, after)) { is Outcome.Failure -> r; is Outcome.Success -> Outcome.success(Unit) }
         val current = when (val r = find(tree, path)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
         if (!same(current, before)) return conflict(path)
         if (after == null) return if (before == null) Outcome.success(Unit) else tree.delete(path)
