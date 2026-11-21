@@ -37,7 +37,7 @@ class WorkspaceChanges(private val store: WorkspaceChangeStore) {
         // Копия могла писаться долго; до первой записи исходника перепроверяем очередь.
         if (index?.valid() == false) {
             val cleared = store.finish(project, applied = false)
-            val conflict = Outcome.failure<Unit>(DiagCode.STATE_CONFLICT, "индекс проекта изменился; повторите переименование")
+            val conflict = Outcome.failure(DiagCode.STATE_CONFLICT, "индекс проекта изменился; повторите переименование")
             return Outcome.Failure(conflict.diagnostics + cleared.diagnostics)
         }
         for (file in files) {
