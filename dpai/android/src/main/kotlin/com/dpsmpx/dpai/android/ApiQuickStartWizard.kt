@@ -86,6 +86,9 @@ internal fun ApiQuickStartWizard(onOpen: (Conversation) -> Unit, onAdvanced: () 
     val newId = remember { ModelsStore.newProfileId() }
     val existing = profiles.firstOrNull { it.id.value == selectedProfile }
     val selected = choices.firstOrNull { it.key == selectedProject }
+    val localStopped = stringResource(R.string.api_work_local_stopped)
+    val noModels = stringResource(R.string.api_work_no_models)
+    val preparing = stringResource(R.string.api_work_preparing)
     LaunchedEffect(Unit) {
         val loaded = withContext(Dispatchers.IO) {
             ModelsStore.init(context)
@@ -106,7 +109,7 @@ internal fun ApiQuickStartWizard(onOpen: (Conversation) -> Unit, onAdvanced: () 
             val result = withContext(Dispatchers.IO) { try {
                 val base = existing ?: ApiProfiles.form(newId, preset.first, preset.second, preset.third, "", null, false).valueOrNull()!!
                 // Старый loopback-порт мог занять другой процесс: не отдавать ему ключ остановленного llama.cpp (T18).
-                if (LocalModel.isOwn(context, base) && !LocalModel.usable(base)) return@withContext Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, context.getString(R.string.api_work_local_stopped))
+                if (LocalModel.isOwn(context, base) && !LocalModel.usable(base)) return@withContext Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, localStopped)
                 val provider = if (capturedKey == null && existing != null) ModelsStore.provider(base) else Providers.of(base, capturedKey)
                 when (val r = provider.models(cancel)) {
                     is Outcome.Failure -> r
@@ -123,7 +126,7 @@ internal fun ApiQuickStartWizard(onOpen: (Conversation) -> Unit, onAdvanced: () 
                     checked = result.value.first
                     models = result.value.second
                     selectedModel = com.dpsmpx.dpai.providers.DevelopmentModels.preferred(models, existing?.model).orEmpty()
-                    if (models.isEmpty()) note = context.getString(R.string.api_work_no_models)
+                    if (models.isEmpty()) note = noModels
                 }
             }
             busy = false
@@ -134,7 +137,7 @@ internal fun ApiQuickStartWizard(onOpen: (Conversation) -> Unit, onAdvanced: () 
         val choice = selected ?: return
         val base = checked ?: existing ?: return
         val selectedId = selectedModel.ifBlank { base.model }
-        busy = true; note = context.getString(R.string.api_work_preparing)
+        busy = true; note = preparing
         val capturedKey = key.trim().takeIf { it.isNotEmpty() }?.let(::Secret)
         scope.launch {
             val result = withContext(Dispatchers.IO) { try {
@@ -154,7 +157,7 @@ internal fun ApiQuickStartWizard(onOpen: (Conversation) -> Unit, onAdvanced: () 
             } }
             when (result) {
                 is Outcome.Failure -> note = result.diagnostics.first().message
-                is Outcome.Success -> { key = ""; ApiQuickStartRequests.dismiss(context); onOpen(result.value) }
+                is Outcome.Success -> { key = ""; SetupWizardPrefs.setLater(context); ApiQuickStartRequests.dismiss(context); onOpen(result.value) }
             }
             busy = false
         }

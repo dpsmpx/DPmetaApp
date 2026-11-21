@@ -60,8 +60,15 @@ internal object ApiProjectRuntime {
         val old = current.project?.let { id -> controller.projects().projects.firstOrNull { it.project == id } }
         val needsLinux = old == null || controller.targets().firstOrNull { it.id == old.target }?.inApp == true
         if (needsLinux && LinuxSetup.environment(context).installed() == null) {
+            (StorageSpace.check(context, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.SERVICE, null, "Linux для API-проекта") as? Outcome.Failure)?.let { return it }
             StorageMap.prepare(context)
-            when (val r = LinuxSetup.install(context)) { is Outcome.Failure -> return r; is Outcome.Success -> Unit }
+            // Тот же резерв, что у ручной установки: две распаковки и apk не идут одновременно.
+            val done = CompletableFuture<LongJobs.Done>()
+            if (!LinuxJobs.install(context) { done.complete(it) }) return Outcome.failure(DiagCode.WORKTREE_OWNED, "окружение занято; дождитесь завершения установки или команды")
+            val result = try { done.get(10, TimeUnit.MINUTES) } catch (_: TimeoutException) {
+                return Outcome.failure(DiagCode.PROCESS_TIMEOUT, "установка Linux ещё не завершена; её итог появится в разделе окружения")
+            }
+            if (result.failed) return Outcome.failure(DiagCode.STORAGE_IO_FAILED, result.note)
             StorageMap.prepare(context)
         }
         if (old != null) return when (val r = controller.selectProject(old.project)) { is Outcome.Failure -> r; is Outcome.Success -> Outcome.success(old) }

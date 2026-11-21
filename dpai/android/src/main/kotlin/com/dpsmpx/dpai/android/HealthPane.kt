@@ -63,7 +63,7 @@ internal class HealthNav(
 internal object LinuxJobs {
     private const val MAX_OUTPUT = 40
 
-    fun install(context: Context): Boolean = LongJobs.get(context).start(LongJobs.LINUX_INSTALL, "Установка Alpine", excludes = LongJobs.GUEST) {
+    fun install(context: Context, onFinished: ((LongJobs.Done) -> Unit)? = null): Boolean = LongJobs.get(context).start(LongJobs.LINUX_INSTALL, "Установка Alpine", excludes = LongJobs.GUEST, onFinished = onFinished) {
         when (val r = LinuxSetup.install(context)) {
             is Outcome.Success -> LongJobs.Done(r.value?.let { "Установлено: файлов ${it.files}, ${it.bytes / 1_048_576} МБ" } ?: "Уже установлено")
             is Outcome.Failure -> LongJobs.Done("Не установлено: ${r.errors.first().message}", failed = true)
