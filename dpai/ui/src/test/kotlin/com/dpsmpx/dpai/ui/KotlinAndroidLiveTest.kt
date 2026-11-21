@@ -118,7 +118,8 @@ class KotlinAndroidLiveTest {
             val unfinished = text + "\nfun today(): LocalDa = java.time.LocalDate.now()\n"
             ok(session.open(uri, "kotlin", unfinished))
             val offset = unfinished.indexOf("LocalDa =") + "LocalDa".length
-            val imported = ok(session.completion(uri, LineIndex(unfinished).position(offset))).items.firstOrNull { it.label.startsWith("LocalDate") }
+            val offered = ok(session.completion(uri, LineIndex(unfinished).position(offset))).items
+            val imported = com.dpsmpx.dpai.lsp.Assist.filter(offered, "LocalDa", 24).firstOrNull { it.label.startsWith("LocalDate") }
             assertNotNull(imported, "служба не предложила LocalDate вне импортов")
             val resolved = ok(session.resolveCompletion(imported))
             assertFalse(resolved.unsupported, "служба требует неподдерживаемую команду/snippet: $resolved")

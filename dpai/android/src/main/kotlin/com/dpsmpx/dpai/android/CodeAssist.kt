@@ -165,7 +165,9 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
 
     /** Правка службы для этого файла: другие файлы — отказ целиком; текст ушёл вперёд — повторить. */
     fun applyWorkspace(edit: WorkspaceEdit, before: String, cursor: Int, done: String) {
-        if (projectEdits != null) {
+        // Обычное исправление текущего буфера остаётся отменяемым и не требует
+        // его предварительной записи; общий предпросмотр нужен для других URI.
+        if (projectEdits != null && edit.changes.keys.any { it != session.uri }) {
             val client = session.ready() ?: return
             scope.launch {
                 busy = true

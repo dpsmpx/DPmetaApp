@@ -89,7 +89,7 @@ object Assist {
 
     /** Варианты, подходящие набранному [prefix], в порядке службы (`sortText`), не больше [limit]. */
     fun filter(items: List<CompletionItem>, prefix: String, limit: Int = 100): List<CompletionItem> = items
-        .filter { (it.filterText ?: it.insertText).startsWith(prefix, ignoreCase = true) }
+        .filter { (it.filterText ?: it.label).startsWith(prefix, ignoreCase = true) }
         .sortedWith(compareBy({ it.sortText ?: it.label }, { it.label }))
         .take(limit)
 

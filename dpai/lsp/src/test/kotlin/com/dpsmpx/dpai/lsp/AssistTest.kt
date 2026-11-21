@@ -53,6 +53,14 @@ class AssistTest {
     }
 
     @Test
+    fun completionFilterDefaultsToLabelEvenWhenInsertionIsDeferredOrQualified() {
+        val deferred = item("LocalDate", insert = "")
+        val qualified = item("Widget", insert = "demo.Widget")
+        assertEquals(listOf(deferred), Assist.filter(listOf(deferred, qualified), "LocalDa"))
+        assertEquals(listOf(qualified), Assist.filter(listOf(deferred, qualified), "Wi"))
+    }
+
+    @Test
     fun marksCoverRangesAndStayVisible() {
         val text = "int x\nreturn;\n"
         val d = { r: TextEdit, s: LspSeverity -> LspDiagnostic(r.range, s, null, null, "m") }
