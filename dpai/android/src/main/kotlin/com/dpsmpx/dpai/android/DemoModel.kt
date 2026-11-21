@@ -650,7 +650,7 @@ class DemoModel(
                     ?: return@start LongJobs.Done("окружение шагов переполнено: добавьте ANDROID_HOME в профиль сами", failed = true)
             } else resolved
             // Сборка в Linux приложения пишет на диск телефона — под защитой места (DPmetaApp:D-113); на ПК-target место — его.
-            if (profile.kind == com.dpsmpx.dpai.ui.ManualProfileKind.BUILD && target.inApp) {
+            if (profile.kind != com.dpsmpx.dpai.ui.ManualProfileKind.CHECK && target.inApp) {
                 (StorageSpace.check(app, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.BUILD, null, "ручная сборка проекта") as? Outcome.Failure)
                     ?.let { return@start LongJobs.Done(it.diagnostics.first().message, failed = true) }
             }

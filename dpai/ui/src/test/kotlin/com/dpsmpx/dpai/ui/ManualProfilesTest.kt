@@ -88,6 +88,10 @@ class ManualProfilesTest {
         fun sample(name: String) = (com.dpsmpx.dpai.core.serialization.JsonParser().parse(javaClass.getResource("/manual-profiles/$name.json")!!.readText()).valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject)
         assertEquals(ManualProfileKind.CHECK, ManualProfile.read(sample("check-v1"))!!.kind)
         assertEquals(null, ManualProfile.read(sample("unknown-version")))
+        val dependencies = ManualProfile.read(sample("dependencies-v5"))!!
+        assertEquals(ManualProfileKind.DEPENDENCIES, dependencies.kind)
+        assertEquals(dependencies, ManualProfile.read(dependencies.toJson()))
+        assertEquals(null, ManualProfile.read(JsonObject(dependencies.toJson().fields + ("version" to JsonNumber.of(4)))))
         assertEquals(listOf("Настройка", "Сборка"), ManualProfile.read(sample("build-v2"))!!.steps.map { it.name })
     }
 

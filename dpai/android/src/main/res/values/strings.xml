@@ -22,4 +22,24 @@
     <string name="project_edit_saved">Файлы сохранены; отмена проектной правки — в списке файлов проекта</string>
     <string name="kotlin_install_busy">Дождитесь завершения установки kotlin-lsp</string>
     <string name="kotlin_install_stopped">Служба остановлена для восстановления kotlin-lsp</string>
+    <string name="dependencies_title">Зависимости проекта</string>
+    <string name="dependencies_explanation">Операции запускаются в выбранном рабочем дереве. Они могут загружать пакеты и выполнять сценарии проекта. Сначала сохраните правки; контур ИИ остаётся на паузе до завершения. Отчёты доступны в файлах проекта.</string>
+    <string name="dependencies_python">Python на target</string>
+    <string name="dependencies_python_hint">Для Python выберите интерпретатор venv проекта, например .venv/bin/python. Для Gradle/Conan Python запускает инструмент.</string>
+    <string name="dependencies_gradle">Gradle: граф всех разрешаемых конфигураций с выбранными версиями и причинами выбора. Закрепление создаёт lock-файлы и подключает блокировку к обычным сборкам корневого проекта. Плагины и included builds требуют отдельного закрепления.</string>
+    <string name="dependencies_pip">pip: граф и версии выбранного окружения, проверка конфликтов pip check. Закрепление сохраняет снимок всего venv в requirements.dp-ide.lock; восстановление выполняется только в venv. Локальные, VCS и editable-пакеты требуют ручного закрепления.</string>
+    <string name="dependencies_conan">Conan 2: граф C++-пакетов из существующего conanfile и стандартный conan.lock. Для CMake без менеджера пакетов универсальной фиксации версий нет; зависимости задаются самим проектом.</string>
+    <string name="dependencies_analyze">Анализировать зависимости</string>
+    <string name="dependencies_pin">Закрепить версии</string>
+    <string name="dependencies_restore">Установить по lock-файлу</string>
+    <string name="dependencies_started">Запрос принят; результат появится ниже.</string>
+    <string name="dependencies_busy">Запуск недоступен: проверьте контур, команду Python и другие долгие операции.</string>
+    <string name="dependencies_stop">Безопасно остановить</string>
+    <string name="dependencies_confirm">Изменить зависимости проекта?</string>
+    <string name="dependencies_gradle_notice">Будут изменены gradle.lockfile в проектах, ./gradle/dp-ide-locking.gradle и корневой build.gradle(.kts). После завершения просмотрите Git diff и сохраните файлы вместе. При отказе Gradle часть lock-файлов могла измениться; приложение покажет ошибку.</string>
+    <string name="dependencies_pip_notice">Будет заменён requirements.dp-ide.lock снимком проверенного venv. Это версии для текущей платформы Python, без хешей архивов; исходные requirements и pyproject не изменяются.</string>
+    <string name="dependencies_conan_notice">Conan создаст или заменит conan.lock по conanfile и активному профилю target. Просмотрите изменения перед сохранением в Git.</string>
+    <string name="dependencies_restore_notice">pip установит версии из requirements.dp-ide.lock в выбранный venv. Возможны загрузки и сборка пакетов.</string>
+    <string name="dependencies_continue">Продолжить</string>
+    <string name="dependencies_cancel">Отмена</string>
 </resources>

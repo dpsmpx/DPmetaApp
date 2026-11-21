@@ -35,4 +35,24 @@
     <string name="sora_editor_text_to_search">Search text</string>
     <string name="kotlin_install_busy">Wait for kotlin-lsp installation to finish</string>
     <string name="kotlin_install_stopped">Server stopped to restore kotlin-lsp</string>
+    <string name="dependencies_title">Project dependencies</string>
+    <string name="dependencies_explanation">Operations run in the selected worktree. They may download packages and execute project scripts. Save edits first; the AI workspace stays paused until completion. Reports are available in project files.</string>
+    <string name="dependencies_python">Python on target</string>
+    <string name="dependencies_python_hint">For Python, select the project venv interpreter, such as .venv/bin/python. For Gradle/Conan, Python runs the tool.</string>
+    <string name="dependencies_gradle">Gradle: graph of all resolvable configurations, selected versions and selection reasons. Pinning writes lock files and enables locking for regular builds of the root project. Plugins and included builds need separate pinning.</string>
+    <string name="dependencies_pip">pip: dependencies and versions in the selected environment, with pip check conflict detection. Pinning saves the entire venv to requirements.dp-ide.lock; restoration requires a venv. Local, VCS and editable packages need manual pinning.</string>
+    <string name="dependencies_conan">Conan 2: C++ package graph from an existing conanfile and a native conan.lock. CMake without a package manager has no universal version locking; dependencies are defined by the project.</string>
+    <string name="dependencies_analyze">Analyze dependencies</string>
+    <string name="dependencies_pin">Pin versions</string>
+    <string name="dependencies_restore">Install from lock file</string>
+    <string name="dependencies_started">Request accepted; the result will appear below.</string>
+    <string name="dependencies_busy">Cannot start: check the workspace, Python command and other running operations.</string>
+    <string name="dependencies_stop">Stop safely</string>
+    <string name="dependencies_confirm">Change project dependencies?</string>
+    <string name="dependencies_gradle_notice">Project gradle.lockfile files, ./gradle/dp-ide-locking.gradle and the root build.gradle(.kts) will change. Review the Git diff afterwards and commit them together. If Gradle fails, some lock files may have changed; the app will report the failure.</string>
+    <string name="dependencies_pip_notice">requirements.dp-ide.lock will be replaced by a snapshot of the checked venv. It pins versions for the current Python platform without archive hashes; original requirements and pyproject files stay as they are.</string>
+    <string name="dependencies_conan_notice">Conan will create or replace conan.lock using conanfile and the active target profile. Review the changes before committing.</string>
+    <string name="dependencies_restore_notice">pip will install requirements.dp-ide.lock versions in the selected venv. Packages may be downloaded and built.</string>
+    <string name="dependencies_continue">Continue</string>
+    <string name="dependencies_cancel">Cancel</string>
 </resources>
