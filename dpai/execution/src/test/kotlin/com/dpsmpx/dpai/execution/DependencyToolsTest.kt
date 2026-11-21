@@ -45,6 +45,15 @@ class DependencyToolsTest {
         assertTrue(original.contains("pip=="))
         assertTrue(File(dir, ".dp-ide/dependencies/python-report.json").isFile)
         ok(tool(dir, Manager.PYTHON, Mode.RESTORE, py))
+        val site = run(dir, listOf(py, "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"))
+        ok(site)
+        val linked = File(site.second.trim(), "linked_sample-1.0.dist-info").apply { mkdirs() }
+        File(linked, "METADATA").writeText("Metadata-Version: 2.1\nName: linked-sample\nVersion: 1.0\n")
+        File(linked, "direct_url.json").writeText("""{"url":"file:///source","dir_info":{"editable":true}}""")
+        val direct = tool(dir, Manager.PYTHON, Mode.PIN, py)
+        assertTrue(direct.first != 0 && "linked-sample" in direct.second, direct.second)
+        assertEquals(original, lock.readText())
+        linked.deleteRecursively()
         val wheel = File(dir, "broken_sample-1.0-py3-none-any.whl")
         ZipOutputStream(wheel.outputStream()).use { zip ->
             for ((name, text) in mapOf(
@@ -72,10 +81,10 @@ class DependencyToolsTest {
             File(dir, path).apply { parentFile.mkdirs(); File(repo, path).copyTo(this) }
         }
         File(dir, "settings.gradle").writeText("rootProject.name='dependency-live'\n")
-        fun artifact(name: String, dependencies: String) {
-            val folder = File(dir, "maven/org/sample/$name/1.0").apply { mkdirs() }
-            File(folder, "$name-1.0.pom").writeText("<project><modelVersion>4.0.0</modelVersion><groupId>org.sample</groupId><artifactId>$name</artifactId><version>1.0</version>$dependencies</project>")
-            ZipOutputStream(File(folder, "$name-1.0.jar").outputStream()).close()
+        fun artifact(name: String, dependencies: String, version: String = "1.0") {
+            val folder = File(dir, "maven/org/sample/$name/$version").apply { mkdirs() }
+            File(folder, "$name-$version.pom").writeText("<project><modelVersion>4.0.0</modelVersion><groupId>org.sample</groupId><artifactId>$name</artifactId><version>$version</version>$dependencies</project>")
+            ZipOutputStream(File(folder, "$name-$version.jar").outputStream()).close()
         }
         artifact("leaf", "")
         artifact("entry", "<dependencies><dependency><groupId>org.sample</groupId><artifactId>leaf</artifactId><version>1.0</version></dependency></dependencies>")
@@ -87,6 +96,14 @@ class DependencyToolsTest {
         assertTrue(File(dir, "gradle.lockfile").readText().contains("org.sample:leaf:1.0"))
         assertTrue(File(dir, "build.gradle").readText().contains("apply from:"))
         ok(run(dir, listOf("sh", "gradlew", "dependencies", "--configuration", "runtimeClasspath", "--offline", "--no-daemon")))
+        File(dir, "src/main/java/Main.java").apply { parentFile.mkdirs(); writeText("class Main {}\n") }
+        ok(run(dir, listOf("sh", "gradlew", "compileJava", "--offline", "--no-daemon")))
+        artifact("entry", "", "2.0")
+        val build = File(dir, "build.gradle")
+        build.writeText(build.readText().replace("org.sample:entry:1.0", "org.sample:entry:2.0"))
+        val refused = run(dir, listOf("sh", "gradlew", "compileJava", "--offline", "--no-daemon"))
+        assertTrue(refused.first != 0, refused.second)
+        assertTrue("lock" in refused.second.lowercase() || "strictly 1.0" in refused.second, refused.second)
         assertFalse(File(dir, "requirements.dp-ide.lock").exists())
     }
 }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +41,7 @@ internal fun WorkspaceDependenciesPanel(model: DemoModel, view: ProjectWorkspace
     var python by rememberSaveable(view.project.project.value, view.target?.id?.value) {
         mutableStateOf(if (view.target?.platform == TargetPlatform.WINDOWS) "python" else "python3")
     }
+    var androidSdk by rememberSaveable(view.project.project.value) { mutableStateOf(false) }
     var pending by rememberSaveable { mutableStateOf<String?>(null) }
     var note by rememberSaveable { mutableStateOf<String?>(null) }
     var run by androidx.compose.runtime.remember { mutableStateOf(model.manualProfileView()) }
@@ -53,7 +55,8 @@ internal fun WorkspaceDependenciesPanel(model: DemoModel, view: ProjectWorkspace
             DependencyTools.Mode.RESTORE -> R.string.dependencies_restore
         })
         val profile = ManualProfile(ManualProfileKind.DEPENDENCIES,
-            listOf(ManualStep(name, DependencyTools.command(manager, mode, python.trim()), 3600)))
+            listOf(ManualStep(name, DependencyTools.command(manager, mode, python.trim()), 3600)),
+            needs = if (androidSdk && manager == DependencyTools.Manager.GRADLE) setOf(com.dpsmpx.dpai.ui.ManualNeed.ANDROID_SDK) else emptySet())
         note = context.getString(if (profile.valid && model.startManualProfile(view.project, where, profile)) R.string.dependencies_started else R.string.dependencies_busy)
         if (profile.valid) ControllerService.resume(context)
     }
@@ -71,6 +74,10 @@ internal fun WorkspaceDependenciesPanel(model: DemoModel, view: ProjectWorkspace
             DependencyTools.Manager.PYTHON -> R.string.dependencies_pip
             DependencyTools.Manager.CONAN -> R.string.dependencies_conan
         }), style = MaterialTheme.typography.bodySmall)
+        if (manager == DependencyTools.Manager.GRADLE && view.target?.inApp == true) Row {
+            Checkbox(androidSdk, { androidSdk = it })
+            Text(stringResource(R.string.dependencies_android_sdk))
+        }
         TextButton(enabled = available, onClick = { start(DependencyTools.Mode.REPORT) }) { Text(stringResource(R.string.dependencies_analyze)) }
         TextButton(enabled = available, onClick = { pending = DependencyTools.Mode.PIN.name }) { Text(stringResource(R.string.dependencies_pin)) }
         if (manager == DependencyTools.Manager.PYTHON) TextButton(enabled = available, onClick = { pending = DependencyTools.Mode.RESTORE.name }) { Text(stringResource(R.string.dependencies_restore)) }

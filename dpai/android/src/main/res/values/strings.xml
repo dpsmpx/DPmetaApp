@@ -42,4 +42,5 @@
     <string name="dependencies_restore_notice">pip установит версии из requirements.dp-ide.lock в выбранный venv. Возможны загрузки и сборка пакетов.</string>
     <string name="dependencies_continue">Продолжить</string>
     <string name="dependencies_cancel">Отмена</string>
+    <string name="dependencies_android_sdk">Для Android-проекта: подключить SDK приложения</string>
 </resources>
