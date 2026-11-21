@@ -12,7 +12,7 @@ import com.dpsmpx.dpmeta.app.screens.RouteActions
 import com.dpsmpx.dpmeta.app.screens.Screens
 import com.dpsmpx.dpmeta.formats.BriefFormat
 import com.dpsmpx.dpai.core.operations.ActionLevel
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals

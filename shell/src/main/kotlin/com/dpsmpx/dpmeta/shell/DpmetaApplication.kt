@@ -79,7 +79,7 @@ class DpmetaApplication : DpaiApplication() {
     /** Опасный ответ окна поверх приложений — только после входа (D-61). */
     override fun loginNeeded(): Boolean = AppLock.loginNeeded
 
-    override fun presentNotice(notice: com.dpsmpx.dpai.notifications.Notification, render: (com.dpsmpx.dpai.ui.NoticePresentation) -> Boolean) =
+    override fun presentNotice(notice: com.dpsmpx.dpai.notifications.Notification, render: (com.dpsmpx.dpai.notifications.NoticePresentation) -> Boolean) =
         com.dpsmpx.dpmeta.app.data.PultAlerts.presentAi(this, notice, render)
 
     override val sharedToolsAccountAvailable: Boolean get() = true

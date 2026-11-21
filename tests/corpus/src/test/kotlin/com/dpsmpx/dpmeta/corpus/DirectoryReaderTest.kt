@@ -1,7 +1,7 @@
 package com.dpsmpx.dpmeta.corpus
 
 import com.dpsmpx.dpai.core.result.Outcome
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import com.dpsmpx.dpmeta.model.SyncProject
 import com.dpsmpx.dpmeta.sync.DirectoryReader
 import java.nio.file.Files

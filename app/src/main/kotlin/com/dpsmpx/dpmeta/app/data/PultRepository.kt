@@ -18,7 +18,7 @@ import com.dpsmpx.dpmeta.metrics.FeedEvent
 import com.dpsmpx.dpmeta.metrics.MetricPoint
 import com.dpsmpx.dpmeta.metrics.Rules
 import com.dpsmpx.dpmeta.metrics.Store
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import com.dpsmpx.dpmeta.model.ProjectList
 import com.dpsmpx.dpmeta.model.ProjectCatalog
 import com.dpsmpx.dpmeta.model.SourceFailure
@@ -232,7 +232,7 @@ class PultRepository(
      * Повтор «Опубликовать» после неудачной отправки ветки (D-150): репозиторий [repo] есть,
      * а ветки [branch] в нём ещё нет. Есть ветка — это уже опубликованный или чужой проект.
      */
-    fun awaitsFirstPush(token: Secret, repo: com.dpsmpx.dpmeta.model.RepoRef, branch: String): Boolean {
+    fun awaitsFirstPush(token: Secret, repo: com.dpsmpx.dpai.core.git.RepoRef, branch: String): Boolean {
         val w = com.dpsmpx.dpmeta.github.GitHubWrite(Net(UrlTransport()), token)
         if (w.defaultBranch(repo) !is Outcome.Success) return false
         val b = w.branch(repo, branch)

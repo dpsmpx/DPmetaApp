@@ -348,7 +348,7 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
      * отказ.
      */
     fun fileAt(project: String, commit: String, path: String): Outcome<ByteArray?> {
-        if (!Regex("[0-9a-f]{40}").matches(commit)) return failure(DiagCode.VALUE_INVALID, "не SHA коммита", project)
+        if (!com.dpsmpx.dpai.core.git.GitNames.sha(commit)) return failure(DiagCode.VALUE_INVALID, "не SHA коммита", project)
         val parts = path.trim('/').split('/').filter { it.isNotEmpty() }
         if (parts.isEmpty()) return Outcome.success(null)
         return withRepo(project) { repo ->
@@ -390,7 +390,7 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
 
     /** Файл ветки GitHub [branch] по пути от корня; нет файла (или это каталог) — `null`, нет клона или ветки — отказ. */
     fun file(project: String, branch: String, path: String): Outcome<ByteArray?> = withRepo(project) { repo ->
-        require(Repository.isValidRefName("${Constants.R_REMOTES}origin/$branch")) { "неверное имя ветки" }
+        require(com.dpsmpx.dpai.core.git.GitNames.branchRef(branch)) { "неверное имя ветки" }
         val tree = repo.resolve("${Constants.R_REMOTES}origin/$branch^{tree}") ?: return@withRepo null
         // Каталог — не файл: байты объекта-дерева на экран не идут (проверка PR #173).
         TreeWalk.forPath(repo, path, tree)?.use { tw -> if (tw.isSubtree) null else repo.open(tw.getObjectId(0)).let { loader ->
@@ -401,7 +401,7 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
 
     /** Размер файла ветки [branch] без чтения его в память; нет файла — `null`. */
     fun size(project: String, branch: String, path: String): Outcome<Long?> = withRepo(project) { repo ->
-        require(Repository.isValidRefName("${Constants.R_REMOTES}origin/$branch")) { "неверное имя ветки" }
+        require(com.dpsmpx.dpai.core.git.GitNames.branchRef(branch)) { "неверное имя ветки" }
         val tree = repo.resolve("${Constants.R_REMOTES}origin/$branch^{tree}") ?: return@withRepo null
         TreeWalk.forPath(repo, path, tree)?.use { tw -> if (tw.isSubtree) null else repo.open(tw.getObjectId(0)).size }
     }

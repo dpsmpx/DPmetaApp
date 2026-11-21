@@ -1,5 +1,7 @@
 package com.dpsmpx.dpmeta.notify
 
+import com.dpsmpx.dpai.notifications.QuietHours
+
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpmeta.model.Event
 import java.time.Instant

@@ -1,5 +1,7 @@
 package com.dpsmpx.dpmeta.model
 
+import com.dpsmpx.dpai.core.git.RepoRef
+
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.DiagnosticCollector
 import com.dpsmpx.dpai.core.result.Outcome

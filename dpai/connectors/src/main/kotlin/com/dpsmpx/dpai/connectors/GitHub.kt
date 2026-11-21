@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.connectors
 
+import com.dpsmpx.dpai.core.git.GitNames
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.diagnostics.DiagnosticCollector
@@ -18,7 +19,6 @@ import com.dpsmpx.dpai.core.serialization.JsonString
  * GitHub (`docs/direction/V1_SCOPE.md`, §3).
  */
 object GitHubCommands {
-    private val BRANCH = Regex("[A-Za-z0-9._/-]{1,200}")
 
     /** `gh pr create`: база, ветка, заголовок, описание; запускать в дереве задачи. */
     fun createPr(base: String, head: String, title: String, body: String): Outcome<List<String>> {
@@ -51,8 +51,6 @@ object GitHubCommands {
     /** Предел своего комментария: экран телефона, а не выгрузка (у GitHub предел больше). */
     const val MAX_COMMENT: Int = 5_000
 
-    private val SHA = Regex("[0-9a-f]{40}")
-    private val PR_URL = Regex("""https://github\.com/([A-Za-z0-9-]{1,39})/([A-Za-z0-9._-]{1,100})/pull/\d+""")
 
     /**
      * `gh pr comment N --body …` (D-108; уровень 2 по `DPmetaApp:D-80`): текст — аргументом, без
@@ -73,12 +71,12 @@ object GitHubCommands {
      */
     fun prMerge(number: Int, headSha: String): Outcome<List<String>> = when {
         number < 1 -> Outcome.failure(DiagCode.VALUE_INVALID, "номер PR — с 1", "github")
-        !SHA.matches(headSha) -> Outcome.failure(DiagCode.VALUE_INVALID, "коммит головы PR — 40 знаков hex", "github")
+        !GitNames.sha(headSha) -> Outcome.failure(DiagCode.VALUE_INVALID, "коммит головы PR — 40 знаков hex", "github")
         else -> Outcome.success(listOf("gh", "pr", "merge", "$number", "--merge", "--match-head-commit", headSha))
     }
 
     /** `владелец/имя` из адреса PR — его человек вводит, подтверждая слияние (уровень 3, `DPmetaApp:D-37`). */
-    fun repoOf(prUrl: String): String? = PR_URL.matchEntire(prUrl)?.let { "${it.groupValues[1]}/${it.groupValues[2]}" }
+    fun repoOf(prUrl: String): String? = com.dpsmpx.dpai.core.git.RepoRef.fromPullUrl(prUrl).valueOrNull()?.toString()
 
     /** Сколько PR в списке — экран телефона, а не выгрузка репозитория. */
     const val LIST_LIMIT: Int = 30
@@ -115,7 +113,7 @@ object GitHubCommands {
         val pr = pr(f)
         val body = f.string("body")?.let(::external)
         val mergeable = f.string("mergeable")
-        val headSha = f.string("headRefOid")?.takeIf { SHA.matches(it) } ?: run {
+        val headSha = f.string("headRefOid")?.takeIf { GitNames.sha(it) } ?: run {
             if (f.has("headRefOid")) f.diagnostics.error(DiagCode.CONNECTOR_REPLY_INVALID, "коммит головы — не 40 знаков hex", "$.headRefOid")
             null
         }
@@ -209,13 +207,13 @@ object GitHubCommands {
         return GhCheck(external(name, 200), state)
     }
 
-    private fun validBranch(b: String) = BRANCH.matches(b) && !b.startsWith("-") && ".." !in b
+    private fun validBranch(b: String) = GitNames.cliBranch(b)
 }
 
 /** Проверка PR (CI): имя и итог — `SUCCESS`, `FAILURE`, `NEUTRAL`, `SKIPPED`…; пока идёт — `IN_PROGRESS`, `QUEUED`, `PENDING`. */
 data class GhCheck(val name: String, val state: String) {
-    val passed: Boolean get() = state in setOf("SUCCESS", "NEUTRAL", "SKIPPED")
-    val failed: Boolean get() = state in setOf("FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE")
+    val passed: Boolean get() = com.dpsmpx.dpai.core.git.GitHubChecks.state(state) == com.dpsmpx.dpai.core.git.GitHubChecks.Verdict.PASSED
+    val failed: Boolean get() = com.dpsmpx.dpai.core.git.GitHubChecks.state(state) == com.dpsmpx.dpai.core.git.GitHubChecks.Verdict.FAILED
 }
 
 /** PR в списке (D-108). [review] — решение отзывов (`APPROVED`, `CHANGES_REQUESTED`, `REVIEW_REQUIRED`), `null` — не требуется. */

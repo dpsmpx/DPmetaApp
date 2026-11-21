@@ -12,7 +12,7 @@ import com.dpsmpx.dpmeta.formats.AlertFormat
 import com.dpsmpx.dpmeta.formats.EventCatalogFormat
 import com.dpsmpx.dpmeta.metrics.Feed
 import com.dpsmpx.dpmeta.model.Event
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import com.dpsmpx.dpmeta.notify.Alerts
 import com.dpsmpx.dpmeta.notify.Decision
 import java.io.File

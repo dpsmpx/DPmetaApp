@@ -4,7 +4,7 @@ import com.dpsmpx.dpmeta.actions.ActionKind
 import com.dpsmpx.dpai.core.operations.ActionLevel
 import com.dpsmpx.dpmeta.app.screens.PublishActions
 import com.dpsmpx.dpmeta.app.screens.Screens
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull

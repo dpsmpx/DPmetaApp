@@ -521,7 +521,7 @@ open class PultActivity : ComponentActivity() {
         if (selected != null) {
             val old = repo.projectList().valueOrNull() ?: com.dpsmpx.dpmeta.model.ProjectList()
             var list = com.dpsmpx.dpmeta.model.ProjectList(old.projects.filter { p -> selected.any { it.equals(p.repo.toString(), ignoreCase = true) } })
-            for (slug in selected) com.dpsmpx.dpmeta.model.RepoRef.parse(slug).valueOrNull()?.let { ref -> list = list.add(ref).valueOrNull() ?: list }
+            for (slug in selected) com.dpsmpx.dpai.core.git.RepoRef.parse(slug).valueOrNull()?.let { ref -> list = list.add(ref).valueOrNull() ?: list }
             when (val saved = repo.saveProjectList(list)) {
                 is Outcome.Failure -> Screens.failure(saved.diagnostics.first()).let { f ->
                     view.value = view.value.copy(statusDetails = f.details, status = "Список проектов не сохранён: ${f.text}.")
@@ -804,7 +804,7 @@ open class PultActivity : ComponentActivity() {
         override fun saveProjectPaths(project: String, docs: List<String>, checklists: List<String>): Outcome<Unit> =
             repo.saveProjectPaths(project, docs, checklists)
 
-        override fun pull(project: String, number: Int, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, com.dpsmpx.dpmeta.github.PullDetail>>) -> Unit) =
+        override fun pull(project: String, number: Int, done: (Outcome<Pair<com.dpsmpx.dpai.core.git.RepoRef, com.dpsmpx.dpmeta.github.PullDetail>>) -> Unit) =
             run({ repo.pull(it, project, number) }, done)
 
         override fun pullCard(project: String, number: Int, done: (Outcome<com.dpsmpx.dpmeta.app.screens.PullActions.Card>) -> Unit) =
@@ -851,7 +851,7 @@ open class PultActivity : ComponentActivity() {
             }
         }
 
-        override fun repo(project: String, done: (Outcome<com.dpsmpx.dpmeta.model.RepoRef>) -> Unit) = run({ repo.repoFor(it, project) }, done)
+        override fun repo(project: String, done: (Outcome<com.dpsmpx.dpai.core.git.RepoRef>) -> Unit) = run({ repo.repoFor(it, project) }, done)
 
         override fun viewer(done: (Outcome<String>) -> Unit) = run({ repo.viewer(it) }, done)
 
@@ -866,7 +866,7 @@ open class PultActivity : ComponentActivity() {
                     is Outcome.Failure -> return@run v
                     is Outcome.Success -> v.value
                 }
-                val ref = when (val r = com.dpsmpx.dpmeta.model.RepoRef.of(login, name)) {
+                val ref = when (val r = com.dpsmpx.dpai.core.git.RepoRef.of(login, name)) {
                     is Outcome.Failure -> return@run r
                     is Outcome.Success -> r.value
                 }
@@ -911,7 +911,7 @@ open class PultActivity : ComponentActivity() {
             bad ?: Outcome.success(out.toList())
         }, done)
 
-        override fun base(project: String, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, String>>) -> Unit) =
+        override fun base(project: String, done: (Outcome<Pair<com.dpsmpx.dpai.core.git.RepoRef, String>>) -> Unit) =
             run({ repo.base(it, project) }, done)
 
         override fun askProfiles(done: (List<com.dpsmpx.dpmeta.app.screens.AskActions.Profile>) -> Unit) =

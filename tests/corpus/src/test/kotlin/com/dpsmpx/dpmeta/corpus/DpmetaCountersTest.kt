@@ -16,7 +16,7 @@ import com.dpsmpx.dpmeta.metrics.Rules
 import com.dpsmpx.dpmeta.metrics.SourceSection
 import com.dpsmpx.dpmeta.metrics.Store
 import com.dpsmpx.dpmeta.model.SyncProject
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import com.dpsmpx.dpmeta.model.ProjectCatalog
 import com.dpsmpx.dpmeta.sync.Sync
 import java.nio.file.Path

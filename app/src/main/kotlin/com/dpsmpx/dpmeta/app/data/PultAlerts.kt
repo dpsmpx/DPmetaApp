@@ -42,7 +42,7 @@ import com.dpsmpx.dpmeta.model.Event
 import com.dpsmpx.dpmeta.model.EventCatalog
 import com.dpsmpx.dpmeta.notify.Alerts
 import com.dpsmpx.dpmeta.notify.Decision
-import com.dpsmpx.dpmeta.notify.QuietHours
+import com.dpsmpx.dpai.notifications.QuietHours
 import com.dpsmpx.dpmeta.notify.Shown
 import java.io.IOException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -126,15 +126,14 @@ object PultAlerts {
     fun resetRules(context: Context): Outcome<Unit> = user(context).reset()
 
     /** Настройки уведомлений: тихие часы (`null` — выкл) и приватность экрана блокировки. */
-    data class Settings(val quiet: QuietHours?, val privacy: Boolean)
 
-    fun settings(context: Context): Settings {
+    fun settings(context: Context): com.dpsmpx.dpai.notifications.NotificationSettings {
         val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val from = p.getInt(QUIET_FROM, AlertActions.DEFAULT_QUIET.fromMinute)
         val to = p.getInt(QUIET_TO, AlertActions.DEFAULT_QUIET.toMinute)
         val days = p.getStringSet(QUIET_DAYS, emptySet()).orEmpty().mapNotNull { runCatching { java.time.DayOfWeek.valueOf(it) }.getOrNull() }.toSet()
         val quiet = if (from in 0 until QuietHours.MINUTES_IN_DAY && to in 0 until QuietHours.MINUTES_IN_DAY && from != to) QuietHours(from, to, days) else null
-        return Settings(quiet, p.getBoolean(PRIVACY, true))
+        return com.dpsmpx.dpai.notifications.NotificationSettings(quiet, p.getBoolean(PRIVACY, true))
     }
 
     fun setQuiet(context: Context, quiet: QuietHours?) {
@@ -169,8 +168,8 @@ object PultAlerts {
 
     /** Обязательные решения остаются нативными; обычные сообщения — общим правилам (D-142). */
     @Synchronized
-    fun presentAi(context: Context, notice: com.dpsmpx.dpai.notifications.Notification, render: (com.dpsmpx.dpai.ui.NoticePresentation) -> Boolean) {
-        val event = AiNotices.event(notice) ?: run { render(com.dpsmpx.dpai.ui.NoticePresentation()); return }
+    fun presentAi(context: Context, notice: com.dpsmpx.dpai.notifications.Notification, render: (com.dpsmpx.dpai.notifications.NoticePresentation) -> Boolean) {
+        val event = AiNotices.event(notice) ?: run { render(com.dpsmpx.dpai.notifications.NoticePresentation()); return }
         val config = when (val r = config(context)) {
             is Outcome.Failure -> { policyIssue.value = "Обычные уведомления ИИ остановлены: ${r.diagnostics.first().message}"; return }
             is Outcome.Success -> r.value
@@ -191,7 +190,7 @@ object PultAlerts {
         if (decision !is Decision.Notify) return
         synchronized(presentationLock) {
             val manager = context.getSystemService(NotificationManager::class.java) ?: return
-            val style = com.dpsmpx.dpai.ui.NoticePresentation(channel(manager, decision.channel, decision.importance), decision.silent, settings(context).privacy)
+            val style = com.dpsmpx.dpai.notifications.NoticePresentation(channel(manager, decision.channel, decision.importance), decision.silent, settings(context).privacy)
             if (render(style)) writeShown(context, result.shown)
         }
     }

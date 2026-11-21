@@ -3,7 +3,7 @@ package com.dpsmpx.dpmeta.github
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Secret
 import com.dpsmpx.dpai.core.result.Outcome
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import com.dpsmpx.dpmeta.net.HttpRequest
 import com.dpsmpx.dpmeta.net.HttpResponse
 import com.dpsmpx.dpmeta.net.Net

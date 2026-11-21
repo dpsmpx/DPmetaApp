@@ -56,7 +56,6 @@ sealed interface WorktreeEvent {
  * (ТЗ, §29–§31). Решения возвращают события; состояние меняет [apply].
  */
 object Worktrees {
-    private val BRANCH = Regex("[A-Za-z0-9._/-]{1,200}")
 
     fun register(state: WorktreesState, repo: Repository, now: Timestamp): Outcome<List<WorktreeEvent>> {
         state.repositories[repo.id]?.let { return if (it == repo) Outcome.success(emptyList()) else Outcome.failure(DiagCode.VALUE_INVALID, "репозиторий с этим id уже другой", "repository ${repo.id}") }
@@ -69,7 +68,7 @@ object Worktrees {
     /** Новое дерево: путь и ветка не заняты другим живым деревом того же target и репозитория. */
     fun create(state: WorktreesState, id: WorktreeId, repository: RepositoryId, path: String, branch: String, now: Timestamp): Outcome<List<WorktreeEvent>> {
         val repo = state.repositories[repository] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такого репозитория", "repository $repository")
-        if (!BRANCH.matches(branch) || branch.startsWith("-") || ".." in branch) return Outcome.failure(DiagCode.VALUE_INVALID, "имя ветки недопустимо", branch)
+        if (!com.dpsmpx.dpai.core.git.GitNames.cliBranch(branch)) return Outcome.failure(DiagCode.VALUE_INVALID, "имя ветки недопустимо", branch)
         val live = state.worktrees.values.filter { !it.removed }
         live.firstOrNull { w -> state.repositories[w.repository]?.target == repo.target && w.path == path }?.let {
             return Outcome.failure(DiagCode.WORKTREE_PATH_IN_USE, "путь занят деревом ${it.id}", path)

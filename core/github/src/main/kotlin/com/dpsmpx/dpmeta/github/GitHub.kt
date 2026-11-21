@@ -1,5 +1,6 @@
 package com.dpsmpx.dpmeta.github
 
+import com.dpsmpx.dpai.core.git.GitNames
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Secret
@@ -12,7 +13,7 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import com.dpsmpx.dpmeta.net.Fetched
 import com.dpsmpx.dpmeta.net.Net
 import java.net.URI
@@ -118,7 +119,7 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
                 body = str(o, "body"),
                 mergedAt = time(o, "merged_at"),
                 createdAt = time(o, "created_at"),
-                headSha = (o["head"] as? JsonObject)?.let { str(it, "sha") }?.takeIf { SHA.matches(it) },
+                headSha = (o["head"] as? JsonObject)?.let { str(it, "sha") }?.takeIf { GitNames.sha(it) },
                 reviewers = (o["requested_reviewers"] as? JsonArray)?.items.orEmpty().mapNotNull { r -> (r as? JsonObject)?.let { str(it, "login") } },
             )
         }
@@ -172,7 +173,7 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
             val items = (p.value as? JsonArray)?.items ?: return@then missing("[]", "$repo:commits")
             val out = items.map { v ->
                 val o = v as? JsonObject ?: return@then missing("commit", "$repo:commits")
-                val sha = str(o, "sha")?.takeIf { SHA.matches(it) } ?: return@then missing("sha", "$repo:commits")
+                val sha = str(o, "sha")?.takeIf { GitNames.sha(it) } ?: return@then missing("sha", "$repo:commits")
                 val c = o["commit"] as? JsonObject ?: return@then missing("commit", "$repo:commits")
                 val date = (c["committer"] as? JsonObject)?.let { time(it, "date") } ?: return@then missing("commit.committer.date", "$repo:commits")
                 val login = (o["author"] as? JsonObject)?.let { str(it, "login") } ?: (c["author"] as? JsonObject)?.let { str(it, "name") }
@@ -188,7 +189,7 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
      * Нет прав на одно — считается по другому; ни на то, ни на другое — `access = false`.
      */
     fun ci(repo: RepoRef, sha: String): Outcome<Page<CiState>> {
-        if (!SHA.matches(sha)) return Outcome.failure(DiagCode.VALUE_INVALID, "SHA коммита — 40 шестнадцатеричных знаков", sha)
+        if (!GitNames.sha(sha)) return Outcome.failure(DiagCode.VALUE_INVALID, "SHA коммита — 40 шестнадцатеричных знаков", sha)
         val subject = "$repo@${sha.take(12)}"
         data class Item(val name: String, val state: CiState.Verdict)
         val items = mutableListOf<Item>()
@@ -203,11 +204,7 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
                 val runs = ((r.value.value as? JsonObject)?.get("check_runs") as? JsonArray)?.items.orEmpty()
                 for (v in runs) {
                     val o = v as? JsonObject ?: continue
-                    val state = when {
-                        str(o, "status") != "completed" -> CiState.Verdict.PENDING
-                        str(o, "conclusion") in setOf("success", "neutral", "skipped") -> CiState.Verdict.GREEN
-                        else -> CiState.Verdict.RED
-                    }
+                    val state = verdict(com.dpsmpx.dpai.core.git.GitHubChecks.checkRun(str(o, "status"), str(o, "conclusion")))
                     items += Item(str(o, "name") ?: "?", state)
                 }
             }
@@ -220,11 +217,7 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
                 val statuses = ((r.value.value as? JsonObject)?.get("statuses") as? JsonArray)?.items.orEmpty()
                 for (v in statuses) {
                     val o = v as? JsonObject ?: continue
-                    val state = when (str(o, "state")) {
-                        "success" -> CiState.Verdict.GREEN
-                        "pending" -> CiState.Verdict.PENDING
-                        else -> CiState.Verdict.RED
-                    }
+                    val state = verdict(com.dpsmpx.dpai.core.git.GitHubChecks.statusContext(str(o, "state")))
                     items += Item(str(o, "context") ?: "?", state)
                 }
             }
@@ -284,7 +277,7 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
 
     /** Коммит по SHA — неизменяемый: вызывающий хранит уже известные и не спрашивает снова. */
     fun commit(repo: RepoRef, sha: String): Outcome<CommitInfo> {
-        if (!SHA.matches(sha)) return Outcome.failure(DiagCode.VALUE_INVALID, "SHA коммита — 40 шестнадцатеричных знаков", sha)
+        if (!GitNames.sha(sha)) return Outcome.failure(DiagCode.VALUE_INVALID, "SHA коммита — 40 шестнадцатеричных знаков", sha)
         return get("repos/$repo/commits/$sha", "$repo@${sha.take(12)}").then { p ->
             val o = p.value as? JsonObject ?: return@then missing("commit", "$repo@$sha")
             val c = o["commit"] as? JsonObject ?: return@then missing("commit", "$repo@$sha")
@@ -373,7 +366,6 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
         const val USER_AGENT = "DPmetaApp"
         private const val JSON = "application/vnd.github+json"
         private const val RAW = "application/vnd.github.raw+json"
-        private val SHA = Regex("[0-9a-f]{40}")
 
         fun status(f: Fetched, subject: String): Outcome<Fetched> = when {
             f.status in 200..299 -> Outcome.success(f)
@@ -411,4 +403,11 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
         private fun missing(field: String, subject: String) =
             Outcome.failure(DiagCode.FIELD_MISSING, "в ответе GitHub нет поля $field", subject)
     }
+}
+
+/** REST без понятного итога закрыт: UNKNOWN не становится зелёным. */
+private fun verdict(outcome: com.dpsmpx.dpai.core.git.GitHubChecks.Verdict): CiState.Verdict = when (outcome) {
+    com.dpsmpx.dpai.core.git.GitHubChecks.Verdict.PASSED -> CiState.Verdict.GREEN
+    com.dpsmpx.dpai.core.git.GitHubChecks.Verdict.PENDING -> CiState.Verdict.PENDING
+    else -> CiState.Verdict.RED
 }

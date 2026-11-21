@@ -7,4 +7,5 @@ plugins {
 
 dependencies {
     api(project(":core:model"))
+    api("com.dpsmpx.dpai:notifications")
 }

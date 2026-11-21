@@ -5,7 +5,7 @@ import com.dpsmpx.dpmeta.actions.ActionKind
 import com.dpsmpx.dpmeta.actions.ActionTarget
 import com.dpsmpx.dpmeta.github.BranchDetail
 import com.dpsmpx.dpmeta.github.Comparison
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 
 /**
  * Ветки в пульте (F-14; D-36, D-37): влита ли ветка в основную, можно ли её удалить и

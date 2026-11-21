@@ -4,7 +4,7 @@ import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpmeta.git.Clones
 import com.dpsmpx.dpmeta.metrics.Rules
 import com.dpsmpx.dpmeta.model.ProjectList
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import com.dpsmpx.dpmeta.sync.CloneReader
 import com.dpsmpx.dpmeta.sync.DirectoryReader
 import com.dpsmpx.dpmeta.sync.Got
