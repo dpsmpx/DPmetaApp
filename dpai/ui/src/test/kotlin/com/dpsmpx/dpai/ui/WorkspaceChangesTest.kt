@@ -36,6 +36,88 @@ class WorkspaceChangesTest {
     private fun store(vfs: Vfs = NioVfs(dir)) = WorkspaceChangeStore(vfs, cipher)
     private fun files() = listOf(WorkspaceBytes("a.kt", "foo".toByteArray(), "bar".toByteArray()), WorkspaceBytes("b.kt", "foo".toByteArray(), "bar".toByteArray()))
     private fun plan() = WorkspaceEditPlan(files().map { WorkspaceTextChange(it.path, "file:///p/${it.path}", "foo", "bar", emptyList()) })
+
+    @Test fun previousV1CopyCanRecoverAndThenUndoUsingTheNewWriter() {
+        val raw = java.io.ByteArrayOutputStream()
+        java.io.DataOutputStream(raw).use { d ->
+            d.writeUTF("p"); d.writeUTF("root"); d.writeInt(1); d.writeUTF("a.kt")
+            for (text in listOf("foo", "bar")) { val b = text.toByteArray(); d.writeInt(b.size); d.write(b) }
+        }
+        val sealed = cipher.seal("dpai.workspace-change.v1:p", raw.toByteArray()).valueOrNull()!!
+        val hash = com.dpsmpx.dpai.core.hashing.Hashing.sha256(sealed).hex
+        val project = com.dpsmpx.dpai.core.hashing.Hashing.sha256("p").hex
+        val vfs = NioVfs(dir)
+        fun str(s: String) = com.dpsmpx.dpai.core.serialization.JsonString(s)
+        val copy = com.dpsmpx.dpai.core.serialization.JsonObject.of("format" to str("dpai.workspace-change"), "version" to com.dpsmpx.dpai.core.serialization.JsonNumber.of(1), "sealed" to str(java.util.Base64.getEncoder().encodeToString(sealed)))
+        val guard = com.dpsmpx.dpai.core.serialization.JsonObject.of("format" to str("dpai.workspace-change"), "version" to com.dpsmpx.dpai.core.serialization.JsonNumber.of(1),
+            "current" to str(hash), "previous" to str(""), "pending" to com.dpsmpx.dpai.core.serialization.JsonBool(true), "applied" to com.dpsmpx.dpai.core.serialization.JsonBool(false))
+        assertIs<Outcome.Success<*>>(com.dpsmpx.dpai.storage.document.DocumentStore(vfs, "workspace-copies/$project").write(hash, copy))
+        assertIs<Outcome.Success<*>>(com.dpsmpx.dpai.storage.document.DocumentStore(vfs, "workspace-guards").write(project, guard))
+        val root = dir.resolve("sources").toFile().apply { mkdirs() }
+        root.resolve("a.kt").writeText("foo")
+        val tree = com.dpsmpx.dpai.files.LocalTree(root.toPath())
+        val changes = WorkspaceChanges(store())
+        assertIs<Outcome.Success<*>>(changes.recover("p", "root", tree, after = true))
+        assertEquals("bar", root.resolve("a.kt").readText())
+        assertIs<Outcome.Success<*>>(changes.undo("p", "root", tree))
+        assertEquals("foo", root.resolve("a.kt").readText())
+    }
+
+    @Test fun apiCreatesAFileWithCopyAndUndoRemovesOnlyThatFile() {
+        val root = dir.resolve("sources").toFile().apply { mkdirs() }
+        val tree = com.dpsmpx.dpai.files.LocalTree(root.toPath())
+        val copies = store()
+        val changes = WorkspaceChanges(copies)
+        assertIs<Outcome.Success<*>>(changes.write("p", "root", tree, "src/new.kt", null, "fun answer() = 42\n"))
+        assertEquals("fun answer() = 42\n", root.resolve("src/new.kt").readText())
+        val saved = copies.load("p").valueOrNull()!!
+        assertFalse(saved.files.single().beforeExists)
+        assertTrue(saved.files.single().afterExists)
+        assertIs<Outcome.Success<*>>(changes.undo("p", "root", tree))
+        assertFalse(root.resolve("src/new.kt").exists())
+        assertIs<Outcome.Success<*>>(changes.undo("p", "root", tree))
+        assertTrue(root.resolve("src/new.kt").exists())
+    }
+
+    @Test fun apiCannotOverwriteAnExistingOrExternallyEditedFileWithoutItsHash() {
+        val root = dir.resolve("sources").toFile().apply { mkdirs() }
+        val file = root.resolve("a.kt").apply { writeText("before") }
+        val tree = com.dpsmpx.dpai.files.LocalTree(root.toPath())
+        val changes = WorkspaceChanges(store())
+        assertIs<Outcome.Failure>(changes.write("p", "root", tree, "a.kt", null, "after"))
+        val hash = com.dpsmpx.dpai.core.hashing.Hashing.sha256(file.readBytes()).hex
+        file.writeText("external")
+        assertIs<Outcome.Failure>(changes.write("p", "root", tree, "a.kt", hash, "after"))
+        assertEquals("external", file.readText())
+    }
+
+    @Test fun apiDeleteHasUndoAndUnknownReplacementPreventsUndo() {
+        val root = dir.resolve("sources").toFile().apply { mkdirs() }
+        val file = root.resolve("a.kt").apply { writeText("original") }
+        val tree = com.dpsmpx.dpai.files.LocalTree(root.toPath())
+        val changes = WorkspaceChanges(store())
+        val hash = com.dpsmpx.dpai.core.hashing.Hashing.sha256(file.readBytes()).hex
+        assertIs<Outcome.Success<*>>(changes.delete("p", "root", tree, "a.kt", hash))
+        assertFalse(file.exists())
+        file.writeText("external")
+        assertIs<Outcome.Failure>(changes.undo("p", "root", tree))
+        assertEquals("external", file.readText())
+        file.delete()
+        assertIs<Outcome.Success<*>>(changes.undo("p", "root", tree))
+        assertEquals("original", file.readText())
+    }
+
+    @Test fun interruptedCreationCanBeRolledBackOrCompletedAfterRestart() {
+        val root = dir.resolve("sources").toFile().apply { mkdirs() }
+        val tree = com.dpsmpx.dpai.files.LocalTree(root.toPath())
+        val bytes = WorkspaceBytes("new.kt", byteArrayOf(), "new".toByteArray(), beforeExists = false)
+        assertIs<Outcome.Success<*>>(store().begin("p", "root", listOf(bytes)))
+        assertTrue(store().blocked("p"))
+        assertIs<Outcome.Success<*>>(WorkspaceChanges(store()).recover("p", "root", tree, after = true))
+        assertEquals("new", root.resolve("new.kt").readText())
+        assertIs<Outcome.Success<*>>(WorkspaceChanges(store()).undo("p", "root", tree))
+        assertFalse(root.resolve("new.kt").exists())
+    }
     @Test fun revokedIndexCannotWriteSourceOrBeginADurableCopy() {
         val index = com.dpsmpx.dpai.lsp.ProjectIndex()
         index.requested(com.dpsmpx.dpai.lsp.ProjectIndex.PROGRESS_ID)
