@@ -20,6 +20,7 @@ import java.io.File
 import java.security.GeneralSecurityException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.Properties
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.spec.GCMParameterSpec
@@ -66,7 +67,14 @@ class KotlinAndroidLiveTest {
         val gradleJava = System.getProperty("dpai.test.gradlejava")
         val sdk = System.getenv("ANDROID_HOME")
         assertNotNull(home); assertNotNull(java); assertNotNull(gradleJava); assertNotNull(sdk)
-        assertTrue(File(sdk, "platforms/android-${NewProject.COMPILE_SDK}/android.jar").isFile)
+        val platformPresent = File(sdk, "platforms").listFiles().orEmpty().any { folder ->
+            val properties = File(folder, "source.properties")
+            if (!File(folder, "android.jar").isFile || !properties.isFile) false else {
+                val metadata = Properties().apply { properties.inputStream().use(::load) }
+                metadata.getProperty("AndroidVersion.ApiLevel") in setOf("${NewProject.COMPILE_SDK}", "${NewProject.COMPILE_SDK}.0")
+            }
+        }
+        assertTrue(platformPresent, "SDK API ${NewProject.COMPILE_SDK} не найден в $sdk")
         val repo = File(checkNotNull(System.getProperty("dpai.repoRoot")))
         val wrapper = NewProject.GradleWrapper(File(repo, "gradlew").readBytes(), File(repo, "gradlew.bat").readBytes(),
             File(repo, "gradle/wrapper/gradle-wrapper.jar").readBytes(), File(repo, "gradle/wrapper/gradle-wrapper.properties").readBytes())
