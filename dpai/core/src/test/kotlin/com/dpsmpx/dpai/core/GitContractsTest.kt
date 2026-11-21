@@ -3,6 +3,7 @@ package com.dpsmpx.dpai.core
 import com.dpsmpx.dpai.core.git.GitHubChecks
 import com.dpsmpx.dpai.core.git.GitNames
 import com.dpsmpx.dpai.core.git.RepoRef
+import com.dpsmpx.dpai.core.result.Outcome
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -12,10 +13,10 @@ class GitContractsTest {
     @Test fun repositoryIdentityUsesTheSameValidationForNamesAndPullUrls() {
         assertEquals("owner/repo.name", RepoRef.fromPullUrl("https://github.com/owner/repo.name/pull/42").valueOrNull().toString())
         for (bad in listOf("-owner/repo", "owner/..", "owner/repo.git", "owner/repo/extra", "owner/repo?x")) {
-            assertTrue(RepoRef.parse(bad).isFailure, bad)
-            assertTrue(RepoRef.fromPullUrl("https://github.com/$bad/pull/42").isFailure, bad)
+            assertTrue(RepoRef.parse(bad) is Outcome.Failure, bad)
+            assertTrue(RepoRef.fromPullUrl("https://github.com/$bad/pull/42") is Outcome.Failure, bad)
         }
-        for (bad in listOf("http://github.com/a/b/pull/1", "https://github.com.evil/a/b/pull/1", "https://github.com/a/b/pull/1?x", "https://github.com/a/b/pull/1#x", "https://user@github.com/a/b/pull/1")) assertTrue(RepoRef.fromPullUrl(bad).isFailure, bad)
+        for (bad in listOf("http://github.com/a/b/pull/1", "https://github.com.evil/a/b/pull/1", "https://github.com/a/b/pull/1?x", "https://github.com/a/b/pull/1#x", "https://user@github.com/a/b/pull/1")) assertTrue(RepoRef.fromPullUrl(bad) is Outcome.Failure, bad)
     }
 
     @Test fun cliBranchRejectsGitInvalidNamesBeforeLaunchingAProcess() {
