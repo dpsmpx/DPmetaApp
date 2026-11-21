@@ -43,6 +43,8 @@ class LanguageSession(val main: LspClient, val helper: LspClient? = null, privat
 
     fun completion(uri: String, at: Position, trigger: Char? = null): Outcome<CompletionList> = main.completion(uri, at, trigger)
 
+    fun resolveCompletion(item: CompletionItem): Outcome<CompletionItem> = main.resolveCompletion(item)
+
     fun hover(uri: String, at: Position): Outcome<Hover?> = main.hover(uri, at)
 
     fun signatureHelp(uri: String, at: Position): Outcome<SignatureHelp?> = main.signatureHelp(uri, at)
@@ -74,6 +76,11 @@ class LanguageSession(val main: LspClient, val helper: LspClient? = null, privat
         val found = results.mapNotNull { (it as? Outcome.Success)?.value }
         return if (found.isNotEmpty()) Outcome.success(found.flatten()) else results.first()
     }
+
+    /** Исправление возвращается той же основной/вспомогательной службе. */
+    fun resolveCodeAction(action: CodeAction): Outcome<CodeAction> =
+        clients.firstOrNull { it === action.owner }?.resolveCodeAction(action)
+            ?: Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, "сеанс исправления изменился; запросите исправления заново")
 
     /** Спросить диагностику [uri] у служб, которые её не присылают: индекс службы → список (`null` — не изменилась). */
     fun pullDiagnostics(uri: String, timeout: Duration = LspClient.SLOW_TIMEOUT): Map<Int, Outcome<List<LspDiagnostic>?>> =
