@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -36,6 +37,7 @@ import com.dpsmpx.dpai.ui.WorkspaceLocation
 @Composable
 internal fun WorkspaceDependenciesPanel(model: DemoModel, view: ProjectWorkspaceView, location: WorkspaceLocation?) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     var managerName by rememberSaveable(view.project.project.value) { mutableStateOf(DependencyTools.Manager.GRADLE.name) }
     val manager = DependencyTools.Manager.valueOf(managerName)
     var python by rememberSaveable(view.project.project.value, view.target?.id?.value) {
@@ -49,7 +51,7 @@ internal fun WorkspaceDependenciesPanel(model: DemoModel, view: ProjectWorkspace
     val available = location != null && view.ready && !view.paused && !view.pendingEdit && !run.blocked && python.isNotBlank()
     fun start(mode: DependencyTools.Mode) {
         val where = location ?: return
-        val name = context.getString(when (mode) {
+        val name = resources.getString(when (mode) {
             DependencyTools.Mode.REPORT -> R.string.dependencies_analyze
             DependencyTools.Mode.PIN -> R.string.dependencies_pin
             DependencyTools.Mode.RESTORE -> R.string.dependencies_restore
@@ -59,10 +61,10 @@ internal fun WorkspaceDependenciesPanel(model: DemoModel, view: ProjectWorkspace
             needs = if (androidSdk && manager == DependencyTools.Manager.GRADLE) setOf(com.dpsmpx.dpai.ui.ManualNeed.ANDROID_SDK) else emptySet())
         val started = profile.valid && model.startManualProfile(view.project, where, profile, onFinished = { _, result ->
             if (mode != DependencyTools.Mode.REPORT && result.complete && view.target?.inApp == true) {
-                CodeService.dependenciesChanged(where.path, context.getString(R.string.dependencies_restart_lsp))
+                CodeService.dependenciesChanged(where.path, resources.getString(R.string.dependencies_restart_lsp))
             }
         })
-        note = context.getString(if (started) R.string.dependencies_started else R.string.dependencies_busy)
+        note = resources.getString(if (started) R.string.dependencies_started else R.string.dependencies_busy)
         if (started) ControllerService.resume(context)
     }
     Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
