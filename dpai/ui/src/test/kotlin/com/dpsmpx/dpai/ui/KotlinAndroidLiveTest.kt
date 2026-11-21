@@ -85,7 +85,7 @@ class KotlinAndroidLiveTest {
         File(dir, "local.properties").writeText("sdk.dir=${sdk.replace("\\", "\\\\")}\n")
         val source = "app/src/main/kotlin/demo/ide/Probe.kt"
         val helper = "app/src/main/kotlin/demo/ide/Helpers.kt"
-        val text = "package demo.ide\n\nimport android.content.Context\n\nfun caption(context: Context): String = decorate(context.packageName)\n"
+        var text = "package demo.ide\n\nimport android.content.Context\n\nfun caption(context: Context): String = decorate(context.packageName)\n"
         File(dir, source).writeText(text)
         File(dir, helper).writeText("package demo.ide\n\nfun decorate(value: String): String = value.uppercase()\n")
         val arch = if (System.getProperty("os.arch") == "aarch64") "aarch64" else "x86_64"
@@ -114,6 +114,18 @@ class KotlinAndroidLiveTest {
             ok(session.open(uri, "kotlin", text))
             val valid = ok(client.pullDiagnostics(uri)).orEmpty()
             assertFalse(valid.any { it.severity == LspSeverity.ERROR }, valid.toString())
+            // Реальное отложенное дополнение класса SDK/JDK вместе с импортом.
+            val unfinished = text + "\nfun today(): LocalDa = java.time.LocalDate.now()\n"
+            ok(session.open(uri, "kotlin", unfinished))
+            val offset = unfinished.indexOf("LocalDa =") + "LocalDa".length
+            val imported = ok(session.completion(uri, LineIndex(unfinished).position(offset))).items.firstOrNull { it.label.startsWith("LocalDate") }
+            assertNotNull(imported, "служба не предложила LocalDate вне импортов")
+            val resolved = ok(session.resolveCompletion(imported))
+            assertFalse(resolved.unsupported, "служба требует команду/snippet: $resolved")
+            text = ok(com.dpsmpx.dpai.lsp.Assist.complete(unfinished, offset, resolved)).text
+            assertTrue(text.contains("import java.time.LocalDate") || text.contains("fun today(): java.time.LocalDate"), text)
+            File(dir, source).writeText(text)
+            ok(session.open(uri, "kotlin", text))
             val index = LineIndex(text)
             val at = index.position(text.indexOf("context.packageName") + "context.".length)
             assertTrue(ok(session.completion(uri, at, '.')).items.any { it.label.startsWith("packageName") || it.label.startsWith("getPackageName") })

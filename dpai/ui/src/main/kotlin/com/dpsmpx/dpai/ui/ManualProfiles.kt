@@ -40,6 +40,7 @@ data class ManualStep(val name: String, val command: List<String>, val timeoutSe
  * `dpai.manual-profile` v2; v1 (одна команда) читается как один шаг; v3 — ещё
  * свои параметры [params] и окружение шагов [env] (D-183), пишется только с ними; v4 — ещё
  * [needs]: что профилю нужно на target (Android SDK, NDK; D-186), пишется только с ним.
+ * v5 — отдельный вид DEPENDENCIES (D-208); CHECK/BUILD сохраняют прежние версии.
  */
 /** Что профилю нужно на target (D-186): проверяется перед запуском в Linux приложения. */
 enum class ManualNeed(val code: String, val title: String) {

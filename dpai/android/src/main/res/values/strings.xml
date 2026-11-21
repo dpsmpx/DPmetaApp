@@ -43,7 +43,7 @@
     <string name="dependencies_continue">Продолжить</string>
     <string name="dependencies_cancel">Отмена</string>
     <string name="dependencies_android_sdk">Для Android-проекта: подключить SDK приложения</string>
-    <string name="dependencies_restart_lsp">Зависимости изменились; запустите языковую службу заново</string>
+    <string name="dependencies_restart_lsp">Зависимости могли измениться; запустите языковую службу заново</string>
 
     <string name="lsp_command_unsupported">Команда службы пока не поддержана; текст не изменён</string>
     <string name="lsp_action_empty">Служба не вернула правок</string>

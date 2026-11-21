@@ -56,7 +56,7 @@
     <string name="dependencies_continue">Continue</string>
     <string name="dependencies_cancel">Cancel</string>
     <string name="dependencies_android_sdk">For Android projects: use the app SDK</string>
-    <string name="dependencies_restart_lsp">Dependencies changed; restart the language service</string>
+    <string name="dependencies_restart_lsp">Dependencies may have changed; restart the language service</string>
 
     <string name="lsp_command_unsupported">This server command is not supported yet; no text was changed</string>
     <string name="lsp_action_empty">The server returned no edits</string>
