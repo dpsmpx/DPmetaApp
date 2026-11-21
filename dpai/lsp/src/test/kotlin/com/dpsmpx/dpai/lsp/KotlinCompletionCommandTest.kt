@@ -64,7 +64,7 @@ class KotlinCompletionCommandTest {
         client.stop()
     }
 
-    @Test fun otherFileUnknownVersionAndMultipleBatchesNeverProduceAPartialCompletion() {
+    @Test fun otherFileMismatchedVersionAndMultipleBatchesNeverProduceAPartialCompletion() {
         val wrongVersion = """{"documentChanges":[{"textDocument":{"uri":"$uri","version":99},"edits":[{"range":{"start":{"line":0,"character":8},"end":{"line":0,"character":10}},"newText":"Widget"}]}]}"""
         for (scenario in 0..2) {
             val (client, _) = server { s ->
