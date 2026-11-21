@@ -42,4 +42,15 @@ class WorkspaceEditParseTest {
         val edits = List(LspParse.MAX_ITEMS + 1) { edit }.joinToString(",")
         assertTrue(parse("""{"changes":{"$uri":[$edits]}}""") == null)
     }
+
+    @Test
+    fun repeatedDocumentsAndTotalEditsAreBoundedBeforeMerging() {
+        val repeated = """{"textDocument":{"uri":"$uri","version":7},"edits":[$edit]}"""
+        assertNull(parse("""{"documentChanges":[${List(LspParse.MAX_ITEMS + 1) { repeated }.joinToString(",") }]}"""))
+        val perFile = List(LspParse.MAX_ITEMS) { edit }.joinToString(",")
+        val files = (0..WorkspaceEdit.MAX_EDITS / LspParse.MAX_ITEMS).joinToString(",") { "\"file:///p/$it.kt\":[$perFile]" }
+        assertTrue(parse("""{"changes":{$files}}""") == null)
+        val accepted = assertNotNull(parse("""{"documentChanges":[${List(LspParse.MAX_ITEMS) { repeated }.joinToString(",") }]}"""))
+        assertEquals(LspParse.MAX_ITEMS, accepted.changes.getValue(uri).size)
+    }
 }

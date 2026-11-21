@@ -23,7 +23,7 @@ data class WorkspaceEditPlan(val files: List<WorkspaceTextChange>) {
 object WorkspaceEdits {
     const val MAX_FILES = 128
     const val MAX_BYTES = 8L * 1024 * 1024
-    private const val MAX_EDITS = 10_000
+    private const val MAX_EDITS = WorkspaceEdit.MAX_EDITS
 
     fun paths(edit: WorkspaceEdit, root: String): Outcome<Map<String, String>> {
         val base = root.trimEnd('/').ifEmpty { "/" }
@@ -63,7 +63,7 @@ object WorkspaceEdits {
             }
             val expected = edit.versions[uri]
             if (expected != null && source.version != expected) {
-                return Outcome.failure(DiagCode.STATE_CONFLICT, "версия файла не совпала с ответом службы; повторите переименование", path)
+                return Outcome.failure(DiagCode.STATE_CONFLICT, "версия файла «$path» не совпала с ответом службы; повторите переименование", path)
             }
             val edits = edit.changes.getValue(uri)
             val after = when (val result = TextEdits.apply(source.text, edits)) {

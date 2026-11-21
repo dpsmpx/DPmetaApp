@@ -121,11 +121,14 @@ class KotlinAndroidLiveTest {
             assertTrue(assertNotNull(ok(session.hover(uri, contextAt))).text.contains("Context"))
             val nameAt = index.position(text.indexOf("decorate(") + 1)
             assertTrue(ok(session.definition(uri, nameAt)).any { it.uri == DocumentUri.ofPath(File(dir, helper).path) })
-            val edit = ok(session.rename(uri, nameAt, "renderName"))
-            val plan = ok(WorkspaceEdits.prepare(edit, dir.path) { path ->
-                val body = ok(TextFile.decode(ok(tree.read(path, TextFile.MAX_EDIT_BYTES))))
-                Outcome.success(WorkspaceSource(body, client.document(DocumentUri.ofPath(File(dir, path).path))?.first))
-            })
+            val plan = ok(WorkspaceRename.prepare(session, dir.path, { path ->
+                tree.read(path, TextFile.MAX_EDIT_BYTES).let { result ->
+                    when (result) {
+                        is Outcome.Failure -> result
+                        is Outcome.Success -> TextFile.decode(result.value)
+                    }
+                }
+            }) { session.rename(uri, nameAt, "renderName") })
             assertEquals(setOf(source, helper), plan.files.map { it.path }.toSet())
             val store = WorkspaceChangeStore(NioVfs(File(dir, ".copies").toPath()), cipher())
             ok(WorkspaceChanges(store).apply("android-live", dir.path, tree, plan))

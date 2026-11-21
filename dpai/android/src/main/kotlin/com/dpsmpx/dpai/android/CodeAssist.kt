@@ -513,12 +513,22 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                 launch("…") {
                     val before = buffer.text
                     val cursor = buffer.state.selection.end.coerceIn(0, before.length)
+                    if (projectEdits != null) {
+                        val prepared = withClient { c, t, at ->
+                            if (language in setOf("c", "cpp") && !indexEnabled) return@withClient Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, context.getString(R.string.project_edit_need_index))
+                            projectEdits.prepareRename(c) { c.rename(session.uri, LineIndex(t).position(at), name) }
+                        }
+                        note = when {
+                            buffer.text != before -> context.getString(R.string.project_edit_stale)
+                            prepared is Outcome.Failure -> prepared.diagnostics.first().message
+                            prepared is Outcome.Success && prepared.value.files.isEmpty() -> context.getString(R.string.project_edit_empty)
+                            prepared is Outcome.Success -> { projectPlan = prepared.value; null }
+                            else -> null
+                        }
+                        return@launch
+                    }
                     val r = withClient { c, t, at ->
                         val place = LineIndex(t).position(at)
-                        if (projectEdits != null) {
-                            if (language in setOf("c", "cpp") && !indexEnabled) return@withClient Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, context.getString(R.string.project_edit_need_index))
-                            return@withClient c.rename(session.uri, place, name)
-                        }
                         val places = when (val d = c.declaration(session.uri, place)) {
                             is Outcome.Failure -> return@withClient d
                             is Outcome.Success -> d.value + ((c.definition(session.uri, place) as? Outcome.Success)?.value.orEmpty())

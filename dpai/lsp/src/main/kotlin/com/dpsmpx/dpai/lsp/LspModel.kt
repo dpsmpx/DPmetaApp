@@ -60,7 +60,9 @@ data class Signature(val label: String, val documentation: String?, val paramete
 data class SignatureHelp(val signatures: List<Signature>, val active: Int, val activeParameter: Int?)
 
 /** Правки по файлам: адрес → правки в координатах текущего текста файла. */
-data class WorkspaceEdit(val changes: Map<String, List<TextEdit>>, val versions: Map<String, Int?> = emptyMap())
+data class WorkspaceEdit(val changes: Map<String, List<TextEdit>>, val versions: Map<String, Int?> = emptyMap()) {
+    companion object { const val MAX_EDITS = 10_000 }
+}
 
 /**
  * Символ документа (`textDocument/documentSymbol`): функция, класс, поле…
@@ -255,12 +257,21 @@ internal object LspParse {
     fun workspaceEdit(v: JsonValue?): WorkspaceEdit? {
         if (v == null || v == JsonNull) return WorkspaceEdit(emptyMap())
         val o = v as? JsonObject ?: return null
-        val out = linkedMapOf<String, List<TextEdit>>()
+        val out = linkedMapOf<String, MutableList<TextEdit>>()
         if (o["changes"] != null && o["changes"] != JsonNull && o["changes"] !is JsonObject) return null
         if (o["documentChanges"] != null && o["documentChanges"] != JsonNull && o["documentChanges"] !is JsonArray) return null
-        (o["changes"] as? JsonObject)?.fields?.forEach { (uri, edits) -> out[uri] = out[uri].orEmpty() + (textEdits(edits) ?: return null) }
+        val legacy = (o["changes"] as? JsonObject)?.fields.orEmpty()
+        val documents = (o["documentChanges"] as? JsonArray)?.items.orEmpty()
+        if (legacy.size > MAX_ITEMS || documents.size > MAX_ITEMS) return null
+        var count = 0
+        for ((uri, value) in legacy) {
+            val edits = textEdits(value) ?: return null
+            count += edits.size
+            if (count > WorkspaceEdit.MAX_EDITS) return null
+            out[uri] = edits.toMutableList()
+        }
         val versions = linkedMapOf<String, Int?>()
-        (o["documentChanges"] as? JsonArray)?.items?.forEach { change ->
+        documents.forEach { change ->
             val co = change as? JsonObject ?: return null
             if (co["kind"] != null) return null
             val document = co["textDocument"] as? JsonObject ?: return null
@@ -273,12 +284,15 @@ internal object LspParse {
             if (uri in versions && versions[uri] != version) return null
             // Версионированные правки этого адреса главнее changes; два представления
             // одной замены не применяются дважды. Разные файлы прежних ответов сохранены.
-            if (uri !in versions) out.remove(uri)
+            if (uri !in versions) count -= out.remove(uri)?.size ?: 0
             versions[uri] = version
-            out[uri] = out[uri].orEmpty() + (textEdits(co["edits"]) ?: return null)
+            val edits = textEdits(co["edits"]) ?: return null
+            count += edits.size
+            if (count > WorkspaceEdit.MAX_EDITS || uri !in out && out.size >= MAX_ITEMS) return null
+            // Повторный URI накапливается линейно, без копирования всего списка на каждом шаге.
+            out.getOrPut(uri) { arrayListOf() }.addAll(edits)
         }
-        if (out.size > MAX_ITEMS) return null
-        return WorkspaceEdit(out, versions)
+        return WorkspaceEdit(out.mapValues { it.value.toList() }, versions)
     }
 
     fun codeActions(v: JsonValue?): List<CodeAction>? {

@@ -48,7 +48,13 @@ class LspClient(
         fun stopped(reason: Diagnostic)
     }
 
-    private class Document(val languageId: String, var version: Int, var text: String)
+    private class Document(val languageId: String, var version: Int, var text: String, var retained: Boolean, var borrowers: Int = 0)
+
+    /** Временный документ запроса: не закрывает файл, который за это время открыл редактор. */
+    class DocumentBorrow internal constructor(private val release: () -> Unit) : AutoCloseable {
+        private val closed = java.util.concurrent.atomic.AtomicBoolean()
+        override fun close() { if (closed.compareAndSet(false, true)) release() }
+    }
 
     private val documents = HashMap<String, Document>()
     private val lock = Any()
@@ -114,12 +120,41 @@ class LspClient(
     /** Открыть документ или заменить его текст, если он уже открыт. */
     fun open(uri: String, languageId: String, text: String): Outcome<Unit> = synchronized(lock) {
         ready()?.let { return it }
-        if (documents.containsKey(uri)) return update(uri, text)
-        documents[uri] = Document(languageId, 1, text)
-        peer.notify(
+        documents[uri]?.let { it.retained = true; return update(uri, text) }
+        openDocument(uri, languageId, text, retained = true)
+    }
+
+    private fun openDocument(uri: String, languageId: String, text: String, retained: Boolean): Outcome<Unit> {
+        val result = peer.notify(
             "textDocument/didOpen",
             JsonObject.of("textDocument" to JsonObject.of("uri" to json(uri), "languageId" to json(languageId), "version" to json(1), "text" to json(text))),
         )
+        if (result is Outcome.Success) documents[uri] = Document(languageId, 1, text, retained)
+        return result
+    }
+
+    /** Зафиксировать текст для повторного rename; чужой несохранённый текст не заменяется. */
+    fun borrowDocument(uri: String, languageId: String, text: String): Outcome<DocumentBorrow> = synchronized(lock) {
+        ready()?.let { return it }
+        val known = documents[uri]
+        if (known != null && known.text != text) return Outcome.failure(DiagCode.STATE_CONFLICT, "текст службы отличается от файла; сначала сохраните правки", uri)
+        if (known == null) {
+            val result = openDocument(uri, languageId, text, retained = false)
+            if (result is Outcome.Failure) return result
+        }
+        val document = documents.getValue(uri)
+        document.borrowers++
+        Outcome.success(DocumentBorrow {
+            synchronized(lock) {
+                if (documents[uri] === document) {
+                    document.borrowers--
+                    if (!document.retained && document.borrowers == 0) {
+                        documents.remove(uri)
+                        peer.notify("textDocument/didClose", JsonObject.of("textDocument" to JsonObject.of("uri" to json(uri))))
+                    }
+                }
+            }
+        })
     }
 
     /** Новый текст открытого документа; тот же текст — ничего не уходит. */
@@ -149,7 +184,10 @@ class LspClient(
 
     fun close(uri: String): Outcome<Unit> = synchronized(lock) {
         ready()?.let { return it }
-        documents.remove(uri) ?: return Outcome.success(Unit)
+        val document = documents[uri] ?: return Outcome.success(Unit)
+        document.retained = false
+        if (document.borrowers > 0) return Outcome.success(Unit)
+        documents.remove(uri)
         peer.notify("textDocument/didClose", JsonObject.of("textDocument" to JsonObject.of("uri" to json(uri))))
     }
 

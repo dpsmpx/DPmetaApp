@@ -91,6 +91,38 @@ class LanguageSessionTest {
     }
 
     @Test
+    fun temporaryDocumentClosesOnlyWhenLastBorrowerReleasesIt() {
+        val (client, server) = client("""{"textDocumentSync":2}""")
+        val first = (client.borrowDocument(uri, "python", "foo") as Outcome.Success).value
+        val second = (client.borrowDocument(uri, "python", "foo") as Outcome.Success).value
+        assertEquals(1 to "foo", client.document(uri))
+        first.close(); first.close()
+        assertEquals(1 to "foo", client.document(uri))
+        assertTrue("textDocument/didClose" !in server.methods())
+        second.close()
+        assertNull(client.document(uri))
+        await("закрытие временного документа") { "textDocument/didClose" in server.methods() }
+        client.stop()
+    }
+
+    @Test
+    fun editorTakingOverBorrowedDocumentIsNotClosedByTheRename() {
+        val (client, _) = client("""{"textDocumentSync":2}""")
+        val borrowed = (client.borrowDocument(uri, "python", "foo") as Outcome.Success).value
+        assertTrue(client.open(uri, "python", "bar") is Outcome.Success)
+        borrowed.close()
+        assertEquals(2 to "bar", client.document(uri))
+        assertTrue(client.borrowDocument(uri, "python", "disk text") is Outcome.Failure)
+        assertEquals(2 to "bar", client.document(uri))
+        val again = (client.borrowDocument(uri, "python", "bar") as Outcome.Success).value
+        assertTrue(client.close(uri) is Outcome.Success)
+        assertEquals(2 to "bar", client.document(uri))
+        again.close()
+        assertNull(client.document(uri))
+        client.stop()
+    }
+
+    @Test
     fun pulledDiagnosticsFullAndUnchanged() {
         var unchanged = false
         val (client, _) = client("""{"diagnosticProvider":{"interFileDependencies":true,"workspaceDiagnostics":false}}""") { method, _ ->

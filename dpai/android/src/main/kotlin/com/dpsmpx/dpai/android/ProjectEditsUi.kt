@@ -23,17 +23,25 @@ import com.dpsmpx.dpai.lsp.WorkspaceEdit
 import com.dpsmpx.dpai.ui.WorkspaceEditPlan
 import com.dpsmpx.dpai.ui.WorkspaceEdits
 import com.dpsmpx.dpai.ui.WorkspaceSource
+import com.dpsmpx.dpai.ui.WorkspaceRename
 
 internal class ProjectEditPlace(val tree: FileTree, val root: String, val dirty: () -> Boolean,
     val apply: (WorkspaceEditPlan) -> Outcome<Unit>, val changed: () -> Unit) {
+    private fun text(path: String): Outcome<String> = when (val result = tree.read(path, TextFile.MAX_EDIT_BYTES)) {
+        is Outcome.Failure -> result
+        is Outcome.Success -> TextFile.decode(result.value)
+    }
+
+    fun prepareRename(client: LanguageSession, request: () -> Outcome<WorkspaceEdit>): Outcome<WorkspaceEditPlan> {
+        if (dirty()) return Outcome.failure(DiagCode.STATE_CONFLICT, "сначала сохраните или отмените правки редактора в этом дереве")
+        val result = WorkspaceRename.prepare(client, root, ::text, request)
+        return if (dirty()) Outcome.failure(DiagCode.STATE_CONFLICT, "правки редактора изменились; сохраните их и повторите") else result
+    }
+
     fun prepare(edit: WorkspaceEdit, client: LanguageSession): Outcome<WorkspaceEditPlan> {
         if (dirty()) return Outcome.failure(DiagCode.STATE_CONFLICT, "сначала сохраните или отмените правки редактора в этом дереве")
         return WorkspaceEdits.prepare(edit, root) load@{ path ->
-            val bytes = when (val result = tree.read(path, TextFile.MAX_EDIT_BYTES)) {
-                is Outcome.Failure -> return@load result
-                is Outcome.Success -> result.value
-            }
-            val text = when (val result = TextFile.decode(bytes)) {
+            val text = when (val result = text(path)) {
                 is Outcome.Failure -> return@load result
                 is Outcome.Success -> result.value
             }
