@@ -80,6 +80,7 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
     var note by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var suggestions by remember { mutableStateOf<List<CompletionItem>>(emptyList()) }
+    var suggestionSnapshot by remember { mutableStateOf<Pair<String, Int>?>(null) }
     var details by remember { mutableStateOf<String?>(null) }
     var problems by remember { mutableStateOf(false) }
     var signature by remember { mutableStateOf<Assist.SignatureLine?>(null) }
@@ -139,7 +140,9 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
         if (Assist.endsSignature(text, cursor)) signature = null
         delay(if (wanted || wantsSignature) 250 else 400)
         val result = withClient { client, _, _ -> if (wanted) client.completion(session.uri, LineIndex(text).position(cursor), trigger) else Outcome.success(null) }
-        suggestions = ((result as? Outcome.Success)?.value)?.let { Assist.filter(it.items, prefix, 24) }.orEmpty()
+        suggestions = if (buffer.text == text && buffer.state.selection == selection)
+            ((result as? Outcome.Success)?.value)?.let { Assist.filter(it.items, prefix, 24) }.orEmpty() else emptyList()
+        suggestionSnapshot = (text to cursor).takeIf { suggestions.isNotEmpty() }
         if (wantsSignature) {
             val help = withClient { client, _, _ -> client.signatureHelp(session.uri, LineIndex(text).position(cursor)) }
             signature = Assist.signature((help as? Outcome.Success)?.value)
@@ -371,10 +374,19 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
             }, Modifier.padding(horizontal = 12.dp).horizontalScroll(rememberScrollState()), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, maxLines = 1)
         }
         if (suggestions.isNotEmpty()) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-            for (item in suggestions) TextButton(enabled = enabled, onClick = {
-                val cursor = buffer.state.selection.end
+            for (item in suggestions) TextButton(enabled = enabled && !busy, onClick = {
+                val snapshot = suggestionSnapshot
                 suggestions = emptyList()
-                apply(Assist.complete(buffer.text, cursor, item), null)
+                if (snapshot == null || buffer.text != snapshot.first || buffer.state.selection.end != snapshot.second) {
+                    note = context.getString(R.string.project_edit_stale)
+                } else launch("…") {
+                    when (val resolved = withClient { c, _, _ -> c.resolveCompletion(item) }) {
+                        is Outcome.Failure -> note = resolved.diagnostics.first().message
+                        is Outcome.Success -> if (buffer.text != snapshot.first || buffer.state.selection.end != snapshot.second) note = context.getString(R.string.project_edit_stale)
+                            else apply(Assist.complete(snapshot.first, snapshot.second, resolved.value), null)
+                        null -> Unit
+                    }
+                }
             }) { Text(item.label.trim().take(40), fontFamily = FontFamily.Monospace) }
         }
     }

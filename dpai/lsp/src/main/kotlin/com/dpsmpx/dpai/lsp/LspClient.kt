@@ -206,7 +206,25 @@ class LspClient(
         } else {
             JsonObject.of("triggerKind" to json(1))
         }
-        return ask("textDocument/completion", JsonObject(place(uri, at).fields + ("context" to context)), timeout, LspParse::completion)
+        val snapshot = document(uri)
+        return when (val result = ask("textDocument/completion", JsonObject(place(uri, at).fields + ("context" to context)), timeout, LspParse::completion)) {
+            is Outcome.Failure -> result
+            is Outcome.Success -> Outcome.success(result.value.copy(items = result.value.items.map { it.copy(owner = this, uri = uri, snapshot = snapshot,
+                resolvable = info?.capabilities?.completionResolve == true && it.payload?.get("data") != null && it.payload["data"] != JsonNull) }))
+        }
+    }
+
+    /** Отложенный импорт/описание — только для того же снимка и клиента. */
+    fun resolveCompletion(item: CompletionItem, timeout: Duration = SLOW_TIMEOUT): Outcome<CompletionItem> {
+        if (item.owner !== this || !isRunning || item.uri == null || item.snapshot == null || document(item.uri) != item.snapshot) {
+            return Outcome.failure(DiagCode.STATE_CONFLICT, "дополнение устарело; запросите варианты заново")
+        }
+        if (!item.resolvable) return Outcome.success(item)
+        return when (val result = ask("completionItem/resolve", checkNotNull(item.payload), timeout, LspParse::completionItem)) {
+            is Outcome.Failure -> result
+            is Outcome.Success -> if (document(item.uri) != item.snapshot) Outcome.failure(DiagCode.STATE_CONFLICT, "текст изменился во время дополнения; повторите")
+                else Outcome.success(result.value.copy(owner = this, uri = item.uri, snapshot = item.snapshot))
+        }
     }
 
     /** Подсказка под курсором; `null` — службе нечего сказать об этом месте. */
@@ -329,7 +347,8 @@ class LspClient(
             // Сниппеты не запрашиваются: вставляется готовый текст, без меток ${1:…}.
             "completion" to JsonObject.of(
                 "contextSupport" to json(true),
-                "completionItem" to JsonObject.of("snippetSupport" to json(false), "documentationFormat" to plain),
+                "completionItem" to JsonObject.of("snippetSupport" to json(false), "documentationFormat" to plain,
+                    "resolveSupport" to JsonObject.of("properties" to JsonArray(listOf(json("additionalTextEdits"), json("detail"), json("documentation"))))),
             ),
             "hover" to JsonObject.of("contentFormat" to plain),
             "signatureHelp" to JsonObject.of(

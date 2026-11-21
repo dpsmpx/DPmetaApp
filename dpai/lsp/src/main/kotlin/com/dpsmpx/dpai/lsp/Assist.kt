@@ -55,6 +55,7 @@ object Assist {
      * сразу после вставленного.
      */
     fun complete(text: String, cursor: Int, item: CompletionItem): Outcome<Applied> {
+        if (item.unsupported) return Outcome.failure(DiagCode.LSP_REPLY_INVALID, "дополнение требует неподдерживаемую команду или snippet; текст не изменён")
         val at = cursor.coerceIn(0, text.length)
         val index = LineIndex(text)
         val main = item.edit ?: TextEdit(Range(index.position(at - typedPrefix(text, at).length), index.position(at)), item.insertText)

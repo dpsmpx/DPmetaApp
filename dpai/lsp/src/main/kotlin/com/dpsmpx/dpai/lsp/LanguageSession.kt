@@ -43,6 +43,8 @@ class LanguageSession(val main: LspClient, val helper: LspClient? = null, privat
 
     fun completion(uri: String, at: Position, trigger: Char? = null): Outcome<CompletionList> = main.completion(uri, at, trigger)
 
+    fun resolveCompletion(item: CompletionItem): Outcome<CompletionItem> = main.resolveCompletion(item)
+
     fun hover(uri: String, at: Position): Outcome<Hover?> = main.hover(uri, at)
 
     fun signatureHelp(uri: String, at: Position): Outcome<SignatureHelp?> = main.signatureHelp(uri, at)

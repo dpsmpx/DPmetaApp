@@ -43,6 +43,12 @@ data class CompletionItem(
     val insertText: String,
     val edit: TextEdit?,
     val additional: List<TextEdit>,
+    val unsupported: Boolean = false,
+    val resolvable: Boolean = false,
+    internal val payload: JsonObject? = null,
+    internal val owner: LspClient? = null,
+    internal val uri: String? = null,
+    internal val snapshot: Pair<Int, String>? = null,
 )
 
 /** [incomplete] — список неполон: при следующем знаке спрашивать службу заново, а не фильтровать этот. */
@@ -99,6 +105,7 @@ data class ServerCapabilities(
     val declaration: Boolean = false,
     val documentSymbols: Boolean = false,
     val codeActionResolve: Boolean = false,
+    val completionResolve: Boolean = false,
 )
 
 /** Имя и версия службы, если она их назвала. */
@@ -189,23 +196,22 @@ internal object LspParse {
             is JsonObject -> ((v["items"] as? JsonArray)?.items ?: return null) to ((v["isIncomplete"] as? JsonBool)?.value ?: false)
             else -> return null
         }
-        val parsed = items.take(MAX_ITEMS).map { item ->
-            val o = item as? JsonObject ?: return null
-            val label = str(o["label"]) ?: return null
-            val edit = if (o["textEdit"] == null || o["textEdit"] == JsonNull) null else textEdit(o["textEdit"]) ?: return null
-            CompletionItem(
-                label = label,
-                kind = int(o["kind"]),
-                detail = str(o["detail"])?.take(MAX_TEXT),
-                documentation = markup(o["documentation"]),
-                sortText = str(o["sortText"]),
-                filterText = str(o["filterText"]),
-                insertText = edit?.newText ?: str(o["insertText"]) ?: label,
-                edit = edit,
-                additional = textEdits(o["additionalTextEdits"]) ?: return null,
-            )
-        }
+        val parsed = items.take(MAX_ITEMS).map { completionItem(it) ?: return null }
         return CompletionList(parsed, incomplete || items.size > MAX_ITEMS)
+    }
+
+    fun completionItem(value: JsonValue?): CompletionItem? {
+        val o = value as? JsonObject ?: return null
+        val label = str(o["label"]) ?: return null
+        val edit = if (o["textEdit"] == null || o["textEdit"] == JsonNull) null else textEdit(o["textEdit"]) ?: return null
+        return CompletionItem(
+            label = label, kind = int(o["kind"]), detail = str(o["detail"])?.take(MAX_TEXT),
+            documentation = markup(o["documentation"]), sortText = str(o["sortText"]), filterText = str(o["filterText"]),
+            insertText = edit?.newText ?: str(o["insertText"]) ?: label, edit = edit,
+            additional = textEdits(o["additionalTextEdits"]) ?: return null,
+            unsupported = o["command"] != null && o["command"] != JsonNull || o["insertTextFormat"] != null && int(o["insertTextFormat"]) != 1,
+            payload = o,
+        )
     }
 
     /** Ответ `textDocument/diagnostic`: полный список; «не изменилось» — список `null`. */
@@ -368,6 +374,7 @@ internal object LspParse {
             declaration = has("declarationProvider"),
             documentSymbols = has("documentSymbolProvider"),
             codeActionResolve = ((o["codeActionProvider"] as? JsonObject)?.get("resolveProvider") as? JsonBool)?.value == true,
+            completionResolve = ((o["completionProvider"] as? JsonObject)?.get("resolveProvider") as? JsonBool)?.value == true,
         )
     }
 
