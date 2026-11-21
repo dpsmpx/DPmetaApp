@@ -53,6 +53,6 @@ class ProjectIndexTest {
         repeat(100) { if (lease == null) { lease = (client.projectIndexLease() as? Outcome.Success)?.value; if (lease == null) CountDownLatch(1).await(10, TimeUnit.MILLISECONDS) } }
         assertTrue(lease?.valid() == true)
         client.stop()
-        assertFalse(lease?.valid() == true)
+        assertFalse(lease.valid())
     }
 }
