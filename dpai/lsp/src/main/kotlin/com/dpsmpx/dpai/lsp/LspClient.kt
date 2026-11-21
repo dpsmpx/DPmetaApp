@@ -255,7 +255,7 @@ class LspClient(
         if (info?.capabilities?.executeCommands?.contains(KOTLIN_COMPLETION) != true || key == null || key < 0 || at == null ||
             item.edit != TextEdit(Range(at, at), "") || item.additional.isNotEmpty() ||
             data?.get("KotlinCompletionItemKey") != args.items.single() ||
-            LspParse.str(data?.get("configurationEntryId")) != "KotlinCompletionProvider") {
+            LspParse.str(data["configurationEntryId"]) != "KotlinCompletionProvider") {
             return Outcome.failure(DiagCode.UNSUPPORTED, "неподдерживаемый контракт команды дополнения Kotlin; текст не изменён")
         }
         val capture = CompletionCapture(item)
