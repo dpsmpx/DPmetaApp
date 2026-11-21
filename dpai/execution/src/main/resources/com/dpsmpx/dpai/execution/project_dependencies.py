@@ -35,13 +35,27 @@ def write(relative, content):
 
 
 def run(argv, capture=False):
-    result = subprocess.run(argv, check=False, stdout=subprocess.PIPE if capture else None, text=True)
-    if result.returncode:
-        raise ValueError("менеджер зависимостей завершился с кодом " + str(result.returncode))
-    if capture:
-        if len(result.stdout.encode("utf-8")) > MAX:
-            raise ValueError("ответ менеджера больше 8 МиБ")
-        return result.stdout
+    if not capture:
+        result = subprocess.run(argv, check=False)
+        if result.returncode:
+            raise ValueError("менеджер зависимостей завершился с кодом " + str(result.returncode))
+        return
+    with subprocess.Popen(argv, stdout=subprocess.PIPE) as child:
+        chunks = []
+        size = 0
+        while True:
+            block = child.stdout.read(8192)
+            if not block:
+                break
+            size += len(block)
+            if size > MAX:
+                child.kill()
+                child.wait()
+                raise ValueError("ответ менеджера больше 8 МиБ")
+            chunks.append(block)
+        if child.wait():
+            raise ValueError("менеджер зависимостей завершился с кодом " + str(child.returncode))
+    return b"".join(chunks).decode("utf-8")
 
 
 LOCKING = """// Создано DP_IDE: закрепление выполняет Gradle, без отдельного resolver.
@@ -61,11 +75,14 @@ gradle.projectsEvaluated {
         doLast {
             def rows = []
             def failures = 0
+            def edges = 0
             rootProject.allprojects.sort { it.path }.each { p ->
                 p.configurations.findAll { it.canBeResolved }.sort { it.name }.each { c ->
+                    if (rows.size() >= 512) throw new GradleException('Dependency report exceeds 512 configurations')
                     def modules = []
                     def missing = []
                     c.incoming.resolutionResult.allDependencies.each { d ->
+                        if (++edges > 100000) throw new GradleException('Dependency report exceeds 100000 edges')
                         if (d instanceof ResolvedDependencyResult) {
                             modules.add([requested:d.requested.displayName, selected:d.selected.id.displayName,
                                 reason:d.selected.selectionReason.descriptions.collect { it.description }])
@@ -79,7 +96,9 @@ gradle.projectsEvaluated {
                 }
             }
             def destination = rootProject.file('.dp-ide/dependencies/gradle-report.json')
-            destination.text = JsonOutput.prettyPrint(JsonOutput.toJson([format:'dp-ide.gradle-dependencies', version:1, configurations:rows]))
+            def json = JsonOutput.prettyPrint(JsonOutput.toJson([format:'dp-ide.gradle-dependencies', version:1, configurations:rows]))
+            if (json.getBytes('UTF-8').length > 8 * 1024 * 1024) throw new GradleException('Dependency report exceeds 8 MiB')
+            destination.setText(json, 'UTF-8')
             if (failures) throw new GradleException('Unresolved dependencies: ' + failures + '; see .dp-ide/dependencies/gradle-report.json')
         }
     }
@@ -116,8 +135,9 @@ def gradle(mode):
             raise ValueError("сценарий Gradle больше 8 МиБ")
         line = 'apply(from = rootProject.file("./gradle/dp-ide-locking.gradle"))' if build.endswith(".kts") else 'apply from: rootProject.file("./gradle/dp-ide-locking.gradle")'
         write(locking, LOCKING)
-        if line not in before.splitlines():
-            write(build, before.rstrip() + "\n\n// DP_IDE: версии из gradle.lockfile.\n" + line + "\n")
+        block = "// DP_IDE-BEGIN dependency locking\n" + line + "\n// DP_IDE-END dependency locking\n"
+        if block not in before:
+            write(build, before.rstrip() + "\n\n" + block)
         print("Версии закреплены Gradle; lock-файлы и подключение сохраните вместе в Git. Плагины и included builds проверяются отдельно.")
     print("Отчёт: .dp-ide/dependencies/gradle-report.json")
 

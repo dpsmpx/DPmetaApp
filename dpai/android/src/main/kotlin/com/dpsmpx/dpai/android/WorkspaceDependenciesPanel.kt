@@ -57,8 +57,13 @@ internal fun WorkspaceDependenciesPanel(model: DemoModel, view: ProjectWorkspace
         val profile = ManualProfile(ManualProfileKind.DEPENDENCIES,
             listOf(ManualStep(name, DependencyTools.command(manager, mode, python.trim()), 3600)),
             needs = if (androidSdk && manager == DependencyTools.Manager.GRADLE) setOf(com.dpsmpx.dpai.ui.ManualNeed.ANDROID_SDK) else emptySet())
-        note = context.getString(if (profile.valid && model.startManualProfile(view.project, where, profile)) R.string.dependencies_started else R.string.dependencies_busy)
-        if (profile.valid) ControllerService.resume(context)
+        val started = profile.valid && model.startManualProfile(view.project, where, profile, onFinished = { _, result ->
+            if (mode != DependencyTools.Mode.REPORT && result.complete && view.target?.inApp == true) {
+                CodeService.dependenciesChanged(where.path, context.getString(R.string.dependencies_restart_lsp))
+            }
+        })
+        note = context.getString(if (started) R.string.dependencies_started else R.string.dependencies_busy)
+        if (started) ControllerService.resume(context)
     }
     Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
         Text(stringResource(R.string.dependencies_title), style = MaterialTheme.typography.titleSmall)

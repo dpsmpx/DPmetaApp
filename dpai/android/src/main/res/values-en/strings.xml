@@ -56,4 +56,5 @@
     <string name="dependencies_continue">Continue</string>
     <string name="dependencies_cancel">Cancel</string>
     <string name="dependencies_android_sdk">For Android projects: use the app SDK</string>
+    <string name="dependencies_restart_lsp">Dependencies changed; restart the language service</string>
 </resources>

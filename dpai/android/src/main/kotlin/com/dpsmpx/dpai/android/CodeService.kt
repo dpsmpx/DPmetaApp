@@ -493,6 +493,19 @@ internal object CodeService {
         }
     }
 
+    /** После изменения lock/окружения прежний индекс не выдаётся за актуальный. Вне UI-потока. */
+    @Synchronized
+    fun dependenciesChanged(root: String, message: String) {
+        val base = root.trimEnd('/')
+        val prefix = "$base/"
+        // При уходе из «Файлов» files уже пуст, но владелец вкладок держит индекс.
+        val keys = synchronized(lock) { running.filter { (key, service) ->
+            val indexed = key.substringAfter('|').trimEnd('/')
+            indexed == base || indexed.startsWith(prefix) || base.startsWith("$indexed/") || service.files.any { it.file.startsWith(prefix) }
+        }.keys.toList() }
+        keys.forEach { stop(it, message) }
+    }
+
     /** Явное выключение/перенастройка относится к общей службе проекта, включая фоновые вкладки. */
     @Synchronized
     fun disable(session: Session) {

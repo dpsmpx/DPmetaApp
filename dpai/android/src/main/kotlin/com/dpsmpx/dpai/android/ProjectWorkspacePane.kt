@@ -47,7 +47,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 
-private enum class WorkspacePage(val title: String) { FILES("Файлы"), AI("ИИ"), CHANGES("Изменения"), CHECKS("Проверки"), BUILD("Сборка"), RUN("Запуск"), DEPENDENCIES("Зависимости") }
+private enum class WorkspacePage(val title: String, val label: Int? = null) { FILES("Файлы"), AI("ИИ"), CHANGES("Изменения"), CHECKS("Проверки"), BUILD("Сборка"), RUN("Запуск"), DEPENDENCIES("", R.string.dependencies_title) }
 
 /** Первый общий рабочий экран: представление одного настроенного проекта (D-132). */
 @Composable
@@ -136,7 +136,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
             }
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
-            for (p in WorkspacePage.entries) FilterChip(selected = page == p.name, onClick = { page = p.name }, label = { Text(p.title) })
+            for (p in WorkspacePage.entries) FilterChip(selected = page == p.name, onClick = { page = p.name }, label = { Text(p.label?.let { androidx.compose.ui.res.stringResource(it) } ?: p.title) })
         }
         }
         }
@@ -200,6 +200,10 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
             }
             override fun delete(path: String) = Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "удаление из рабочего экрана пока недоступно")
         }
+    }
+    LaunchedEffect(location) {
+        val reloaded = withContext(Dispatchers.IO) { Drafts.reloadWorkspace(location, tree, target?.inApp == true) }
+        if (reloaded is Outcome.Failure) AppLogs.info(context, "файлы проекта", reloaded.diagnostics.first().message)
     }
     var dir by rememberSaveable(location.key) { mutableStateOf("") }
     val openFiles = rememberOpenEditorFiles(location.key)
