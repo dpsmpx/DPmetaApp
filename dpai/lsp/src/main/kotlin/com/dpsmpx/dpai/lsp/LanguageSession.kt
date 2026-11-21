@@ -77,6 +77,10 @@ class LanguageSession(val main: LspClient, val helper: LspClient? = null, privat
         return if (found.isNotEmpty()) Outcome.success(found.flatten()) else results.first()
     }
 
+    /** Известная версия именно породившей исправление службы; чужой текст не подтверждается. */
+    fun actionVersion(action: CodeAction, uri: String, text: String): Int? =
+        clients.firstOrNull { it === action.owner }?.document(uri)?.takeIf { it.second == text }?.first
+
     /** Исправление возвращается той же основной/вспомогательной службе. */
     fun resolveCodeAction(action: CodeAction): Outcome<CodeAction> =
         clients.firstOrNull { it === action.owner }?.resolveCodeAction(action)

@@ -231,13 +231,14 @@ object Assist {
      * других файлов или с пересечением уже взятых — замечание остаётся (его — человеку или
      * ИИ). Одинаковая правка для двух замечаний берётся один раз.
      */
-    fun fixAll(uri: String, perDiagnostic: List<List<CodeAction>>): FixAll {
+    fun fixAll(uri: String, perDiagnostic: List<List<CodeAction>>, version: (CodeAction) -> Int? = { null }): FixAll {
         val taken = mutableListOf<TextEdit>()
         var fixed = 0
         var skipped = 0
         for (actions in perDiagnostic) {
             val edits = actions.asSequence()
                 .filter { it.disabledReason == null && !it.requiresCommand && it.preferred && it.edit != null && (it.kind == null || it.kind.startsWith("quickfix")) }
+                .filter { a -> a.edit!!.versions[uri]?.let { it == version(a) } ?: true }
                 .mapNotNull { a -> (editsForFile(a.edit!!, uri) as? Outcome.Success)?.value?.takeIf { it.isNotEmpty() } }
                 .firstOrNull()
             if (edits == null) { skipped++; continue }
