@@ -183,6 +183,7 @@ private fun ProfileCard(p: ApiProfile, onChat: () -> Unit, onEdit: () -> Unit, o
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row {
+                TextButton(onClick = { ApiQuickStartRequests.request(profile = p.id.value) }) { Text(androidx.compose.ui.res.stringResource(R.string.api_work_start)) }
                 TextButton(onClick = onChat) { Text("Чат") }
                 // «Удалить» — в окне «Изменить», а не рядом с «Чат» (AI:A-26).
                 TextButton(onClick = onEdit) { Text("Изменить") }
@@ -536,6 +537,7 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
                 Text(p?.let { "${it.name} · ${it.model}" } ?: "профиль удалён", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        if (c.project == null) TextButton(onClick = { ApiQuickStartRequests.request(profile = c.profile.value) }) { Text(androidx.compose.ui.res.stringResource(R.string.api_work_connect_project)) }
         if (c.project != null) Row(Modifier.fillMaxWidth()) {
             TextButton(enabled = live == null, onClick = { scope.launch {
                 val result = withContext(Dispatchers.IO) {

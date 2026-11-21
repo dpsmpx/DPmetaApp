@@ -90,6 +90,10 @@ object ModelsStore {
         profileFlow.value = read(d, PROFILES, "профили") { ApiProfileBook.fromJson(it) }.orEmpty()
         chatFlow.value = read(d, CHATS, "переписка") { ChatBook.fromJson(it) }.orEmpty()
         routineFlow.value = read(d, ROUTINES, "маршруты") { RoutineBook.fromJson(it) }.orEmpty()
+        val interrupted = chatFlow.value.map { c ->
+            if (c.project != null && c.entries.lastOrNull()?.role == ChatRole.USER) c.plus(ChatEntry(ChatRole.ASSISTANT, app.getString(R.string.api_work_interrupted), status = EntryStatus.CANCELLED)) else c
+        }
+        if (interrupted != chatFlow.value) writeChats(interrupted)
         readyFlow.value = true
     }
 
@@ -296,13 +300,13 @@ object ModelsStore {
                     is Outcome.Success -> {
                         val tools = selectedProvider as? com.dpsmpx.dpai.providers.ToolChat
                         if (tools == null) Outcome.failure(DiagCode.UNSUPPORTED, "провайдер не поддерживает проектные инструменты")
-                        else tools.chatWithTools(ChatRequest(profile.model, withUser.context(), opened.value.system(), profile.maxOutputTokens), opened.value.tools, cancel, onText) { call ->
-                            val result = opened.value.run(call, cancel)
+                        else opened.value.use { session -> tools.chatWithTools(ChatRequest(profile.model, withUser.context(), session.system(), profile.maxOutputTokens), session.tools, cancel, onText) { call ->
+                            val result = session.run(call, cancel)
                             val path = ((call.input["path"] as? com.dpsmpx.dpai.core.serialization.JsonString)?.value ?: "").take(200)
                             val action = app.getString(if (result.isError) R.string.api_work_action_failed else R.string.api_work_action_ok, call.name, path)
                             runningFlow.update { m -> m[conversationId]?.let { m + (conversationId to it.copy(actions = (it.actions + action).takeLast(64))) } ?: m }
                             result
-                        }
+                        } }
                     }
                 }
             }.getOrElse { e -> Outcome.failure(DiagCode.INTERNAL_ERROR, "сбой: ${e.javaClass.simpleName}", profile.kind.key) }

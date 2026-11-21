@@ -98,6 +98,10 @@ class AnthropicProvider(profile: ApiProfile, key: Secret?, transport: Transport)
             if (t.blocks.any { it.opaque }) {
                 return Outcome.failure(DiagCode.PROVIDER_REPLY_INVALID, "в ответе с инструментами — блок неизвестного вида: продолжить нельзя", subject)
             }
+            val callIds = calls.map { it.fields["id"].str().orEmpty() }
+            if (calls.size > 64 || callIds.any { it.isEmpty() || it.length > 256 } || callIds.toSet().size != callIds.size) {
+                return Outcome.failure(DiagCode.PROVIDER_REPLY_INVALID, "неверные или повторные id инструментов в одном ответе Anthropic", subject)
+            }
             val results = calls.map { b ->
                 val id = b.fields["id"].str().orEmpty()
                 val name = b.fields["name"].str().orEmpty()

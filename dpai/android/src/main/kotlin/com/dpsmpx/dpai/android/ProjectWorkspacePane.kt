@@ -149,6 +149,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
                     }
                 }
                 WorkspacePage.AI.name -> Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
+                    TextButton(onClick = { ApiQuickStartRequests.request(project = project.project.value) }) { Text(androidx.compose.ui.res.stringResource(R.string.api_work_title)) }
                     if (selected == null) Text("Выберите задачу контура, чтобы открыть её чат и действия") else {
                         Text("${selected.title} · ${Words.task(selected.state)}")
                         selected.session?.let { s -> TextButton(onClick = { onSession(s.value) }) { Text("Открыть чат ИИ") } }

@@ -126,6 +126,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
             item(key = "empty") {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Button(onClick = { ApiQuickStartRequests.request() }) { Text(androidx.compose.ui.res.stringResource(R.string.api_work_title)) }
                         Text("Настройте Linux в приложении или подключите ПК по SSH — шаги есть в инструкции.", style = MaterialTheme.typography.bodySmall)
                         Row {
                             Button(onClick = { guide = true }) { Text("Инструкция") }

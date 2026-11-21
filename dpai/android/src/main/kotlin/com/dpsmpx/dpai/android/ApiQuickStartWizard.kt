@@ -51,7 +51,9 @@ import kotlinx.coroutines.withContext
 internal object ApiQuickStartRequests {
     val open = MutableStateFlow(false)
     val chat = MutableStateFlow<String?>(null)
-    fun request() { open.value = true }
+    var preferredProfile: String? = null
+    var preferredProject: String? = null
+    fun request(profile: String? = null, project: String? = null) { preferredProfile = profile; preferredProject = project; open.value = true }
     fun seen(context: Context) = context.getSharedPreferences("dpai.quick-start", Context.MODE_PRIVATE).getBoolean("seen", false)
     fun dismiss(context: Context) {
         context.getSharedPreferences("dpai.quick-start", Context.MODE_PRIVATE).edit { putBoolean("seen", true) }
@@ -74,6 +76,8 @@ internal fun ApiQuickStartWizard(onOpen: (Conversation) -> Unit, onAdvanced: () 
     var models by remember { mutableStateOf<List<ModelInfo>>(emptyList()) }
     var selectedModel by remember { mutableStateOf("") }
     var checked by remember { mutableStateOf<ApiProfile?>(null) }
+    var probeCancel by remember { mutableStateOf<com.dpsmpx.dpai.providers.Cancel?>(null) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { probeCancel?.cancel() } }
     val presets = remember {
         listOf(Triple("Anthropic", ProviderKind.ANTHROPIC, ProviderKind.ANTHROPIC.fixedBaseUrl!!), Triple("Gemini", ProviderKind.GEMINI, ProviderKind.GEMINI.fixedBaseUrl!!)) +
             ApiPresets.OPENAI_COMPATIBLE.map { Triple(it.name, ProviderKind.OPENAI_COMPATIBLE, it.baseUrl) }
@@ -88,39 +92,42 @@ internal fun ApiQuickStartWizard(onOpen: (Conversation) -> Unit, onAdvanced: () 
             ApiProjectRuntime.choices(context)
         }
         when (loaded) {
-            is Outcome.Success -> { choices = loaded.value; selectedProject = choices.firstOrNull()?.key; selectedProfile = ModelsStore.profiles.value.firstOrNull()?.id?.value }
+            is Outcome.Success -> { choices = loaded.value; selectedProject = choices.firstOrNull { it.project?.value == ApiQuickStartRequests.preferredProject }?.key ?: choices.firstOrNull()?.key; selectedProfile = ModelsStore.profiles.value.firstOrNull { it.id.value == ApiQuickStartRequests.preferredProfile }?.id?.value ?: ModelsStore.profiles.value.firstOrNull()?.id?.value }
             is Outcome.Failure -> note = loaded.diagnostics.first().message
         }
         busy = false
     }
     fun changedProfile() { checked = null; models = emptyList(); selectedModel = ""; note = null; key = "" }
     fun connect() {
-        busy = true; note = null
+        busy = true; note = null; checked = null
+        val cancel = com.dpsmpx.dpai.providers.Cancel().also { probeCancel = it }
         val capturedKey = key.trim().takeIf { it.isNotEmpty() }?.let(::Secret)
         scope.launch {
-            val result = withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) { try {
                 val base = existing ?: ApiProfiles.form(newId, preset.first, preset.second, preset.third, "", null, false).valueOrNull()!!
                 val provider = if (capturedKey == null && existing != null) ModelsStore.provider(base) else Providers.of(base, capturedKey)
-                when (val r = provider.models()) {
+                when (val r = provider.models(cancel)) {
                     is Outcome.Failure -> r
-                    is Outcome.Success -> Outcome.success(base to r.value.filterNot { m ->
-                        val id = m.id.lowercase()
-                        listOf("embedding", "whisper", "dall-e", "gpt-image", "tts-", "imagen", "veo-", "moderation").any { it in id }
-                    }.sortedBy { it.id })
+                    is Outcome.Success -> Outcome.success(base to com.dpsmpx.dpai.providers.DevelopmentModels.eligible(r.value))
                 }
-            }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.INTERNAL_ERROR, "сбой проверки API: ${e.javaClass.simpleName}")
+            } }
+            probeCancel = null
             when (result) {
                 is Outcome.Failure -> note = result.diagnostics.first().message
                 is Outcome.Success -> {
                     checked = result.value.first
                     models = result.value.second
-                    selectedModel = existing?.model?.takeIf { id -> models.any { it.id == id } } ?: ModelsStore.suggest(models).orEmpty()
+                    selectedModel = com.dpsmpx.dpai.providers.DevelopmentModels.preferred(models, existing?.model).orEmpty()
                     if (models.isEmpty()) note = context.getString(R.string.api_work_no_models)
                 }
             }
             busy = false
         }
     }
+    LaunchedEffect(selectedProfile) { if (!busy && existing != null && ModelsStore.hasKey(existing.id)) connect() }
     fun start() {
         val choice = selected ?: return
         val base = checked ?: existing ?: return
@@ -128,7 +135,8 @@ internal fun ApiQuickStartWizard(onOpen: (Conversation) -> Unit, onAdvanced: () 
         busy = true; note = context.getString(R.string.api_work_preparing)
         val capturedKey = key.trim().takeIf { it.isNotEmpty() }?.let(::Secret)
         scope.launch {
-            val result = withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) { try {
+                if (existing != null && ModelsStore.profiles.value.firstOrNull { it.id == existing.id } != existing) return@withContext Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, "профиль изменился; выберите его заново")
                 val profile = when (val r = ApiProfiles.form(base.id, base.name, base.kind, base.baseUrl, selectedId, base.maxOutputTokens, base.customHostAllowed)) {
                     is Outcome.Failure -> return@withContext r
                     is Outcome.Success -> r.value
@@ -138,7 +146,10 @@ internal fun ApiQuickStartWizard(onOpen: (Conversation) -> Unit, onAdvanced: () 
                     is Outcome.Failure -> r
                     is Outcome.Success -> Outcome.success(ModelsStore.newProjectChat(profile, r.value.project))
                 }
-            }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.INTERNAL_ERROR, "сбой подготовки проекта: ${e.javaClass.simpleName}")
+            } }
             when (result) {
                 is Outcome.Failure -> note = result.diagnostics.first().message
                 is Outcome.Success -> { key = ""; ApiQuickStartRequests.dismiss(context); onOpen(result.value) }
@@ -162,7 +173,7 @@ internal fun ApiQuickStartWizard(onOpen: (Conversation) -> Unit, onAdvanced: () 
             }
             if (existing == null) Row(Modifier.horizontalScroll(rememberScrollState())) { for (p in presets) FilterChip(selected = preset == p, onClick = { if (!busy) { preset = p; changedProfile() } }, label = { Text(p.first) }) }
             val needsKey = existing == null || !ModelsStore.hasKey(existing.id)
-            if (needsKey) OutlinedTextField(key, { key = it; checked = null; models = emptyList() }, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.api_work_key)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true, enabled = !busy)
+            OutlinedTextField(key, { key = it; checked = null; models = emptyList() }, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(if (needsKey) R.string.api_work_key else R.string.api_work_key_saved)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true, enabled = !busy)
             TextButton(enabled = !busy && (!needsKey || key.isNotBlank()), onClick = ::connect) { Text(stringResource(R.string.api_work_check_key)) }
             if (models.isNotEmpty()) {
                 Text(stringResource(R.string.api_work_model))
@@ -172,6 +183,6 @@ internal fun ApiQuickStartWizard(onOpen: (Conversation) -> Unit, onAdvanced: () 
             note?.let { Text(it, color = if (busy) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error) }
             if (busy) CircularProgressIndicator()
         } },
-        confirmButton = { TextButton(enabled = !busy && selected != null && (checked != null && selectedModel.isNotBlank() || existing != null && existing.model.isNotBlank() && ModelsStore.hasKey(existing.id)), onClick = ::start) { Text(stringResource(R.string.api_work_start)) } },
-        dismissButton = { Row { TextButton(enabled = !busy, onClick = { ApiQuickStartRequests.dismiss(context); onAdvanced() }) { Text(stringResource(R.string.api_work_advanced)) }; TextButton(enabled = !busy, onClick = { ApiQuickStartRequests.dismiss(context) }) { Text(stringResource(R.string.api_work_later)) } } })
+        confirmButton = { TextButton(enabled = !busy && selected != null && checked != null && selectedModel.isNotBlank(), onClick = ::start) { Text(stringResource(R.string.api_work_start)) } },
+        dismissButton = { Row { if (busy && probeCancel != null) TextButton(onClick = { probeCancel?.cancel() }) { Text(stringResource(R.string.api_work_cancel)) }; TextButton(enabled = !busy, onClick = { ApiQuickStartRequests.dismiss(context); onAdvanced() }) { Text(stringResource(R.string.api_work_advanced)) }; TextButton(enabled = !busy, onClick = { ApiQuickStartRequests.dismiss(context) }) { Text(stringResource(R.string.api_work_later)) } } })
 }

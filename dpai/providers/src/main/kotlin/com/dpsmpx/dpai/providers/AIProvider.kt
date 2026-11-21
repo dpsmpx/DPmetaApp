@@ -55,7 +55,7 @@ interface ToolChat {
 val EFFORT_LEVELS: List<String> = listOf("low", "medium", "high", "xhigh", "max")
 
 /** Модель провайдера: id для запроса, имя для экрана, предел ответа — если провайдер его сообщает. */
-data class ModelInfo(val id: String, val name: String? = null, val maxOutputTokens: Int? = null)
+data class ModelInfo(val id: String, val name: String? = null, val maxOutputTokens: Int? = null, val supportsTools: Boolean? = null)
 
 /** Чем кончился ответ: сам, по пределу длины, отказом модели или иначе (сырое значение — в [ChatReply.stopReason]). */
 enum class StopKind { END, LENGTH, REFUSAL, OTHER }

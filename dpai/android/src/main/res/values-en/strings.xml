@@ -71,7 +71,7 @@
     <string name="api_work_check_key">Check key and load models</string>
     <string name="api_work_model">Model</string>
     <string name="api_work_no_models">No suitable text models were returned. Choose another profile or advanced setup.</string>
-    <string name="api_work_consent">After you send a message, the model can read and change this project and run its check/build profiles. Code is sent to the selected provider; keys and other projects are not exposed. Setup does not start a paid task.</string>
+    <string name="api_work_consent">After you send a message, the model can read and change this project and run its check/build profiles. Code is sent to the selected provider; the API key and other projects are not exposed. Setup does not start a paid task.</string>
     <string name="api_work_start">Start working</string>
     <string name="api_work_preparing">Preparing the project and environment. Existing clones and settings are preserved.</string>
     <string name="api_work_advanced">Advanced setup</string>
@@ -83,4 +83,8 @@
     <string name="api_work_open_project">Project and changes</string>
     <string name="api_work_file_deleted">The API model deleted this file. You can undo the last change in the project workspace.</string>
     <string name="api_work_lsp_refresh_failed">The API model changed a file that could not be reloaded. Restart the language service.</string>
+    <string name="api_work_connect_project">Work on a project</string>
+    <string name="api_work_interrupted">The API turn was interrupted by an app restart. Files may have changed: review changes and the last backup in the workspace. Commands are not automatically repeated.</string>
+    <string name="api_work_key_saved">New API key — only to replace the saved key</string>
+    <string name="api_work_cancel">Stop checking</string>
 </resources>

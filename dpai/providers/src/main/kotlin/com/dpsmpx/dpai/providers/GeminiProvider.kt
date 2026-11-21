@@ -106,7 +106,7 @@ class GeminiProvider(profile: ApiProfile, key: Secret?, transport: Transport) : 
         if (!MODEL.matches(model)) return Outcome.failure(DiagCode.PROVIDER_REQUEST_REJECTED, "недопустимое имя модели Gemini")
         val messages = request.messages.map { JsonObject.of("role" to jstr(if (it.role == ChatRole.USER) "user" else "model"), "parts" to JsonArray(listOf(JsonObject.of("text" to jstr(it.text))))) }.toMutableList<JsonValue>()
         var serial = 0
-        val providerIds = hashSetOf<String>()
+        val providerIds = hashMapOf<String, String>()
         return ToolLoop.run(messages, tools, cancel, onText, turn = turn@{ history ->
             val body = linkedMapOf<String, JsonValue>("contents" to JsonArray(history), "tools" to JsonArray(listOf(JsonObject.of("functionDeclarations" to JsonArray(tools.map(ToolLoop::schema))))))
             request.system?.let { body["systemInstruction"] = JsonObject.of("parts" to JsonArray(listOf(JsonObject.of("text" to jstr(it))))) }
@@ -121,13 +121,18 @@ class GeminiProvider(profile: ApiProfile, key: Secret?, transport: Transport) : 
             if (content == null || reason == null) return@turn Outcome.failure(DiagCode.PROVIDER_REPLY_INVALID, "нет завершённого ответа Gemini")
             val parts = content["parts"].arr()
             val calls = arrayListOf<ToolCall>()
+            val seenIds = hashSetOf<String>()
+            providerIds.clear()
             for (part in parts) {
                 val call = part.obj()?.get("functionCall").obj() ?: continue
                 val name = call["name"].str()
                 val args = call["args"].obj()
                 if (name == null || args == null) return@turn Outcome.failure(DiagCode.PROVIDER_REPLY_INVALID, "неверный вызов функции Gemini")
-                val suppliedId = call["id"].str()?.also { providerIds += it }
-                calls += ToolCall(suppliedId ?: "gemini-${serial++}", name, args)
+                val suppliedId = call["id"].str()
+                if (suppliedId != null && (suppliedId.isEmpty() || !seenIds.add(suppliedId))) return@turn Outcome.failure(DiagCode.PROVIDER_REPLY_INVALID, "повторный id функции Gemini")
+                val localId = "gemini-${serial++}"
+                if (suppliedId != null) providerIds[localId] = suppliedId
+                calls += ToolCall(localId, name, args)
             }
             val text = parts.mapNotNull { p -> p.obj()?.takeIf { it["thought"] != JsonBool(true) }?.get("text").str() }.joinToString("")
             val usage = reply["usageMetadata"].obj()
@@ -135,7 +140,7 @@ class GeminiProvider(profile: ApiProfile, key: Secret?, transport: Transport) : 
         }, results = { values -> JsonObject.of("role" to jstr("user"), "parts" to JsonArray(values.map { (call, result) ->
             // id возвращается лишь если он действительно был в functionCall; локальный счётчик не выдаётся за id сервера.
             val fields = linkedMapOf<String, JsonValue>("name" to jstr(call.name), "response" to JsonObject.of("output" to jstr(result.text), "isError" to JsonBool(result.isError)))
-            if (call.id in providerIds) fields["id"] = jstr(call.id)
+            providerIds[call.id]?.let { fields["id"] = jstr(it) }
             JsonObject.of("functionResponse" to JsonObject(fields))
         })) }, execute = run)
     }

@@ -54,6 +54,22 @@ class LanguageSessionTest {
         client.stop()
     }
 
+    @Test fun deletedProjectFileClosesBothDocumentsAndAnnouncesDeletedInsteadOfChanged() {
+        val (main, first) = client("{}")
+        val (helper, second) = client("{}")
+        val session = LanguageSession(main, helper)
+        assertTrue(session.open(uri, "python", "code") is Outcome.Success)
+        assertTrue(session.filesDeleted(setOf(uri)) is Outcome.Success)
+        for ((c, server) in listOf(main to first, helper to second)) {
+            assertNull(c.document(uri))
+            await("событие удаления") { "workspace/didChangeWatchedFiles" in server.methods() }
+            val events = server.params("workspace/didChangeWatchedFiles")["changes"] as JsonArray
+            assertEquals(json(3), (events.items.single() as JsonObject)["type"])
+            assertTrue("textDocument/didClose" in server.methods())
+        }
+        main.stop(); helper.stop()
+    }
+
     @Test
     fun settingsAnswerConfigurationBySectionAndAreAnnounced() {
         val settings = PythonServers.pylsp("/root/.local/share/dpai/projects/k/python/bin/python").settings

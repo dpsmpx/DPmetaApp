@@ -24,7 +24,6 @@ internal object ToolLoop {
         val text = StringBuilder()
         var input: Long? = 0
         var output: Long? = 0
-        val seen = hashSetOf<String>()
         repeat(MAX_ROUNDS + 1) { number ->
             if (cancel.cancelled) return cancelled()
             val round = when (val r = turn(messages)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
@@ -37,13 +36,12 @@ internal object ToolLoop {
             output = output?.let { a -> round.output?.takeIf { it >= 0 && a <= Long.MAX_VALUE - it }?.let { a + it } }
             if (!round.useTools || round.calls.isEmpty()) return Outcome.success(ChatReply(text.toString(), round.stop, round.reason, ChatUsage.of(input, output)))
             if (number == MAX_ROUNDS) return Outcome.success(ChatReply(text.toString(), StopKind.OTHER, "tool_round_limit", ChatUsage.of(input, output)))
-            // Весь ответ проверяется до первого побочного эффекта; повторный id не повторяет запись.
-            if (round.calls.size > MAX_CALLS || round.calls.any { it.id.isBlank() || it.id.length > 256 || it.id in seen } || round.calls.map { it.id }.toSet().size != round.calls.size) {
+            // Весь ответ проверяется до первого побочного эффекта; id однозначен внутри этого ответа.
+            if (round.calls.size > MAX_CALLS || round.calls.any { it.id.isBlank() || it.id.length > 256 } || round.calls.map { it.id }.toSet().size != round.calls.size) {
                 return Outcome.failure(DiagCode.PROVIDER_REPLY_INVALID, "неверные или повторные вызовы инструментов")
             }
             val values = round.calls.map { call ->
                 if (cancel.cancelled) return cancelled()
-                seen += call.id
                 val result = if (tools.none { it.name == call.name }) ToolResult("нет такого инструмента", true)
                     else runCatching { execute(call) }.getOrElse { ToolResult("сбой инструмента: ${it.javaClass.simpleName}", true) }
                 call to result.copy(text = result.text.take(MAX_RESULT))

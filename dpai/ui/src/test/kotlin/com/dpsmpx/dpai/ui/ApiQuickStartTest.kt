@@ -21,6 +21,21 @@ class ApiQuickStartTest {
         { path, _, text -> when (val r = LocalTree(dir).write(path, text.toByteArray())) { is Outcome.Failure -> r; is Outcome.Success -> Outcome.success(Unit) } },
         { path, _ -> LocalTree(dir).delete(path) })
 
+    @Test fun automaticPreparationRequiresNoTargetFieldsAndDoesNotDuplicateTheProject() {
+        val ids = com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.ManualClock(), com.dpsmpx.dpai.core.clock.RandomSource.seeded(214))
+        var created = 0
+        val target = TargetForm.inApp(ids.next(com.dpsmpx.dpai.core.ids.IdKinds.TARGET), "Телефон", "/root/.claude-slot-1").valueOrNull()!!
+        val clone = ApiQuickStart.Clone("owner/repo", "main")
+        val first = ApiQuickStart.adopt(ids, clone, emptyList(), emptyList()) { created++; Outcome.success(target) }.valueOrNull()!!
+        assertEquals(1, created)
+        assertEquals(target.id, first.target)
+        assertEquals("/root/projects/owner/repo", first.root)
+        val again = ApiQuickStart.adopt(ids, clone, listOf(target), listOf(first)) { error("дублирование target") }.valueOrNull()!!
+        assertEquals(first, again)
+        assertEquals(1, created)
+        assertIs<Outcome.Failure>(ApiQuickStart.adopt(ids, ApiQuickStart.Clone("../other", "main"), listOf(target), emptyList()) { error("не вызывать") })
+    }
+
     @Test fun existingClonesAppearWithoutTargetsOrLinuxProcess() {
         file("owner/repo/.git/HEAD", "ref: refs/heads/dev\n")
         file("local/.git/HEAD", "ref: refs/heads/main\n")

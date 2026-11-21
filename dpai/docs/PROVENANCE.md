@@ -234,3 +234,13 @@ capabilities.experimental.indexDir используются её официал�
 [vscode-extension-core](https://github.com/Kotlin/kotlin-lsp/blob/ce29f8446ba2d60ba914d23dd8ddf2f1b410dc6e/vscode-extension-core/src/lspClient.ts).
 Каталог выбирает приложение; произвольный путь ответа не используется
 для удаления. Живой тест проверяет и ответ, и реальные файлы RocksDB.
+
+### Проектный режим API, D-214
+
+Собственная обвязка официальных протоколов, без новых библиотек:
+[OpenAI function calling](https://platform.openai.com/docs/guides/function-calling),
+[stateless Responses](https://platform.openai.com/docs/guides/reasoning),
+[Gemini function calling](https://ai.google.dev/gemini-api/docs/function-calling).
+Responses использует store=false и сохраняет reasoning.encrypted_content
+в памяти продолжения; Gemini возвращает исходные parts с thoughtSignature.
+Ключ передаёт прежний HTTP-транспорт, инструменты исполняет общая защита проекта.

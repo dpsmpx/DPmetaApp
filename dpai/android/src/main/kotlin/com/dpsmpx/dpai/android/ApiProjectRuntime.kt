@@ -41,7 +41,7 @@ internal object ApiProjectRuntime {
     fun choices(context: Context): Outcome<List<Choice>> {
         val controller = Controller.get(context.filesDir)
         val registered = controller.projects().projects
-        val rows = registered.map { Choice(it.project.value, it.root.substringAfterLast('/').substringAfterLast('\\'), it.root, it.integrationBranch, it.project) }.toMutableList()
+        val rows = registered.map { Choice(it.project.value, it.root.removePrefix("/root/projects/"), it.root, it.integrationBranch, it.project) }.toMutableList()
         val projects = GuestPaths.home(context).resolve("projects")
         if (projects.isDirectory) {
             val clones = when (val r = ApiQuickStart.clones(LocalTree(projects.toPath()))) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
@@ -52,6 +52,7 @@ internal object ApiProjectRuntime {
     }
 
     /** Служебные поля выводятся из выбранного клона; существующая привязка не дублируется. */
+    @Synchronized
     fun prepare(context: Context, choice: Choice): Outcome<ProjectEntry> {
         val controller = Controller.get(context.filesDir)
         val current = choices(context).valueOrNull()?.firstOrNull { it.key == choice.key && it.root == choice.root && it.branch == choice.branch }
@@ -64,13 +65,11 @@ internal object ApiProjectRuntime {
             StorageMap.prepare(context)
         }
         if (old != null) return when (val r = controller.selectProject(old.project)) { is Outcome.Failure -> r; is Outcome.Success -> Outcome.success(old) }
-        val target = controller.targets().firstOrNull { it.inApp && it.configDir != null } ?: when (val r = controller.addInApp(IdGenerator(Clock.SYSTEM, RandomSource.secure()).next(IdKinds.TARGET))) {
-            is Outcome.Failure -> return r
-            is Outcome.Success -> r.value
-        }
-        val root = current.root.trimEnd('/')
-        val worktrees = root.substringBeforeLast('/') + "/.trees/" + root.substringAfterLast('/')
-        val project = when (val r = controller.projectForm(target, root, worktrees, current.branch, "", claudeOn = target)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
+        val ids = IdGenerator(Clock.SYSTEM, RandomSource.secure())
+        val clone = ApiQuickStart.Clone(current.root.removePrefix("/root/projects/"), current.branch)
+        val project = when (val r = ApiQuickStart.adopt(ids, clone, controller.targets(), controller.projects().projects) {
+            controller.addInApp(ids.next(IdKinds.TARGET))
+        }) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
         return when (val r = controller.putProject(project)) { is Outcome.Failure -> r; is Outcome.Success -> Outcome.success(project) }
     }
 
@@ -85,11 +84,12 @@ internal object ApiProjectRuntime {
             val relative = WorkspacePaths.homeRelative(target, project.root) ?: return Outcome.failure(DiagCode.VALUE_INVALID, "каталог проекта вне домашней папки")
             SubTree(GuestPaths.homeTree(context), relative)
         } else when (val r = model.pcFiles(target, project.root, writable = true)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
-        return Outcome.success(Session(context.applicationContext, model, project, view.main, tree))
+        return Outcome.success(Session(context.applicationContext, model, project, view.main, tree, target.inApp))
     }
 
     class Session(private val context: Context, private val model: DemoModel, val project: ProjectEntry,
-        private val location: com.dpsmpx.dpai.ui.WorkspaceLocation, private val tree: FileTree) {
+        private val location: com.dpsmpx.dpai.ui.WorkspaceLocation, private val tree: FileTree, private val inApp: Boolean) : AutoCloseable {
+        override fun close() { (tree as? AutoCloseable)?.close() }
         private val files = ApiProjectFiles(tree,
             { path, sha, text -> model.workspaceChange(project, location) { it.write(project.project.value, location.key, tree, path, sha, text) } },
             { path, sha -> model.workspaceChange(project, location) { it.delete(project.project.value, location.key, tree, path, sha) } })
@@ -118,10 +118,10 @@ internal object ApiProjectRuntime {
                         val path = (call.input["path"] as? JsonString)?.value.orEmpty()
                         val absolute = project.root.trimEnd('/') + "/" + path
                         val text = if (call.name == "delete_file") null else tree.read(path, com.dpsmpx.dpai.files.TextFile.MAX_EDIT_BYTES).valueOrNull()?.let { com.dpsmpx.dpai.files.TextFile.decode(it).valueOrNull() }
-                        if (call.name == "delete_file" || text != null) CodeService.projectFilesChanged(absolute, text, call.name == "write_file" && call.input["sha256"] !is JsonString,
+                        if (inApp && (call.name == "delete_file" || text != null)) CodeService.projectFilesChanged(absolute, text, call.name == "write_file" && call.input["sha256"] !is JsonString,
                             context.getString(R.string.api_work_file_deleted))
-                        else CodeService.dependenciesChanged(project.root, context.getString(R.string.api_work_lsp_refresh_failed))
-                        Drafts.reloadWorkspace(location, tree, model.workspace()?.target?.inApp == true)
+                        else if (inApp) CodeService.dependenciesChanged(project.root, context.getString(R.string.api_work_lsp_refresh_failed))
+                        Drafts.reloadWorkspace(location, tree, inApp)
                         changed.value = changed.value + 1
                     }
                     ToolResult(result.value)
@@ -151,6 +151,18 @@ internal object ApiProjectRuntime {
 
         private fun defaultProfile(kind: ManualProfileKind): ManualProfile? {
             val root = tree.list("").valueOrNull()?.map { it.name }?.toSet() ?: return null
+            if ("CMakeLists.txt" in root) {
+                val steps = listOf(ManualStep("Конфигурация CMake", listOf("cmake", "-S", ".", "-B", "build", "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"), 600),
+                    ManualStep("Сборка CMake", listOf("cmake", "--build", "build"), 1800)) +
+                    if (kind == ManualProfileKind.CHECK) listOf(ManualStep("Тесты CTest", listOf("ctest", "--test-dir", "build", "--output-on-failure"), 1800)) else emptyList()
+                return ManualProfile(kind, steps)
+            }
+            if ("Makefile" in root) {
+                val make = tree.read("Makefile", 256 * 1024).valueOrNull()?.toString(Charsets.UTF_8).orEmpty()
+                val test = Regex("(?m)^(check|test)\\s*:").find(make)?.groupValues?.get(1)
+                if (kind == ManualProfileKind.CHECK && test == null) return null
+                return ManualProfile(kind, listOf(ManualStep("Make", listOfNotNull("make", if (kind == ManualProfileKind.CHECK) test else null), 1800)))
+            }
             val argv = when {
                 "gradlew" in root -> listOf("sh", "gradlew", if (kind == ManualProfileKind.CHECK) "check" else "assemble")
                 "gradlew.bat" in root -> listOf("cmd.exe", "/c", "gradlew.bat", if (kind == ManualProfileKind.CHECK) "check" else "assemble")

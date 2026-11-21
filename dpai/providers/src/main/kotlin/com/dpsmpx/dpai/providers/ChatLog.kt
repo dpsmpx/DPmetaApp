@@ -99,7 +99,7 @@ object ChatBook {
     fun fromJson(value: JsonValue): Outcome<List<Conversation>> {
         val d = DiagnosticCollector()
         val f = JsonFields.root(value, d) ?: return Outcome.Failure(d.all)
-        FormatHeader.read(f, FORMAT, 1..VERSION, d) ?: return Outcome.Failure(d.all)
+        val version = FormatHeader.read(f, FORMAT, 1..VERSION, d) ?: return Outcome.Failure(d.all)
         val items = f.array("conversations")?.items.orEmpty()
         f.finish()
         val out = items.takeLast(MAX_CONVERSATIONS).mapIndexedNotNull { i, item ->
@@ -110,6 +110,7 @@ object ChatBook {
             val profile = c.string("profile")?.let { IdKinds.ACCOUNT.parse(it).valueOrNull() }
             val title = c.string("title")
             val projectText = c.optString("project")
+            if (version == 1 && projectText != null) d.error(DiagCode.VALUE_INVALID, "привязка проекта требует версии 2", "$at.project")
             val project = projectText?.let { IdKinds.PROJECT.parse(it).valueOrNull() }
             if (projectText != null && project == null) d.error(DiagCode.VALUE_INVALID, "неверный id проекта разговора", "$at.project")
             val entries = c.array("entries")?.items.orEmpty().takeLast(MAX_ENTRIES).mapIndexedNotNull { j, e -> entry(e, "$at.entries[$j]", d) }
