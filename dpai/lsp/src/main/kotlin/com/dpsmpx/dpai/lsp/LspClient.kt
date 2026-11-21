@@ -60,6 +60,10 @@ class LspClient(
     private val documents = HashMap<String, Document>()
     private val lock = Any()
 
+    private val projectIndex = ProjectIndex()
+    fun projectIndexLease(): Outcome<ProjectIndex.Lease> = if (isRunning) projectIndex.lease()
+        else Outcome.failure(DiagCode.LSP_SERVER_STOPPED, "служба индекса остановлена")
+
     private val completionSerial = Any()
     private val completionGeneration = java.util.concurrent.atomic.AtomicLong()
     private class CompletionCapture(val item: CompletionItem) {
@@ -76,6 +80,12 @@ class LspClient(
         input, output,
         object : JsonRpcPeer.Handler {
             override fun notification(method: String, params: JsonValue?) {
+                if (method == "$/progress") {
+                    val o = params as? JsonObject
+                    val value = o?.get("value") as? JsonObject
+                    projectIndex.progress(LspParse.str(o?.get("token")), LspParse.str(value?.get("kind")))
+                    return
+                }
                 if (method != "textDocument/publishDiagnostics") return
                 val o = params as? JsonObject ?: return
                 val uri = LspParse.str(o["uri"]) ?: return
@@ -88,14 +98,18 @@ class LspClient(
                 "workspace/configuration" -> Outcome.success(
                     JsonArray((((params as? JsonObject)?.get("items") as? JsonArray)?.items ?: emptyList()).map { section(LspParse.str((it as? JsonObject)?.get("section"))) }),
                 )
-                "client/registerCapability", "client/unregisterCapability", "window/workDoneProgress/create" -> Outcome.success(JsonNull)
+                "client/registerCapability", "client/unregisterCapability" -> Outcome.success(JsonNull)
+                "window/workDoneProgress/create" -> {
+                    projectIndex.requested(LspParse.str((params as? JsonObject)?.get("token")))
+                    Outcome.success(JsonNull)
+                }
                 // Правки по команде службы не применяются молча: только те, что редактор запросил сам.
                 "workspace/applyEdit" -> captureCompletionEdit(params)
                 "window/showDocument" -> captureCompletionCaret(params)
                 else -> Outcome.failure(DiagCode.UNSUPPORTED, "редактор не выполняет $method")
             }
 
-            override fun closed(reason: Diagnostic) = listener.stopped(reason)
+            override fun closed(reason: Diagnostic) { projectIndex.stopped(); listener.stopped(reason) }
         },
         maxBody,
     )
@@ -446,7 +460,7 @@ class LspClient(
             "clientInfo" to JsonObject.of("name" to json("dpai")),
             "rootUri" to json(rootUri),
             "capabilities" to JsonObject.of(
-                "window" to JsonObject.of("showDocument" to JsonObject.of("support" to json(true))),
+                "window" to JsonObject.of("workDoneProgress" to json(true), "showDocument" to JsonObject.of("support" to json(true))),
                 "general" to JsonObject.of("positionEncodings" to JsonArray(listOf(json("utf-16")))),
                 "textDocument" to text,
                 "workspace" to JsonObject.of(

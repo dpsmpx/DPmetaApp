@@ -36,6 +36,66 @@ class WorkspaceChangesTest {
     private fun store(vfs: Vfs = NioVfs(dir)) = WorkspaceChangeStore(vfs, cipher)
     private fun files() = listOf(WorkspaceBytes("a.kt", "foo".toByteArray(), "bar".toByteArray()), WorkspaceBytes("b.kt", "foo".toByteArray(), "bar".toByteArray()))
     private fun plan() = WorkspaceEditPlan(files().map { WorkspaceTextChange(it.path, "file:///p/${it.path}", "foo", "bar", emptyList()) })
+    @Test fun revokedIndexCannotWriteSourceOrBeginADurableCopy() {
+        val index = com.dpsmpx.dpai.lsp.ProjectIndex()
+        index.requested(com.dpsmpx.dpai.lsp.ProjectIndex.PROGRESS_ID)
+        index.progress(com.dpsmpx.dpai.lsp.ProjectIndex.PROGRESS_ID, "end")
+        val lease = (index.lease() as Outcome.Success).value
+        val tree = Tree()
+        val copies = store()
+        index.progress(com.dpsmpx.dpai.lsp.ProjectIndex.PROGRESS_ID, "begin")
+        assertIs<Outcome.Failure>(WorkspaceChanges(copies).apply("p", "root", tree, plan().copy(index = lease)))
+        assertEquals(0, tree.writes)
+        assertEquals(null, copies.load("p").valueOrNull())
+    }
+
+    @Test fun indexRestartingDuringPreflightDoesNotStartSourceWrites() {
+        val index = com.dpsmpx.dpai.lsp.ProjectIndex()
+        index.requested(com.dpsmpx.dpai.lsp.ProjectIndex.PROGRESS_ID)
+        index.progress(com.dpsmpx.dpai.lsp.ProjectIndex.PROGRESS_ID, "end")
+        val lease = (index.lease() as Outcome.Success).value
+        val source = Tree()
+        val tree = object : FileTree by source {
+            override fun read(path: String, maxBytes: Long): Outcome<ByteArray> {
+                index.progress(com.dpsmpx.dpai.lsp.ProjectIndex.PROGRESS_ID, "begin")
+                return source.read(path, maxBytes)
+            }
+        }
+        val copies = store()
+        assertIs<Outcome.Failure>(WorkspaceChanges(copies).apply("p", "root", tree, plan().copy(index = lease)))
+        assertEquals(0, source.writes)
+        assertEquals(null, copies.load("p").valueOrNull())
+    }
+
+    @Test fun indexRevokedWhileEncryptingTheCopyCannotWriteSourceOrLeaveAnUnneededPause() {
+        val index = com.dpsmpx.dpai.lsp.ProjectIndex()
+        index.requested(com.dpsmpx.dpai.lsp.ProjectIndex.PROGRESS_ID)
+        index.progress(com.dpsmpx.dpai.lsp.ProjectIndex.PROGRESS_ID, "end")
+        val lease = (index.lease() as Outcome.Success).value
+        val stoppingCipher = object : DraftCipher by cipher {
+            override fun seal(record: String, bytes: ByteArray): Outcome<ByteArray> {
+                index.progress(com.dpsmpx.dpai.lsp.ProjectIndex.PROGRESS_ID, "begin")
+                return cipher.seal(record, bytes)
+            }
+        }
+        val copies = WorkspaceChangeStore(NioVfs(dir), stoppingCipher)
+        val tree = Tree()
+        assertIs<Outcome.Failure>(WorkspaceChanges(copies).apply("p", "root", tree, plan().copy(index = lease)))
+        assertEquals(0, tree.writes)
+        assertFalse(copies.blocked("p"))
+    }
+
+    @Test fun aCurrentIndexLeaseAllowsTheWholeConfirmedChange() {
+        val index = com.dpsmpx.dpai.lsp.ProjectIndex()
+        index.requested(com.dpsmpx.dpai.lsp.ProjectIndex.PROGRESS_ID)
+        index.progress(com.dpsmpx.dpai.lsp.ProjectIndex.PROGRESS_ID, "end")
+        val lease = (index.lease() as Outcome.Success).value
+        val tree = Tree()
+        assertIs<Outcome.Success<Unit>>(WorkspaceChanges(store()).apply("p", "root", tree, plan().copy(index = lease)))
+        assertEquals(2, tree.writes)
+        assertEquals("bar", tree.files.getValue("a.kt").toString(Charsets.UTF_8))
+    }
+
     private class Tree : FileTree {
         val files = linkedMapOf("a.kt" to "foo".toByteArray(), "b.kt" to "foo".toByteArray())
         var writes = 0

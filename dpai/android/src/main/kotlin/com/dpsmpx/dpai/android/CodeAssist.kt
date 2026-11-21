@@ -447,7 +447,8 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
     references?.let { found ->
         AlertDialog(onDismissRequest = { references = null }, title = { Text("Использования: ${found.size}") },
             text = { Column {
-                Text("Без индекса проекта — места в этом файле и разобранных заголовках, не все файлы проекта.", style = MaterialTheme.typography.bodySmall)
+                if (language in setOf("c", "cpp") && session.cppProject?.root?.let { CodeService.cppIndex(context, it) } != true)
+                    Text("Без индекса проекта — места в этом файле и разобранных заголовках, не все файлы проекта.", style = MaterialTheme.typography.bodySmall)
                 LazyColumn {
                     items(found) { l ->
                         val target = Assist.target(l, session.uri, guestRoot)
@@ -552,8 +553,8 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                     val cursor = buffer.state.selection.end.coerceIn(0, before.length)
                     if (projectEdits != null) {
                         val prepared = withClient { c, t, at ->
-                            if (language in setOf("c", "cpp") && !indexEnabled) return@withClient Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, context.getString(R.string.project_edit_need_index))
-                            projectEdits.prepareRename(c) { c.rename(session.uri, LineIndex(t).position(at), name) }
+                            if (language in setOf("c", "cpp") && session.cppProject?.root?.let { CodeService.cppIndex(context, it) } != true) return@withClient Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, context.getString(R.string.project_edit_need_index))
+                            projectEdits.prepareRename(c, requireProjectIndex = language in setOf("c", "cpp")) { c.rename(session.uri, LineIndex(t).position(at), name) }
                         }
                         note = when {
                             buffer.text != before -> context.getString(R.string.project_edit_stale)

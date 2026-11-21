@@ -11,7 +11,7 @@ import com.dpsmpx.dpai.lsp.WorkspaceEdit
 /** Наблюдаемый текст и версия открытого в службе документа; у закрытого версия неизвестна. */
 data class WorkspaceSource(val text: String, val version: Int? = null)
 data class WorkspaceTextChange(val path: String, val uri: String, val before: String, val after: String, val edits: List<TextEdit>)
-data class WorkspaceEditPlan(val files: List<WorkspaceTextChange>) {
+data class WorkspaceEditPlan(val files: List<WorkspaceTextChange>, val index: com.dpsmpx.dpai.lsp.ProjectIndex.Lease? = null) {
     val editCount: Int get() = files.sumOf { it.edits.size }
 }
 

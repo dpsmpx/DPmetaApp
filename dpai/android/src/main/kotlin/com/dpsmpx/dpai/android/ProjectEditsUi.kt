@@ -32,9 +32,9 @@ internal class ProjectEditPlace(val tree: FileTree, val root: String, val dirty:
         is Outcome.Success -> TextFile.decode(result.value)
     }
 
-    fun prepareRename(client: LanguageSession, request: () -> Outcome<WorkspaceEdit>): Outcome<WorkspaceEditPlan> {
+    fun prepareRename(client: LanguageSession, requireProjectIndex: Boolean = false, request: () -> Outcome<WorkspaceEdit>): Outcome<WorkspaceEditPlan> {
         if (dirty()) return Outcome.failure(DiagCode.STATE_CONFLICT, "сначала сохраните или отмените правки редактора в этом дереве")
-        val result = WorkspaceRename.prepare(client, root, ::text, request)
+        val result = WorkspaceRename.prepare(client, root, ::text, requireProjectIndex, request)
         return if (dirty()) Outcome.failure(DiagCode.STATE_CONFLICT, "правки редактора изменились; сохраните их и повторите") else result
     }
 

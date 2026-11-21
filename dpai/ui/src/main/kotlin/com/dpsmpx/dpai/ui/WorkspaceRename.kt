@@ -12,9 +12,24 @@ import com.dpsmpx.dpai.lsp.WorkspaceEdit
  * такой документ временно открывается у службы, запрос повторяется.
  */
 object WorkspaceRename {
-    fun prepare(client: LanguageSession, root: String, load: (String) -> Outcome<String>,
-        request: () -> Outcome<WorkspaceEdit>): Outcome<WorkspaceEditPlan> = prepare(root, load,
-        client.main::document, { uri, language, text -> client.main.borrowDocument(uri, language, text) }, request)
+    fun prepare(client: LanguageSession, root: String, load: (String) -> Outcome<String>, requireProjectIndex: Boolean = false,
+        request: () -> Outcome<WorkspaceEdit>): Outcome<WorkspaceEditPlan> {
+        val index = if (requireProjectIndex) when (val result = client.main.projectIndexLease()) {
+            is Outcome.Failure -> return result
+            is Outcome.Success -> result.value
+        } else null
+        val result = prepare(root, load, client.main::document,
+            { uri, language, text -> client.main.borrowDocument(uri, language, text) }) {
+            if (index?.valid() == false) indexChanged() else request()
+        }
+        if (index?.valid() == false) return indexChanged()
+        return when (result) {
+            is Outcome.Failure -> result
+            is Outcome.Success -> Outcome.success(result.value.copy(index = index))
+        }
+    }
+
+    private fun <T> indexChanged(): Outcome<T> = Outcome.failure(DiagCode.STATE_CONFLICT, "индекс проекта изменился; повторите переименование")
 
     internal fun prepare(root: String, load: (String) -> Outcome<String>, document: (String) -> Pair<Int, String>?,
         borrow: (String, String, String) -> Outcome<AutoCloseable>, request: () -> Outcome<WorkspaceEdit>): Outcome<WorkspaceEditPlan> {

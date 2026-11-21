@@ -9,6 +9,7 @@ import com.dpsmpx.dpai.files.TextFileEdit
 /** Проектная запись; весь вызов выполняется под WorkspaceWriteGate, общим с запуском ИИ. */
 class WorkspaceChanges(private val store: WorkspaceChangeStore) {
     fun apply(project: String, root: String, tree: FileTree, plan: WorkspaceEditPlan): Outcome<Unit> {
+        if (plan.index?.valid() == false) return Outcome.failure(DiagCode.STATE_CONFLICT, "индекс проекта изменился; повторите переименование")
         if (plan.files.isEmpty()) return Outcome.success(Unit)
         val files = arrayListOf<WorkspaceBytes>()
         for (file in plan.files) {
@@ -23,14 +24,21 @@ class WorkspaceChanges(private val store: WorkspaceChangeStore) {
             }
             files += WorkspaceBytes(file.path, before, after)
         }
-        return applyBytes(project, root, tree, files)
+        if (plan.index?.valid() == false) return Outcome.failure(DiagCode.STATE_CONFLICT, "индекс проекта изменился; повторите переименование")
+        return applyBytes(project, root, tree, files, plan.index)
     }
 
-    private fun applyBytes(project: String, root: String, tree: FileTree, files: List<WorkspaceBytes>): Outcome<Unit> {
+    private fun applyBytes(project: String, root: String, tree: FileTree, files: List<WorkspaceBytes>, index: com.dpsmpx.dpai.lsp.ProjectIndex.Lease? = null): Outcome<Unit> {
         // До durable pending нет ни одной записи исходника.
         when (val result = store.begin(project, root, files)) {
             is Outcome.Failure -> return result
             is Outcome.Success -> Unit
+        }
+        // Копия могла писаться долго; до первой записи исходника перепроверяем очередь.
+        if (index?.valid() == false) {
+            val cleared = store.finish(project, applied = false)
+            val conflict = Outcome.failure<Unit>(DiagCode.STATE_CONFLICT, "индекс проекта изменился; повторите переименование")
+            return Outcome.Failure(conflict.diagnostics + cleared.diagnostics)
         }
         for (file in files) {
             when (val result = TextFileEdit.saveBytes(tree, file.path, file.before, file.after)) {
