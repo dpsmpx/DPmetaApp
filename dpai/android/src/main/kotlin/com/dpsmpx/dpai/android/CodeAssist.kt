@@ -327,7 +327,12 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                                 val out = ArrayList<List<CodeAction>>()
                                 for (d in asked) when (val a = c.codeActions(session.uri, d.range, listOf(d))) {
                                     is Outcome.Failure -> return@withClient a
-                                    is Outcome.Success -> out += a.value
+                                    is Outcome.Success -> {
+                                        val preferred = a.value.firstOrNull { it.preferred && it.resolvable && it.disabledReason == null && !it.requiresCommand }
+                                        val resolved = preferred?.let { c.resolveCodeAction(it) }
+                                        if (resolved is Outcome.Failure) return@withClient resolved
+                                        out += a.value.map { if (it === preferred && resolved is Outcome.Success) resolved.value else it }
+                                    }
                                 }
                                 Outcome.success(out)
                             }
@@ -399,7 +404,24 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
         AlertDialog(onDismissRequest = { fixes = null }, title = { Text("Исправления службы") },
             text = { LazyColumn {
                 items(f.applicable) { a: CodeAction ->
-                    TextButton(enabled = enabled, onClick = { fixes = null; a.edit?.let { applyWorkspace(it, before, buffer.state.selection.end, "Исправлено; отмена — ↶") } }) {
+                    TextButton(enabled = enabled && !busy, onClick = {
+                        fixes = null
+                        launch("…") {
+                            when (val resolved = withClient { c, _, _ -> c.resolveCodeAction(a) }) {
+                                is Outcome.Failure -> note = resolved.diagnostics.first().message
+                                is Outcome.Success -> {
+                                    val action = resolved.value
+                                    when {
+                                        action.disabledReason != null -> note = action.disabledReason
+                                        action.requiresCommand -> note = context.getString(R.string.lsp_command_unsupported)
+                                        action.edit == null -> note = context.getString(R.string.lsp_action_empty)
+                                        else -> applyWorkspace(action.edit, before, buffer.state.selection.end, "Исправлено; отмена — ↶")
+                                    }
+                                }
+                                null -> Unit
+                            }
+                        }
+                    }) {
                         Text((if (a.preferred) "★ " else "") + a.title, style = MaterialTheme.typography.bodySmall)
                     }
                 }

@@ -35,4 +35,6 @@
     <string name="sora_editor_text_to_search">Search text</string>
     <string name="kotlin_install_busy">Wait for kotlin-lsp installation to finish</string>
     <string name="kotlin_install_stopped">Server stopped to restore kotlin-lsp</string>
+    <string name="lsp_command_unsupported">This server command is not supported yet; no text was changed</string>
+    <string name="lsp_action_empty">The server returned no edits</string>
 </resources>

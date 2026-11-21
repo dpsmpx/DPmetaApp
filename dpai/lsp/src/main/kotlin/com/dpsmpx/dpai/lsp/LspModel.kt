@@ -71,8 +71,15 @@ data class WorkspaceEdit(val changes: Map<String, List<TextEdit>>, val versions:
  */
 data class CodeSymbol(val name: String, val kind: Int, val range: Range, val children: List<CodeSymbol>)
 
-/** Исправление или преобразование. Применимо здесь только с готовыми правками ([edit]); `command` службы пока не исполняется. */
-data class CodeAction(val title: String, val kind: String?, val edit: WorkspaceEdit?, val preferred: Boolean)
+/** Исправление; отложенная правка разрешается только породившей её службой. */
+data class CodeAction(
+    val title: String, val kind: String?, val edit: WorkspaceEdit?, val preferred: Boolean,
+    val disabledReason: String? = null,
+    val requiresCommand: Boolean = false,
+    val resolvable: Boolean = false,
+    internal val payload: JsonObject? = null,
+    internal val owner: LspClient? = null,
+)
 
 /** Что служба умеет — по её ответу на `initialize`. */
 data class ServerCapabilities(
@@ -91,6 +98,7 @@ data class ServerCapabilities(
     val pullDiagnostics: Boolean = false,
     val declaration: Boolean = false,
     val documentSymbols: Boolean = false,
+    val codeActionResolve: Boolean = false,
 )
 
 /** Имя и версия службы, если она их назвала. */
@@ -298,13 +306,36 @@ internal object LspParse {
     fun codeActions(v: JsonValue?): List<CodeAction>? {
         if (v == null || v == JsonNull) return emptyList()
         val a = v as? JsonArray ?: return null
-        return a.items.take(MAX_ITEMS).map { item ->
-            val o = item as? JsonObject ?: return null
-            val title = str(o["title"]) ?: return null
-            // Голая Command (поле command — строка) или CodeAction без edit: правок нет.
-            val edit = (o["edit"] as? JsonObject)?.let { workspaceEdit(it) ?: return null }
-            CodeAction(title.take(500), str(o["kind"]), edit, (o["isPreferred"] as? JsonBool)?.value ?: false)
+        return a.items.take(MAX_ITEMS).map { codeAction(it) ?: return null }
+    }
+
+    fun codeAction(value: JsonValue?): CodeAction? {
+        val o = value as? JsonObject ?: return null
+        val title = str(o["title"]) ?: return null
+        val disabled = when (val d = o["disabled"]) {
+            null, JsonNull -> null
+            is JsonObject -> str(d["reason"])?.take(500) ?: return null
+            else -> return null
         }
+        val rawEdit = o["edit"]
+        var edit = if (rawEdit == null || rawEdit == JsonNull) null else workspaceEdit(rawEdit) ?: return null
+        val command = when (val c = o["command"]) {
+            null, JsonNull -> null
+            is JsonString -> o // прежняя голая Command
+            is JsonObject -> c
+            else -> return null
+        }
+        var requiresCommand = command != null
+        if (command != null && str(command["command"]) == null) return null
+        // clangd.applyFix — документированный контейнер WorkspaceEdit, не выполнение кода.
+        if (command != null && str(command["command"]) == "clangd.applyFix" && edit == null) {
+            val args = (command["arguments"] as? JsonArray)?.items ?: return null
+            if (args.size != 1) return null
+            edit = workspaceEdit(args.single()) ?: return null
+            requiresCommand = false
+        }
+        return CodeAction(title.take(500), str(o["kind"]), edit, (o["isPreferred"] as? JsonBool)?.value ?: false,
+            disabledReason = disabled, requiresCommand = requiresCommand, payload = o)
     }
 
     fun capabilities(v: JsonValue?): ServerCapabilities {
@@ -336,6 +367,7 @@ internal object LspParse {
             pullDiagnostics = has("diagnosticProvider"),
             declaration = has("declarationProvider"),
             documentSymbols = has("documentSymbolProvider"),
+            codeActionResolve = ((o["codeActionProvider"] as? JsonObject)?.get("resolveProvider") as? JsonBool)?.value == true,
         )
     }
 

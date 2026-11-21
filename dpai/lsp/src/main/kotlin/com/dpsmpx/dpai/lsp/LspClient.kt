@@ -243,15 +243,29 @@ class LspClient(
     }
 
     /** Исправления и преобразования для [range]; [diagnostics] — диагностика этого места, к которой нужны исправления. */
-    fun codeActions(uri: String, range: Range, diagnostics: List<LspDiagnostic>, timeout: Duration = REQUEST_TIMEOUT): Outcome<List<CodeAction>> = ask(
+    fun codeActions(uri: String, range: Range, diagnostics: List<LspDiagnostic>, timeout: Duration = REQUEST_TIMEOUT): Outcome<List<CodeAction>> = when (val result = ask(
         "textDocument/codeAction",
         JsonObject.of(
             "textDocument" to JsonObject.of("uri" to json(uri)),
             "range" to LspParse.toJson(range),
             "context" to JsonObject.of("diagnostics" to JsonArray(diagnostics.map { LspParse.toJson(it) })),
-        ),
-        timeout, LspParse::codeActions,
-    )
+        ), timeout, LspParse::codeActions,
+    )) {
+        is Outcome.Failure -> result
+        is Outcome.Success -> Outcome.success(result.value.map { action -> action.copy(owner = this,
+            resolvable = info?.capabilities?.codeActionResolve == true && action.edit == null && action.payload?.get("data") != null && action.payload["data"] != JsonNull) })
+    }
+
+    /** Чужая/прежняя служба не получает opaque data другой сессии. Команды не исполняются. */
+    fun resolveCodeAction(action: CodeAction, timeout: Duration = SLOW_TIMEOUT): Outcome<CodeAction> {
+        if (action.owner !== this || !isRunning) return Outcome.failure(DiagCode.STATE_CONFLICT, "служба исправления изменилась; запросите исправления заново")
+        if (action.disabledReason != null) return Outcome.failure(DiagCode.STATE_CONFLICT, action.disabledReason)
+        if (!action.resolvable) return Outcome.success(action)
+        return when (val result = ask("codeAction/resolve", checkNotNull(action.payload), timeout, LspParse::codeAction)) {
+            is Outcome.Failure -> result
+            is Outcome.Success -> Outcome.success(result.value.copy(owner = this))
+        }
+    }
 
     /**
      * Диагностика файла по запросу (`textDocument/diagnostic`, LSP 3.17) — для
@@ -329,6 +343,8 @@ class LspClient(
             "rangeFormatting" to JsonObject(emptyMap()),
             // С литералами служба отдаёт исправления готовыми правками, а не командой.
             "codeAction" to JsonObject.of(
+                "dataSupport" to json(true), "disabledSupport" to json(true),
+                "resolveSupport" to JsonObject.of("properties" to JsonArray(listOf(json("edit")))),
                 "codeActionLiteralSupport" to JsonObject.of("codeActionKind" to JsonObject.of("valueSet" to JsonArray(listOf(json("quickfix"), json("refactor"))))),
             ),
         )

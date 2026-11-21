@@ -22,4 +22,6 @@
     <string name="project_edit_saved">Файлы сохранены; отмена проектной правки — в списке файлов проекта</string>
     <string name="kotlin_install_busy">Дождитесь завершения установки kotlin-lsp</string>
     <string name="kotlin_install_stopped">Служба остановлена для восстановления kotlin-lsp</string>
+    <string name="lsp_command_unsupported">Команда службы пока не поддержана; текст не изменён</string>
+    <string name="lsp_action_empty">Служба не вернула правок</string>
 </resources>

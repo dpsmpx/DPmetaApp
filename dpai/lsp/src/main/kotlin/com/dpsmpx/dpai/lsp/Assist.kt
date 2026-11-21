@@ -211,7 +211,7 @@ object Assist {
     data class Fixes(val applicable: List<CodeAction>, val commands: Int)
 
     fun fixes(actions: List<CodeAction>): Fixes {
-        val (withEdit, without) = actions.partition { it.edit != null }
+        val (withEdit, without) = actions.filter { it.disabledReason == null }.partition { !it.requiresCommand && (it.edit != null || it.resolvable) }
         return Fixes(withEdit.sortedWith(compareBy({ !it.preferred }, { it.title })), without.size)
     }
 
@@ -236,7 +236,7 @@ object Assist {
         var skipped = 0
         for (actions in perDiagnostic) {
             val edits = actions.asSequence()
-                .filter { it.preferred && it.edit != null && (it.kind == null || it.kind.startsWith("quickfix")) }
+                .filter { it.disabledReason == null && !it.requiresCommand && it.preferred && it.edit != null && (it.kind == null || it.kind.startsWith("quickfix")) }
                 .mapNotNull { a -> (editsForFile(a.edit!!, uri) as? Outcome.Success)?.value?.takeIf { it.isNotEmpty() } }
                 .firstOrNull()
             if (edits == null) { skipped++; continue }
