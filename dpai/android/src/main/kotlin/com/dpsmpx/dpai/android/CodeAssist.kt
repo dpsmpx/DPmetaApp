@@ -342,7 +342,7 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                             when (r) {
                                 is Outcome.Failure -> note = r.diagnostics.first().message
                                 is Outcome.Success -> {
-                                    val plan = Assist.fixAll(session.uri, r.value)
+                                    val plan = Assist.fixAll(session.uri, r.value) { session.ready()?.actionVersion(it, session.uri, before) }
                                     val left = plan.skipped + (diagnostics.size - asked.size)
                                     note = when {
                                         plan.edits.isEmpty() -> "Без ИИ исправить нечего: у службы нет уверенных правок (★) — замечаний $left"
