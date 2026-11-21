@@ -496,6 +496,17 @@ internal object CodeService {
         }
     }
 
+    /** Изменение API-моделью: обновить индекс и открытые документы, включая создание/удаление (D-214). */
+    fun projectFilesChanged(path: String, text: String?, created: Boolean, deletedMessage: String) {
+        val affected = synchronized(lock) { running.filterKeys { key -> path.startsWith(key.substringAfter('|').trimEnd('/') + "/") }.values.toList() }
+        val uri = DocumentUri.ofPath(path)
+        for (service in affected) {
+            if (text == null) service.session.filesDeleted(setOf(uri))
+            else service.session.filesChanged(mapOf(uri to text), if (created) 1 else 2)
+        }
+        if (text == null) main.post { shownSessions[path]?.let { it.state = State.Failed(deletedMessage); it.diagnostics.clear() } }
+    }
+
     /** После изменения lock/окружения прежний индекс не выдаётся за актуальный. Вне UI-потока. */
     @Synchronized
     fun dependenciesChanged(root: String, message: String) {

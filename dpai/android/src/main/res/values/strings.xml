@@ -48,4 +48,26 @@
     <string name="lsp_command_unsupported">Команда службы пока не поддержана; текст не изменён</string>
     <string name="lsp_action_empty">Служба не вернула правок</string>
     <string name="kotlin_index_unmanaged">Служба не подтвердила управляемый каталог индекса; обновите kotlin-lsp</string>
+    <string name="api_work_title">Быстрый старт с ИИ</string>
+    <string name="api_work_intro">Выберите существующий проект и модель. Пути и место работы приложение подготовит само. Вручную нужен только API-ключ.</string>
+    <string name="api_work_project">Проект</string>
+    <string name="api_work_provider">Подключённый профиль или провайдер</string>
+    <string name="api_work_new_profile">Другой провайдер</string>
+    <string name="api_work_no_projects">Нет клонов — открыть проекты и файлы</string>
+    <string name="api_work_key">API-ключ модели</string>
+    <string name="api_work_check_key">Проверить ключ и получить модели</string>
+    <string name="api_work_model">Модель</string>
+    <string name="api_work_no_models">В ответе нет подходящих текстовых моделей. Выберите другой профиль или расширенную настройку.</string>
+    <string name="api_work_consent">После вашего сообщения модель сможет читать и менять код выбранного проекта и запускать его профили проверки/сборки. Код отправляется выбранному провайдеру; ключи и другие проекты не выдаются. До сообщения платная задача не запускается.</string>
+    <string name="api_work_start">Начать работу</string>
+    <string name="api_work_preparing">Подготавливается проект и среда. Клоны и существующие настройки сохраняются.</string>
+    <string name="api_work_advanced">Расширенная настройка</string>
+    <string name="api_work_later">Позже</string>
+    <string name="api_work_models_intro">API-модели могут работать над проектом через быстрый старт. Обычные чаты и расширенная настройка профилей тоже доступны.</string>
+    <string name="api_work_action_ok">✓ %1$s %2$s</string>
+    <string name="api_work_action_failed">Не выполнено: %1$s %2$s</string>
+    <string name="api_work_actions">Действия инструментов:\n%1$s</string>
+    <string name="api_work_open_project">Проект и изменения</string>
+    <string name="api_work_file_deleted">Файл удалён API-моделью. Последнюю правку можно отменить на рабочем экране проекта.</string>
+    <string name="api_work_lsp_refresh_failed">Файл изменён API-моделью, но не перечитан: языковую службу нужно включить заново.</string>
 </resources>

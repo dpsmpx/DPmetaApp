@@ -58,7 +58,7 @@ object ModelsStore {
     private const val ROUTINES = "routines"
 
     /** Ответ, который идёт сейчас: текст до сих пор и отмена. */
-    data class Running(val text: String, val cancel: Cancel)
+    data class Running(val text: String, val cancel: Cancel, val actions: List<String> = emptyList())
 
     private lateinit var app: Context
     private var docs: DocumentStore? = null
@@ -229,8 +229,17 @@ object ModelsStore {
     /** Новый разговор — в списке сразу, в файле — с первой репликой; пустой разговор профиля — переиспользуется. */
     @Synchronized
     fun newChat(profile: ApiProfile): Conversation {
-        chatFlow.value.firstOrNull { it.profile == profile.id && it.entries.isEmpty() }?.let { return it }
+        chatFlow.value.firstOrNull { it.profile == profile.id && it.project == null && it.entries.isEmpty() }?.let { return it }
         val c = Conversation(ids.next(IdKinds.CORRELATION), profile.id, "", emptyList())
+        chatFlow.value = chatFlow.value + c
+        return c
+    }
+
+    /** Разговор выбранной пары профиль/проект; обычная переписка в него не переносится. */
+    @Synchronized
+    fun newProjectChat(profile: ApiProfile, project: com.dpsmpx.dpai.core.ids.ProjectId): Conversation {
+        chatFlow.value.lastOrNull { it.profile == profile.id && it.project == project }?.let { return it }
+        val c = Conversation(ids.next(IdKinds.CORRELATION), profile.id, "", emptyList(), project)
         chatFlow.value = chatFlow.value + c
         return c
     }
@@ -260,6 +269,7 @@ object ModelsStore {
      * неудачный, остаётся в переписке с пометкой, но в следующий запрос не
      * уходит (`Conversation.context`). Итог — текст отказа до отправки или `null`.
      */
+    @Synchronized
     fun send(conversationId: CorrelationId, text: String): String? {
         val conv = chatFlow.value.firstOrNull { it.id == conversationId } ?: return "разговор не найден"
         val profile = profileFlow.value.firstOrNull { it.id == conv.profile } ?: return "профиль разговора удалён"
@@ -267,18 +277,33 @@ object ModelsStore {
         // Сервер телефона не запущен — на его порту может слушать кто угодно (T18): не спрашивать.
         if (LocalModel.isOwn(app, profile) && !LocalModel.usable(profile)) return "сервер llama.cpp на телефоне не запущен: вкладка Linux → «Запустить»"
         if (conversationId in runningFlow.value) return "ответ ещё идёт"
+        val selectedProvider = provider(profile)
         val withUser = conv.plus(ChatEntry(ChatRole.USER, text)).let { if (it.title.isBlank()) it.copy(title = Conversation.title(text)) else it }
         upsert(withUser)
         val cancel = Cancel()
         runningFlow.update { it + (conversationId to Running("", cancel)) }
         scope.launch {
             val sb = StringBuilder()
-            val request = ChatRequest(profile.model, withUser.context(), null, profile.maxOutputTokens)
+            val onText: (String) -> Unit = { piece ->
+                sb.append(piece)
+                runningFlow.update { m -> m[conversationId]?.let { m + (conversationId to it.copy(text = sb.toString())) } ?: m }
+            }
             val r = runCatching {
-                provider(profile).chat(request, cancel) { piece ->
-                    sb.append(piece)
-                    val now = sb.toString()
-                    runningFlow.update { m -> if (conversationId in m) m + (conversationId to Running(now, cancel)) else m }
+                val project = withUser.project
+                if (project == null) selectedProvider.chat(ChatRequest(profile.model, withUser.context(), null, profile.maxOutputTokens), cancel, onText)
+                else when (val opened = ApiProjectRuntime.open(app, project)) {
+                    is Outcome.Failure -> opened
+                    is Outcome.Success -> {
+                        val tools = selectedProvider as? com.dpsmpx.dpai.providers.ToolChat
+                        if (tools == null) Outcome.failure(DiagCode.UNSUPPORTED, "провайдер не поддерживает проектные инструменты")
+                        else tools.chatWithTools(ChatRequest(profile.model, withUser.context(), opened.value.system(), profile.maxOutputTokens), opened.value.tools, cancel, onText) { call ->
+                            val result = opened.value.run(call, cancel)
+                            val path = ((call.input["path"] as? com.dpsmpx.dpai.core.serialization.JsonString)?.value ?: "").take(200)
+                            val action = app.getString(if (result.isError) R.string.api_work_action_failed else R.string.api_work_action_ok, call.name, path)
+                            runningFlow.update { m -> m[conversationId]?.let { m + (conversationId to it.copy(actions = (it.actions + action).takeLast(64))) } ?: m }
+                            result
+                        }
+                    }
                 }
             }.getOrElse { e -> Outcome.failure(DiagCode.INTERNAL_ERROR, "сбой: ${e.javaClass.simpleName}", profile.kind.key) }
             val entry = when (r) {
@@ -294,7 +319,9 @@ object ModelsStore {
             }
             synchronized(this@ModelsStore) {
                 val latest = chatFlow.value.firstOrNull { it.id == conversationId }
-                if (latest != null) upsert(latest.plus(entry))
+                val actions = runningFlow.value[conversationId]?.actions.orEmpty()
+                val recorded = if (actions.isEmpty()) entry else entry.copy(text = entry.text + "\n\n" + app.getString(R.string.api_work_actions, actions.joinToString("\n")))
+                if (latest != null) upsert(latest.plus(recorded))
             }
             runningFlow.update { it - conversationId }
         }

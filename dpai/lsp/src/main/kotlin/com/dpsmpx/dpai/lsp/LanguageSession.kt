@@ -29,14 +29,20 @@ class LanguageSession(val main: LspClient, val helper: LspClient? = null, privat
     fun saved(uri: String): Outcome<Unit> = each { it.saved(uri) }
 
     /** Записанный проектный набор: открытые документы обновляются, закрытые — событием файлов. */
-    fun filesChanged(files: Map<String, String>): Outcome<Unit> = each { client ->
+    fun filesChanged(files: Map<String, String>, type: Int = 2): Outcome<Unit> = each { client ->
         for ((uri, text) in files) if (client.document(uri) != null) {
             val changed = client.update(uri, text)
             if (changed is Outcome.Failure) return@each changed
             val saved = client.saved(uri)
             if (saved is Outcome.Failure) return@each saved
         }
-        client.filesChanged(files.keys)
+        client.filesChanged(files.keys, type)
+    }
+
+    /** Удалённый исходник закрывается у обеих служб, затем идёт событие Deleted. */
+    fun filesDeleted(uris: Set<String>): Outcome<Unit> = each { client ->
+        for (uri in uris) { val result = client.close(uri); if (result is Outcome.Failure) return@each result }
+        client.filesChanged(uris, 3)
     }
 
     fun close(uri: String): Outcome<Unit> = each { it.close(uri) }

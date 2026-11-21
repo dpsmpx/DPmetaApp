@@ -561,6 +561,17 @@ class DemoModel(
         return try { workspaceLocked(p).also { workspaceCached = it } } finally { lock.unlock() }
     }
 
+    /** Подготовить API-доступ без такта и запуска очереди CLI-задач (D-214). */
+    fun apiWorkspace(p: ProjectEntry): Outcome<com.dpsmpx.dpai.ui.ProjectWorkspaceView> {
+        if (!lock.tryLock()) return Outcome.failure(DiagCode.WORKTREE_OWNED, "контроллер занят; повторите запрос")
+        return try {
+            if (controller.project() != p) return Outcome.failure(DiagCode.STATE_CONFLICT, "выбран другой проект; откройте проект этого разговора")
+            current()
+            val view = workspaceLocked(p)
+            if (!view.ready) Outcome.failure(DiagCode.STATE_CONFLICT, "место проекта не готово; запустите мастер подготовки") else Outcome.success(view)
+        } finally { lock.unlock() }
+    }
+
     private fun workspaceLocked(p: ProjectEntry): com.dpsmpx.dpai.ui.ProjectWorkspaceView {
         val targets = controller.targets()
         val o = (built as? LiveSystem)?.orchestrator?.takeIf {

@@ -65,7 +65,7 @@ class ChatLogTest {
             good.replace("\"title\":", "\"extra\":1,\"title\":"),
             good.replace("\"status\":\"ok\"", "\"status\":\"maybe\""),
             good.replace("\"profile\":\"acc_", "\"profile\":\"tgt_"),
-            good.replace("\"version\":1", "\"version\":2"),
+            good.replace("\"version\":${ChatBook.VERSION}", "\"version\":${ChatBook.VERSION + 1}"),
         )) {
             assertIs<Outcome.Failure>(ChatBook.fromJson(JsonParser().parse(bad).valueOrNull()!!), bad)
         }

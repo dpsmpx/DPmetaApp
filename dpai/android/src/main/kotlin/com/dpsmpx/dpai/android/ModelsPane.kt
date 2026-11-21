@@ -95,6 +95,9 @@ fun ModelsPane() {
     val running by ModelsStore.running.collectAsState()
     val problem by ModelsStore.problem.collectAsState()
     var open by rememberSaveable { mutableStateOf<String?>(null) }
+    val requestedChat by ApiQuickStartRequests.chat.collectAsState()
+    LaunchedEffect(requestedChat) { requestedChat?.let { open = it; ApiQuickStartRequests.chat.value = null } }
+    LaunchedEffect(Unit) { if (!ApiQuickStartRequests.seen(context)) ApiQuickStartRequests.request() }
     var usageOf by rememberSaveable { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf<ApiProfile?>(null) }
     var creating by remember { mutableStateOf(false) }
@@ -113,10 +116,11 @@ fun ModelsPane() {
     LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Text(
-                "Модели по ключу API — для чата. Задачи Claude Code идут по подписке, ключ в них не попадает.",
+                androidx.compose.ui.res.stringResource(R.string.api_work_models_intro),
                 style = MaterialTheme.typography.bodySmall,
             )
             problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            androidx.compose.material3.Button(onClick = { ApiQuickStartRequests.request() }) { Text(androidx.compose.ui.res.stringResource(R.string.api_work_title)) }
             // «Добавить профиль» — заметной кнопкой, а не текстом под пояснением (AI:A-26).
             androidx.compose.material3.FilledTonalButton(onClick = { creating = true }, modifier = Modifier.padding(top = 4.dp)) { Text("Добавить профиль") }
         }
@@ -532,11 +536,27 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
                 Text(p?.let { "${it.name} · ${it.model}" } ?: "профиль удалён", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        if (c.project != null) Row(Modifier.fillMaxWidth()) {
+            TextButton(enabled = live == null, onClick = { scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    val choice = ApiProjectRuntime.choices(context).valueOrNull()?.firstOrNull { it.project == c.project }
+                    if (choice == null) Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, "проект удалён")
+                    else ApiProjectRuntime.prepare(context, choice)
+                }
+                when (result) {
+                    is Outcome.Failure -> note = result.diagnostics.first().message
+                    is Outcome.Success -> context.startActivity(MainActivity.workspace(context))
+                }
+            } }) { Text(androidx.compose.ui.res.stringResource(R.string.api_work_open_project)) }
+        }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (c.entries.isEmpty() && live == null) item { Text("Напишите вопрос — ответит ${p?.model ?: "модель"}.", style = MaterialTheme.typography.bodySmall) }
             // Ответы только дописываются в конец: ключ — номер (AI:A-25).
             items(c.entries.size, key = { it }) { i -> EntryView(c.entries[i]) }
-            live?.let { r -> item { EntryView(ChatEntry(ChatRole.ASSISTANT, r.text.ifEmpty { "…" }, p?.model), streaming = true) } }
+            live?.let { r -> item {
+                if (r.actions.isNotEmpty()) Text(r.actions.takeLast(4).joinToString("\n"), style = MaterialTheme.typography.labelSmall)
+                EntryView(ChatEntry(ChatRole.ASSISTANT, r.text.ifEmpty { "…" }, p?.model), streaming = true)
+            } }
         }
         note?.let { Text(it, Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         if (files.isNotEmpty()) {

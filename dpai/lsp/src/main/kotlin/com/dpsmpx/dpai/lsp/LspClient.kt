@@ -220,9 +220,10 @@ class LspClient(
     }
 
     /** Записанные файлы, включая закрытые документы. */
-    fun filesChanged(uris: Set<String>): Outcome<Unit> = synchronized(lock) {
+    fun filesChanged(uris: Set<String>, type: Int = 2): Outcome<Unit> = synchronized(lock) {
+        if (type !in 1..3) return Outcome.failure(DiagCode.VALUE_INVALID, "неверный вид изменения файла")
         ready()?.let { return it }
-        peer.notify("workspace/didChangeWatchedFiles", JsonObject.of("changes" to JsonArray(uris.map { JsonObject.of("uri" to json(it), "type" to json(2)) })))
+        peer.notify("workspace/didChangeWatchedFiles", JsonObject.of("changes" to JsonArray(uris.map { JsonObject.of("uri" to json(it), "type" to json(type)) })))
     }
 
     /** Версия открытого документа у службы; `null` — не открыт. */

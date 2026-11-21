@@ -219,6 +219,8 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
     var recovering by remember(location) { mutableStateOf(false) }
     var applyingChange by remember(location) { mutableStateOf(false) }
     fun completed() { refresh++ }
+    val apiChanged by ApiProjectRuntime.changed.collectAsState()
+    LaunchedEffect(apiChanged) { if (apiChanged > 0) refresh++ }
     val editPlace = remember(view.project, location, tree) {
         ProjectEditPlace(tree, location.path, { Drafts.dirtyIn(location, target?.inApp == true) }, { plan ->
             val result = model.workspaceChange(view.project, location) { changes -> changes.apply(view.project.project.value, location.key, inner, plan) }

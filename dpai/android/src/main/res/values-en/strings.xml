@@ -61,4 +61,26 @@
     <string name="lsp_command_unsupported">This server command is not supported yet; no text was changed</string>
     <string name="lsp_action_empty">The server returned no edits</string>
     <string name="kotlin_index_unmanaged">The server did not confirm the managed index directory; update kotlin-lsp</string>
+    <string name="api_work_title">Start a project with AI</string>
+    <string name="api_work_intro">Choose an existing project and model. The app prepares paths and the workspace. Only an API key needs typing.</string>
+    <string name="api_work_project">Project</string>
+    <string name="api_work_provider">Connected profile or provider</string>
+    <string name="api_work_new_profile">Another provider</string>
+    <string name="api_work_no_projects">No clones — open projects and files</string>
+    <string name="api_work_key">Model API key</string>
+    <string name="api_work_check_key">Check key and load models</string>
+    <string name="api_work_model">Model</string>
+    <string name="api_work_no_models">No suitable text models were returned. Choose another profile or advanced setup.</string>
+    <string name="api_work_consent">After you send a message, the model can read and change this project and run its check/build profiles. Code is sent to the selected provider; keys and other projects are not exposed. Setup does not start a paid task.</string>
+    <string name="api_work_start">Start working</string>
+    <string name="api_work_preparing">Preparing the project and environment. Existing clones and settings are preserved.</string>
+    <string name="api_work_advanced">Advanced setup</string>
+    <string name="api_work_later">Later</string>
+    <string name="api_work_models_intro">API models can work on a project through quick start. Ordinary chats and advanced profile setup are also available.</string>
+    <string name="api_work_action_ok">✓ %1$s %2$s</string>
+    <string name="api_work_action_failed">Failed: %1$s %2$s</string>
+    <string name="api_work_actions">Tool actions:\n%1$s</string>
+    <string name="api_work_open_project">Project and changes</string>
+    <string name="api_work_file_deleted">The API model deleted this file. You can undo the last change in the project workspace.</string>
+    <string name="api_work_lsp_refresh_failed">The API model changed a file that could not be reloaded. Restart the language service.</string>
 </resources>
