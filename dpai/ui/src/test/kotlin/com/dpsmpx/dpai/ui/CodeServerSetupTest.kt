@@ -9,6 +9,8 @@ import com.dpsmpx.dpai.lsp.PythonServers
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.security.MessageDigest
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -125,6 +127,115 @@ class CodeServerSetupTest {
         assertEquals("{\"launch\":[]}\n", info)
         assertEquals("-Xmx2048m", vm)
         assertNull(CodeServerSetup.kotlinFiles(listOf("{}")))
+    }
+
+    @Test
+    fun kotlinCachesAreIsolatedByProjectAndBuildWithoutRawProjectPaths() {
+        val first = CodeServerSetup.kotlinSystem("/root/work/project one")
+        assertEquals(first, CodeServerSetup.kotlinSystem("/root/work/project one"))
+        assertTrue(first != CodeServerSetup.kotlinSystem("/root/work/project two"))
+        assertTrue(first.startsWith("${CodeServerSetup.KOTLIN_SYSTEM_BASE}/${KotlinLsp.PINNED_BUILD}/"))
+        assertFalse("project one" in first)
+        assertTrue(CodeServerSetup.KOTLIN_HOME.endsWith("/${KotlinLsp.PINNED_BUILD}"))
+        assertFalse(CodeServerSetup.KOTLIN_HOME.endsWith("/current"))
+    }
+
+    private data class InstallFixture(val root: File, val bin: File, val command: List<String>)
+
+    private fun kotlinFixture(dir: File, failMove: String? = null): InstallFixture {
+        val payload = File(dir, "payload/server").apply { File(this, "lib/rocksdbjni").mkdirs() }
+        File(payload, "product-info.json").writeText("{\"buildNumber\":\"${KotlinLsp.PINNED_BUILD}\"}")
+        File(payload, "new-file").writeText("new verified payload")
+        File(payload, "jbr").mkdirs()
+        val archive = File(dir, "server.tgz")
+        assertEquals(0, run(listOf("tar", "-czf", archive.path, "-C", payload.parent, "server")).code)
+        val jar = File(dir, "rocksdb.jar")
+        ZipOutputStream(jar.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry(KotlinLsp.rocksDbLibrary("aarch64"))); zip.write("native fixture".toByteArray()); zip.closeEntry()
+        }
+        val bin = File(dir, "bin").apply { mkdirs() }
+        File(bin, "curl").apply {
+            writeText("""
+                #!/bin/sh
+                URL=; OUT=
+                while test "${'$'}#" -gt 0; do
+                    case "$1" in https://*) URL="$1";; -o) OUT="$2"; shift;; esac
+                    shift
+                done
+                case "${'$'}URL" in *.jar) cp '${jar.path}' "${'$'}OUT";; *) cp '${archive.path}' "${'$'}OUT";; esac
+            """.trimIndent()); setExecutable(true)
+        }
+        if (failMove != null) File(bin, "mv").apply {
+            val failure = when (failMove) {
+                "payload" -> "case \"\$1\" in */out/server) exit 19;; esac"
+                "old" -> "case \"\$1\" in */${KotlinLsp.PINNED_BUILD}) exit 19;; esac"
+                else -> "test \"\$1\" = -Tf && exit 19"
+            }
+            writeText("#!/bin/sh\n$failure\nexec /bin/mv \"\$@\"\n"); setExecutable(true)
+        }
+        val root = File(dir, "installed with spaces").apply { mkdirs() }
+        val command = (CodeServerSetup.kotlinInstall(KotlinLsp.PINNED_BUILD, "aarch64") as Outcome.Success).value.toMutableList()
+        command[4] = root.path
+        // Синтетические архивы проверяют алгоритм commit/rollback; доверие APK проверяется отдельно выше.
+        command[8] = MessageDigest.getInstance("SHA-256").digest(jar.readBytes()).joinToString("") { "%02x".format(it) }
+        command[10] = MessageDigest.getInstance("SHA-256").digest(archive.readBytes()).joinToString("") { "%02x".format(it) }
+        return InstallFixture(root, bin, command)
+    }
+
+    @Test
+    fun kotlinRepairRestoresPreviousDirectoryWhenCommitMoveFails(@TempDir dir: File) {
+        val fixture = kotlinFixture(dir, "payload")
+        val old = File(fixture.root, KotlinLsp.PINNED_BUILD).apply { mkdirs() }
+        File(old, "product-info.json").writeText("old")
+        File(old, "keep").writeText("working version")
+        java.nio.file.Files.createSymbolicLink(File(fixture.root, "current").toPath(), old.toPath())
+        val result = run(fixture.command, fixture.bin.path)
+        assertTrue(result.code != 0, result.out)
+        assertEquals("working version", File(fixture.root, "current/keep").readText())
+        assertFalse(File(old, "new-file").exists())
+        assertTrue(fixture.root.list()!!.none { it.startsWith("install.") })
+    }
+
+    @Test
+    fun kotlinFailedSelectorLeavesOldLinkAndRemovesUnpublishedCandidate(@TempDir dir: File) {
+        val fixture = kotlinFixture(dir, "selector")
+        val old = File(fixture.root, "263.1.0").apply { mkdirs() }
+        File(old, "keep").writeText("working version")
+        java.nio.file.Files.createSymbolicLink(File(fixture.root, "current").toPath(), old.toPath())
+        val result = run(fixture.command, fixture.bin.path)
+        assertTrue(result.code != 0, result.out)
+        assertEquals("working version", File(fixture.root, "current/keep").readText())
+        assertFalse(File(fixture.root, KotlinLsp.PINNED_BUILD).exists())
+        assertEquals(setOf("263.1.0", "current"), fixture.root.list()!!.toSet())
+    }
+
+    @Test
+    fun failedBackupMoveDoesNotDeleteTheUnmovedVersion(@TempDir dir: File) {
+        val fixture = kotlinFixture(dir, "old")
+        val selected = File(fixture.root, "263.1.0").apply { mkdirs() }
+        File(selected, "keep").writeText("selected")
+        val untouched = File(fixture.root, KotlinLsp.PINNED_BUILD).apply { mkdirs() }
+        File(untouched, "product-info.json").writeText("old metadata")
+        File(untouched, "keep").writeText("unmoved")
+        java.nio.file.Files.createSymbolicLink(File(fixture.root, "current").toPath(), selected.toPath())
+        assertTrue(run(fixture.command, fixture.bin.path).code != 0)
+        assertEquals("selected", File(fixture.root, "current/keep").readText())
+        assertEquals("unmoved", File(untouched, "keep").readText())
+    }
+
+    @Test
+    fun kotlinSuccessfulInstallKeepsOnePreviousVersionAndRemovesBundledJbr(@TempDir dir: File) {
+        val fixture = kotlinFixture(dir)
+        val old = File(fixture.root, "263.1.0").apply { mkdirs() }
+        File(old, "keep").writeText("previous")
+        File(fixture.root, "262.1.0").mkdirs()
+        java.nio.file.Files.createSymbolicLink(File(fixture.root, "current").toPath(), old.toPath())
+        val result = run(fixture.command, fixture.bin.path)
+        assertEquals(0, result.code, result.out)
+        assertEquals("new verified payload", File(fixture.root, "current/new-file").readText())
+        assertEquals("previous", File(old, "keep").readText())
+        assertFalse(File(fixture.root, "current/jbr").exists())
+        assertEquals(setOf("263.1.0", KotlinLsp.PINNED_BUILD, "current"), fixture.root.list()!!.toSet())
     }
 
     @Test

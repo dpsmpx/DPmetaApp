@@ -33,4 +33,6 @@
     <string name="sora_editor_replaceAll">Replace all</string>
     <string name="sora_editor_replacement">Replacement</string>
     <string name="sora_editor_text_to_search">Search text</string>
+    <string name="kotlin_install_busy">Wait for kotlin-lsp installation to finish</string>
+    <string name="kotlin_install_stopped">Server stopped to restore kotlin-lsp</string>
 </resources>

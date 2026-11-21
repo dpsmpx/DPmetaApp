@@ -1,6 +1,7 @@
 package com.dpsmpx.dpai.ui
 
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpai.core.hashing.Hashing
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.lsp.KotlinLsp
 import com.dpsmpx.dpai.lsp.PythonServers
@@ -20,8 +21,12 @@ object CodeServerSetup {
     /** Службы IDE — в разделе инструментов (D-143, DPmetaApp:D-113); прежний `~/.local/share/dpai` — ссылкой. */
     const val HOME: String = "/root/tools/ide"
     const val PYRIGHT_HOME: String = "$HOME/${PythonServers.PYRIGHT_DIR}"
-    const val KOTLIN_HOME: String = "$HOME/kotlin-lsp/current"
-    const val KOTLIN_SYSTEM: String = "$HOME/kotlin-lsp-system"
+    const val KOTLIN_HOME: String = "$HOME/kotlin-lsp/${KotlinLsp.PINNED_BUILD}"
+    const val KOTLIN_SYSTEM_BASE: String = "$HOME/kotlin-lsp-system"
+    const val KOTLIN_SYSTEM: String = "$KOTLIN_SYSTEM_BASE/${KotlinLsp.PINNED_BUILD}"
+
+    /** Каталог IntelliJ нельзя одновременно открывать двум процессам разных проектов. */
+    fun kotlinSystem(projectRoot: String): String = "$KOTLIN_SYSTEM/${Hashing.sha256(projectRoot).hex}"
     const val ANDROID_SDK: String = "$HOME/android-sdk"
 
     private const val CURL = "curl -sS --fail --location --proto '=https' --connect-timeout 30 --max-time 1800"
@@ -61,10 +66,22 @@ object CodeServerSetup {
             sh(
                 "dpai-kotlin-lsp",
                 """
-                ROOT="$1"; DEST="${'$'}ROOT/$2"
+                ROOT="$1"; DEST="${'$'}ROOT/$2"; MOVED=0
                 mkdir -p "${'$'}ROOT" || exit
                 STAGE=${'$'}(mktemp -d "${'$'}ROOT/install.XXXXXX") || exit
-                trap 'rm -rf "${'$'}STAGE"' EXIT
+                cleanup() {
+                    if test "${'$'}MOVED" = 1 && { test "${'$'}(readlink "${'$'}ROOT/current" 2>/dev/null)" != "${'$'}DEST" || ! test -f "${'$'}DEST/product-info.json"; }; then
+                        if test -e "${'$'}STAGE/previous" || test -L "${'$'}STAGE/previous"; then
+                            rm -rf "${'$'}DEST"
+                            mv "${'$'}STAGE/previous" "${'$'}DEST"
+                        elif ! test -d "${'$'}SERVER" && test -f "${'$'}DEST/product-info.json"; then
+                            rm -rf "${'$'}DEST"
+                        fi
+                    fi
+                    rm -rf "${'$'}STAGE"
+                }
+                trap cleanup EXIT
+                trap 'exit 1' HUP INT TERM
                 $CURL "$3" -o "${'$'}STAGE/server.tgz" || exit
                 printf '%s  %s\n' "$7" "${'$'}STAGE/server.tgz" | sha256sum -c - >/dev/null || { printf 'DPAI_KOTLIN_LSP_CHECKSUM: failed\n'; exit 1; }
                 $CURL "$4" -o "${'$'}STAGE/rocksdb.jar" || exit
@@ -74,9 +91,12 @@ object CodeServerSetup {
                 test -n "${'$'}SERVER" && test -f "${'$'}SERVER/product-info.json" && test -d "${'$'}SERVER/lib/rocksdbjni" || { printf 'DPAI_KOTLIN_LSP_LAYOUT: unexpected\n'; exit 1; }
                 unzip -o -q "${'$'}STAGE/rocksdb.jar" "$6" -d "${'$'}SERVER/lib/rocksdbjni" || exit
                 rm -rf "${'$'}SERVER/jbr"
-                rm -rf "${'$'}DEST" && mv "${'$'}SERVER" "${'$'}DEST" || exit
-                ln -sfn "${'$'}DEST" "${'$'}ROOT/current" || exit
-                for OLD in "${'$'}ROOT"/[0-9]*; do test "${'$'}OLD" = "${'$'}DEST" || rm -rf "${'$'}OLD"; done
+                BEFORE=${'$'}(readlink -f "${'$'}ROOT/current" 2>/dev/null)
+                MOVED=1
+                if test -e "${'$'}DEST" || test -L "${'$'}DEST"; then mv "${'$'}DEST" "${'$'}STAGE/previous" || exit; fi
+                mv "${'$'}SERVER" "${'$'}DEST" || exit
+                ln -s "${'$'}DEST" "${'$'}STAGE/current" && mv -Tf "${'$'}STAGE/current" "${'$'}ROOT/current" || exit
+                for OLD in "${'$'}ROOT"/[0-9]*; do test "${'$'}OLD" = "${'$'}DEST" || test "${'$'}OLD" = "${'$'}BEFORE" || rm -rf "${'$'}OLD"; done
                 printf 'DPAI_KOTLIN_LSP_OK\n'
                 """,
                 "$HOME/kotlin-lsp", build, KotlinLsp.archiveUrl(build, arch), KotlinLsp.ROCKSDB_URL, KotlinLsp.ROCKSDB_SHA256, KotlinLsp.rocksDbLibrary(arch), KotlinLsp.archiveSha256(arch),

@@ -116,7 +116,7 @@ object AppComponents {
         dir(CodeServerSetup.KOTLIN_HOME.removePrefix("/root/").substringBeforeLast('/'))?.let { k ->
             val builds = children(k).filter { KotlinLsp.validBuild(it) }
             val current = runCatching { Files.readSymbolicLink(k.resolve("current")).fileName.toString() }.getOrNull()?.takeIf(KotlinLsp::validBuild)
-            val system = dir(CodeServerSetup.KOTLIN_SYSTEM.removePrefix("/root/"))
+            val system = dir(CodeServerSetup.KOTLIN_SYSTEM_BASE.removePrefix("/root/"))
             val (a, cutA) = size(k)
             val (b, cutB) = system?.let(::size) ?: (0L to false)
             val sum = arch?.let { runCatching { KotlinLsp.archiveSha256(it) }.getOrNull() }
@@ -126,7 +126,7 @@ object AppComponents {
                 arch?.let { runCatching { KotlinLsp.archiveUrl(KotlinLsp.PINNED_BUILD, it) }.getOrNull() } ?: "download.jetbrains.com", sum,
                 "SHA-256 сборки ${KotlinLsp.PINNED_BUILD} закреплена в APK и сверена до распаковки",
                 if (a == null || b == null) null else a + b, cutA || cutB, builds + listOfNotNull("кеш и индексы".takeIf { system != null }),
-                Remove.Tree(listOfNotNull(CodeServerSetup.KOTLIN_HOME.substringBeforeLast('/'), CodeServerSetup.KOTLIN_SYSTEM.takeIf { system != null })),
+                Remove.Tree(listOfNotNull(CodeServerSetup.KOTLIN_HOME.substringBeforeLast('/'), CodeServerSetup.KOTLIN_SYSTEM_BASE.takeIf { system != null })),
             )
         }
         dir(CodeServerSetup.PYRIGHT_HOME.removePrefix("/root/").substringBeforeLast('/'))?.let { p ->

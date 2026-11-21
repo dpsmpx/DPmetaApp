@@ -20,4 +20,6 @@
     <string name="project_edit_rename_hint">Изменения всех файлов будут показаны перед сохранением. Сначала сохраните или отмените ручные правки.</string>
     <string name="project_edit_need_index">Для переименования по проекту сначала включите индекс C++ в строке службы.</string>
     <string name="project_edit_saved">Файлы сохранены; отмена проектной правки — в списке файлов проекта</string>
+    <string name="kotlin_install_busy">Дождитесь завершения установки kotlin-lsp</string>
+    <string name="kotlin_install_stopped">Служба остановлена для восстановления kotlin-lsp</string>
 </resources>

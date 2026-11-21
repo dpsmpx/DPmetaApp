@@ -119,15 +119,18 @@ https://repo.maven.apache.org/maven2/ , с POM и транзитивными з�
   Суммы зашиты в APK; файл `.sha256` сервера при установке не читается.
   Запуск без встроенной
   glibc-JVM: JDK 25 Alpine, gcompat для наблюдения за файлами,
-  `--data-sharing=none`. Проверена сборка 263.7084.0: на Alpine x86_64
+  `--data-sharing=none`. Ранее проверена сборка 263.7084.0: на Alpine x86_64
   (musl) в chroot и на хосте — импорт Gradle, диагностика, переходы,
-  переименование.
+  переименование. Сборка 271.2085.0 проверена 21 ноября на хосте с
+  JRE25/JDK21: живой Gradle JVM, диагностика, дополнение, переходы и
+  переименование. Android и телефон проверяются отдельно.
 - rocksdbjni 10.10.1 (Apache-2.0 / GPL-2.0): общий архив Maven Central
   https://repo1.maven.org/maven2/org/rocksdb/rocksdbjni/10.10.1/rocksdbjni-10.10.1.jar ,
   SHA-256 `3e3c9e439b89c2ac4aaa7512bc73052d44b3a6397daed6cb88168cefa6e431a9`
   (совпал с `.sha256` Maven Central). Из него берётся только musl-библиотека
   нужной архитектуры: набор JNI-символов (1525) совпал с библиотекой
-  сборки kotlin-lsp полностью, для x86_64 и aarch64.
+  сборок kotlin-lsp полностью, для x86_64 и aarch64; для 271.2085.0
+  повторно сверены все 1525 символов 21 ноября 2026.
 - Платформа Android SDK: архив из манифеста
   https://dl.google.com/android/repository/repository2-3.xml , сверка SHA-1
   манифеста, как у sdkmanager; ставится после принятия лицензии Google
