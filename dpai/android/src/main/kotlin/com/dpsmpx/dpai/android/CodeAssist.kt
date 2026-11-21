@@ -411,11 +411,12 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                                 is Outcome.Failure -> note = resolved.diagnostics.first().message
                                 is Outcome.Success -> {
                                     val action = resolved.value
+                                    val edit = action.edit
                                     when {
                                         action.disabledReason != null -> note = action.disabledReason
                                         action.requiresCommand -> note = context.getString(R.string.lsp_command_unsupported)
-                                        action.edit == null -> note = context.getString(R.string.lsp_action_empty)
-                                        else -> applyWorkspace(action.edit, before, buffer.state.selection.end, "Исправлено; отмена — ↶")
+                                        edit == null -> note = context.getString(R.string.lsp_action_empty)
+                                        else -> applyWorkspace(edit, before, buffer.state.selection.end, "Исправлено; отмена — ↶")
                                     }
                                 }
                                 null -> Unit
