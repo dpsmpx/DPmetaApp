@@ -59,6 +59,15 @@ class LspClient(
     private val documents = HashMap<String, Document>()
     private val lock = Any()
 
+    private val completionSerial = Any()
+    private val completionGeneration = java.util.concurrent.atomic.AtomicLong()
+    private class CompletionCapture(val item: CompletionItem) {
+        var edit: WorkspaceEdit? = null
+        var caret: Position? = null
+        var failure: String? = null
+    }
+    @Volatile private var completionCapture: CompletionCapture? = null
+
     @Volatile
     private var server: ServerInfo? = null
 
@@ -80,7 +89,8 @@ class LspClient(
                 )
                 "client/registerCapability", "client/unregisterCapability", "window/workDoneProgress/create" -> Outcome.success(JsonNull)
                 // Правки по команде службы не применяются молча: только те, что редактор запросил сам.
-                "workspace/applyEdit" -> Outcome.success(JsonObject.of("applied" to json(false)))
+                "workspace/applyEdit" -> captureCompletionEdit(params)
+                "window/showDocument" -> captureCompletionCaret(params)
                 else -> Outcome.failure(DiagCode.UNSUPPORTED, "редактор не выполняет $method")
             }
 
@@ -200,31 +210,94 @@ class LspClient(
     /** Версия открытого документа у службы; `null` — не открыт. */
     fun version(uri: String): Int? = synchronized(lock) { documents[uri]?.version }
 
-    fun completion(uri: String, at: Position, trigger: Char? = null, timeout: Duration = REQUEST_TIMEOUT): Outcome<CompletionList> {
+    fun completion(uri: String, at: Position, trigger: Char? = null, timeout: Duration = REQUEST_TIMEOUT): Outcome<CompletionList> = synchronized(completionSerial) {
         val context = if (trigger != null) {
             JsonObject.of("triggerKind" to json(2), "triggerCharacter" to json(trigger.toString()))
         } else {
             JsonObject.of("triggerKind" to json(1))
         }
         val snapshot = document(uri)
+        val generation = completionGeneration.incrementAndGet()
         return when (val result = ask("textDocument/completion", JsonObject(place(uri, at).fields + ("context" to context)), timeout, LspParse::completion)) {
             is Outcome.Failure -> result
-            is Outcome.Success -> Outcome.success(result.value.copy(items = result.value.items.map { it.copy(owner = this, uri = uri, snapshot = snapshot,
+            is Outcome.Success -> Outcome.success(result.value.copy(items = result.value.items.map { it.copy(owner = this, uri = uri, snapshot = snapshot, generation = generation, position = at,
                 resolvable = info?.capabilities?.completionResolve == true && it.payload?.get("data") != null && it.payload["data"] != JsonNull) }))
         }
     }
 
     /** Отложенный импорт/описание — только для того же снимка и клиента. */
-    fun resolveCompletion(item: CompletionItem, timeout: Duration = SLOW_TIMEOUT): Outcome<CompletionItem> {
-        if (item.owner !== this || !isRunning || item.uri == null || item.snapshot == null || document(item.uri) != item.snapshot) {
+    fun resolveCompletion(item: CompletionItem, timeout: Duration = SLOW_TIMEOUT): Outcome<CompletionItem> = synchronized(completionSerial) {
+        if (item.owner !== this || !isRunning || item.uri == null || item.snapshot == null || document(item.uri) != item.snapshot || item.generation != completionGeneration.get()) {
             return Outcome.failure(DiagCode.STATE_CONFLICT, "дополнение устарело; запросите варианты заново")
         }
+        val command = item.payload?.get("command") as? JsonObject
+        if (LspParse.str(command?.get("command")) == KOTLIN_COMPLETION) return prepareKotlinCompletion(item, checkNotNull(command), timeout)
         if (!item.resolvable) return Outcome.success(item)
         return when (val result = ask("completionItem/resolve", checkNotNull(item.payload), timeout, LspParse::completionItem)) {
             is Outcome.Failure -> result
             is Outcome.Success -> if (document(item.uri) != item.snapshot) Outcome.failure(DiagCode.STATE_CONFLICT, "текст изменился во время дополнения; повторите")
-                else Outcome.success(result.value.copy(owner = this, uri = item.uri, snapshot = item.snapshot))
+                else Outcome.success(result.value.copy(owner = this, uri = item.uri, snapshot = item.snapshot, generation = item.generation, position = item.position))
         }
+    }
+
+    /**
+     * Единственная известная команда: pinned kotlin-lsp вычисляет вставку на копии
+     * и посылает один applyEdit (D-211). Ответ всегда applied:false: буфер ещё не
+     * изменён. После завершения запроса клиент проверяет и применяет его сам.
+     */
+    private fun prepareKotlinCompletion(item: CompletionItem, command: JsonObject, timeout: Duration): Outcome<CompletionItem> {
+        val args = command["arguments"] as? JsonArray
+            ?: return Outcome.failure(DiagCode.LSP_REPLY_INVALID, "нет аргумента команды дополнения")
+        val key = (args.items.singleOrNull() as? JsonNumber)?.toLongExact()
+        val data = item.payload?.get("data") as? JsonObject
+        val at = item.position
+        if (info?.capabilities?.executeCommands?.contains(KOTLIN_COMPLETION) != true || key == null || key < 0 || at == null ||
+            item.edit != TextEdit(Range(at, at), "") || item.additional.isNotEmpty() ||
+            data?.get("KotlinCompletionItemKey") != args.items.single() ||
+            LspParse.str(data?.get("configurationEntryId")) != "KotlinCompletionProvider") {
+            return Outcome.failure(DiagCode.UNSUPPORTED, "неподдерживаемый контракт команды дополнения Kotlin; текст не изменён")
+        }
+        val capture = CompletionCapture(item)
+        completionCapture = capture
+        try {
+            val reply = peer.request("workspace/executeCommand", JsonObject.of("command" to json(KOTLIN_COMPLETION), "arguments" to args), timeout)
+            // Таймаут/обрыв не превращаются в успешное вычисление даже после applyEdit.
+            if (reply is Outcome.Failure && reply.diagnostics.any { it.code != DiagCode.LSP_REQUEST_FAILED }) return reply
+            if (document(checkNotNull(item.uri)) != item.snapshot) return Outcome.failure(DiagCode.STATE_CONFLICT, "текст изменился во время дополнения; повторите")
+            return synchronized(capture) {
+                capture.failure?.let { return Outcome.failure(DiagCode.LSP_REPLY_INVALID, it) }
+                val edit = capture.edit ?: return Outcome.failure(DiagCode.STATE_CONFLICT, "вариант дополнения устарел; запросите варианты заново")
+                Outcome.success(item.copy(unsupported = false, resolvable = false, prepared = edit, preparedCaret = capture.caret))
+            }
+        } finally { completionCapture = null }
+    }
+
+    private fun captureCompletionEdit(params: JsonValue?): Outcome<JsonValue> {
+        val active = completionCapture
+        if (active != null) synchronized(active) {
+            val item = active.item
+            val uri = checkNotNull(item.uri)
+            val edit = LspParse.workspaceEdit((params as? JsonObject)?.get("edit"))
+            val expected = edit?.versions?.get(uri)
+            when {
+                active.edit != null || active.failure != null -> active.failure = "команда прислала несколько наборов; текст не изменён"
+                edit == null || edit.changes.keys != setOf(uri) -> active.failure = "команда дополнения меняет неподдерживаемые документы; текст не изменён"
+                document(checkNotNull(item.uri)) != item.snapshot || expected != null && expected != item.snapshot?.first -> active.failure = "снимок дополнения изменился; текст не изменён"
+                else -> active.edit = edit
+            }
+        }
+        return Outcome.success(JsonObject.of("applied" to json(false), "failureReason" to json("DP_IDE prepares the selected completion; the editor has not applied it yet")))
+    }
+
+    private fun captureCompletionCaret(params: JsonValue?): Outcome<JsonValue> {
+        val active = completionCapture
+        val o = params as? JsonObject
+        if (active != null && LspParse.str(o?.get("uri")) == active.item.uri && o?.get("external") != json(true)) {
+            val selection = LspParse.range(o?.get("selection"))
+            if (selection != null && selection.start == selection.end) synchronized(active) { active.caret = selection.start }
+        }
+        // Навигация будет выполнена только вместе с проверенной вставкой.
+        return Outcome.success(JsonObject.of("success" to json(false)))
     }
 
     /** Подсказка под курсором; `null` — службе нечего сказать об этом месте. */
@@ -372,6 +445,7 @@ class LspClient(
             "clientInfo" to JsonObject.of("name" to json("dpai")),
             "rootUri" to json(rootUri),
             "capabilities" to JsonObject.of(
+                "window" to JsonObject.of("showDocument" to JsonObject.of("support" to json(true))),
                 "general" to JsonObject.of("positionEncodings" to JsonArray(listOf(json("utf-16")))),
                 "textDocument" to text,
                 "workspace" to JsonObject.of(
@@ -385,6 +459,7 @@ class LspClient(
     }
 
     companion object {
+        private const val KOTLIN_COMPLETION = "jetbrains.kotlin.completion.apply"
         val START_TIMEOUT: Duration = 30.seconds
         val REQUEST_TIMEOUT: Duration = 5.seconds
 

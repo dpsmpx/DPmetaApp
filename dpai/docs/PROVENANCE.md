@@ -216,3 +216,14 @@ https://registry.npmjs.org/@anthropic-ai/claude-code/2.1.322 .
 |---|---|
 | editor-0.24.7.aar | cdfdacdb3ac8605b190768d93f504935400c9aa37b773dc6f6c840311faf2b4c |
 | language-textmate-0.24.7.aar | eca50e81595cd4cf1f677cca12c5fa2203d6051eaf87dabc7e7489413dd098f1 |
+
+## Контракт дополнения kotlin-lsp 271
+
+D-211 использует контракт команды jetbrains.kotlin.completion.apply,
+изученный в официальном исходнике выпуска 271.2085.0, commit
+ce29f8446ba2d60ba914d23dd8ddf2f1b410dc6e:
+[LSCompletionProviderHelper](https://github.com/Kotlin/kotlin-lsp/blob/ce29f8446ba2d60ba914d23dd8ddf2f1b410dc6e/features-impl/common/src/com/jetbrains/ls/api/features/impl/common/completion/LSCompletionProviderHelper.kt)
+и Kotlin FileForModificationProvider. Заголовок исходника — Apache-2.0.
+Код не копировался: реализован ограниченный клиент протокола, с честным
+отказом от немедленной записи и последующей проверкой правки буфера.
+Новая закреплённая сборка проверяется живым сценарием заново.

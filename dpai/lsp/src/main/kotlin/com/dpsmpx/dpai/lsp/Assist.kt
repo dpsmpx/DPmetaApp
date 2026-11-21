@@ -55,6 +55,24 @@ object Assist {
      * сразу после вставленного.
      */
     fun complete(text: String, cursor: Int, item: CompletionItem): Outcome<Applied> {
+        if (item.snapshot != null && item.snapshot.second != text) return Outcome.failure(DiagCode.STATE_CONFLICT, "дополнение рассчитано для другого текста")
+        val prepared = item.prepared
+        if (prepared != null) {
+            val uri = item.uri ?: return Outcome.failure(DiagCode.LSP_REPLY_INVALID, "нет документа дополнения")
+            val expected = prepared.versions[uri]
+            if (expected != null && expected != item.snapshot?.first) return Outcome.failure(DiagCode.STATE_CONFLICT, "версия дополнения изменилась")
+            return when (val edits = editsForFile(prepared, uri)) {
+                is Outcome.Failure -> edits
+                is Outcome.Success -> when (val applied = applyEdits(text, cursor, edits.value)) {
+                    is Outcome.Failure -> applied
+                    is Outcome.Success -> {
+                        val at = item.preparedCaret?.let { LineIndex(applied.value.text).offset(it) }
+                        if (item.preparedCaret != null && at == null) Outcome.failure(DiagCode.LSP_REPLY_INVALID, "курсор дополнения за концом текста")
+                        else Outcome.success(applied.value.copy(cursor = at ?: applied.value.cursor))
+                    }
+                }
+            }
+        }
         if (item.unsupported) return Outcome.failure(DiagCode.LSP_REPLY_INVALID, "дополнение требует неподдерживаемую команду или snippet; текст не изменён")
         val at = cursor.coerceIn(0, text.length)
         val index = LineIndex(text)

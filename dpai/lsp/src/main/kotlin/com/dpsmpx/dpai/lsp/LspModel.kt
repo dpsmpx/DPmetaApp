@@ -49,6 +49,10 @@ data class CompletionItem(
     internal val owner: LspClient? = null,
     internal val uri: String? = null,
     internal val snapshot: Pair<Int, String>? = null,
+    internal val generation: Long = 0,
+    internal val position: Position? = null,
+    internal val prepared: WorkspaceEdit? = null,
+    internal val preparedCaret: Position? = null,
 )
 
 /** [incomplete] — список неполон: при следующем знаке спрашивать службу заново, а не фильтровать этот. */
@@ -106,6 +110,7 @@ data class ServerCapabilities(
     val documentSymbols: Boolean = false,
     val codeActionResolve: Boolean = false,
     val completionResolve: Boolean = false,
+    val executeCommands: Set<String> = emptySet(),
 )
 
 /** Имя и версия службы, если она их назвала. */
@@ -375,6 +380,7 @@ internal object LspParse {
             documentSymbols = has("documentSymbolProvider"),
             codeActionResolve = ((o["codeActionProvider"] as? JsonObject)?.get("resolveProvider") as? JsonBool)?.value == true,
             completionResolve = ((o["completionProvider"] as? JsonObject)?.get("resolveProvider") as? JsonBool)?.value == true,
+            executeCommands = (((o["executeCommandProvider"] as? JsonObject)?.get("commands") as? JsonArray)?.items.orEmpty()).take(128).mapNotNull { str(it) }.toSet(),
         )
     }
 

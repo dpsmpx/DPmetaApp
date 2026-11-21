@@ -121,7 +121,8 @@ class KotlinAndroidLiveTest {
             val imported = ok(session.completion(uri, LineIndex(unfinished).position(offset))).items.firstOrNull { it.label.startsWith("LocalDate") }
             assertNotNull(imported, "служба не предложила LocalDate вне импортов")
             val resolved = ok(session.resolveCompletion(imported))
-            assertFalse(resolved.unsupported, "служба требует команду/snippet: $resolved")
+            assertFalse(resolved.unsupported, "служба требует неподдерживаемую команду/snippet: $resolved")
+            assertEquals(text, File(dir, source).readText(), "команда службы не должна записывать исходный файл")
             text = ok(com.dpsmpx.dpai.lsp.Assist.complete(unfinished, offset, resolved)).text
             assertTrue(text.contains("import java.time.LocalDate") || text.contains("fun today(): java.time.LocalDate"), text)
             File(dir, source).writeText(text)
