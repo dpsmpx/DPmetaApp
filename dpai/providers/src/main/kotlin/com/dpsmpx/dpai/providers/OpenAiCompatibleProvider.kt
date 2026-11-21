@@ -10,6 +10,7 @@ import com.dpsmpx.dpai.core.serialization.JsonBool
 import com.dpsmpx.dpai.core.serialization.JsonNumber
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonValue
+import com.dpsmpx.dpai.core.serialization.JsonParser
 
 /**
  * OpenAI-совместимый провайдер (D-98; `DPmetaApp:D-52`): OpenAI,
@@ -21,7 +22,7 @@ import com.dpsmpx.dpai.core.serialization.JsonValue
  * `max_completion_tokens` (`max_tokens` новые модели отвергают), у
  * остальных — `max_tokens`.
  */
-class OpenAiCompatibleProvider(profile: ApiProfile, key: Secret?, transport: Transport) : HttpProvider(profile, key, transport) {
+class OpenAiCompatibleProvider(profile: ApiProfile, key: Secret?, transport: Transport) : HttpProvider(profile, key, transport), ToolChat {
     private val headers = mapOf("content-type" to "application/json")
 
     private fun secret() = key?.takeIf { !it.isEmpty }?.let { SecretHeader("Authorization", "Bearer ", it) }
@@ -80,6 +81,43 @@ class OpenAiCompatibleProvider(profile: ApiProfile, key: Secret?, transport: Tra
         // Не все совместимые серверы шлют [DONE]: конец ответа — и причина остановки.
         if (!done && stop == null) return Outcome.failure(DiagCode.PROVIDER_REPLY_INVALID, "поток оборвался без причины остановки", subject)
         return Outcome.success(ChatReply(text.toString(), stopKind(stop), stop, ChatUsage.of(input, output)))
+    }
+
+    /** Проектные инструменты используют тот же транспорт/список адресов, ключ не уходит в процессы (D-214). */
+    override fun chatWithTools(request: ChatRequest, tools: List<ToolSpec>, cancel: Cancel, onText: (String) -> Unit, run: (ToolCall) -> ToolResult): Outcome<ChatReply> {
+        if (tools.isEmpty()) return chat(request, cancel, onText)
+        val messages = buildList<JsonValue> {
+            request.system?.takeIf { it.isNotBlank() }?.let { add(JsonObject.of("role" to jstr("system"), "content" to jstr(it))) }
+            request.messages.forEach { add(JsonObject.of("role" to jstr(if (it.role == ChatRole.USER) "user" else "assistant"), "content" to jstr(it.text))) }
+        }.toMutableList()
+        // OpenAI требует отдельное сообщение tool на каждый вызов, поэтому они разворачиваются перед HTTP.
+        return ToolLoop.run(messages, tools, cancel, onText, turn = turn@{ history ->
+            val flattened = history.flatMap { if (it is JsonArray) it.items else listOf(it) }
+            val body = linkedMapOf<String, JsonValue>("model" to jstr(request.model), "stream" to JsonBool(false), "messages" to JsonArray(flattened),
+                "tools" to JsonArray(tools.map { JsonObject.of("type" to jstr("function"), "function" to ToolLoop.schema(it)) }))
+            request.maxOutputTokens?.let { body[if (profile.host == OPENAI_HOST) "max_completion_tokens" else "max_tokens"] = JsonNumber.of(it) }
+            val reply = when (val r = json(HttpCall("POST", url("/chat/completions"), headers, CanonicalJson.write(JsonObject(body)).toByteArray(Charsets.UTF_8), secret()), cancel)) {
+                is Outcome.Failure -> return@turn r
+                is Outcome.Success -> r.value
+            }
+            val choice = reply["choices"].arr().singleOrNull().obj()
+            val message = choice?.get("message").obj()
+            val reason = choice?.get("finish_reason").str()
+            if (message == null || reason == null) return@turn Outcome.failure(DiagCode.PROVIDER_REPLY_INVALID, "нет завершённого ответа API")
+            val calls = arrayListOf<ToolCall>()
+            for (value in message["tool_calls"].arr()) {
+                val o = value.obj()
+                val f = o?.get("function").obj()
+                val id = o?.get("id").str()
+                val name = f?.get("name").str()
+                val raw = f?.get("arguments").str()
+                val args = raw?.takeIf { it.length <= 128 * 1024 }?.let { JsonParser().parse(it).valueOrNull() as? JsonObject }
+                if (o?.get("type").str() != "function" || id == null || name == null || args == null) return@turn Outcome.failure(DiagCode.PROVIDER_REPLY_INVALID, "неверный вызов инструмента API")
+                calls += ToolCall(id, name, args)
+            }
+            val usage = reply["usage"].obj()
+            Outcome.success(ToolLoop.Round(message["content"].str().orEmpty(), stopKind(reason), reason, usage?.get("prompt_tokens").long(), usage?.get("completion_tokens").long(), message, calls, reason == "tool_calls"))
+        }, results = { values -> JsonArray(values.map { (call, result) -> JsonObject.of("role" to jstr("tool"), "tool_call_id" to jstr(call.id), "content" to jstr(if (result.isError) "ERROR: ${result.text}" else result.text)) }) }, execute = run)
     }
 
     companion object {

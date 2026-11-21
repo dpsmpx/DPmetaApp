@@ -44,8 +44,8 @@ data class ToolResult(val text: String, val isError: Boolean = false)
 
 /**
  * Провайдер, умеющий ходить с инструментами (D-118): модель просит данные, приложение
- * исполняет [run] и возвращает итог, пока модель не ответит. Инструменты — только чтение:
- * что делает [run], решает вызывающий; провайдер ничего, кроме него, не исполняет.
+ * исполняет [run] и возвращает итог, пока модель не ответит. Полномочия инструментов
+ * определяет вызывающий (D-214); провайдер сам не открывает файлы и не запускает процессы.
  */
 interface ToolChat {
     fun chatWithTools(request: ChatRequest, tools: List<ToolSpec>, cancel: Cancel, onText: (String) -> Unit, run: (ToolCall) -> ToolResult): Outcome<ChatReply>
