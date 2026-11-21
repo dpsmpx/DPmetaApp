@@ -108,9 +108,10 @@ class LspClient(
         return Outcome.success(result)
     }
 
-    /** Открыть документ или заменить его текст, если он уже открыт. */
+    /** Снимок текста и версии для сверки проектной правки. */
     fun document(uri: String): Pair<Int, String>? = synchronized(lock) { documents[uri]?.let { it.version to it.text } }
 
+    /** Открыть документ или заменить его текст, если он уже открыт. */
     fun open(uri: String, languageId: String, text: String): Outcome<Unit> = synchronized(lock) {
         ready()?.let { return it }
         if (documents.containsKey(uri)) return update(uri, text)
@@ -152,12 +153,13 @@ class LspClient(
         peer.notify("textDocument/didClose", JsonObject.of("textDocument" to JsonObject.of("uri" to json(uri))))
     }
 
-    /** Версия открытого документа у службы; `null` — не открыт. */
+    /** Записанные файлы, включая закрытые документы. */
     fun filesChanged(uris: Set<String>): Outcome<Unit> = synchronized(lock) {
         ready()?.let { return it }
         peer.notify("workspace/didChangeWatchedFiles", JsonObject.of("changes" to JsonArray(uris.map { JsonObject.of("uri" to json(it), "type" to json(2)) })))
     }
 
+    /** Версия открытого документа у службы; `null` — не открыт. */
     fun version(uri: String): Int? = synchronized(lock) { documents[uri]?.version }
 
     fun completion(uri: String, at: Position, trigger: Char? = null, timeout: Duration = REQUEST_TIMEOUT): Outcome<CompletionList> {
@@ -300,7 +302,7 @@ class LspClient(
                 "general" to JsonObject.of("positionEncodings" to JsonArray(listOf(json("utf-16")))),
                 "textDocument" to text,
                 "workspace" to JsonObject.of(
-                    "workspaceEdit" to JsonObject.of("documentChanges" to json(false)),
+                    "workspaceEdit" to JsonObject.of("documentChanges" to json(true)),
                     "applyEdit" to json(false),
                     "configuration" to json(settings.fields.isNotEmpty()),
                     "didChangeConfiguration" to JsonObject(emptyMap()),

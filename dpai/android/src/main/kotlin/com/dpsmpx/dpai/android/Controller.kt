@@ -190,11 +190,11 @@ object KeystoreKey {
  * `dpai.app-targets` через `DocumentStore` (атомарная замена, D-24).
  * Вызовы сети — с фонового потока.
  */
-class Controller(private val root: File, val version: String?) {
+class Controller(private val root: File, val version: String?, workspaceCopyRoot: File = File(root, "workspace-changes")) {
     private val vfs = NioVfs(root.toPath())
     private val docs = DocumentStore(vfs, "docs")
     val workspaceChanges = com.dpsmpx.dpai.ui.WorkspaceChangeStore(
-        NioVfs(File(root.parentFile, "workspace-changes").toPath()), DraftEncryption)
+        NioVfs(workspaceCopyRoot.toPath()), DraftEncryption)
 
     val manualProfiles = com.dpsmpx.dpai.ui.ManualProfiles(
         DocumentStore(NioVfs(File(root.parentFile, "manual-profiles").toPath()), "docs"), IdGenerator(Clock.SYSTEM, RandomSource.secure()), Clock.SYSTEM)
@@ -559,8 +559,12 @@ class Controller(private val root: File, val version: String?) {
          * `doctor` сверяет версию агента. Кто бы ни создал контроллер первым (экран, служба после
          * перезапуска, терминал), версия та же — и в приложении DPmetaApp, где у APK своя версия.
          */
+        private var workspaceCopyDir: File? = null
+        fun install(context: Context) { workspaceCopyDir = File(context.applicationContext.noBackupFilesDir, "workspace-changes") }
+
         fun get(filesDir: File): Controller = instance ?: synchronized(this) {
-            instance ?: Controller(File(filesDir, "controller"), BuildConfig.DPAI_VERSION).also { instance = it }
+            instance ?: Controller(File(filesDir, "controller"), BuildConfig.DPAI_VERSION,
+                workspaceCopyDir ?: File(filesDir, "workspace-changes")).also { instance = it }
         }
     }
 }

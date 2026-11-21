@@ -110,6 +110,47 @@ class WorkspaceChangesTest {
         assertEquals(0, tree.writes)
     }
 
+    @Test fun pendingGuardFailureNeverWritesSourcesAndRemainsRecoverable() {
+        val io = object : Vfs by NioVfs(dir) {
+            override fun fsync(path: String) { if (path.startsWith("workspace-guards/")) throw IOException("отказ guard") else NioVfs(dir).fsync(path) }
+        }
+        val tree = Tree()
+        assertIs<Outcome.Failure>(WorkspaceChanges(store(io)).apply("p", "tree", tree, plan()))
+        assertEquals(0, tree.writes)
+        assertTrue(store().blocked("p"))
+        assertIs<Outcome.Success<Unit>>(WorkspaceChanges(store()).recover("p", "tree", tree, false))
+        assertFalse(store().blocked("p"))
+    }
+
+    @Test fun lostCurrentGuardUsesPreviousOnlyAsPendingAndCanBeRecovered() {
+        val tree = Tree()
+        assertIs<Outcome.Success<Unit>>(WorkspaceChanges(store()).apply("p", "tree", tree, plan()))
+        val guard = java.nio.file.Files.list(dir.resolve("workspace-guards")).use { stream -> stream.filter { !it.fileName.toString().contains('.') }.findFirst().orElseThrow() }
+        java.nio.file.Files.write(guard, "corrupt".toByteArray())
+        assertTrue(store().blocked("p"))
+        assertTrue(store().load("p").valueOrNull()!!.pending)
+        assertIs<Outcome.Success<Unit>>(WorkspaceChanges(store()).recover("p", "tree", tree, false))
+        assertTrue(tree.files.values.all { it.toString(Charsets.UTF_8) == "foo" })
+        assertFalse(store().blocked("p"))
+    }
+
+    @Test fun completionFailureKeepsPauseEvenAfterAllSourcesWereWritten() {
+        var guardWrites = 0
+        val base = NioVfs(dir)
+        val io = object : Vfs by base {
+            override fun fsync(path: String) {
+                if (path.startsWith("workspace-guards/") && ++guardWrites > 2) throw IOException("отказ завершения")
+                base.fsync(path)
+            }
+        }
+        val tree = Tree()
+        assertIs<Outcome.Failure>(WorkspaceChanges(store(io)).apply("p", "tree", tree, plan()))
+        assertTrue(tree.files.values.all { it.toString(Charsets.UTF_8) == "bar" })
+        assertTrue(store().blocked("p"))
+        assertIs<Outcome.Success<Unit>>(WorkspaceChanges(store()).recover("p", "tree", tree, true))
+        assertFalse(store().blocked("p"))
+    }
+
     @Test fun pendingBlocksAnotherTransactionAndUndoRefusesExternalEdits() {
         val tree = Tree()
         assertIs<Outcome.Success<Unit>>(store().begin("p", "tree", files()))

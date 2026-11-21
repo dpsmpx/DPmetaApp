@@ -71,6 +71,25 @@ class LanguageSessionTest {
     }
 
     @Test
+    fun savedProjectEditUpdatesOpenDocumentsAndAnnouncesClosedFilesToBothServers() {
+        val (main, first) = client("""{"textDocumentSync":2}""")
+        val (helper, second) = client("""{"textDocumentSync":2}""")
+        val session = LanguageSession(main, helper)
+        assertTrue(session.open(uri, "python", "foo") is Outcome.Success)
+        val closed = "file:///p/util.py"
+        assertTrue(session.filesChanged(linkedMapOf(uri to "bar", closed to "bar")) is Outcome.Success)
+        for ((client, server) in listOf(main to first, helper to second)) {
+            assertEquals(2 to "bar", client.document(uri))
+            assertNull(client.document(closed))
+            await("изменения файлов") { "workspace/didChangeWatchedFiles" in server.methods() }
+            val changes = server.params("workspace/didChangeWatchedFiles")["changes"] as JsonArray
+            assertEquals(listOf(uri, closed), changes.items.map { ((it as JsonObject)["uri"] as JsonString).value })
+            assertTrue("textDocument/didSave" in server.methods())
+        }
+        main.stop(); helper.stop()
+    }
+
+    @Test
     fun pulledDiagnosticsFullAndUnchanged() {
         var unchanged = false
         val (client, _) = client("""{"diagnosticProvider":{"interFileDependencies":true,"workspaceDiagnostics":false}}""") { method, _ ->

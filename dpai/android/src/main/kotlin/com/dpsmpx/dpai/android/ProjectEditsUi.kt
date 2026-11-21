@@ -10,6 +10,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.res.stringResource
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
@@ -48,15 +49,16 @@ internal val LocalProjectEdits = staticCompositionLocalOf<ProjectEditPlace?> { n
 /** Весь набор, включая все замены; исходники ещё не записаны. */
 @Composable
 internal fun ProjectEditPreview(plan: WorkspaceEditPlan, busy: Boolean, note: String?, onApply: () -> Unit, onClose: () -> Unit) {
+    val indexes = remember(plan) { plan.files.associate { it.path to LineIndex(it.before) } }
     AlertDialog(onDismissRequest = { if (!busy) onClose() }, title = { Text(stringResource(R.string.project_edit_title, plan.files.size, plan.editCount)) },
         text = { Column {
             Text(stringResource(R.string.project_edit_copy), style = MaterialTheme.typography.bodySmall)
             note?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             LazyColumn {
-                items(plan.files, key = { it.path }) { file ->
-                    Text(file.path, style = MaterialTheme.typography.titleSmall)
-                    val index = LineIndex(file.before)
-                    for (edit in file.edits) {
+                for (file in plan.files) {
+                    item(key = "file:${file.path}") { Text(file.path, style = MaterialTheme.typography.titleSmall) }
+                    items(file.edits) { edit ->
+                        val index = indexes.getValue(file.path)
                         val start = index.offset(edit.range.start)
                         val end = index.offset(edit.range.end)
                         SelectionContainer { Text("${edit.range.start.line + 1}:${edit.range.start.character + 1}\n− ${if (start != null && end != null) file.before.substring(start, end) else "?"}\n+ ${edit.newText}", style = MaterialTheme.typography.bodySmall) }

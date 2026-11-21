@@ -20,6 +20,7 @@ open class DpaiApplication : Application() {
         // Восстановление из резервной копии (DPmetaApp:D-151) — до чтения настроек и хранилищ.
         AppBackups.applyPending(this)
         Drafts.install(this)
+        Controller.install(this)
         IdeState.install(this)
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityStopped(activity: android.app.Activity) { Drafts.flushNow(); IdeState.flush() }

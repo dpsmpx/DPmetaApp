@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="project_edit_title">Project edit: %1$d files, %2$d changes</string>
+    <string name="project_edit_title">Project edit: files: %1$d; changes: %2$d</string>
     <string name="project_edit_copy">An encrypted recovery copy is saved before writing. External changes cancel the write.</string>
     <string name="project_edit_save">Save all files</string>
     <string name="project_edit_recovery">Project edit recovery</string>
@@ -14,4 +14,23 @@
     <string name="project_edit_rename_hint">Review all affected files before saving. Save or discard manual edits first.</string>
     <string name="project_edit_need_index">Enable the C++ project index in the server toolbar before a project rename.</string>
     <string name="project_edit_saved">Files saved; project undo is available in the project file list</string>
+    <string name="app_name">DP AI Orcestrator</string>
+    <string name="editor_command_template">Single-file template for %1$s. It replaces this language command only after saving.\n\n%2$s</string>
+    <string name="terminal_problems">Errors: %1$s</string>
+    <string name="request_confirm_label">Confirm: %1$s?</string>
+    <string name="request_open_for_login">Opening the app for PIN authentication. If it stays closed, open it manually: the request is on the Requests screen.</string>
+    <string name="request_failed">Rejected: %1$s</string>
+    <string name="sora_editor_clip_text_length_too_large">Text is too large to copy</string>
+    <string name="sora_editor_diagnostics_more_actions">More actions…</string>
+    <string name="sora_editor_editor_formatting">Formatting code…</string>
+    <string name="sora_editor_editor_search_busy">Preparing editor…</string>
+    <string name="sora_editor_editor_search_replacing">Replacing text…</string>
+    <string name="sora_editor_last">Previous</string>
+    <string name="sora_editor_long_select">Extend selection</string>
+    <string name="sora_editor_more">More</string>
+    <string name="sora_editor_next">Next</string>
+    <string name="sora_editor_replace">Replace</string>
+    <string name="sora_editor_replaceAll">Replace all</string>
+    <string name="sora_editor_replacement">Replacement</string>
+    <string name="sora_editor_text_to_search">Search text</string>
 </resources>

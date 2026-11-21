@@ -178,6 +178,12 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
             }
             return
         }
+        val expected = edit.versions[session.uri]
+        val observed = session.ready()?.main?.document(session.uri)
+        if (expected != null && (observed == null || observed.first != expected || observed.second != before)) {
+            note = context.getString(R.string.project_edit_stale)
+            return
+        }
         when (val mine = Assist.editsForFile(edit, session.uri)) {
             is Outcome.Failure -> note = mine.diagnostics.first().message
             is Outcome.Success -> when {
@@ -490,9 +496,9 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                     note = if (synced is Outcome.Failure) synced.diagnostics.first().message else context.getString(R.string.project_edit_saved)
                 } else note = (result as Outcome.Failure).diagnostics.first().message
                 projectApplying = false
-                place.changed()
+                if (result is Outcome.Success) place.changed()
             }
-        }, onClose = { projectPlan = null; note = null })
+        }, onClose = { projectPlan = null; note = null; projectEdits?.changed?.invoke() })
     }
     renaming?.let { initial ->
         var name by remember(initial) { mutableStateOf(initial) }
