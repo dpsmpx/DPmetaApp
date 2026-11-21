@@ -31,7 +31,7 @@ class CodeServerSetupTest {
     fun scriptsParse() {
         val scripts = listOf(
             CodeServerSetup.pyrightInstall(),
-            (CodeServerSetup.kotlinInstall("263.7084.0", "aarch64") as Outcome.Success).value,
+            (CodeServerSetup.kotlinInstall("271.2085.0", "aarch64") as Outcome.Success).value,
             CodeServerSetup.kotlinFilesCommand(),
             CodeServerSetup.locate("/p", "/p/a.kt"),
         )
@@ -114,9 +114,9 @@ class CodeServerSetupTest {
     fun kotlinBuildAndCommandsAreChecked() {
         assertTrue(CodeServerSetup.kotlinInstall("1.2;rm", "aarch64") is Outcome.Failure)
         assertTrue(CodeServerSetup.kotlinInstall("263.9999.1", "aarch64") is Outcome.Failure)
-        assertTrue(CodeServerSetup.kotlinInstall("263.7084.0", "mips") is Outcome.Failure)
-        val install = (CodeServerSetup.kotlinInstall("263.7084.0", "aarch64") as Outcome.Success).value
-        assertEquals(listOf("/root/tools/ide/kotlin-lsp", "263.7084.0", KotlinLsp.archiveUrl("263.7084.0", "aarch64"), KotlinLsp.ROCKSDB_URL, KotlinLsp.ROCKSDB_SHA256, "librocksdbjni-linux-aarch64-musl.so", KotlinLsp.archiveSha256("aarch64")), install.drop(4))
+        assertTrue(CodeServerSetup.kotlinInstall("271.2085.0", "mips") is Outcome.Failure)
+        val install = (CodeServerSetup.kotlinInstall("271.2085.0", "aarch64") as Outcome.Success).value
+        assertEquals(listOf("/root/tools/ide/kotlin-lsp", "271.2085.0", KotlinLsp.archiveUrl("271.2085.0", "aarch64"), KotlinLsp.ROCKSDB_URL, KotlinLsp.ROCKSDB_SHA256, "librocksdbjni-linux-aarch64-musl.so", KotlinLsp.archiveSha256("aarch64")), install.drop(4))
         assertFalse("server.sha256" in install[2])
         assertEquals(KotlinLsp.PINNED_BUILD, KotlinLsp.productBuild("{\"buildNumber\":\"${KotlinLsp.PINNED_BUILD}\"}"))
         assertNull(KotlinLsp.productBuild("{\"buildNumber\":42}"))

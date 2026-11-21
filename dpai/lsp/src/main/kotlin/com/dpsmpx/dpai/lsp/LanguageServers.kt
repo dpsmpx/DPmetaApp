@@ -127,18 +127,18 @@ object KotlinLsp {
 
     const val RELEASES_LATEST: String = "https://github.com/Kotlin/kotlin-lsp/releases/latest"
     /** Проверенный дистрибутив: новые версии приходят только с обновлением APK (DPmetaApp:D-136). */
-    const val PINNED_BUILD: String = "263.7084.0"
+    const val PINNED_BUILD: String = "271.2085.0"
 
     fun archiveSha256(arch: String): String = when (arch) {
-        "aarch64" -> "450ab7c1d80e48106aa429b48cb4226d82ca12a8a2400447ae02386794780cac"
-        "x86_64" -> "ae0c4b01e17ab73a4a5227a78ea99e6dcbe3e499600315b22759a4e4cddd11df"
+        "aarch64" -> "877aee612a17dab48144466282a6414ec58ab428a10b97c7e13edd9b6b3dc96e"
+        "x86_64" -> "e398e799027f41749ea33faa57470307d13d40f910961858c7e30adbd778ae08"
         else -> throw IllegalArgumentException("архитектура $arch не поддержана")
     }
     private val BUILD = Regex("[0-9]{3}\\.[0-9]{1,6}\\.[0-9]{1,6}")
 
     /** Номер сборки из адреса страницы выпуска (`…/releases/tag/v263.7084.0`); иное — `null`. */
     fun build(location: String): String? {
-        val tag = location.trim().substringAfterLast("/releases/tag/", "").removePrefix("v")
+        val tag = location.trim().substringAfterLast("/releases/tag/", "").removePrefix("kotlin-lsp/").removePrefix("kotlin-lsp%2F").removePrefix("kotlin-lsp%2f").removePrefix("v")
         return tag.takeIf { BUILD.matches(it) }
     }
 
