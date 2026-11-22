@@ -47,6 +47,7 @@ include(
     ":tasks",
     ":sessions",
     ":verification",
+    ":automation",
     ":monitoring",
     ":notifications",
     ":connectors",

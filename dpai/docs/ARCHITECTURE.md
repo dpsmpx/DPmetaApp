@@ -76,6 +76,7 @@
 | `tasks` | задачи, очередь, приоритеты, DAG, политики, планировщик | `core`, `security`, `accounts`, `execution` | 7 |
 | `sessions` | реестр сессий, жизненный цикл, heartbeat, поток событий | `core`, `accounts`, `execution` | 6 |
 | `verification` | профили FAST/NORMAL/FULL, доказательства, адаптер DP-Verify | `core`, `execution`, `git` | 10 |
+| `automation` | общий каталог нынешних инструментов, схемы входов, проверка ревизии и OperationResult без своего worker (D-215) | `core`, `verification` | — |
 | `monitoring` | сводки, временная шкала, свежесть, устаревание, ресурсы, самодиагностика | `core`, `accounts`, `execution`, `sessions`, `tasks` | 11 |
 | `notifications` | категории, дедупликация, агрегация, cooldown, deep links, запросы человеку (D-44) | `core` | 12 |
 | `connectors` | GitHub и другие внешние сервисы | `core`, `security` | 15 |
@@ -85,7 +86,7 @@
 | `lsp` | клиент языковых служб редактора (D-137): кадры и JSON-RPC протокола LSP поверх потоков, документы с версиями, диагностика, дополнение, переходы, переименование, форматирование, правки текста в UTF-16; команда clangd; процессов не запускает, execution — только для живого теста с настоящим clangd | `core`, `execution` | — |
 | `sync` | облачная синхронизация (ТЗ, §4.1; D-107): копия состояния контура, зашифрованная на устройстве (PBKDF2-HMAC-SHA256, AES-256-GCM), архив с оглавлением и разрешёнными корнями, восстановление при запуске с сохранением прежних данных, клиент Git Data API к `api.github.com` для приватного репозитория; ядро без облака работает | `core`, `storage`, `providers` | — |
 | `analytics` | учёт использования провайдера; телеметрия приложения — отдельно | `core` | 11, 17 |
-| `orchestrator` | сборка системы: команды, сверка, восстановление, продолжение, полуавтономный режим | `storage`, `security`, `execution`, `accounts`, `git`, `contexts`, `tasks`, `sessions`, `verification`, `monitoring`, `notifications`, `connectors`, `analytics` | 13, 14, 16 |
+| `orchestrator` | сборка системы: команды, сверка, восстановление, продолжение, полуавтономный режим | `storage`, `security`, `execution`, `accounts`, `git`, `contexts`, `tasks`, `sessions`, `verification`, `automation`, `monitoring`, `notifications`, `connectors`, `analytics` | 13, 14, 16 |
 | `ui` | представление без платформы: состояния экранов, форматирование, разбор `dpai://`, приватные снимки редактора; команды установки и поиска языковых служб Python/Kotlin (D-142); подготовка проектных правок LSP с проверкой версий и путей, файловые инструменты API и обнаружение клонов без ручного target (D-214) | `orchestrator`, `lsp`, `files` | 11 |
 | `cli` | оболочка JVM: команда `dpai` | `orchestrator` | 0 |
 | `jsch` | SSH-хост на JVM (JSch) для targets там, где нет системного OpenSSH — приложение Android (D-35); интерактивная оболочка с PTY для терминала (D-71); файлы ПК по SFTP только для чтения (D-162); процесс-собеседник без PTY — адаптер отладки на ПК (D-164), lsp — только для живого теста отладки по SSH | `execution`, `files`, `lsp` | 11 |

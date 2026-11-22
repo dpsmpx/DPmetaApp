@@ -14,6 +14,7 @@ dependencies {
     api(project(":tasks"))
     api(project(":sessions"))
     api(project(":verification"))
+    api(project(":automation"))
     api(project(":monitoring"))
     api(project(":notifications"))
     api(project(":connectors"))
