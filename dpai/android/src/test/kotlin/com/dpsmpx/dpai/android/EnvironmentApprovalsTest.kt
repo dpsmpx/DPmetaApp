@@ -11,6 +11,7 @@ import com.dpsmpx.dpai.ui.AutomationPlan
 import com.dpsmpx.dpai.ui.DependencyAutomations
 import com.dpsmpx.dpai.execution.target.TargetPlatform
 import com.dpsmpx.dpai.ui.ProjectEntry
+import com.dpsmpx.dpai.ui.TargetForm
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -66,6 +67,22 @@ class EnvironmentApprovalsTest {
         val grant = answer.get(5, TimeUnit.SECONDS).valueOrNull()!!
         clock.advance(6.minutes)
         assertEquals(DiagCode.APPROVAL_INVALID, grant.consume(request.proposal).diagnostics.single().code)
+    }
+
+    @Test fun chatFullAccessIssuesBoundDangerousGrantWithoutPendingUiAndRevocationWins() {
+        val target = TargetForm.inApp(project.target, "Linux", "/root/.claude-slot-1").valueOrNull()!!
+        val enabled = AtomicBoolean(true)
+        val broker = EnvironmentApprovalBroker(clock, ids) { owner, p, t ->
+            enabled.get() && owner == "chat:actual" && p == project && t == target
+        }
+        val plan = command()
+        val grant = broker.await("chat:actual", project, plan, "revision", target = target) { false }.valueOrNull()!!
+        assertTrue(broker.pending.value.isEmpty(), "пользователь уже включил доступ к своему чату")
+        assertEquals(DiagCode.APPROVAL_INVALID, grant.consume(plan.proposal(project, "other-revision")).diagnostics.single().code)
+        assertIs<Outcome.Success<Unit>>(grant.consume(plan.proposal(project, "revision")))
+        val pendingGrant = broker.await("chat:actual", project, plan, "revision", target = target) { false }.valueOrNull()!!
+        enabled.set(false)
+        assertEquals(DiagCode.APPROVAL_REQUIRED, pendingGrant.consume(plan.proposal(project, "revision")).diagnostics.single().code)
     }
 
     @Test fun callWithoutHumanSurfaceIsRejected() {
