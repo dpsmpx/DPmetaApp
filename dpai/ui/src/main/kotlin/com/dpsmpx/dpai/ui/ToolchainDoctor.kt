@@ -60,7 +60,7 @@ object ToolchainDoctor {
             else -> "JVM не стартует: java -version завершился с ошибкой."
         }
         return Outcome.failure(DiagCode.EXECUTION_HOST_UNAVAILABLE,
-            "PRECHECK_FAILED: $reason Gradle не запускался; это не конфликт Git. Для APK выберите обычный SSH-target с работающими JDK и Android SDK. Вывод java: $message")
+            "PRECHECK_FAILED: $reason Gradle не запускался; это не конфликт Git. Для самостоятельной сборки на телефоне нужен APK DPmetaApp в режиме совместимости (targetSdk 28), затем работающий JDK 21 и Android SDK в Linux приложения. Альтернатива — SSH-target. Вывод java: $message")
     }
 
     private val cpp = """

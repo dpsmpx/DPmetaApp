@@ -154,9 +154,10 @@ Sysroot сборки proot — пакеты Alpine 3.24 `main` (в APK из ни
 
 | Что | Версия | SHA-256 | Откуда и как проверено |
 |---|---|---|---|
-| `commandlinetools-linux-16111833_latest.zip` | cmdline-tools 23.0 | `0877a1d048fe4a24efe2eff536ca4223f7adeb58648bb81909d33c446918cfa8` | `dl.google.com/android/repository`; SHA-1 `e025545c62a8e64c7559119566a569fb1dec5f60` совпал с манифестом `repository2-3.xml`, 15 ноября 2026 |
-| `platforms;android-36`, `build-tools;36.1.0`, `ndk;29.0.14206865` (x86_64) | — | суммы сверяет `sdkmanager` по манифесту Google | `dl.google.com` |
-| aapt2 и NDK для linux-arm64 | по выбору автора | вводит автор вместе с адресом | сборки сообщества; сессия их не закрепляет и не проверяет содержимое — только сумму |
+| `commandlinetools-linux-14742923_latest.zip` | cmdline-tools 20.0 | `04453066b540409d975c676d781da1477479dde3761310f1a7eb92a1dfb15af7` | `dl.google.com/android/repository`; архив и запуск `sdkmanager --version` проверены 23 ноября 2026. В 23.0 sdkmanager скачивает отдельный Android CLI; в 20.0 — запускается в JVM без CLI |
+| `platforms;android-37.0`, `build-tools;36.1.0`, `ndk;29.0.14206865` (x86_64) | — | суммы сверяет `sdkmanager` по манифесту Google | `dl.google.com`; для compileSdk 37 идентификатор платформы содержит `.0` |
+| `aapt2-arm64-v8a` | статический AndroidIDE-Dev platform-tools v35.0.2 | `db737b3bbee99dd8a9e56108cc05d032597874d3f8ac557a69f3c5de5efaf57f` | `https://github.com/AndroidIDE-Dev/platform-tools/releases/download/v35.0.2/aapt2-arm64-v8a`; SHA-256 GitHub Release + независимое скачивание и сверка 23 ноября 2026; AAPT2 из AOSP, Apache-2.0 |
+| NDK для linux-arm64, альтернативный AAPT2 | по выбору автора | вводит автор вместе с адресом | сборки сообщества; приложение сверяет SHA-256, совместимость доказывает отдельная проба |
 
 ## 5. Идеи из экосистемы
 

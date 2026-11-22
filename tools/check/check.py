@@ -219,15 +219,15 @@ def anchors(text):
 # ---- проверки ----
 
 def check_layout(repo, r):
-    """repo.layout — в корне только точки входа (`DPmeta:E-06`); workflow GitHub Actions нет (D-13)."""
+    """repo.layout — в корне только точки входа; для APK разрешён один workflow (D-187)."""
     entries = sorted({f.split("/", 1)[0] for f in repo.files})
     r.scanned = len(entries)
     for e in entries:
         if e not in ROOT_ALLOW:
             r.add(e, "в корне — только точки входа; перенести в свой каталог (CLAUDE.md, «Где что лежит»)")
     for f in repo.files:
-        if f.startswith(".github/workflows/"):
-            r.add(f, "GitHub Actions не используются (D-13)")
+        if f.startswith(".github/workflows/") and f != ".github/workflows/apk.yml":
+            r.add(f, "Разрешён только проверенный workflow APK (D-187)")
 
 
 def check_format(repo, r):

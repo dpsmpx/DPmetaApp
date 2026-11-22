@@ -37,7 +37,7 @@ class ManualProfileNeedsTest {
 
     @Test
     fun missingInGuestAndAndroidHome() {
-        val sdk = setOf(AndroidSdk.HOME + "/platforms/android-36", AndroidSdk.HOME + "/build-tools/36.1.0")
+        val sdk = setOf(AndroidSdk.HOME + "/platforms/${AndroidSdk.PLATFORM.substringAfter(';')}", AndroidSdk.HOME + "/build-tools/36.1.0")
         assertEquals(emptyList(), AndroidSdk.missing(emptySet(), { false }, false))
         assertEquals(listOf(AndroidSdk.PLATFORM, AndroidSdk.BUILD_TOOLS), AndroidSdk.missing(setOf(ManualNeed.ANDROID_SDK), { false }, false))
         assertEquals(emptyList(), AndroidSdk.missing(setOf(ManualNeed.ANDROID_SDK), { it in sdk }, false))

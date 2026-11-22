@@ -8,7 +8,7 @@
   * сумма дистрибутива Gradle в wrapper и SHA-256 gradle-wrapper.jar —
     те же, что в docs/PROVENANCE.md, §3;
   * каждый двоичный файл репозитория — в docs/PROVENANCE.md, §4 с той же суммой;
-  * нет workflow GitHub Actions (D-15).
+  * разрешён только workflow APK корневого DPmetaApp (DPmetaApp:D-187).
 
     python3 tools/verify/check_dependencies.py
 
@@ -74,7 +74,7 @@ def check():
             if PLUGIN_VERSION.search(text):
                 f.add(rel, "версия плагина мимо каталога gradle/libs.versions.toml")
         if rel.startswith(".github/workflows/"):
-            f.add(rel, "workflow GitHub Actions не используется (D-15)")
+            f.add(rel, "в подсистеме нельзя добавлять workflow; APK собирает DPmetaApp:D-187")
 
     prov = read(PROVENANCE)
     if os.path.isfile(os.path.join(root(), WRAPPER_PROPS)):

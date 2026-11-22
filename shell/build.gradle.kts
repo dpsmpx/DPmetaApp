@@ -20,6 +20,14 @@ val screenshots = providers.gradleProperty("dpmeta.screenshots").isPresent
 // Один проверенный образ на запуск; стандартные снимки сохраняют API 36.
 val testSdk = providers.gradleProperty("dpmeta.test.sdk").orElse("36").get()
 require(testSdk in setOf("30", "36")) { "dpmeta.test.sdk: поддерживаются закреплённые образы 30 и 36" }
+// Termux-compatible personal APK: Android blocks execve from writable app data
+// for targets >=29. Opt in explicitly: this changes Android permission and sandbox behavior.
+// A separate SELinux execmem failure is still subject to a real on-device JVM probe.
+// Never reduce minSdk (it controls which devices can install, not their SELinux domain).
+val onDeviceBuild = providers.gradleProperty("dpmeta.onDeviceBuild").orElse("false").get().let {
+    require(it == "true" || it == "false") { "dpmeta.onDeviceBuild: true или false" }
+    it == "true"
+}
 val robolectricImage: Configuration = configurations.create("robolectricAndroid") {
     isCanBeConsumed = false
     isTransitive = false
@@ -61,7 +69,7 @@ android {
     defaultConfig {
         applicationId = "com.dpsmpx.dpai"
         minSdk = 30
-        targetSdk = 36
+        targetSdk = if (onDeviceBuild) 28 else 36
         versionName = project.version.toString()
         versionCode = versionCodeOf(versionName!!)
         // Коммит сборки для «О программе» (F-50); без git (архив исходников) — «неизвестен».
@@ -87,8 +95,8 @@ android {
         checkDependencies = false
         // Подавления — с причиной в самом файле (JGit, D-65): байт-код библиотек в APK Lint смотрит и так.
         lintConfig = file("lint.xml")
-        // targetSdk 36 — как у отдельной сборки «AI» (DP_AI_Orcestrator: docs/PROVENANCE.md, §2):
-        // поднимается вместе с ней, иначе одно приложение вело бы себя по-разному в двух сборках.
+        // Обычная сборка — targetSdk 36. Для личной сборки, совместимой с Termux,
+        // -Pdpmeta.onDeviceBuild=true выбирает 28; minSdk остаётся 30.
         disable += "OldTargetApi"
     }
 }

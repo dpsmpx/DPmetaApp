@@ -109,6 +109,7 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
             for (t in ManualProfile.templates(kind)) TextButton(enabled = editable, onClick = {
                 rows.clear()
                 rows.addAll(t.steps.map { (n, c, s) -> StepRow(n, c, s) })
+                if (t.title == "APK Android") needsText = com.dpsmpx.dpai.ui.ManualNeed.ANDROID_SDK.code
                 note = "Шаблон «${t.title}» подставлен — проверьте команды и сохраните"
             }) { Text(t.title) }
         }
@@ -143,8 +144,10 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
         }
         Text("В Linux приложения нужное проверяется до запуска, ANDROID_HOME подставляется сам; на ПК — его SDK.", style = MaterialTheme.typography.bodySmall)
         if (view.target?.inApp == true && kind in setOf(ManualProfileKind.CHECK, ManualProfileKind.BUILD)) {
-            Text("Gradle/JVM: перед запуском приложение проверит реальный старт java. Если Android SELinux запрещает execmem, эта сборка на телефоне невозможна: " +
-                "используйте SSH-target с JDK и Android SDK. Установка JDK в proot не снимает запрет SELinux.",
+            val compatible = context.applicationInfo.targetSdkVersion <= 28
+            Text("APK внутри приложения: ${if (compatible) "режим совместимости с Termux включён (targetSdk 28)" else "этот APK имеет targetSdk 29+ — Android может запретить запуск JVM"}. " +
+                "В Linux установите openjdk21-jdk (Пакеты), затем «Android SDK…» (aapt2 ARM64 ставится автоматически); выберите шаблон «APK Android». " +
+                "Перед Gradle приложение проверяет реальный старт JVM. Нативные проекты с C/C++ требуют также ARM64 NDK. SSH-target — запасной вариант.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text("В командах и окружении: \${PROJECT}, \${ROOT}, \${TREE}, \${BRANCH}, \${TARGET} и свои \${ИМЯ}; сам знак \${ — \$\${.",

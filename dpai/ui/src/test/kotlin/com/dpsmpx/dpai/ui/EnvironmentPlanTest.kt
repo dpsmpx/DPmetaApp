@@ -45,6 +45,8 @@ class EnvironmentPlanTest {
         assertTrue(probe.contains("build-tools/37.0.0/source.properties"))
         assertEquals(plan.profile, ManualProfile.read(plan.profile.toJson()), "скрипты проходят сохранение без раскрытия shell-переменных")
         assertIs<Outcome.Failure>(EnvironmentPlan.create("environment.android_sdk", mapOf("api" to "37;echo")))
+        val current = EnvironmentPlan.create("environment.android_sdk", mapOf("api" to "37.0")).valueOrNull()!!
+        assertTrue(current.profile.steps.last().command.last().contains("platforms/android-37.0/android.jar"))
     }
 
     @Test fun installedSdkIsDiscoveredButExplicitConfigurationWins() {

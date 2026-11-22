@@ -39,10 +39,10 @@ object EnvironmentAutomations {
                         AutomationParameter("timeoutSeconds", "Предел ожидания в секундах: 1…3600", emptyList(), "120", text = true, maxLength = 4),
                         AutomationParameter("snapshot", "Снимок обязателен; skip — только для восстановления при нечитаемой базе с отдельным опасным подтверждением", listOf("required", "skip"), "required")),
                     platforms = setOf(TargetPlatform.POSIX), remote = false, cancellable = true, verification = "История, реальный id и коды шагов подтверждённой команды"),
-                AutomationDefinition("environment.android_sdk", "Установить Android SDK", "Закреплённый установщик; лицензию принимает человек. Официальные aapt2/NDK для Linux arm64 недоступны — это явно указано в выводе.",
+                AutomationDefinition("environment.android_sdk", "Установить Android SDK", "Закреплённый установщик; лицензию принимает человек. На ARM64 автоматически ставит проверенный статический aapt2 AndroidIDE; NDK нужен отдельно для проектов с C/C++.",
                     AutomationSource.ENVIRONMENT, AutomationCategory.ENVIRONMENT, Hashing.sha256(AndroidSdk.CMDLINE_SHA256 + "EnvironmentPlan.sdk:3").hex, ActionLevel.REVERSIBLE, listOf(root),
                     AutomationInvocation.DIRECT, available, reason, parameters = listOf(AutomationParameter("ndk", "Также запросить NDK", listOf("no", "yes"), "no"),
-                        AutomationParameter("api", "compileSdk проекта: номер Android API", emptyList(), AndroidSdk.PLATFORM.substringAfter("android-"), text = true, maxLength = 2),
+                        AutomationParameter("api", "compileSdk проекта: Android API (например 37.0)", emptyList(), AndroidSdk.PLATFORM.substringAfter("android-"), text = true, maxLength = 5),
                         AutomationParameter("buildTools", "Точная версия build-tools проекта", emptyList(), AndroidSdk.BUILD_TOOLS.substringAfter(';'), text = true, maxLength = 8)),
                     platforms = setOf(TargetPlatform.POSIX), remote = false, cancellable = true, verification = "Закреплённая сумма, код установщика и повторная диагностика")
             )

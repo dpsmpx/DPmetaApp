@@ -188,6 +188,7 @@ data class ManualProfile(
                     Triple("Сборка", "cmake --build build -j 2", "3600"),
                 )),
                 Template("Gradle", listOf(Triple("Сборка", "./gradlew assembleDebug", "3600"))),
+                Template("APK Android", listOf(Triple("APK (Gradle)", "./gradlew --no-daemon assembleDebug", "3600"))),
                 Template("Make", listOf(Triple("Сборка", "make -j2", "3600"))),
             )
             ManualProfileKind.CHECK -> listOf(

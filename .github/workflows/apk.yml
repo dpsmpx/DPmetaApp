@@ -1,0 +1,83 @@
+name: Verify and build DPmetaApp APK
+
+on:
+  push:
+    branches:
+      - main
+      - 'build/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Strict checks and two Android APK variants
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out exact source revision
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install required Android SDK components
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ANDROID_HOME:-}"
+          curl --fail --location --retry 3 --silent --show-error \
+            'https://dl.google.com/android/repository/commandlinetools-linux-14742923_latest.zip' \
+            -o "$RUNNER_TEMP/cmdline.zip"
+          printf '%s  %s\n' '04453066b540409d975c676d781da1477479dde3761310f1a7eb92a1dfb15af7' \
+            "$RUNNER_TEMP/cmdline.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/cmdline.zip" -d "$RUNNER_TEMP/sdktools"
+          "$RUNNER_TEMP/sdktools/cmdline-tools/bin/sdkmanager" --sdk_root="$ANDROID_HOME" \
+            --install 'platforms;android-37.0' 'build-tools;36.1.0' \
+            'ndk;28.2.13676358' 'cmake;3.22.1'
+      - name: Full repository verification
+        shell: bash
+        run: tools/check/run.sh full --strict
+      - name: Build standard APK for modern Android policies
+        shell: bash
+        env:
+          DPAI_RELEASE_DEBUG_KEY: '1'
+        run: |
+          set -euo pipefail
+          sh tools/build-apk.sh release
+          mkdir -p build/apk/standard
+          cp shell/build/outputs/apk/release/*.apk build/apk/standard/
+      - name: Build self-hosted studio APK (Termux-compatible)
+        shell: bash
+        env:
+          DPAI_ON_DEVICE_BUILD: '1'
+          DPAI_RELEASE_DEBUG_KEY: '1'
+        run: |
+          set -euo pipefail
+          sh tools/build-apk.sh release
+          mkdir -p build/apk/on-device
+          cp shell/build/outputs/apk/release/*.apk build/apk/on-device/
+          for apk in build/apk/on-device/*.apk; do
+            "$ANDROID_HOME/build-tools/36.1.0/aapt" dump badging "$apk" | grep -F "targetSdkVersion:'28'"
+          done
+      - name: Publish artifact checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          find build/apk -name '*.apk' -type f -print0 | sort -z | xargs -0 sha256sum > build/apk/SHA256SUMS
+          cat build/apk/SHA256SUMS
+      - name: Upload APKs and SHA-256 checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: DPmetaApp-apk-${{ github.sha }}
+          path: build/apk/
+          if-no-files-found: error
+          retention-days: 14

@@ -160,8 +160,9 @@ class LayoutTest(CheckCase):
     def test_master_spec_is_allowed_in_root(self):
         self.assertClean(self.sample({"MESTER_TECHNICAL_TASK_ROADMAP.md": "# Мастер-ТЗ\n"}).run("repo.layout"))
 
-    def test_workflow_is_forbidden(self):
-        self.assertCatches(self.sample({".github/workflows/ci.yml": "on: push\n"}).run("repo.layout"), "D-13")
+    def test_only_apk_workflow_is_allowed(self):
+        self.assertCatches(self.sample({".github/workflows/ci.yml": "on: push\n"}).run("repo.layout"), "D-187")
+        self.assertClean(self.sample({".github/workflows/apk.yml": "on: push\n"}).run("repo.layout"))
 
 
 COMMAND = ('[[command]]\nid = "x.y"\ntitle = "Т"\nproject = "*"\npath = "/bin/bash"\nargs = ["tools/check.sh"]\n'

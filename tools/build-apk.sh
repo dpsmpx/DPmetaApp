@@ -44,7 +44,13 @@ fi
 # Один SDK — и корню, и включённой сборке dpai/: каждая ищет его в своём local.properties.
 export ANDROID_HOME="$SDK"
 cd "$DIR"
-sh ./gradlew --console=plain "$MODULE:$TASK"
+if [ "${DPAI_ON_DEVICE_BUILD:-0}" = 1 ]; then
+  # Личный APK с разрешённым запуском Linux/JVM из каталога данных, как у Termux.
+  # Снижает targetSdk, не minSdk. Не предназначен для публикации в магазине.
+  sh ./gradlew --console=plain -Pdpmeta.onDeviceBuild=true "$MODULE:$TASK"
+else
+  sh ./gradlew --console=plain "$MODULE:$TASK"
+fi
 OUT="$OUT_DIR/build/outputs/apk/$MODE"
 ls "$OUT/"*.apk
 

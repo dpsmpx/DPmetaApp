@@ -34,8 +34,8 @@ object EnvironmentPlan {
                 val ndk = values["ndk"] == "yes"
                 val api = values["api"] ?: AndroidSdk.PLATFORM.substringAfter("android-")
                 val tools = values["buildTools"] ?: AndroidSdk.BUILD_TOOLS.substringAfter(';')
-                if (api.toIntOrNull() !in 21..99 || !Regex("[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}").matches(tools))
-                    return Outcome.failure(DiagCode.VALUE_INVALID, "нужны номер API 21…99 и точная версия build-tools")
+                if (!Regex("(?:[2-9][0-9])(?:\\.[0-9]{1,2})?").matches(api) || !Regex("[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}").matches(tools))
+                    return Outcome.failure(DiagCode.VALUE_INVALID, "нужен номер API 20…99 (можно 37.0) и точная версия build-tools")
                 return Outcome.success(AutomationPlan(id, "Android SDK", ActionLevel.REVERSIBLE,
                     ManualProfile(ManualProfileKind.DEPENDENCIES, listOf(
                         ManualStep("Пакеты для Android SDK", LinuxEnvironment.apk(LinuxEnvironment.Apk.ADD, AndroidSdk.packages).valueOrNull()!!.command, 900),
