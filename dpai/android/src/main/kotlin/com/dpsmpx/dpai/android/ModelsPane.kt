@@ -520,7 +520,8 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
     val fullAccessName = projectForAccess?.root?.trimEnd('/')?.substringAfterLast('/')
     val fullAccessTarget = projectForAccess?.let { project -> Controller.get(context.filesDir).targets().firstOrNull { it.id == project.target }?.label }
     val fullAccessTitle = androidx.compose.ui.res.stringResource(R.string.chat_full_access_title)
-    LaunchedEffect(c.project) { fullAccess = ModelsStore.chatFullAccess(c.id) }
+    val fullAccessScope = ModelsStore.chatFullAccessScope(c.id)
+    LaunchedEffect(c.project, fullAccessScope) { fullAccess = ModelsStore.chatFullAccess(c.id) }
     // Файлы к вопросу (D-99): только выбором человека; текст уходит провайдеру вместе с вопросом.
     var files by remember(c.id.value) { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     val attach = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
@@ -555,9 +556,14 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
         },
         confirmButton = {
             TextButton(enabled = !authenticating && typedFullAccess == fullAccessName, onClick = {
+                val scopeBeforeAuth = ModelsStore.chatFullAccessScope(c.id)
+                if (scopeBeforeAuth == null) {
+                    note = context.getString(R.string.chat_full_access_failed)
+                    return@TextButton
+                }
                 authenticating = true
                 DeviceConfirm.ask(context, fullAccessTitle, onOk = {
-                    val ok = ModelsStore.enableChatFullAccess(c.id, typedFullAccess)
+                    val ok = ModelsStore.enableChatFullAccess(c.id, typedFullAccess, scopeBeforeAuth)
                     fullAccess = ModelsStore.chatFullAccess(c.id)
                     authenticating = false
                     if (ok && fullAccess) showFullAccess = false
