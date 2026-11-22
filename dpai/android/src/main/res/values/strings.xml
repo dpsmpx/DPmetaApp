@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="env_tools_probe">Проверить инструменты запуском</string>
+    <string name="env_linux_command">Команда в Linux приложения</string>
+    <string name="env_sdk_install">Установить Android SDK</string>
     <string name="app_name">DP AI Orcestrator</string>
     <string name="editor_command_template">Шаблон одного файла %1$s. Он заменит команду этого языка только после сохранения.\n\n%2$s</string>
     <string name="terminal_problems">Ошибки: %1$s</string>

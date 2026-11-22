@@ -74,7 +74,7 @@ object AndroidSdk {
      * Итог — строка `DPAI_ANDROID_SDK_OK`; ошибки — строками `DPAI_ANDROID_…`.
      */
     fun install(licenses: Boolean, ndk: Boolean, aapt2: Community?, ndkCommunity: Community?, platform: String = PLATFORM, buildTools: String = BUILD_TOOLS): List<String> {
-        require(Regex("platforms;android-[0-9]{2}").matches(platform) && Regex("build-tools;[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}").matches(buildTools)) { "нужны точные идентификаторы Android SDK" }
+        requireVersions(platform, buildTools)
         // Адрес и сумма идут в скрипт: проверка — и здесь, конструктор Community открыт (проверка PR #190).
         for (c in listOfNotNull(aapt2, ndkCommunity)) require(URL.matches(c.url) && SHA.matches(c.sha256)) { "сборка сообщества — только через community()" }
         val script = buildString {
@@ -130,6 +130,32 @@ object AndroidSdk {
             appendLine("printf 'DPAI_ANDROID_SDK_OK %s\\n' \"\$SDK\"")
         }
         return listOf("/bin/sh", "-c", script)
+    }
+
+    /** Успех установки не доказывает наличие запрошенной платформы и запуск нативных инструментов. */
+    fun probe(platform: String, buildTools: String, ndk: Boolean): List<String> {
+        requireVersions(platform, buildTools)
+        return listOf("/bin/sh", "-c", buildString {
+            appendLine("set -eu")
+            appendLine("SDK=\${ANDROID_HOME:-'$HOME'}")
+            appendLine("test -f \"\$SDK/platforms/${platform.substringAfter(';')}/android.jar\" || { echo 'DPAI_ANDROID_PLATFORM_MISSING: $platform'; exit 1; }")
+            appendLine("test -f \"\$SDK/build-tools/${buildTools.substringAfter(';')}/source.properties\" || { echo 'DPAI_ANDROID_BUILD_TOOLS_MISSING: $buildTools'; exit 1; }")
+            appendLine("\"\$SDK/cmdline-tools/latest/bin/sdkmanager\" --version")
+            appendLine("AAPT=\"\$SDK/dpai/aapt2\"")
+            appendLine("test -x \"\$AAPT\" || AAPT=\"\$SDK/build-tools/${buildTools.substringAfter(';')}/aapt2\"")
+            appendLine("\"\$AAPT\" version || { echo 'DPAI_ANDROID_AAPT2: не запускается на этом процессоре; нужен совместимый aapt2 или ПК-target'; exit 1; }")
+            if (ndk) {
+                appendLine("CLANG=''")
+                appendLine("for c in \"\$SDK/ndk/${NDK.substringAfter(';')}\"/toolchains/llvm/prebuilt/*/bin/clang \"\$SDK/ndk/community\"/toolchains/llvm/prebuilt/*/bin/clang; do test ! -x \"\$c\" || CLANG=\"\$c\"; done")
+                appendLine("test -n \"\$CLANG\" || { echo 'DPAI_ANDROID_NDK_MISSING: нужен совместимый NDK или ПК-target'; exit 1; }")
+                appendLine("\"\$CLANG\" --version")
+            }
+            appendLine("echo 'DPAI_ANDROID_TOOLS_OK: $platform $buildTools'")
+        })
+    }
+
+    private fun requireVersions(platform: String, buildTools: String) {
+        require(Regex("platforms;android-[0-9]{2}").matches(platform) && Regex("build-tools;[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}").matches(buildTools)) { "нужны точные идентификаторы Android SDK" }
     }
 
     /** SDK после установки виден следующим командам без ручного ANDROID_HOME; свой путь сильнее. */

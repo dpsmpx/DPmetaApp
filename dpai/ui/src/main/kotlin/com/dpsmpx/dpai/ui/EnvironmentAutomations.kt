@@ -20,8 +20,8 @@ object EnvironmentAutomations {
             ActionLevel.READ, listOf(root), AutomationInvocation.DIRECT, available, reason, platforms = setOf(TargetPlatform.POSIX),
             remote = false, deterministic = true, idempotent = true, verification = "Факты из базы apk; отсутствие данных не является успехом", triggers = setOf("MANUAL", "AI"))) +
             LinuxEnvironment.Apk.entries.map { op -> AutomationDefinition("environment.apk.${op.name.lowercase()}", op.name,
-                "Прежняя операция менеджера пакетов; выбор пакетов, снимок и подтверждение — на экране окружения.",
-                AutomationSource.ENVIRONMENT, AutomationCategory.ENVIRONMENT, Hashing.sha256(op.descriptionHash + ToolchainDoctor.sourceHash + "EnvironmentPlan:2").hex,
+                "Штатная операция менеджера пакетов; прямой план подтверждается в приложении, остальные действия — на экране окружения.",
+                AutomationSource.ENVIRONMENT, AutomationCategory.ENVIRONMENT, Hashing.sha256(op.descriptionHash + ToolchainDoctor.sourceHash + "EnvironmentPlan:3").hex,
                 if (op in setOf(LinuxEnvironment.Apk.UPDATE, LinuxEnvironment.Apk.LIST_UPGRADES)) ActionLevel.READ else ActionLevel.REVERSIBLE, listOf(root),
                 if (op in EnvironmentPlan.packageActions) AutomationInvocation.DIRECT else AutomationInvocation.OPEN_UI, available, reason,
                 parameters = if (op in setOf(LinuxEnvironment.Apk.ADD, LinuxEnvironment.Apk.FIX, LinuxEnvironment.Apk.REPAIR, LinuxEnvironment.Apk.UPGRADE_SOME))
@@ -40,7 +40,7 @@ object EnvironmentAutomations {
                         AutomationParameter("snapshot", "Снимок обязателен; skip — только для восстановления при нечитаемой базе с отдельным опасным подтверждением", listOf("required", "skip"), "required")),
                     platforms = setOf(TargetPlatform.POSIX), remote = false, cancellable = true, verification = "История, реальный id и коды шагов подтверждённой команды"),
                 AutomationDefinition("environment.android_sdk", "Установить Android SDK", "Закреплённый установщик; лицензию принимает человек. Официальные aapt2/NDK для Linux arm64 недоступны — это явно указано в выводе.",
-                    AutomationSource.ENVIRONMENT, AutomationCategory.ENVIRONMENT, Hashing.sha256(AndroidSdk.CMDLINE_SHA256).hex, ActionLevel.REVERSIBLE, listOf(root),
+                    AutomationSource.ENVIRONMENT, AutomationCategory.ENVIRONMENT, Hashing.sha256(AndroidSdk.CMDLINE_SHA256 + "EnvironmentPlan.sdk:3").hex, ActionLevel.REVERSIBLE, listOf(root),
                     AutomationInvocation.DIRECT, available, reason, parameters = listOf(AutomationParameter("ndk", "Также запросить NDK", listOf("no", "yes"), "no"),
                         AutomationParameter("api", "compileSdk проекта: номер Android API", emptyList(), AndroidSdk.PLATFORM.substringAfter("android-"), text = true, maxLength = 2),
                         AutomationParameter("buildTools", "Точная версия build-tools проекта", emptyList(), AndroidSdk.BUILD_TOOLS.substringAfter(';'), text = true, maxLength = 8)),

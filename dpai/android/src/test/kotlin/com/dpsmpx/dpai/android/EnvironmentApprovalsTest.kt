@@ -71,6 +71,12 @@ class EnvironmentApprovalsTest {
         assertTrue(broker.pending.value.isEmpty())
     }
 
+    @Test fun declinedPlanDoesNotIssueAGrant() = waiting(command()) { broker, request, answer, _ ->
+        assertTrue(broker.answer("test", request.id, false))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, answer.get(5, TimeUnit.SECONDS).diagnostics.single().code)
+        assertFalse(broker.answer("test", request.id, true, "project"))
+    }
+
     private fun command() = EnvironmentPlan.create("environment.command", mapOf("argv" to "[\"java\",\"-version\"]")).valueOrNull()!!
     private fun waiting(plan: EnvironmentPlan, block: (EnvironmentApprovalBroker, EnvironmentApprovalBroker.Request,
         CompletableFuture<Outcome<EnvironmentApprovalBroker.Grant?>>, AtomicBoolean) -> Unit) {

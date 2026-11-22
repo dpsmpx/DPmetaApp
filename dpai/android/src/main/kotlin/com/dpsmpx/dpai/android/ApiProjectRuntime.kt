@@ -345,9 +345,11 @@ internal object ApiProjectRuntime {
                     is Outcome.Failure -> return Outcome.failure(DiagCode.STATE_CONFLICT, completed.first.note)
                     is Outcome.Success -> r.value
                 }
-                evidence(output)
+                val finding = if (environment) com.dpsmpx.dpai.ui.ToolchainDoctor.explain(view.output) else null
+                val details = if (finding == null) output else JsonObject(output.fields + mapOf("finding" to JsonString(finding.first), "explanation" to JsonString(finding.second)))
+                evidence(details)
                 if (environment && view.results.isNotEmpty()) CodeService.dependenciesChanged(project.root, context.getString(R.string.env_changed_refresh))
-                return if (view.complete) Outcome.success(output) else Outcome.failure(DiagCode.PROCESS_EXIT_NONZERO, completed.first.note, prepared.get()?.value)
+                return if (view.complete) Outcome.success(details) else Outcome.failure(DiagCode.PROCESS_EXIT_NONZERO, completed.first.note, prepared.get()?.value)
             }
             profileCancel.cancel()
             return Outcome.failure(DiagCode.PROCESS_TIMEOUT, "ожидание профиля истекло; остановка запрошена, результат ещё не подтверждён")

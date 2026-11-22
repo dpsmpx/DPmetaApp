@@ -161,6 +161,9 @@ private fun automationTitle(d: AutomationDefinition): String = when (d.id) {
     "manual.run" -> stringResource(R.string.automation_launch)
     "manual.dependencies" -> stringResource(R.string.dependencies_title)
     "environment.inspect" -> stringResource(R.string.automation_inspect)
+    "environment.probe" -> stringResource(R.string.env_tools_probe)
+    "environment.command" -> stringResource(R.string.env_linux_command)
+    "environment.android_sdk" -> stringResource(R.string.env_sdk_install)
     else -> when (d.source) {
         AutomationSource.VERIFICATION -> stringResource(R.string.automation_verification_level, d.title)
         AutomationSource.ENVIRONMENT -> stringResource(R.string.automation_package_operation, d.title)

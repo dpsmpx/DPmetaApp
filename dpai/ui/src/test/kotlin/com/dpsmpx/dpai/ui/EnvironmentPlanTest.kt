@@ -40,6 +40,10 @@ class EnvironmentPlanTest {
         val script = plan.profile.steps.single { AndroidSdk.CMDLINE_URL in it.command.last() }.command.last()
         assertTrue(script.contains("'platforms;android-37' 'build-tools;37.0.0'"))
         assertTrue(script.contains(AndroidSdk.CMDLINE_SHA256))
+        val probe = plan.profile.steps.last().command.last()
+        assertTrue(probe.contains("platforms/android-37/android.jar"))
+        assertTrue(probe.contains("build-tools/37.0.0/source.properties"))
+        assertEquals(plan.profile, ManualProfile.read(plan.profile.toJson()), "скрипты проходят сохранение без раскрытия shell-переменных")
         assertIs<Outcome.Failure>(EnvironmentPlan.create("environment.android_sdk", mapOf("api" to "37;echo")))
     }
 

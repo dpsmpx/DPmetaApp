@@ -1,13 +1,20 @@
 package com.dpsmpx.dpai.ui
 
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.execution.process.LocalProcessHost
+import com.dpsmpx.dpai.execution.process.ProcessSpec
+import com.dpsmpx.dpai.execution.process.run
+import java.nio.file.Path
+import org.junit.jupiter.api.io.TempDir
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 /** Android SDK по желанию (D-185): официальное по закреплённой сумме, сообщество — по сумме автора. */
 class AndroidSdkTest {
+    @TempDir lateinit var dir: Path
     private val sha = "ab".repeat(32)
 
     @Test
@@ -35,5 +42,25 @@ class AndroidSdkTest {
         assertTrue(AndroidSdk.community("https://example.org/a'; rm -rf /", sha, "aapt2") is Outcome.Failure, "без кавычек и пробелов")
         assertTrue(AndroidSdk.community("https://example.org/a", "xyz", "aapt2") is Outcome.Failure)
         assertEquals(sha, (AndroidSdk.community(" https://example.org/a ", sha.uppercase(), "aapt2") as Outcome.Success).value?.sha256)
+    }
+
+    @Test fun exactRequestedComponentsAndNativeExecutablesMustWork() {
+        val sdk = dir.toFile()
+        fun file(path: String, text: String = "") = sdk.resolve(path).apply { parentFile.mkdirs(); writeText(text) }
+        fun executable(path: String, code: Int) = file(path, "#!/bin/sh\nexit $code\n").apply { assertTrue(setExecutable(true)) }
+        fun probe(ndk: Boolean = false) = LocalProcessHost().run(ProcessSpec(AndroidSdk.probe("platforms;android-37", "build-tools;37.0.0", ndk),
+            sdk.path, System.getenv() + ("ANDROID_HOME" to sdk.path)), 10.seconds).valueOrNull()!!
+        file("platforms/android-36/android.jar")
+        assertTrue(probe().stdout.any { "PLATFORM_MISSING" in it }, "другая установленная платформа не заменяет запрошенную")
+        file("platforms/android-37/android.jar")
+        file("build-tools/37.0.0/source.properties")
+        executable("cmdline-tools/latest/bin/sdkmanager", 0)
+        executable("build-tools/37.0.0/aapt2", 126)
+        assertFalse(probe().ok, "успех sdkmanager не скрывает несовместимый aapt2")
+        executable("build-tools/37.0.0/aapt2", 0)
+        assertTrue(probe().ok)
+        assertFalse(probe(ndk = true).ok, "запрошенный NDK обязателен")
+        executable("ndk/${AndroidSdk.NDK.substringAfter(';')}/toolchains/llvm/prebuilt/linux-x86_64/bin/clang", 0)
+        assertTrue(probe(ndk = true).ok)
     }
 }
