@@ -27,6 +27,15 @@ JUnit замеров — `tests/integration/build/test-results/performanceTest/`
 текстовые числа текущего прогона — `tests/integration/build/perf/results.txt`.
 Выносливость остаётся в обычной `test` и включается явно, как прежде.
 
+Живые пробы окружения D-216 проверяет `ToolchainDoctorTest`: на хосте
+нужны `python3` со стандартными модулями ssl/sqlite3 и рабочий `c++`
+с заголовками и стандартной библиотекой. Это требования тестового хоста,
+а не предположение о готовности гостя. `EnvironmentFlowTest` запускает
+настоящий агент без Git и проверяет отказ JVM после успешного apk;
+внешние apk/JVM там заменены образцами процессов. Одобрение человека
+проверяет `EnvironmentApprovalsTest`, Android/proot — приёмка в TODO
+приложения, а не эти хостовые тесты.
+
 ## 2. Детерминизм
 
 - Время — `ManualClock`: `now()`, `advance()`; `Thread.sleep` в тестах
