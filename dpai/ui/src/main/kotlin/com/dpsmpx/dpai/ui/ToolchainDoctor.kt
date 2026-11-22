@@ -46,16 +46,22 @@ object ToolchainDoctor {
             lib.mprotect.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int]
             lib.munmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
             n = os.sysconf('SC_PAGE_SIZE')
+            selinux = None
+            try:
+                with open('/proc/self/attr/current', 'r', encoding='utf-8') as label:
+                    selinux = label.read(256).strip()
+            except OSError:
+                pass
             p = lib.mmap(None, n, mmap.PROT_READ | mmap.PROT_WRITE, mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS, -1, 0)
             if p == ctypes.c_void_p(-1).value:
-                print(json.dumps({'pageSize':n, 'mmapErrno':ctypes.get_errno()})); sys.exit(1)
+                print(json.dumps({'pageSize':n, 'mmapErrno':ctypes.get_errno(), 'selinuxContext':selinux})); sys.exit(1)
             try:
                 ctypes.set_errno(0)
                 rwx = lib.mprotect(p, n, mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
                 rwx_error = ctypes.get_errno() if rwx else 0
                 ctypes.set_errno(0)
                 rx = lib.mprotect(p, n, mmap.PROT_READ | mmap.PROT_EXEC)
-                print(json.dumps({'pageSize':n, 'rwxErrno':rwx_error, 'rxErrno':ctypes.get_errno() if rx else 0}))
+                print(json.dumps({'pageSize':n, 'rwxErrno':rwx_error, 'rxErrno':ctypes.get_errno() if rx else 0, 'selinuxContext':selinux}))
                 sys.exit(1 if rwx else 0)
             finally:
                 lib.munmap(p, n)
@@ -142,6 +148,8 @@ object ToolchainDoctor {
 
     /** HotSpot check_pax проверяет mmap/mprotect, но не определяет установленный модуль PaX. */
     fun explain(output: String): Pair<String, String>? = when {
+        output.contains("u:r:untrusted_app:") && Regex("""["]rwxErrno["]\\s*:\\s*(1|13)\\b""").containsMatchIn(output) ->
+            "ANDROID_SELINUX_EXECMEM" to "Проба mprotect RW→RWX получила EPERM/EACCES в домене Android untrusted_app. Это согласуется с запретом исполняемой памяти политикой SELinux; proot и uid=0 не меняют домен. Обычная JVM и Gradle здесь не запустятся: выберите execution target с работающей JVM (например SSH ПК)."
         output.contains("Failed to mark memory page as executable", ignoreCase = true) -> "JVM_EXECUTABLE_MEMORY" to
             "JVM получила отказ при переводе памяти в исполняемую (mprotect). Причина ещё не установлена: это не доказательство PaX/grsecurity. Запросите java_debug и memory для errno и размера страниц. Paxctl или смена ядра без этих данных не являются подтверждённым исправлением."
         output.contains("Could not reserve enough space", ignoreCase = true) || output.contains("Native memory allocation", ignoreCase = true) -> "JVM_MEMORY" to
