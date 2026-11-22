@@ -71,12 +71,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Вкладка «Модели» (D-98): API-профили по ключу и чат с моделью. Задачи
- * оркестратора по-прежнему исполняет Claude Code по подписке (D-29) —
- * профили для них не выбираются.
+ * Единое окно чатов (D-219): API-переписки и сессии терминальных исполнителей.
+ * Хранилища и исполнительные механизмы остаются прежними.
  */
 @Composable
-fun ModelsPane() {
+fun ModelsPane(controller: Controller, model: DemoModel, onSession: (ExecutorChat) -> Unit) {
     val context = LocalContext.current
     val ready by ModelsStore.ready.collectAsState()
     LaunchedEffect(Unit) {
@@ -94,6 +93,10 @@ fun ModelsPane() {
     val undo = LocalUndo.current
     val running by ModelsStore.running.collectAsState()
     val problem by ModelsStore.problem.collectAsState()
+    var executorChats by remember { mutableStateOf<List<ExecutorChat>>(emptyList()) }
+    Poll(periodMs = 5_000) { executorChats = withContext(Dispatchers.IO) { model.executorChats() } }
+    var creatingTask by remember { mutableStateOf(false) }
+    var showProfiles by rememberSaveable { mutableStateOf(false) }
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     val requestedChat by ApiQuickStartRequests.chat.collectAsState()
     LaunchedEffect(requestedChat) { requestedChat?.let { open = it; ApiQuickStartRequests.chat.value = null } }
@@ -105,7 +108,7 @@ fun ModelsPane() {
     if (conv != null) {
         // Системный «назад» из разговора — к списку «Моделей» (AI:A-2).
         androidx.activity.compose.BackHandler { open = null }
-        ChatPane(conv, profiles.firstOrNull { it.id == conv.profile }, running[conv.id]) { open = null }
+        ChatPane(conv, profiles.firstOrNull { it.id == conv.profile }, profiles, running[conv.id], controller, model) { open = null }
         return
     }
     profiles.firstOrNull { it.id.value == usageOf }?.let { p ->
@@ -115,21 +118,48 @@ fun ModelsPane() {
     }
     LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
+            Text("Все чаты", style = MaterialTheme.typography.titleLarge)
             Text(
                 androidx.compose.ui.res.stringResource(R.string.api_work_models_intro),
                 style = MaterialTheme.typography.bodySmall,
             )
             problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-            androidx.compose.material3.Button(onClick = { ApiQuickStartRequests.request() }) { Text(androidx.compose.ui.res.stringResource(R.string.api_work_title)) }
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                androidx.compose.material3.Button(onClick = { ApiQuickStartRequests.request() }) { Text("API-чат с проектом") }
+                androidx.compose.material3.FilledTonalButton(onClick = { creatingTask = true }) { Text("Чат CLI / задача") }
+            }
+            val terminal = controller.targets().filter { it.configDir != null }.map { it.executor.title }.distinct()
+            Text("Подключены: " + (profiles.map { it.name } + terminal).distinct().ifEmpty { listOf("пока никого") }.joinToString(" · "),
+                style = MaterialTheme.typography.labelSmall)
+        }
+        if (chats.isNotEmpty()) item { Text("API-разговоры", style = MaterialTheme.typography.titleMedium) }
+        items(chats.reversed().filter { undo?.hidden?.containsKey("chat:${it.id.value}") != true }, key = { "c:${it.id.value}" }) { c ->
+            val p = profiles.firstOrNull { it.id == c.profile }
+            ChatRow(c, p, running[c.id] != null) { open = c.id.value }
+        }
+        if (executorChats.isNotEmpty()) item { Text("Сессии CLI · все проекты", style = MaterialTheme.typography.titleMedium) }
+        items(executorChats, key = { "cli:${it.session.value}" }) { c ->
+            Row(Modifier.fillMaxWidth().clickable { onSession(c) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(c.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${c.executor.title} · ${c.target}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text("Открыть", style = MaterialTheme.typography.labelMedium)
+            }
+        }
+        item {
+            TextButton(onClick = { showProfiles = !showProfiles }) { Text(if (showProfiles) "Скрыть исполнителей и настройки ▾" else "Исполнители и настройки ▸") }
+        }
+        if (showProfiles) item {
             // «Добавить профиль» — заметной кнопкой, а не текстом под пояснением (AI:A-26).
             androidx.compose.material3.FilledTonalButton(onClick = { creating = true }, modifier = Modifier.padding(top = 4.dp)) { Text("Добавить профиль") }
         }
-        if (profiles.isEmpty()) item { Text("Профилей нет: добавьте ключ Anthropic, OpenAI-совместимого провайдера или Gemini.", style = MaterialTheme.typography.bodySmall) }
-        items(profiles, key = { "p:${it.id.value}" }) { p ->
+        if (showProfiles && profiles.isEmpty()) item { Text("Профилей нет: добавьте ключ Anthropic, OpenAI-совместимого провайдера или Gemini.", style = MaterialTheme.typography.bodySmall) }
+        if (showProfiles) items(profiles, key = { "p:${it.id.value}" }) { p ->
             ProfileCard(p, onChat = { open = ModelsStore.newChat(p).id.value }, onEdit = { editing = p }, onUsage = { usageOf = p.id.value })
         }
         // Локальная модель на телефоне (D-105) — здесь, рядом с профилем «Телефон: llama.cpp» (`DP_AI_Orcestrator:D-113`).
-        item(key = "local-model") {
+        if (showProfiles) item(key = "local-model") {
             androidx.compose.material3.Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     LocalModelSection()
@@ -139,7 +169,7 @@ fun ModelsPane() {
         }
         // Локальный ИИ (D-105): какой профиль на этом устройстве или в частной сети спрашивать о подсказках.
         val local = LocalHints.candidates(profiles)
-        if (local.isNotEmpty()) {
+        if (showProfiles && local.isNotEmpty()) {
             item {
                 var chosen by remember(profiles) { mutableStateOf<com.dpsmpx.dpai.core.ids.AccountId?>(null) }
                 // Выбор читается из настроек в фоне, не на главном потоке.
@@ -150,13 +180,8 @@ fun ModelsPane() {
                 }
             }
         }
-        if (chats.isNotEmpty()) item { Text("Разговоры", style = MaterialTheme.typography.titleMedium) }
-        // Удалённый, но ещё не подтверждённый снэкбаром — не виден (AI:A-4).
-        items(chats.reversed().filter { undo?.hidden?.containsKey("chat:${it.id.value}") != true }, key = { "c:${it.id.value}" }) { c ->
-            val p = profiles.firstOrNull { it.id == c.profile }
-            ChatRow(c, p, running[c.id] != null) { open = c.id.value }
-        }
     }
+    if (creatingTask) NewTaskDialog(model) { creatingTask = false }
     if (creating || editing != null) {
         ProfileDialog(editing) {
             creating = false
@@ -506,12 +531,16 @@ private fun kindName(k: ProviderKind): String = when (k) {
 
 /** Чат с моделью профиля: ответ идёт кусками; «Стоп» прерывает его. */
 @Composable
-private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?, onBack: () -> Unit) {
+private fun ChatPane(c: Conversation, p: ApiProfile?, profiles: List<ApiProfile>, live: ModelsStore.Running?,
+                     controller: Controller, model: DemoModel, onBack: () -> Unit) {
     EnvironmentApprovalUi(EnvironmentApprovalBroker.chat(c.id.value))
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var input by rememberSaveable(c.id.value) { mutableStateOf("") }
     var note by remember { mutableStateOf<String?>(null) }
+    var pickingTarget by remember(c.id.value) { mutableStateOf(false) }
+    var choosingExecutor by remember(c.id.value) { mutableStateOf(false) }
+    var transferring by remember(c.id.value) { mutableStateOf(false) }
     var fullAccess by remember(c.id.value) { mutableStateOf(ModelsStore.chatFullAccess(c.id)) }
     var showFullAccess by remember(c.id.value) { mutableStateOf(false) }
     var typedFullAccess by remember(c.id.value) { mutableStateOf("") }
@@ -520,8 +549,62 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
     val fullAccessName = projectForAccess?.root?.trimEnd('/')?.substringAfterLast('/')
     val fullAccessTarget = projectForAccess?.let { project -> Controller.get(context.filesDir).targets().firstOrNull { it.id == project.target }?.label }
     val fullAccessTitle = androidx.compose.ui.res.stringResource(R.string.chat_full_access_title)
+    val fullAccessFailed = androidx.compose.ui.res.stringResource(R.string.chat_full_access_failed)
     val fullAccessScope = ModelsStore.chatFullAccessScope(c.id)
     LaunchedEffect(c.project, fullAccessScope) { fullAccess = ModelsStore.chatFullAccess(c.id) }
+    if (pickingTarget) ChatTargetPicker(controller, projectForAccess, onPick = { project ->
+        note = ModelsStore.connectProject(c.id, project.project)
+        if (note == null) pickingTarget = false
+    }, onDismiss = { pickingTarget = false })
+    if (choosingExecutor) AlertDialog(
+        onDismissRequest = { if (!transferring) choosingExecutor = false },
+        title = { Text("Сменить исполнителя") },
+        text = {
+            Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("API-профиль продолжит эту переписку. При передаче терминальному исполнителю будет создана задача с ограниченным контекстом. Секреты, полномочия и «Полный доступ» не передаются.", style = MaterialTheme.typography.bodySmall)
+                for (profile in profiles) {
+                    TextButton(enabled = live == null && !transferring, onClick = {
+                        note = ModelsStore.switchProfile(c.id, profile.id)
+                        if (note == null) choosingExecutor = false
+                    }) { Text("API · ${profile.name}" + if (p?.id == profile.id) " ✓" else "") }
+                }
+                for (executor in com.dpsmpx.dpai.core.ids.Executor.entries) {
+                    TextButton(enabled = live == null && !transferring && projectForAccess != null, onClick = {
+                        val project = c.project ?: return@TextButton
+                        transferring = true
+                        scope.launch {
+                            val outcome = withContext(Dispatchers.IO) {
+                                val chosen = model.selectProject(project)
+                                when (chosen) {
+                                    is Outcome.Failure -> chosen
+                                    is Outcome.Success -> {
+                                        val key = com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM,
+                                            com.dpsmpx.dpai.core.clock.RandomSource.secure()).next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
+                                        val title = c.title.ifBlank { "Продолжение API-чата" }.take(60)
+                                        val objective = "Продолжи проектную задачу после явной передачи пользователем.\n" +
+                                            com.dpsmpx.dpai.providers.ChatHandoff.prompt(c)
+                                        when (val form = com.dpsmpx.dpai.ui.NewTaskForm.command(title, objective, key, executor = executor)) {
+                                            is Outcome.Failure -> form
+                                            is Outcome.Success -> model.addTask(form.value)
+                                        }
+                                    }
+                                }
+                            }
+                            transferring = false
+                            when (outcome) {
+                                is Outcome.Failure -> note = outcome.diagnostics.first().message
+                                is Outcome.Success -> {
+                                    choosingExecutor = false
+                                    note = "Контекст передан ${executor.title}: задача ${outcome.value.value}. Откройте её в списке CLI-сессий после запуска."
+                                }
+                            }
+                        }
+                    }) { Text("CLI · ${executor.title}" + if (projectForAccess == null) " · нужен проект" else "") }
+                }
+            }
+        },
+        confirmButton = { TextButton(enabled = !transferring, onClick = { choosingExecutor = false }) { Text("Закрыть") } },
+    )
     // Файлы к вопросу (D-99): только выбором человека; текст уходит провайдеру вместе с вопросом.
     var files by remember(c.id.value) { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     val attach = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
@@ -558,7 +641,7 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
             TextButton(enabled = !authenticating && typedFullAccess == fullAccessName, onClick = {
                 val scopeBeforeAuth = ModelsStore.chatFullAccessScope(c.id)
                 if (scopeBeforeAuth == null) {
-                    note = context.getString(R.string.chat_full_access_failed)
+                    note = fullAccessFailed
                     return@TextButton
                 }
                 authenticating = true
@@ -567,7 +650,7 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
                     fullAccess = ModelsStore.chatFullAccess(c.id)
                     authenticating = false
                     if (ok && fullAccess) showFullAccess = false
-                    else note = context.getString(R.string.chat_full_access_failed)
+                    else note = fullAccessFailed
                 }, onDenied = { error -> authenticating = false; note = error })
             }) { Text(androidx.compose.ui.res.stringResource(R.string.chat_full_access_confirm)) }
         },
@@ -586,13 +669,19 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
                 Text(p?.let { "${it.name} · ${it.model}" } ?: "профиль удалён", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        if (c.project == null) TextButton(onClick = { ApiQuickStartRequests.request(profile = c.profile.value) }) { Text(androidx.compose.ui.res.stringResource(R.string.api_work_connect_project)) }
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            TextButton(enabled = live == null, onClick = { pickingTarget = true }) {
+                Text(if (c.project == null) "Подключить проект / target" else "Сменить проект / target")
+            }
+            TextButton(enabled = live == null, onClick = { choosingExecutor = true }) { Text("Исполнитель / контекст") }
+        }
+        if (c.project == null) TextButton(onClick = { ApiQuickStartRequests.request(profile = c.profile.value) }) { Text("Быстрая настройка API-проекта") }
         if (c.project != null) FlowRow(Modifier.fillMaxWidth()) {
             FilterChip(selected = fullAccess, enabled = fullAccess || fullAccessName != null, onClick = {
                 if (fullAccess) {
                     ModelsStore.revokeChatFullAccess(c.id)
                     fullAccess = ModelsStore.chatFullAccess(c.id)
-                    if (fullAccess) note = context.getString(R.string.chat_full_access_failed)
+                    if (fullAccess) note = fullAccessFailed
                 } else {
                     typedFullAccess = ""
                     showFullAccess = true

@@ -27,6 +27,8 @@ import com.dpsmpx.dpai.providers.AIProvider
 import com.dpsmpx.dpai.providers.Cancel
 import com.dpsmpx.dpai.providers.ChatBook
 import com.dpsmpx.dpai.providers.ChatEntry
+import com.dpsmpx.dpai.providers.ChatHandoff
+import com.dpsmpx.dpai.providers.ChatMessage
 import com.dpsmpx.dpai.providers.ChatReply
 import com.dpsmpx.dpai.providers.ChatRequest
 import com.dpsmpx.dpai.providers.ChatRole
@@ -254,6 +256,43 @@ object ModelsStore {
         return c
     }
 
+    /** Чат можно подключить к любому уже созданному проекту его target; выбора модели недостаточно для смены прав. */
+    @Synchronized
+    fun connectProject(chat: CorrelationId, project: com.dpsmpx.dpai.core.ids.ProjectId): String? {
+        val previous = chatFlow.value.firstOrNull { it.id == chat } ?: return "разговор не найден"
+        if (chat in runningFlow.value) return "дождитесь ответа или остановите ход"
+        val controller = Controller.get(app.filesDir)
+        val linked = controller.projects().projects.firstOrNull { it.project == project } ?: return "проект удалён"
+        if (controller.targets().none { it.id == linked.target }) return "target проекта удалён"
+        if (previous.project == project) return null
+        revokeChatFullAccess(chat)
+        if (chatFullAccess(chat)) return "сначала отключите полный доступ"
+        return if (writeChats(chatFlow.value.filter { it.id != chat } + previous.copy(project = project))) null else "привязка проекта не сохранена"
+    }
+
+    /** Смена API-профиля продолжает тот же разговор и его контекст; пользовательский грант не переносится. */
+    @Synchronized
+    fun switchProfile(chat: CorrelationId, profile: AccountId): String? {
+        val previous = chatFlow.value.firstOrNull { it.id == chat } ?: return "разговор не найден"
+        if (chat in runningFlow.value) return "ответ ещё идёт"
+        if (profileFlow.value.none { it.id == profile }) return "профиль удалён"
+        if (previous.profile == profile) return null
+        revokeChatFullAccess(chat)
+        if (chatFullAccess(chat)) return "сначала отключите полный доступ"
+        return if (writeChats(chatFlow.value.filter { it.id != chat } + previous.copy(profile = profile))) null else "смена исполнителя не сохранена"
+    }
+
+    /** Человек переносит только видимую переписку CLI в новый API-чат, без полномочий старой задачи. */
+    @Synchronized
+    fun importCliChat(profile: AccountId, project: com.dpsmpx.dpai.core.ids.ProjectId?, title: String,
+                      messages: List<ChatMessage>, source: String): Conversation? {
+        if (profileFlow.value.none { it.id == profile }) return null
+        if (project != null && Controller.get(app.filesDir).projects().projects.none { it.project == project }) return null
+        val imported = ChatHandoff.importMessages(messages).map { if (it.role == ChatRole.ASSISTANT) it.copy(model = source) else it }
+        val c = Conversation(ids.next(IdKinds.CORRELATION), profile, title.take(60), imported, project)
+        return c.takeIf { writeChats(chatFlow.value + it) }
+    }
+
     /**
      * Подтверждение делегирования не содержится в запросе модели и не берётся из её текста.
      * В приватных preferences хранится только отпечаток связки проект/target (D-218).
@@ -283,7 +322,8 @@ object ModelsStore {
     }
 
     /** Только оболочка UI вызывает после PIN/биометрии и точного имени; API-инструмента нет. */
-    @SuppressLint("ApplySharedPref")
+    // В отличие от KTX edit здесь нужен результат commit(): отказ записи запрещает выдавать грант.
+    @SuppressLint("ApplySharedPref", "UseKtx")
     @Synchronized
     fun enableChatFullAccess(chat: CorrelationId, typedName: String, expectedScope: String): Boolean {
         val (project, target) = accessContext(chat) ?: return false
@@ -312,7 +352,8 @@ object ModelsStore {
         return fullAccessPreferences().getString(chat.value, null) == requestedScope
     }
 
-    @SuppressLint("ApplySharedPref")
+    // Результат commit() нужен для запрета повторной выдачи гранта после отказа сохранения.
+    @SuppressLint("ApplySharedPref", "UseKtx")
     @Synchronized
     fun revokeChatFullAccess(chat: CorrelationId) {
         if (!fullAccessPreferences().edit().remove(chat.value).commit()) {
@@ -337,14 +378,14 @@ object ModelsStore {
 
     @Synchronized
     private fun writeChats(next: List<Conversation>): Boolean {
-        chatFlow.value = next
-        // Только чат с явным постоянным грантом переживает рестарт даже до первой реплики.
-        val persistent = next.filter { it.entries.isNotEmpty() || (it.project != null && fullAccessPreferences().contains(it.id.value)) }
+        // Привязанный к проекту чат сохраняем до первой реплики; обычный пустой остаётся временным.
+        val persistent = next.filter { it.entries.isNotEmpty() || it.project != null }
         val written = docs?.write(CHATS, ChatBook.toJson(persistent)) ?: return false
         if (written is Outcome.Failure) {
             problemFlow.value = "переписка не сохранена: ${written.errors.first().message}"
             return false
         }
+        chatFlow.value = next
         return true
     }
 

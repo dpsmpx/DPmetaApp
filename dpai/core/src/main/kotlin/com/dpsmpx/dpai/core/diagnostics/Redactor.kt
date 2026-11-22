@@ -174,7 +174,9 @@ class Redactor private constructor(private val strict: Boolean) {
         private val KNOWN_TOKENS = listOf(
             Regex("\\bsk-ant-[A-Za-z0-9_-]{8,}"),
             Regex("\\bsk-(?:proj-)?[A-Za-z0-9]{20,}"),
-            Regex("\\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})"),
+            // Токен из отчёта может примыкать к обычному тексту или границе страницы.
+            // Для этого префикса граница слова не обязательна: утечка опаснее ложного маскирования.
+            Regex("(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})"),
             Regex("\\bhf_[A-Za-z0-9]{20,}"),
             Regex("\\b(?:AKIA|ASIA)[0-9A-Z]{16}\\b"),
             Regex("\\bxox[abprs]-[A-Za-z0-9-]{10,}"),

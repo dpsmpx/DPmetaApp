@@ -10,7 +10,7 @@ enum class AiTab(val title: String) {
     TASKS("Задачи"),
     TARGETS("Targets"),
     REQUESTS("Запросы"),
-    MODELS("Модели"),
+    MODELS("Чаты"),
     FILES("Файлы"),
     ;
 

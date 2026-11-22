@@ -26,6 +26,7 @@ class RedactorTest {
         val aws = "AK" + "IA" + "ABCDEFGHIJKLMNOP"
         assertRedacted("ключ $anthropic в выводе", anthropic)
         assertRedacted("push с токеном $github", github)
+        assertRedacted("x".repeat(17_989) + github + "конец отчёта", github)
         assertRedacted("aws $aws", aws)
     }
 

@@ -462,7 +462,7 @@ private fun CheckRow(c: CheckLine) {
  * показывает target (`ssh-keygen -l -f <ключ хоста>.pub`) → сохранение.
  */
 @Composable
-private fun AddTargetDialog(controller: Controller, onDone: (TargetEntry?) -> Unit) {
+internal fun AddTargetDialog(controller: Controller, onDone: (TargetEntry?) -> Unit) {
     val scope = rememberCoroutineScope()
     var label by remember { mutableStateOf("") }
     var host by remember { mutableStateOf("") }
@@ -576,7 +576,7 @@ private fun AddTargetDialog(controller: Controller, onDone: (TargetEntry?) -> Un
  * с каталогом Claude (D-50: дерево — по SSH ключом того target).
  */
 @Composable
-private fun ProjectDialog(controller: Controller, target: TargetEntry, withClaude: List<TargetEntry>, onDone: (ProjectEntry?) -> Unit) {
+internal fun ProjectDialog(controller: Controller, target: TargetEntry, withClaude: List<TargetEntry>, onDone: (ProjectEntry?) -> Unit) {
     val scope = rememberCoroutineScope()
     var root by remember { mutableStateOf("") }
     var trees by remember { mutableStateOf("") }

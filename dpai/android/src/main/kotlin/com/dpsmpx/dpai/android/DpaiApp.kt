@@ -332,6 +332,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     // Окно сессии: чат или временная шкала (D-59) — переключатель в заголовке, а не в окне (D-61).
     var sessionEvents by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
+    var switchingSessionExecutor by remember { mutableStateOf(false) }
     // Лист задачи — кнопкой из чата (D-62): вывод модели — в чате, настройки и действия задачи — в листе.
     var taskSheet by remember { mutableStateOf<com.dpsmpx.dpai.core.ids.TaskId?>(null) }
     val sessionScreen = if (selectedId != null) snapshot?.session else null
@@ -349,6 +350,12 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
             renaming = false
         }
     }
+    if (switchingSessionExecutor && sessionScreen != null) CliExecutorPicker(sessionScreen, model, controller,
+        onApiChat = { chat ->
+            switchingSessionExecutor = false
+            ApiQuickStartRequests.chat.value = chat
+            openTab(AiTab.MODELS)
+        }, onDismiss = { switchingSessionExecutor = false })
     var creating by rememberSaveable { mutableStateOf(false) }
     if (creating) NewTaskDialog(model) { creating = false }
     // Обратимое — сразу и со снэкбаром «Отменить» (AI:A-4): хост — у оболочки, действия — во вкладках.
@@ -427,6 +434,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                                 style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
                             sessionScreen?.task?.let { t ->
+                                TextButton(onClick = { switchingSessionExecutor = true }) { Text("Сменить ИИ") }
                                 TextButton(
                                     onClick = { if (wide) taskPanel = !taskPanel else taskSheet = t },
                                     modifier = Modifier.semantics { contentDescription = if (twoPane) "Скрыть лист задачи" else "Лист задачи" },
@@ -551,7 +559,17 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                                 screen == SETTINGS_SCREEN -> AiSettingsPane(controller, model, settingsSub, onTargets = { openTab(AiTab.TARGETS) }) { settingsSub = it }
                                 screen == AiTab.TARGETS.ordinal -> TargetsPane(controller, model)
                                 screen == AiTab.REQUESTS.ordinal -> RequestsPane(model, s)
-                                screen == AiTab.MODELS.ordinal -> ModelsPane()
+                                screen == AiTab.MODELS.ordinal -> ModelsPane(controller, model) { chat ->
+                                    scope.launch {
+                                        val result = if (chat.project != null && controller.project()?.project != chat.project)
+                                            withContext(Dispatchers.IO) { model.selectProject(chat.project) }
+                                        else Outcome.success(Unit)
+                                        when (result) {
+                                            is Outcome.Success -> selectedId = chat.session.value
+                                            is Outcome.Failure -> snack.showSnackbar("Чат не открыт: ${result.diagnostics.first().message}")
+                                        }
+                                    }
+                                }
                                 screen == AiTab.FILES.ordinal -> FilesPane(onLinux = { openTab(AiTab.TARGETS) }, model = model, onSession = { selectedId = it })
                                 s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                                 screen == SESSION_SCREEN -> {

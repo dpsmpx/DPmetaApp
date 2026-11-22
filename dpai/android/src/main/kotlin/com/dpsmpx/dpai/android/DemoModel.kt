@@ -55,6 +55,17 @@ data class Snapshot(
     val quick: com.dpsmpx.dpai.ui.QuickActions = com.dpsmpx.dpai.ui.QuickActions.NONE,
 )
 
+/** Одна запись в общем окне чатов: текущая CLI-сессия задачи с исходным проектом. */
+data class ExecutorChat(
+    val session: com.dpsmpx.dpai.core.ids.SessionId,
+    val task: com.dpsmpx.dpai.core.ids.TaskId,
+    val project: com.dpsmpx.dpai.core.ids.ProjectId?,
+    val title: String,
+    val executor: com.dpsmpx.dpai.core.ids.Executor,
+    val target: String,
+    val updatedAt: Long,
+)
+
 /**
  * Какая система сейчас показывается (D-34, D-35): есть target с каталогом
  * Claude — настоящий контроллер ([LiveSystem]), иначе демо. Смена targets
@@ -205,6 +216,26 @@ class DemoModel(
     @Volatile private var widgetCounts: List<Int>? = null
 
     @Volatile private var workCached: List<com.dpsmpx.dpai.ui.ProjectWork>? = null
+
+    @Volatile private var executorChatCache: List<ExecutorChat> = emptyList()
+
+    /** Сессии всех рабочих проектов, включая фоновые; ожидание занятого такта ограничено. */
+    fun executorChats(): List<ExecutorChat> {
+        if (!lock.tryLock(200, TimeUnit.MILLISECONDS)) return executorChatCache
+        return try {
+            val targets = controller.targets().associate { it.id to it.label }
+            contours.flatMap { (project, view) ->
+                val o = view.orchestrator
+                o.sessions.sessions.values.filter { it.review == null }.groupBy { it.task }.mapNotNull { (task, sessions) ->
+                    val latest = sessions.maxByOrNull { it.updatedAt.epochMillis } ?: return@mapNotNull null
+                    val record = o.tasks.tasks[task] ?: return@mapNotNull null
+                    ExecutorChat(latest.id, task, project, record.title,
+                        o.accounts.slots[latest.slot]?.executor ?: record.policy.executor,
+                        targets[latest.target] ?: latest.target.value, latest.updatedAt.epochMillis)
+                }
+            }.sortedByDescending { it.updatedAt }.also { executorChatCache = it }
+        } finally { lock.unlock() }
+    }
 
     /**
      * Работа студии по каждому рабочему проекту — для пульта (DPmetaApp:D-176). Такт держит замок —

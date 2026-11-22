@@ -7,7 +7,7 @@ import kotlin.test.assertEquals
 class AiTabsTest {
     @Test
     fun sixTabsWithoutLog() {
-        assertEquals(listOf("Сводка", "Задачи", "Targets", "Запросы", "Модели", "Файлы"), AiTab.entries.map { it.title })
+        assertEquals(listOf("Сводка", "Задачи", "Targets", "Запросы", "Чаты", "Файлы"), AiTab.entries.map { it.title })
     }
 
     @Test
