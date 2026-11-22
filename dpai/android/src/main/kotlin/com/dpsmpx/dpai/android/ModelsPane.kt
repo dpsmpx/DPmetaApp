@@ -507,6 +507,7 @@ private fun kindName(k: ProviderKind): String = when (k) {
 /** Чат с моделью профиля: ответ идёт кусками; «Стоп» прерывает его. */
 @Composable
 private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?, onBack: () -> Unit) {
+    EnvironmentApprovalUi(EnvironmentApprovalBroker.chat(c.id.value))
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var input by rememberSaveable(c.id.value) { mutableStateOf("") }

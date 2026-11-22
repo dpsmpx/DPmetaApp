@@ -37,6 +37,8 @@ import com.dpsmpx.dpai.ui.ManualAutomations
 import com.dpsmpx.dpai.ui.EnvironmentAutomations
 import com.dpsmpx.dpai.ui.ProjectProfileDefaults
 import com.dpsmpx.dpai.ui.ProjectNeeds
+import com.dpsmpx.dpai.ui.EnvironmentPlan
+import com.dpsmpx.dpai.ui.ToolchainDoctor
 import com.dpsmpx.dpai.providers.Cancel
 import com.dpsmpx.dpai.providers.ToolCall
 import com.dpsmpx.dpai.providers.ToolResult
@@ -51,6 +53,7 @@ import com.dpsmpx.dpai.ui.WorkspacePaths
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import kotlin.time.Duration.Companion.seconds
 
 /** Связь API-чата с существующей файловой системой и защитой проекта, без второго планировщика (D-214). */
 internal object ApiProjectRuntime {
@@ -99,7 +102,7 @@ internal object ApiProjectRuntime {
         return when (val r = controller.putProject(project)) { is Outcome.Failure -> r; is Outcome.Success -> Outcome.success(project) }
     }
 
-    fun open(context: Context, id: ProjectId): Outcome<Session> {
+    fun open(context: Context, id: ProjectId, approvalOwner: String? = null): Outcome<Session> {
         val controller = Controller.get(context.filesDir)
         val project = controller.projects().projects.firstOrNull { it.project == id }
             ?: return Outcome.failure(DiagCode.STATE_CONFLICT, "проект разговора удалён; выберите проект в мастере")
@@ -110,11 +113,13 @@ internal object ApiProjectRuntime {
             val relative = WorkspacePaths.homeRelative(target, project.root) ?: return Outcome.failure(DiagCode.VALUE_INVALID, "каталог проекта вне домашней папки")
             SubTree(GuestPaths.homeTree(context), relative)
         } else when (val r = model.pcFiles(target, project.root, writable = true)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
-        return Outcome.success(Session(context.applicationContext, model, project, view.main, tree, target))
+        return Outcome.success(Session(context.applicationContext, model, project, view.main, tree, target, approvalOwner))
     }
 
     class Session(private val context: Context, private val model: DemoModel, val project: ProjectEntry,
-        private val location: com.dpsmpx.dpai.ui.WorkspaceLocation, private val tree: FileTree, private val targetSnapshot: com.dpsmpx.dpai.ui.TargetEntry) : AutoCloseable {
+        private val location: com.dpsmpx.dpai.ui.WorkspaceLocation, private val tree: FileTree, private val targetSnapshot: com.dpsmpx.dpai.ui.TargetEntry,
+        private val approvalOwner: String?) : AutoCloseable {
+        private val deniedEnvironment = HashSet<String>()
         private val inApp: Boolean get() = targetSnapshot.inApp
         private fun sameTarget() = Controller.get(context.filesDir).targets().firstOrNull { it.id == project.target } == targetSnapshot
         private fun <T> targetChanged(): Outcome<T> = Outcome.failure(DiagCode.STATE_CONFLICT, "подключение target изменилось; откройте проект заново")
@@ -165,19 +170,69 @@ internal object ApiProjectRuntime {
                 { cancel.cancelled },
                 { entry ->
                     // Полномочия не выводятся из id или числового уровня: только явно подключённые обработчики.
-                    if (entry.id !in setOf("manual.check", "manual.build", "environment.inspect")) Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "нужен прежний экран инструмента")
+                    if (entry.id !in setOf("manual.check", "manual.build", "environment.inspect", "environment.probe", "environment.command", "environment.android_sdk") &&
+                        com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment.Apk.entries.none { it in EnvironmentPlan.packageActions && entry.id == "environment.apk.${it.name.lowercase()}" }) Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "нужен прежний экран инструмента")
                     else model.workspaceAccess(project, location, write = false) { Outcome.success(Unit) }
                 },
                 { entry, values -> when (entry.id) {
                     "environment.inspect" -> inspect()
+                    "environment.probe" -> probe(values["tool"] ?: "project", snapshot, cancel)
                     "manual.check", "manual.build" -> {
                         val kind = if (entry.id == "manual.check") ManualProfileKind.CHECK else ManualProfileKind.BUILD
                         val chosen = snapshot.profiles[kind] ?: return@invoke Outcome.failure(DiagCode.STATE_CONFLICT, "профиль удалён")
                         profile(chosen, snapshot.choices[kind].orEmpty() + values, cancel) { evidence = it }
                     }
-                    else -> Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "нужен прежний экран инструмента")
+                    else -> environment(entry, values, cancel) { evidence = it }
                 } })
             return Outcome.success(AutomationJson.result(result, if (result.outcome is Outcome.Failure) evidence else null))
+        }
+
+        private fun environment(entry: AutomationDefinition, values: Map<String, String>, cancel: Cancel, evidence: (JsonObject) -> Unit): Outcome<JsonObject> {
+            if (!inApp) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "план окружения относится к Linux приложения")
+            val broken = if (entry.id.startsWith("environment.apk.")) when (val result = LinuxSetup.environment(context).brokenPackages()) { is Outcome.Failure -> return result; is Outcome.Success -> result.value.map { it.name } } else emptyList()
+            val plan = when (val result = EnvironmentPlan.create(entry.id, values, broken)) { is Outcome.Failure -> return result; is Outcome.Success -> result.value }
+            val hash = plan.proposal(project, entry.revision).hash.hex
+            if (hash in deniedEnvironment) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "человек уже отклонил этот план; дождитесь нового поручения")
+            val grant = when (val result = EnvironmentApprovalBroker.shared.await(approvalOwner, project, plan, entry.revision) { cancel.cancelled }) {
+                is Outcome.Failure -> { if (result.errors.any { it.code == DiagCode.OPERATION_NOT_ALLOWED }) deniedEnvironment += hash; return result }
+                is Outcome.Success -> result.value
+            }
+            return profile(plan.profile, emptyMap(), cancel, evidence, environment = true, environmentSnapshot = plan.snapshot, authorize = {
+                when (val allowed = grant?.consume() ?: Outcome.success(Unit)) { is Outcome.Failure -> allowed; is Outcome.Success -> {
+                    if (!sameTarget()) targetChanged()
+                    else plan.estimatedBytes?.let { bytes ->
+                        when (val space = StorageSpace.check(context, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.SERVICE, bytes, plan.title)) {
+                            is Outcome.Failure -> space
+                            is Outcome.Success -> Outcome.success(Unit)
+                        }
+                    } ?: Outcome.success(Unit)
+                } }
+            })
+        }
+
+        private fun probe(tool: String, snapshot: Snapshot, cancel: Cancel): Outcome<JsonObject> {
+            if (!inApp) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "пробы относятся к Linux приложения")
+            val names = when (val result = tree.list("")) { is Outcome.Failure -> return result; is Outcome.Success -> result.value.map { it.name }.toSet() }
+            val wanted = (ProjectNeeds.fromFiles(names) + snapshot.profiles.mapNotNull { (kind, profile) -> profile?.let { ProjectNeeds.fromProfile(kind, it) } }.flatten()).map { it.first }
+            val probes = when (val result = ToolchainDoctor.select(tool, wanted)) { is Outcome.Failure -> return result; is Outcome.Success -> result.value }
+            val host = LinuxSetup.guestHost(context) ?: return Outcome.failure(DiagCode.STATE_CONFLICT, "Linux приложения не готов")
+            val stop = Cancel()
+            val finished = CompletableFuture<Outcome<JsonObject>>()
+            var own: Outcome<JsonObject>? = null
+            val started = LongJobs.get(context).start(LongJobs.LINUX_APK, context.getString(R.string.env_probe_title), LongJobs.GUEST,
+                onFinished = { job -> finished.complete(own ?: Outcome.failure(DiagCode.INTERNAL_ERROR, job.note)) }) {
+                own = ToolchainDoctor.run(host, probes, project.root) { cancel.cancelled || stop.cancelled }
+                LongJobs.Done(context.getString(R.string.env_probe_finished), failed = own is Outcome.Failure)
+            }
+            if (!started) return Outcome.failure(DiagCode.WORKTREE_OWNED, "окружение занято другой командой")
+            val begun = Clock.SYSTEM.monotonicNanos()
+            val timeout = (probes.sumOf { it.seconds } + 60).seconds
+            while (Clock.SYSTEM.monotonicNanos() - begun < timeout.inWholeNanoseconds) {
+                if (cancel.cancelled) { stop.cancel(); return Outcome.failure(DiagCode.CANCELLED_BY_USER, "диагностика отменена") }
+                try { return finished.get(1, TimeUnit.SECONDS) } catch (_: TimeoutException) { /* Только свой результат. */ }
+            }
+            stop.cancel()
+            return Outcome.failure(DiagCode.PROCESS_TIMEOUT, "диагностика не завершилась вовремя, остановка запрошена")
         }
 
         private fun inspect(): Outcome<JsonObject> {
@@ -209,6 +264,9 @@ internal object ApiProjectRuntime {
             append("Перед записью прочитай актуальный файл и его sha256. Не выдавай текст ответа за изменение файла, запуск тестов или успешную сборку: опирайся на результаты инструментов. ")
             append("Служебные каталоги и секреты недоступны. Создание, замена и удаление сохраняют копию для отмены. После правок запусти подходящий профиль и сообщи результат.\n")
             append("Сначала узнай доступные автоматизации list_automations, затем describe_automation. Предпочитай готовый инструмент повторному анализу. run_automation требует актуальную ревизию; OPEN_UI означает действие человека, не обходи его. Успешный вызов не означает, что все проверки прошли: смотри status, data/evidence и реальные коды.\n")
+            append("Окружение: environment.inspect читает только базу пакетов. environment.probe запускает настоящие пробы — наличие java не доказывает запуск JVM. Настрой окружение через environment.apk.add/fix/repair, environment.android_sdk или environment.command. Изменения ждут подтверждения человека прямо в приложении; не отправляй его вручную вводить команды. Не повторяй отклонённый план.\n")
+            append("environment.command принимает argv как JSON-массив строк: [\"java\",\"-version\"], для shell явно [\"/bin/sh\",\"-c\",\"...\"]. apk запускай отдельным argv или штатным инструментом пакетов: ему нужен proot без /proc. Ключ API гостю не выдан. Proot не песочница; общие команды имеют расширенный доступ и отдельное опасное подтверждение.\n")
+            append("После исправления повтори живые пробы и нужную сборку. Сообщение JVM check_pax о mprotect не доказывает PaX/grsecurity: не объявляй смену ядра или paxctl решением без проверки errno/Android/proot. Лицензии и неподдержанные нативные SDK-инструменты требуют явного решения человека, не объявляй проект готовым по одной базе пакетов.\n")
             for (path in listOf("AGENTS.md", "CLAUDE.md")) {
                 val text = tree.read(path, 64 * 1024).valueOrNull()?.let { com.dpsmpx.dpai.files.TextFile.decode(it).valueOrNull() } ?: continue
                 append("\nИнструкции проекта из $path:\n"); append(text.take(12_000))
@@ -266,25 +324,30 @@ internal object ApiProjectRuntime {
             }
         }
 
-        private fun profile(chosen: ManualProfile, values: Map<String, String>, cancel: Cancel, evidence: (JsonObject) -> Unit): Outcome<JsonObject> {
+        private fun profile(chosen: ManualProfile, values: Map<String, String>, cancel: Cancel, evidence: (JsonObject) -> Unit,
+            environment: Boolean = false, environmentSnapshot: Boolean = true, authorize: (() -> Outcome<Unit>)? = null): Outcome<JsonObject> {
             val prepared = java.util.concurrent.atomic.AtomicReference<com.dpsmpx.dpai.core.ids.SessionId?>(null)
             val profileCancel = Cancel()
-            val done = CompletableFuture<ManualRunView>()
+            val done = CompletableFuture<Pair<LongJobs.Done, ManualRunView>>()
             if (!model.startManualProfile(project, location, chosen, choices = values, cancelled = { cancel.cancelled || profileCancel.cancelled }, expectedTarget = targetSnapshot,
-                    onPrepared = { prepared.set(it.id) }, onFinished = { _, r -> done.complete(r) })) return Outcome.failure(DiagCode.WORKTREE_OWNED, "контур занят; дождитесь завершения команды")
+                    onPrepared = { prepared.set(it.id) }, environment = environment, beforePrepare = authorize, environmentSnapshot = environmentSnapshot,
+                    onFinished = { job, r -> done.complete(job to r) })) return Outcome.failure(DiagCode.WORKTREE_OWNED, "контур занят; дождитесь завершения команды")
             ControllerService.resume(context)
-            val deadline = Clock.SYSTEM.now().epochMillis + chosen.steps.sumOf { it.timeoutSeconds } * 1000 + 60_000
+            val begun = Clock.SYSTEM.monotonicNanos()
+            val timeout = (chosen.steps.sumOf { it.timeoutSeconds } + 60).seconds
             // Worker слушает только сигналы этого вызова. Общий manualStop мог бы остановить уже соседний запуск.
-            while (Clock.SYSTEM.now().epochMillis < deadline) {
+            while (Clock.SYSTEM.monotonicNanos() - begun < timeout.inWholeNanoseconds) {
                 if (cancel.cancelled) return Outcome.failure(DiagCode.CANCELLED_BY_USER, "запрошена остановка команды; пауза сохраняется до подтверждения её конца")
-                val view = try { done.get(1, TimeUnit.SECONDS) } catch (_: TimeoutException) { continue }
+                val completed = try { done.get(1, TimeUnit.SECONDS) } catch (_: TimeoutException) { continue }
+                val view = completed.second
                 if (cancel.cancelled) return Outcome.failure(DiagCode.CANCELLED_BY_USER, "вызов отменён; состояние команды смотрите в истории профиля")
                 val output = when (val r = com.dpsmpx.dpai.ui.ManualAutomationResult.evidence(prepared.get(), view)) {
-                    is Outcome.Failure -> return r
+                    is Outcome.Failure -> return Outcome.failure(DiagCode.STATE_CONFLICT, completed.first.note)
                     is Outcome.Success -> r.value
                 }
                 evidence(output)
-                return if (view.complete) Outcome.success(output) else Outcome.failure(DiagCode.PROCESS_EXIT_NONZERO, view.note, prepared.get()?.value)
+                if (environment && view.results.isNotEmpty()) CodeService.dependenciesChanged(project.root, context.getString(R.string.env_changed_refresh))
+                return if (view.complete) Outcome.success(output) else Outcome.failure(DiagCode.PROCESS_EXIT_NONZERO, completed.first.note, prepared.get()?.value)
             }
             profileCancel.cancel()
             return Outcome.failure(DiagCode.PROCESS_TIMEOUT, "ожидание профиля истекло; остановка запрошена, результат ещё не подтверждён")

@@ -104,4 +104,19 @@
     <string name="api_work_key_saved">Новый API-ключ — только если нужно заменить сохранённый</string>
     <string name="api_work_cancel">Остановить проверку</string>
     <string name="api_work_local_stopped">Сервер llama.cpp на телефоне остановлен. Запустите его в разделе Linux и снова откройте мастер.</string>
+    <string name="env_probe_title">Диагностика инструментов</string>
+    <string name="env_probe_finished">Диагностика завершена: смотрите результаты проб</string>
+    <string name="env_changed_refresh">Окружение изменилось: перезапустите языковую службу</string>
+    <string name="env_approve_title">Выполнить план окружения?</string>
+    <string name="env_approve_danger_title">Команда с расширенным доступом</string>
+    <string name="env_approve_scope">Команды выполняются в Linux приложения. Proot не является песочницей: код может обращаться ко всем доступным приложению файлам и сети. Ключ API модели гостю не передаётся.</string>
+    <string name="env_approve_danger">Произвольная команда может изменить или удалить данные. Проверьте все аргументы. Снимок пакетов не является копией всех файлов.</string>
+    <string name="env_approve_snapshot">Перед изменением будет сохранён снимок настроек и пакетов окружения.</string>
+    <string name="env_approve_no_snapshot">Снимок окружения для этой операции не создаётся.</string>
+    <string name="env_approve_commands">Показать или скрыть полные команды</string>
+    <string name="env_approve_license">Я принимаю лицензию Android SDK</string>
+    <string name="env_approve_terms">Прочитать лицензию</string>
+    <string name="env_approve_type_name">Введите имя проекта: %1$s</string>
+    <string name="env_approve_execute">Выполнить план</string>
+    <string name="env_approve_decline">Отклонить</string>
 </resources>

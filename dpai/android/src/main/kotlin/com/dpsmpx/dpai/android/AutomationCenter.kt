@@ -15,6 +15,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -45,6 +46,7 @@ import kotlinx.coroutines.withContext
 /** Первый центр автоматизаций основного дерева; исполнение не принадлежит Compose (D-215). */
 @Composable
 internal fun AutomationCenter(project: ProjectEntry, onOpen: (AutomationDefinition) -> Unit) {
+    EnvironmentApprovalUi(AutomationUiCalls.key(project.project))
     val context = LocalContext.current.applicationContext
     val jobs = remember { LongJobs.get(context) }
     val states by jobs.state.collectAsState()
@@ -122,7 +124,7 @@ internal fun AutomationCenter(project: ProjectEntry, onOpen: (AutomationDefiniti
 
 @Composable
 private fun AutomationDetails(d: AutomationDefinition, running: Boolean, onRun: (Map<String, String>) -> Unit, onOpen: () -> Unit) {
-    var values by remember(d.revision) { mutableStateOf(d.parameters.associate { it.name to (it.defaultValue ?: it.choices.first()) }) }
+    var values by remember(d.revision) { mutableStateOf(d.parameters.associate { it.name to (it.defaultValue ?: it.choices.firstOrNull().orEmpty()) }) }
     Text(stringResource(R.string.automation_level, d.level.code), style = MaterialTheme.typography.bodySmall)
     Text(stringResource(if (d.invocation == AutomationInvocation.DIRECT) R.string.automation_direct else R.string.automation_existing_ui), style = MaterialTheme.typography.bodySmall)
     d.reason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
@@ -130,12 +132,17 @@ private fun AutomationDetails(d: AutomationDefinition, running: Boolean, onRun: 
     if (d.dependencies.isNotEmpty()) Text(stringResource(R.string.automation_dependencies, d.dependencies.joinToString()), style = MaterialTheme.typography.bodySmall)
     d.timeoutSeconds?.let { Text(stringResource(R.string.automation_timeout, it), style = MaterialTheme.typography.bodySmall) }
     for (p in d.parameters) {
+        if (p.text) {
+            OutlinedTextField(values[p.name].orEmpty(), { values = values + (p.name to it.take(p.maxLength)) },
+                enabled = !running, label = { Text(p.title) }, modifier = Modifier.fillMaxWidth())
+            continue
+        }
         Text(p.title)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             for (v in p.choices) FilterChip(selected = values[p.name] == v, enabled = !running, onClick = { values = values + (p.name to v) }, label = { Text(v) })
         }
     }
-    if (d.invocation == AutomationInvocation.DIRECT) TextButton(enabled = !running && d.available, onClick = { onRun(values) }) { Text(stringResource(R.string.automation_run)) }
+    if (d.invocation == AutomationInvocation.DIRECT) TextButton(enabled = !running && d.available && d.parameters.filter { it.required }.all { values[it.name]?.isNotBlank() == true }, onClick = { onRun(values) }) { Text(stringResource(R.string.automation_run)) }
     else TextButton(onClick = onOpen) { Text(stringResource(R.string.automation_open)) }
 }
 

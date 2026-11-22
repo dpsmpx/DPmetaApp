@@ -285,11 +285,11 @@ object LinuxSetup {
         // 24-битный цвет (терминал:A-23): COLORTERM — как у kitty и Windows Terminal.
         // Секреты, выданные ИИ автором (DPmetaApp:D-114), — и терминалу; слот во вкладке убирает перекрывающие вход сам (`env -u`).
         // Свои переменные автора (D-193) — под окружением гостя: оно сильнее.
-        val env = com.dpsmpx.dpai.android.OwnVariablesStore.under(
+        val env = guestEnvironment(context, com.dpsmpx.dpai.android.OwnVariablesStore.under(
             context,
             ProotHost.GUEST_ENVIRONMENT + com.dpsmpx.dpai.android.SecretGrants.environment(context) +
                 ("TERM" to "xterm-256color") + ("COLORTERM" to com.dpsmpx.dpai.ui.TerminalLaunch.COLORTERM),
-        )
+        ))
         val spec = ProcessSpec(argv, environment = env)
         val wrapped = host(context).wrap(spec)
         return JniProcesses().spawn(wrapped.command, wrapped.environment.orEmpty(), null, size)
@@ -347,7 +347,7 @@ object LinuxSetup {
                 // Раскладка — на каждый запуск: привязка хранилища следует переключателю (D-99).
                 val layout = layout(app)
                 // Свои переменные автора (D-193) — шагам профилей и Git проекта, под окружением процесса: оно сильнее.
-                val withOwn = spec.copy(environment = com.dpsmpx.dpai.android.OwnVariablesStore.under(app, spec.environment ?: ProotHost.GUEST_ENVIRONMENT))
+                val withOwn = spec.copy(environment = guestEnvironment(app, com.dpsmpx.dpai.android.OwnVariablesStore.under(app, spec.environment ?: ProotHost.GUEST_ENVIRONMENT)))
                 return ProotHost(NativeProcessHost(JniProcesses(), Clock.SYSTEM), layout.copy(binds = layout.binds + ProotLayout.Bind(home, home))).start(withOwn, onOutput)
             }
         }
@@ -365,8 +365,14 @@ object LinuxSetup {
         val native = JniProcesses()
         return com.dpsmpx.dpai.execution.process.NativeStreamHost(native, wrap = { spec ->
             val layout = layout(app)
-            ProotHost(NativeProcessHost(native, Clock.SYSTEM), layout.copy(binds = layout.binds + ProotLayout.Bind(home, home))).wrap(spec)
+            val withOwn = spec.copy(environment = guestEnvironment(app, com.dpsmpx.dpai.android.OwnVariablesStore.under(app, spec.environment ?: ProotHost.GUEST_ENVIRONMENT)))
+            ProotHost(NativeProcessHost(native, Clock.SYSTEM), layout.copy(binds = layout.binds + ProotLayout.Bind(home, home))).wrap(withOwn)
         })
+    }
+
+    private fun guestEnvironment(context: Context, base: Map<String, String>): Map<String, String> {
+        val rootfs = File(context.filesDir, environment(context).rootfs)
+        return com.dpsmpx.dpai.ui.AndroidSdk.discoveredEnv(base) { File(rootfs, it.removePrefix("/")).isFile }
     }
 
     /** Завершить оболочку: процесс-лидер сеанса получает HUP, proot с `--kill-on-exit` уносит гостя с собой. */

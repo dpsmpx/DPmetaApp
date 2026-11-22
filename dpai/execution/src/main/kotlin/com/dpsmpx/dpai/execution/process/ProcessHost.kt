@@ -151,7 +151,7 @@ fun ProcessHost.run(
         val report = process.stop(grace)
         val causes = if (report.clean) emptyList() else listOf(orphans(report, spec))
         return Outcome.Failure(
-            listOf(Diagnostic.of(if (wasCancelled) DiagCode.CANCELLED_BY_USER else DiagCode.PROCESS_TIMEOUT,
+            listOf(Diagnostic.error(if (wasCancelled) DiagCode.CANCELLED_BY_USER else DiagCode.PROCESS_TIMEOUT,
                 if (wasCancelled) "${spec.program}: вызов отменён, запрошена остановка своего процесса" else "${spec.program}: не завершился за $timeout, остановлен", causes = causes)),
         )
     }

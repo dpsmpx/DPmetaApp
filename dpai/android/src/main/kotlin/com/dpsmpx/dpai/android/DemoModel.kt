@@ -636,8 +636,12 @@ class DemoModel(
         cancelled: () -> Boolean = { false },
         expectedTarget: TargetEntry? = null,
         onPrepared: ((com.dpsmpx.dpai.ui.ManualRun) -> Unit)? = null,
+        environment: Boolean = false,
+        beforePrepare: (() -> Outcome<Unit>)? = null,
+        environmentSnapshot: Boolean = true,
         onFinished: ((LongJobs.Done, com.dpsmpx.dpai.ui.ManualRunView) -> Unit)? = null): Boolean {
         val app = context ?: return false
+        if (environment && (profile.kind != com.dpsmpx.dpai.ui.ManualProfileKind.DEPENDENCIES || beforePrepare == null)) return false
         return LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST,
             onFinished = { done ->
                 (app.applicationContext as? DpaiApplication)?.studioChanged()
@@ -649,11 +653,15 @@ class DemoModel(
             if (expectedTarget != null && target != expectedTarget) return@start LongJobs.Done("подключение target изменилось; откройте проект заново", failed = true)
             // Параметры (D-183): встроенные и выбранные — в шаги и окружение; в якорь — уже раскрытый профиль.
             val chosen = choices ?: controller.manualProfiles.choices(p, profile.kind)
-            val resolved = when (val r = profile.resolve(com.dpsmpx.dpai.ui.ManualVars.builtIns(p, target, location) + chosen)) {
+            val resolved = if (environment) profile else when (val r = profile.resolve(com.dpsmpx.dpai.ui.ManualVars.builtIns(p, target, location) + chosen)) {
                 is Outcome.Failure -> return@start LongJobs.Done(r.errors.first().message, failed = true)
                 is Outcome.Success -> r.value
             }
-            if (choices != null) controller.manualProfiles.saveChoices(p, profile.kind, choices)
+            if (beforePrepare != null) when (val allowed = beforePrepare()) {
+                is Outcome.Failure -> return@start LongJobs.Done(allowed.diagnostics.first().message, failed = true)
+                is Outcome.Success -> Unit
+            }
+            if (choices != null && !environment) controller.manualProfiles.saveChoices(p, profile.kind, choices)
             // Что профилю нужно (D-186): в Linux приложения — проверка до запуска и ANDROID_HOME в окружение шагов;
             // на ПК-target SDK — его собственный.
             val ready = if (target.inApp && resolved.needs.isNotEmpty()) {
@@ -693,6 +701,16 @@ class DemoModel(
             if (cancelled()) {
                 controller.manualProfiles.stop(client)
                 return@start LongJobs.Done("Запуск отменён до команды", failed = true)
+            }
+            if (environment) {
+                // Bootstrap не требует работающего git. Снимок — уже под штатной долговечной паузой.
+                if (environmentSnapshot) when (val snap = EnvSnapshotStore.take(app, "План окружения API")) {
+                    is Outcome.Failure -> { controller.manualProfiles.stop(client); return@start LongJobs.Done(snap.diagnostics.first().message, failed = true) }
+                    is Outcome.Success -> Unit
+                }
+                if (cancelled()) { controller.manualProfiles.stop(client); return@start LongJobs.Done("План окружения отменён до команды", failed = true) }
+                controller.manualProfiles.launch(ownRun, client)
+                return@start watchManual(client, cancelled)
             }
             // Проверка Git уже под долговечной паузой: такт не сменит дерево между status и start.
             val git = workspaceGit(p, location)

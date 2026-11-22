@@ -74,16 +74,15 @@ internal object EnvSnapshotStore {
      * убрать лишнее из кеша: только из долгой работы гостя, когда apk не идёт параллельно
      * (иначе ушёл бы файл, который apk только что скачал).
      */
-    fun take(context: Context, label: String, prune: Boolean = true) {
-        synchronized(lock) {
+    fun take(context: Context, label: String, prune: Boolean = true): Outcome<Unit> = synchronized(lock) {
             val env = LinuxSetup.environment(context)
-            if (env.installed() == null) return
+            if (env.installed() == null) return@synchronized Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, "Linux не установлен: снимок не создан")
             if (cacheOn(context)) env.enableCache()
-            val inv = inventory(context) ?: return
+            val inv = inventory(context) ?: return@synchronized Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STORAGE_IO_FAILED, "не удалось прочитать пакеты для снимка")
             val at = Clock.SYSTEM.now().epochMillis
             val snap = EnvSnapshots.take("env-$at", at, label, inv, OwnVariablesStore.load(context))
             val all = list(context)
-            if (all.firstOrNull()?.sameState(snap) == true) return
+            if (all.firstOrNull()?.sameState(snap) == true) return@synchronized Outcome.success(Unit)
             val v = vfs(context)
             try {
                 v.mkdirs(DIR)
@@ -100,8 +99,9 @@ internal object EnvSnapshotStore {
                 }
             } catch (e: IOException) {
                 AppLogs.info(context.applicationContext, "окружение", "снимок не записан: ${e.message}")
+                return@synchronized Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STORAGE_IO_FAILED, "снимок не записан: ${e.message}")
             }
-        }
+            Outcome.success(Unit)
     }
 
     fun list(context: Context): List<EnvSnapshots.Snapshot> {

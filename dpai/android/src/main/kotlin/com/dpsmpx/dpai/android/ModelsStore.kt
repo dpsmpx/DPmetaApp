@@ -295,7 +295,7 @@ object ModelsStore {
             val r = runCatching {
                 val project = withUser.project
                 if (project == null) selectedProvider.chat(ChatRequest(profile.model, withUser.context(), null, profile.maxOutputTokens), cancel, onText)
-                else when (val opened = ApiProjectRuntime.open(app, project)) {
+                else when (val opened = ApiProjectRuntime.open(app, project, EnvironmentApprovalBroker.chat(conversationId.value))) {
                     is Outcome.Failure -> opened
                     is Outcome.Success -> {
                         val tools = selectedProvider as? com.dpsmpx.dpai.providers.ToolChat

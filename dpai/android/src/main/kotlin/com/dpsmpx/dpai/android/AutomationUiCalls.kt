@@ -21,7 +21,7 @@ internal object AutomationUiCalls {
         val cancel = Cancel()
         if (cancellations.putIfAbsent(key, cancel) != null) return false
         val started = LongJobs.get(app).start(key, app.getString(R.string.automation_title), onFinished = { cancellations.remove(key, cancel) }) {
-            val result = when (val session = ApiProjectRuntime.open(app, project)) {
+            val result = when (val session = ApiProjectRuntime.open(app, project, key)) {
                 is Outcome.Failure -> session
                 is Outcome.Success -> session.value.use { it.invokeAutomation(id, revision, parameters, cancel, ActorKind.USER) }
             }

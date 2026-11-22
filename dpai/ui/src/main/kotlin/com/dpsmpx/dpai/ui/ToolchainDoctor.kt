@@ -37,11 +37,46 @@ object ToolchainDoctor {
     """.trimIndent()
     private val definitions = listOf(
         Probe("java", listOf("java", "-Xmx128m", "-version")),
+        Probe("java_debug", listOf("java", "-Xmx128m", "-Xlog:os=debug", "-version")),
+        Probe("memory", listOf("python3", "-I", "-B", "-c", """
+            import ctypes, mmap, os, json, sys
+            lib = ctypes.CDLL(None, use_errno=True)
+            lib.mmap.restype = ctypes.c_void_p
+            lib.mmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_long]
+            lib.mprotect.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int]
+            lib.munmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+            n = os.sysconf('SC_PAGE_SIZE')
+            p = lib.mmap(None, n, mmap.PROT_READ | mmap.PROT_WRITE, mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS, -1, 0)
+            if p == ctypes.c_void_p(-1).value:
+                print(json.dumps({'pageSize':n, 'mmapErrno':ctypes.get_errno()})); sys.exit(1)
+            try:
+                ctypes.set_errno(0)
+                rwx = lib.mprotect(p, n, mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
+                rwx_error = ctypes.get_errno() if rwx else 0
+                ctypes.set_errno(0)
+                rx = lib.mprotect(p, n, mmap.PROT_READ | mmap.PROT_EXEC)
+                print(json.dumps({'pageSize':n, 'rwxErrno':rwx_error, 'rxErrno':ctypes.get_errno() if rx else 0}))
+                sys.exit(1 if rwx else 0)
+            finally:
+                lib.munmap(p, n)
+        """.trimIndent())),
         Probe("jdk", listOf("/bin/sh", "-c", jdk), 60),
         Probe("javac", listOf("javac", "-version")),
         Probe("python3", listOf("python3", "-I", "-B", "-c", "import sys,ssl,sqlite3; print(sys.version); print(ssl.OPENSSL_VERSION); print('sqlite', sqlite3.sqlite_version)")),
         Probe("git", listOf("git", "--version")),
         Probe("c++", listOf("/bin/sh", "-c", cpp), 60),
+        Probe("android_sdk", listOf("/bin/sh", "-c", """
+            set -eu
+            sdk=${'$'}{ANDROID_HOME:-/root/android-sdk}
+            printf 'SDK=%s\n' "${'$'}sdk"
+            "${'$'}sdk/cmdline-tools/latest/bin/sdkmanager" --version
+            test -d "${'$'}sdk/platforms"
+            aapt=${'$'}sdk/dpai/aapt2
+            if ! test -x "${'$'}aapt"; then
+                for candidate in "${'$'}sdk"/build-tools/*/aapt2; do test ! -x "${'$'}candidate" || aapt=${'$'}candidate; done
+            fi
+            "${'$'}aapt" version
+        """.trimIndent()), 60),
     ) + listOf("cc", "gcc", "g++", "clang", "clang++", "cmake", "make", "ninja", "node", "npm", "rustc", "cargo", "go", "mvn")
         .map { Probe(it, listOf(it, if (it == "go") "version" else "--version")) }
     val choices: List<String> = listOf("project", "all") + definitions.map { it.name }
@@ -94,7 +129,7 @@ object ToolchainDoctor {
     /** HotSpot check_pax проверяет mmap/mprotect, но не определяет установленный модуль PaX. */
     fun explain(output: String): Pair<String, String>? = when {
         output.contains("Failed to mark memory page as executable", ignoreCase = true) -> "JVM_EXECUTABLE_MEMORY" to
-            "JVM получила отказ при переводе памяти в исполняемую (mprotect). Причина ещё не установлена: это не доказательство PaX/grsecurity. Нужны errno и проверка Android/proot; paxctl или смена ядра без этих данных не являются подтверждённым исправлением."
+            "JVM получила отказ при переводе памяти в исполняемую (mprotect). Причина ещё не установлена: это не доказательство PaX/grsecurity. Запросите java_debug и memory для errno и размера страниц. Paxctl или смена ядра без этих данных не являются подтверждённым исправлением."
         output.contains("Could not reserve enough space", ignoreCase = true) || output.contains("Native memory allocation", ignoreCase = true) -> "JVM_MEMORY" to
             "JVM не смогла выделить память; проверьте доступную память и пределы heap, затем повторите пробу."
         else -> null

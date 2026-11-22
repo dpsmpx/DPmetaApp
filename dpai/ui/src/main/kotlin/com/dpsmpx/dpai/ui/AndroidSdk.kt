@@ -73,7 +73,8 @@ object AndroidSdk {
      * ([licenses]) `sdkmanager` ничего не ставит — согласие даёт человек в форме.
      * Итог — строка `DPAI_ANDROID_SDK_OK`; ошибки — строками `DPAI_ANDROID_…`.
      */
-    fun install(licenses: Boolean, ndk: Boolean, aapt2: Community?, ndkCommunity: Community?): List<String> {
+    fun install(licenses: Boolean, ndk: Boolean, aapt2: Community?, ndkCommunity: Community?, platform: String = PLATFORM, buildTools: String = BUILD_TOOLS): List<String> {
+        require(Regex("platforms;android-[0-9]{2}").matches(platform) && Regex("build-tools;[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}").matches(buildTools)) { "нужны точные идентификаторы Android SDK" }
         // Адрес и сумма идут в скрипт: проверка — и здесь, конструктор Community открыт (проверка PR #190).
         for (c in listOfNotNull(aapt2, ndkCommunity)) require(URL.matches(c.url) && SHA.matches(c.sha256)) { "сборка сообщества — только через community()" }
         val script = buildString {
@@ -95,7 +96,7 @@ object AndroidSdk {
                 appendLine("echo 'DPAI_ANDROID_LICENSE: не принята — sdkmanager ничего не ставит'; exit 3")
             }
             // Только лицензия выбранных SDK-пакетов: --licenses принял бы и чужие/preview.
-            appendLine("printf 'y\\n' | \"\$SDKM\" --sdk_root=\"\$SDK\" '$PLATFORM' '$BUILD_TOOLS'")
+            appendLine("printf 'y\\n' | \"\$SDKM\" --sdk_root=\"\$SDK\" '$platform' '$buildTools'")
             appendLine("mkdir -p /root/.gradle")
             appendLine("touch /root/.gradle/gradle.properties")
             // aapt2 для Gradle: официальный — только x86_64; на arm64 — сборка сообщества по желанию.
@@ -129,5 +130,11 @@ object AndroidSdk {
             appendLine("printf 'DPAI_ANDROID_SDK_OK %s\\n' \"\$SDK\"")
         }
         return listOf("/bin/sh", "-c", script)
+    }
+
+    /** SDK после установки виден следующим командам без ручного ANDROID_HOME; свой путь сильнее. */
+    fun discoveredEnv(base: Map<String, String>, exists: (String) -> Boolean): Map<String, String> {
+        val home = base["ANDROID_HOME"] ?: base["ANDROID_SDK_ROOT"] ?: HOME.takeIf { exists("$it/cmdline-tools/latest/bin/sdkmanager") } ?: return base
+        return base + listOf("ANDROID_HOME", "ANDROID_SDK_ROOT").filter { it !in base }.associateWith { home }
     }
 }
