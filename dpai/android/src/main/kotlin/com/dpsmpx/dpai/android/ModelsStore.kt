@@ -14,6 +14,11 @@ import com.dpsmpx.dpai.core.ids.AccountId
 import com.dpsmpx.dpai.core.ids.CorrelationId
 import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
+import com.dpsmpx.dpai.core.hashing.Hashing
+import com.dpsmpx.dpai.core.serialization.CanonicalJson
+import com.dpsmpx.dpai.ui.ProjectEntry
+import com.dpsmpx.dpai.ui.TargetBook
+import com.dpsmpx.dpai.ui.TargetEntry
 import com.dpsmpx.dpai.core.measure.Measure
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.JsonObject
@@ -55,6 +60,7 @@ import kotlinx.coroutines.launch
 object ModelsStore {
     private const val PROFILES = "api-profiles"
     private const val CHATS = "api-chats"
+    private const val CHAT_FULL_ACCESS = "dpai.chat-full-access"
     private const val ROUTINES = "routines"
 
     /** Ответ, который идёт сейчас: текст до сих пор и отмена. */
@@ -191,7 +197,7 @@ object ModelsStore {
         if (d.write(PROFILES, ApiProfileBook.toJson(next)) is Outcome.Success) profileFlow.value = next
         ApiKeys.remove(app, id)
         ApiKeys.removeNamed(app, adminName(id))
-        chatFlow.value.filter { it.profile == id }.forEach { c -> runningFlow.value[c.id]?.cancel?.cancel() }
+        chatFlow.value.filter { it.profile == id }.forEach { c -> revokeChatFullAccess(c.id) }
         writeChats(chatFlow.value.filter { it.profile != id })
     }
 
@@ -248,9 +254,61 @@ object ModelsStore {
         return c
     }
 
+    /**
+     * Подтверждение делегирования не содержится в запросе модели и не берётся из её текста.
+     * В приватных preferences хранится только отпечаток связки проект/target (D-218).
+     */
+    private fun fullAccessPreferences() = app.getSharedPreferences(CHAT_FULL_ACCESS, Context.MODE_PRIVATE)
+
+    private fun accessScope(project: ProjectEntry, target: TargetEntry): String =
+        Hashing.sha256(listOf(project.project.value, project.root, project.worktreeRoot, project.integrationBranch,
+            CanonicalJson.write(TargetBook.toJson(listOf(target)))).joinToString("\u0000")).hex
+
+    private fun accessContext(chat: CorrelationId): Pair<ProjectEntry, TargetEntry>? {
+        val linked = chatFlow.value.firstOrNull { it.id == chat }?.project ?: return null
+        val controller = Controller.get(app.filesDir)
+        val project = controller.projects().projects.firstOrNull { it.project == linked } ?: return null
+        val target = controller.targets().firstOrNull { it.id == project.target } ?: return null
+        return project to target
+    }
+
+    @Synchronized
+    fun chatFullAccess(chat: CorrelationId): Boolean {
+        val (project, target) = accessContext(chat) ?: return false
+        return fullAccessPreferences().getString(chat.value, null) == accessScope(project, target)
+    }
+
+    /** Только оболочка UI вызывает после PIN/биометрии и точного имени; API-инструмента нет. */
+    @SuppressLint("ApplySharedPref")
+    @Synchronized
+    fun enableChatFullAccess(chat: CorrelationId, typedName: String): Boolean {
+        val (project, target) = accessContext(chat) ?: return false
+        if (typedName != project.root.trimEnd('/').substringAfterLast('/')) return false
+        val stored = fullAccessPreferences().edit().putString(chat.value, accessScope(project, target)).commit()
+        if (stored) AppLogs.get(app).info("ai", "Полный доступ к проектному API-чату включён человеком")
+        return stored
+    }
+
+    /** Проверяется брокером и повторно при consume; сам агент изменить грант не может. */
+    @Synchronized
+    fun fullAccessFor(owner: String, project: ProjectEntry, target: TargetEntry): Boolean {
+        if (!owner.startsWith("chat:")) return false
+        val chat = IdKinds.CORRELATION.parse(owner.removePrefix("chat:")).valueOrNull() ?: return false
+        if (chatFlow.value.none { it.id == chat && it.project == project.project }) return false
+        return fullAccessPreferences().getString(chat.value, null) == accessScope(project, target)
+    }
+
+    @SuppressLint("ApplySharedPref")
+    @Synchronized
+    fun revokeChatFullAccess(chat: CorrelationId) {
+        fullAccessPreferences().edit().remove(chat.value).commit()
+        runningFlow.value[chat]?.cancel?.cancel()
+        AppLogs.get(app).info("ai", "Полный доступ к проектному API-чату отозван человеком")
+    }
+
     @Synchronized
     fun deleteChat(id: CorrelationId) {
-        runningFlow.value[id]?.cancel?.cancel()
+        revokeChatFullAccess(id)
         writeChats(chatFlow.value.filter { it.id != id })
     }
 
