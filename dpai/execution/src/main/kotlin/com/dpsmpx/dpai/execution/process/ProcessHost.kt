@@ -152,7 +152,7 @@ fun ProcessHost.run(
         val causes = if (report.clean) emptyList() else listOf(orphans(report, spec))
         return Outcome.Failure(
             listOf(Diagnostic.error(if (wasCancelled) DiagCode.CANCELLED_BY_USER else DiagCode.PROCESS_TIMEOUT,
-                if (wasCancelled) "${spec.program}: вызов отменён, запрошена остановка своего процесса" else "${spec.program}: не завершился за $timeout, остановлен", causes = causes)),
+                if (wasCancelled) "${spec.program}: вызов отменён, запрошена остановка своего процесса" else "${spec.program}: не завершился за $timeout, остановлен").withCauses(causes)),
         )
     }
     // Выход корня ещё не значит, что потоки чтения дочитали вывод: их дожидается awaitExit.

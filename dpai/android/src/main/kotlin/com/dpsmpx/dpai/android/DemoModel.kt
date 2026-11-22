@@ -657,10 +657,6 @@ class DemoModel(
                 is Outcome.Failure -> return@start LongJobs.Done(r.errors.first().message, failed = true)
                 is Outcome.Success -> r.value
             }
-            if (beforePrepare != null) when (val allowed = beforePrepare()) {
-                is Outcome.Failure -> return@start LongJobs.Done(allowed.diagnostics.first().message, failed = true)
-                is Outcome.Success -> Unit
-            }
             if (choices != null && !environment) controller.manualProfiles.saveChoices(p, profile.kind, choices)
             // Что профилю нужно (D-186): в Linux приложения — проверка до запуска и ANDROID_HOME в окружение шагов;
             // на ПК-target SDK — его собственный.
@@ -681,6 +677,10 @@ class DemoModel(
             val client = manualClient(target) ?: return@start LongJobs.Done("агент target недоступен", failed = true)
             val capability = client.profiles()
             if (capability is Outcome.Failure) return@start LongJobs.Done("обновите агент target для ручных профилей: ${capability.errors.first().message}", failed = true)
+            if (beforePrepare != null) when (val allowed = beforePrepare()) {
+                is Outcome.Failure -> return@start LongJobs.Done(allowed.diagnostics.first().message, failed = true)
+                is Outcome.Success -> Unit
+            }
             val prepared = lock.withLock {
                 if (cancelled()) return@withLock Outcome.failure(DiagCode.CANCELLED_BY_USER, "запуск отменён до подготовки")
                 val fresh = controller.project()

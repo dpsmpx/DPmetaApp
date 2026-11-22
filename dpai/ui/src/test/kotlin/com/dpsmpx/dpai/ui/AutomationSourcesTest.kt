@@ -64,8 +64,11 @@ class AutomationSourcesTest {
 
     @Test fun environmentAdapterUsesTheExistingOperationsAndDoesNotRunThem() {
         val entries = EnvironmentAutomations.describe(inApp = true, installed = true, root = "/project")
-        assertEquals(LinuxEnvironment.Apk.entries.size + 1, entries.size)
-        assertEquals(listOf("environment.inspect"), entries.filter { it.invocation == AutomationInvocation.DIRECT }.map { it.id })
+        assertEquals(LinuxEnvironment.Apk.entries.size + 4, entries.size)
+        assertEquals(LinuxEnvironment.Apk.entries.map { "environment.apk.${it.name.lowercase()}" }.toSet(), entries.filter { it.id.startsWith("environment.apk.") }.map { it.id }.toSet())
+        assertEquals(AutomationInvocation.DIRECT, entries.single { it.id == "environment.apk.add" }.invocation)
+        assertEquals(AutomationInvocation.OPEN_UI, entries.single { it.id == "environment.apk.del" }.invocation)
+        assertEquals(com.dpsmpx.dpai.core.operations.ActionLevel.DANGEROUS, entries.single { it.id == "environment.command" }.level)
         assertTrue(EnvironmentAutomations.describe(false, true, "/project").none { it.available })
         assertTrue(EnvironmentAutomations.describe(true, false, "/project").none { it.available })
     }

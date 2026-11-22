@@ -180,7 +180,7 @@ internal object ApiProjectRuntime {
                     "manual.check", "manual.build" -> {
                         val kind = if (entry.id == "manual.check") ManualProfileKind.CHECK else ManualProfileKind.BUILD
                         val chosen = snapshot.profiles[kind] ?: return@invoke Outcome.failure(DiagCode.STATE_CONFLICT, "профиль удалён")
-                        profile(chosen, snapshot.choices[kind].orEmpty() + values, cancel) { evidence = it }
+                        profile(chosen, snapshot.choices[kind].orEmpty() + values, cancel, evidence = { evidence = it })
                     }
                     else -> environment(entry, values, cancel) { evidence = it }
                 } })
