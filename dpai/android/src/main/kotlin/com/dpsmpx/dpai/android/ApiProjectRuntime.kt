@@ -268,15 +268,17 @@ internal object ApiProjectRuntime {
 
         private fun profile(chosen: ManualProfile, values: Map<String, String>, cancel: Cancel, evidence: (JsonObject) -> Unit): Outcome<JsonObject> {
             val prepared = java.util.concurrent.atomic.AtomicReference<com.dpsmpx.dpai.core.ids.SessionId?>(null)
+            val profileCancel = Cancel()
             val done = CompletableFuture<ManualRunView>()
-            if (!model.startManualProfile(project, location, chosen, choices = values, cancelled = { cancel.cancelled }, expectedTarget = targetSnapshot,
+            if (!model.startManualProfile(project, location, chosen, choices = values, cancelled = { cancel.cancelled || profileCancel.cancelled }, expectedTarget = targetSnapshot,
                     onPrepared = { prepared.set(it.id) }, onFinished = { _, r -> done.complete(r) })) return Outcome.failure(DiagCode.WORKTREE_OWNED, "контур занят; дождитесь завершения команды")
             ControllerService.resume(context)
             val deadline = Clock.SYSTEM.now().epochMillis + chosen.steps.sumOf { it.timeoutSeconds } * 1000 + 60_000
+            // Worker слушает только сигналы этого вызова. Общий manualStop мог бы остановить уже соседний запуск.
             while (Clock.SYSTEM.now().epochMillis < deadline) {
-                if (cancel.cancelled) { model.stopManualProfile(); return Outcome.failure(DiagCode.CANCELLED_BY_USER, "запрошена остановка команды; пауза сохраняется до подтверждения её конца") }
+                if (cancel.cancelled) return Outcome.failure(DiagCode.CANCELLED_BY_USER, "запрошена остановка команды; пауза сохраняется до подтверждения её конца")
                 val view = try { done.get(1, TimeUnit.SECONDS) } catch (_: TimeoutException) { continue }
-                if (cancel.cancelled) { model.stopManualProfile(); return Outcome.failure(DiagCode.CANCELLED_BY_USER, "вызов отменён; состояние команды смотрите в истории профиля") }
+                if (cancel.cancelled) return Outcome.failure(DiagCode.CANCELLED_BY_USER, "вызов отменён; состояние команды смотрите в истории профиля")
                 val output = when (val r = com.dpsmpx.dpai.ui.ManualAutomationResult.evidence(prepared.get(), view)) {
                     is Outcome.Failure -> return r
                     is Outcome.Success -> r.value
@@ -284,7 +286,7 @@ internal object ApiProjectRuntime {
                 evidence(output)
                 return if (view.complete) Outcome.success(output) else Outcome.failure(DiagCode.PROCESS_EXIT_NONZERO, view.note, prepared.get()?.value)
             }
-            model.stopManualProfile()
+            profileCancel.cancel()
             return Outcome.failure(DiagCode.PROCESS_TIMEOUT, "ожидание профиля истекло; остановка запрошена, результат ещё не подтверждён")
         }
 
