@@ -44,8 +44,20 @@ jobs:
             --install 'platforms;android-37.0' 'build-tools;36.1.0' \
             'ndk;28.2.13676358' 'cmake;3.22.1'
       - name: Full repository verification
+        id: strict
+        continue-on-error: true
         shell: bash
-        run: tools/check/run.sh full --strict
+        run: tools/check/run.sh full --strict --verbose
+      - name: Preserve failing JUnit test reports
+        if: steps.strict.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: DPmetaApp-test-results-${{ github.sha }}
+          path: |
+            **/build/test-results/**/*.xml
+            **/build/reports/tests/**
+          if-no-files-found: warn
+          retention-days: 7
       - name: Build standard APK for modern Android policies
         shell: bash
         env:
@@ -82,3 +94,9 @@ jobs:
           path: build/apk/
           if-no-files-found: error
           retention-days: 14
+      - name: Require green full-strict result
+        if: steps.strict.outcome != 'success'
+        shell: bash
+        run: |
+          echo 'full --strict failed: APKs (if created) are diagnostic only; merge into main is forbidden.'
+          exit 1
