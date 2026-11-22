@@ -13,6 +13,12 @@ import com.dpsmpx.dpai.core.serialization.JsonString
 
 /** Соседний finished не доказывает исполнение нашего запроса, даже если он новее (D-215). */
 object ManualAutomationResult {
+    /** PRECHECK отказал ещё до prepare: чужой предыдущий run нельзя выдавать за результат этого вызова. */
+    fun preflight(note: String): JsonObject = JsonObject.of("complete" to JsonBool(false), "run" to JsonNull,
+        "note" to JsonString(note.take(1000)), "output" to JsonString(""), "outputTruncated" to JsonBool(false),
+        "phase" to JsonString("PREFLIGHT"), "commandStarted" to JsonBool(false),
+        "outputHash" to JsonString("sha256:" + Hashing.sha256("").hex), "steps" to JsonArray(emptyList()))
+
     fun evidence(prepared: SessionId?, view: ManualRunView): Outcome<JsonObject> {
         if (prepared == null || view.finished != prepared) return Outcome.failure(DiagCode.STATE_CONFLICT, view.note)
         val commandStarted = view.step != null || view.results.isNotEmpty()

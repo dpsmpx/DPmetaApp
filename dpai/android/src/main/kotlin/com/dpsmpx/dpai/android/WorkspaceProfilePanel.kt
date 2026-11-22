@@ -142,6 +142,11 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
             )
         }
         Text("В Linux приложения нужное проверяется до запуска, ANDROID_HOME подставляется сам; на ПК — его SDK.", style = MaterialTheme.typography.bodySmall)
+        if (view.target?.inApp == true && kind in setOf(ManualProfileKind.CHECK, ManualProfileKind.BUILD)) {
+            Text("Gradle/JVM: перед запуском приложение проверит реальный старт java. Если Android SELinux запрещает execmem, эта сборка на телефоне невозможна: " +
+                "используйте SSH-target с JDK и Android SDK. Установка JDK в proot не снимает запрет SELinux.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         Text("В командах и окружении: \${PROJECT}, \${ROOT}, \${TREE}, \${BRANCH}, \${TARGET} и свои \${ИМЯ}; сам знак \${ — \$\${.",
             style = MaterialTheme.typography.bodySmall)
         Text("В sh -c и PowerShell подстановки не экранируются: используйте только доверенные значения. Пути и имена передавайте через окружение, обращения к переменным заключайте в кавычки.",

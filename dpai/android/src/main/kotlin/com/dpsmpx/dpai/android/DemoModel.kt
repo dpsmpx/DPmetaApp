@@ -658,6 +658,16 @@ class DemoModel(
                 is Outcome.Success -> r.value
             }
             if (choices != null && !environment) controller.manualProfiles.saveChoices(p, profile.kind, choices)
+            // Пакет openjdk в Alpine не означает работающую JVM: SELinux может запретить execmem (D-216).
+            // Штатные Gradle/JVM-шаги не запускаем до подтверждения, что `java -version` реально работает.
+            if (target.inApp && com.dpsmpx.dpai.ui.ToolchainDoctor.needsJvm(resolved)) {
+                val host = com.dpsmpx.dpai.android.linux.LinuxSetup.guestHost(app)
+                    ?: return@start LongJobs.Done("PRECHECK_FAILED: Linux приложения недоступен; BUILD не запускался", failed = true)
+                when (val java = com.dpsmpx.dpai.ui.ToolchainDoctor.buildJvmPreflight(host, cancelled)) {
+                    is Outcome.Failure -> return@start LongJobs.Done(java.diagnostics.first().message, failed = true)
+                    is Outcome.Success -> Unit
+                }
+            }
             // Что профилю нужно (D-186): в Linux приложения — проверка до запуска и ANDROID_HOME в окружение шагов;
             // на ПК-target SDK — его собственный.
             val ready = if (target.inApp && resolved.needs.isNotEmpty()) {

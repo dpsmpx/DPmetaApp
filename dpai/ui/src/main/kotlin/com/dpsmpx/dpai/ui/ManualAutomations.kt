@@ -22,7 +22,7 @@ object ManualAutomations {
         val profile = profiles[kind]
         val direct = kind in setOf(ManualProfileKind.CHECK, ManualProfileKind.BUILD)
         val title = when (kind) { ManualProfileKind.CHECK -> "Проверки"; ManualProfileKind.BUILD -> "Сборка"; ManualProfileKind.DEPENDENCIES -> "Зависимости" }
-        AutomationDefinition("manual.${kind.name.lowercase()}", title, "Штатный профиль проекта; готовность инструментов проверяет прежний worker.",
+        AutomationDefinition("manual.${kind.name.lowercase()}", title, "Штатный профиль проекта. В Linux приложения Gradle/JVM проверяются живым запуском Java до команд; другие инструменты проверяйте через environment.probe.",
             AutomationSource.MANUAL, when (kind) { ManualProfileKind.CHECK -> AutomationCategory.CHECK; ManualProfileKind.BUILD -> AutomationCategory.BUILD; ManualProfileKind.DEPENDENCIES -> AutomationCategory.ENVIRONMENT },
             Hashing.sha256(JsonObject.of("profile" to (profile?.toJson() ?: JsonNull), "selections" to JsonObject(selections[kind].orEmpty().mapValues { com.dpsmpx.dpai.core.serialization.JsonString(it.value) }))).hex, ActionLevel.REVERSIBLE, listOf(root),
             if (direct) AutomationInvocation.DIRECT else AutomationInvocation.OPEN_UI, profile != null,
