@@ -21,8 +21,8 @@ object EnvironmentAutomations {
             remote = false, deterministic = true, idempotent = true, verification = "Факты из базы apk; отсутствие данных не является успехом", triggers = setOf("MANUAL", "AI"))) +
             LinuxEnvironment.Apk.entries.map { op -> AutomationDefinition("environment.apk.${op.name.lowercase()}", op.name,
                 "Штатная операция менеджера пакетов; прямой план подтверждается в приложении, остальные действия — на экране окружения.",
-                AutomationSource.ENVIRONMENT, AutomationCategory.ENVIRONMENT, Hashing.sha256(op.descriptionHash + ToolchainDoctor.sourceHash + "EnvironmentPlan:3").hex,
-                if (op in setOf(LinuxEnvironment.Apk.UPDATE, LinuxEnvironment.Apk.LIST_UPGRADES)) ActionLevel.READ else ActionLevel.REVERSIBLE, listOf(root),
+                AutomationSource.ENVIRONMENT, AutomationCategory.ENVIRONMENT, Hashing.sha256(op.descriptionHash + ToolchainDoctor.sourceHash + "EnvironmentPlan:4").hex,
+                if (op == LinuxEnvironment.Apk.LIST_UPGRADES) ActionLevel.READ else ActionLevel.REVERSIBLE, listOf(root),
                 if (op in EnvironmentPlan.packageActions) AutomationInvocation.DIRECT else AutomationInvocation.OPEN_UI, available, reason,
                 parameters = if (op in setOf(LinuxEnvironment.Apk.ADD, LinuxEnvironment.Apk.FIX, LinuxEnvironment.Apk.REPAIR, LinuxEnvironment.Apk.UPGRADE_SOME))
                     listOf(AutomationParameter("packages", "Имена пакетов через пробел; например openjdk21-jdk python3 git", emptyList(), text = true, required = true)) else emptyList(),

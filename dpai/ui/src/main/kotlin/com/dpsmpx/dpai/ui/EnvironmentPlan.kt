@@ -27,8 +27,9 @@ data class EnvironmentPlan(val id: String, val title: String, val level: ActionL
                     ?: return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "операция требует прежнего экрана", id)
                 val packages = values["packages"].orEmpty().trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
                 val spec = when (val result = LinuxEnvironment.apk(action, packages)) { is Outcome.Failure -> return result; is Outcome.Success -> result.value }
-                val read = action in setOf(LinuxEnvironment.Apk.UPDATE, LinuxEnvironment.Apk.LIST_UPGRADES)
-                val repair = if (!read && action != LinuxEnvironment.Apk.REPAIR && broken.isNotEmpty()) {
+                val read = action == LinuxEnvironment.Apk.LIST_UPGRADES
+                val changesPackages = action !in setOf(LinuxEnvironment.Apk.UPDATE, LinuxEnvironment.Apk.LIST_UPGRADES)
+                val repair = if (changesPackages && action != LinuxEnvironment.Apk.REPAIR && broken.isNotEmpty()) {
                     val fix = when (val result = LinuxEnvironment.apk(LinuxEnvironment.Apk.REPAIR, broken)) { is Outcome.Failure -> return result; is Outcome.Success -> result.value }
                     listOf(ManualStep("Восстановить повреждённые пакеты", fix.command, 900))
                 } else emptyList()

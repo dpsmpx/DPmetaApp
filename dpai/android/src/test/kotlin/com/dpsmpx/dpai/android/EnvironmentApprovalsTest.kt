@@ -77,6 +77,17 @@ class EnvironmentApprovalsTest {
         assertFalse(broker.answer("test", request.id, true, "project"))
     }
 
+    @Test fun indexUpdateRequiresHumanButListingAvailableUpdatesDoesNot() {
+        val broker = EnvironmentApprovalBroker(clock, ids)
+        val update = EnvironmentPlan.create("environment.apk.update", emptyMap(), listOf("broken-package")).valueOrNull()!!
+        assertTrue(update.snapshot)
+        assertEquals(1, update.profile.steps.size, "обновление индекса не переустанавливает повреждённые пакеты")
+        assertEquals(DiagCode.APPROVAL_REQUIRED, broker.await(null, project, update, "revision") { false }.diagnostics.single().code)
+        val listing = EnvironmentPlan.create("environment.apk.list_upgrades", emptyMap()).valueOrNull()!!
+        assertIs<Outcome.Success<EnvironmentApprovalBroker.Grant?>>(broker.await(null, project, listing, "revision") { false })
+        assertTrue(broker.pending.value.isEmpty())
+    }
+
     private fun command() = EnvironmentPlan.create("environment.command", mapOf("argv" to "[\"java\",\"-version\"]")).valueOrNull()!!
     private fun waiting(plan: EnvironmentPlan, block: (EnvironmentApprovalBroker, EnvironmentApprovalBroker.Request,
         CompletableFuture<Outcome<EnvironmentApprovalBroker.Grant?>>, AtomicBoolean) -> Unit) {
