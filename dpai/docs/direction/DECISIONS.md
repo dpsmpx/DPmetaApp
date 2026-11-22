@@ -6166,6 +6166,9 @@ CLI→API — новый разговор с видимыми пользоват
 
 **Решение.** Android SDK Alpine под proot получает статический AAPT2
 ARM64 от AndroidIDE-Dev с закреплённой SHA-256 и проверкой `version`;
+статические `zipalign`, `aidl`, `aapt`, `split-select` из проверенного
+архива AndroidIDEOfficial также заменяют x86_64-файлы SDK с отдельной
+суммой и проверкой запуска `zipalign`;
 при явной пользовательской ссылке + SHA-256 использует её. Gradle
 читает `android.aapt2FromMavenOverride` из `~/.gradle/gradle.properties`.
 Используется cmdline-tools 20.0 с собственным Java-sdkmanager: утилита

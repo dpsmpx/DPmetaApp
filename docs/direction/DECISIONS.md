@@ -5338,7 +5338,9 @@ Workflow и проверка исходников имеют права толь
 внешнего target**; локальная `environment.probe` обязана подтвердить,
 что `java` действительно работает. Установщик SDK автоматически загружает
 проверенную статическую ARM64-сборку `aapt2` проекта AndroidIDE-Dev
-(v35.0.2, SHA-256 закреплена в `AndroidSdk`), задаёт Gradle override,
+(v35.0.2, SHA-256 закреплена в `AndroidSdk`), а также статические
+ARM64 `zipalign`, `aidl`, `aapt`, `split-select` из AndroidIDEOfficial
+(v34.0.4, отдельная SHA-256), задаёт Gradle override,
 проверяет запуск. Компоненты SDK из Google (compileSdk 37 —
 `platforms;android-37.0`) — после согласия с лицензией;
 для проектов с C/C++ всё ещё требуется совместимый ARM64 NDK.

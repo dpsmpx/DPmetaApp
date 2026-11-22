@@ -72,8 +72,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          find build/apk -name '*.apk' -type f -print0 | sort -z | xargs -0 sha256sum > build/apk/SHA256SUMS
-          cat build/apk/SHA256SUMS
+          cd build/apk
+          find . -name '*.apk' -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+          cat SHA256SUMS
       - name: Upload APKs and SHA-256 checksums
         uses: actions/upload-artifact@v4
         with:

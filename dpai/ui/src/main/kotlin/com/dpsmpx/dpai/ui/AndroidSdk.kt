@@ -15,6 +15,9 @@ object AndroidSdk {
     /** Статически слинкованный AAPT2 ARM64 AndroidIDE-Dev, release v35.0.2. */
     const val ARM64_AAPT2_URL = "https://github.com/AndroidIDE-Dev/platform-tools/releases/download/v35.0.2/aapt2-arm64-v8a"
     const val ARM64_AAPT2_SHA256 = "db737b3bbee99dd8a9e56108cc05d032597874d3f8ac557a69f3c5de5efaf57f"
+    /** Дополнительные статические zipalign/aidl/aapt/split-select для Gradle на ARM64. */
+    const val ARM64_TOOLS_URL = "https://github.com/AndroidIDEOfficial/androidide-tools/releases/download/v34.0.4/build-tools-34.0.4-aarch64.tar.xz"
+    const val ARM64_TOOLS_SHA256 = "4bbbdeee608ff8d3a2c1534d0a5270305a02b1f200403a536c75ac84c41e52fa"
     /** cmdline-tools 20.0: sdkmanager запускается напрямую в JVM без загрузки нового Android CLI. */
     const val CMDLINE_VERSION = "20.0"
     const val CMDLINE_URL = "https://dl.google.com/android/repository/commandlinetools-linux-14742923_latest.zip"
@@ -112,6 +115,16 @@ object AndroidSdk {
             appendLine("  \"\$SDK/dpai/aapt2\" version || { echo 'DPAI_ANDROID_AAPT2: не запускается на этом процессоре'; exit 1; }")
             appendLine("  grep -v '^android.aapt2FromMavenOverride=' /root/.gradle/gradle.properties > \"\$STAGE/gp\" || true")
             appendLine("  printf 'android.aapt2FromMavenOverride=%s\\n' \"\$SDK/dpai/aapt2\" >> \"\$STAGE/gp\" && mv \"\$STAGE/gp\" /root/.gradle/gradle.properties")
+            // AGP также вызывает native zipalign и иногда aidl. Официальные
+            // linux-x86_64 инструменты из SDK на телефоне не выполняются.
+            appendLine("  curl --fail --location --proto '=https' --connect-timeout 30 --max-time 1200 '$ARM64_TOOLS_URL' -o \"\$STAGE/arm-tools.tar.xz\"")
+            appendLine("  printf '%s  %s\\n' '$ARM64_TOOLS_SHA256' \"\$STAGE/arm-tools.tar.xz\" | sha256sum -c - || { echo 'DPAI_ANDROID_CHECKSUM: arm-tools'; exit 1; }")
+            appendLine("  for DPAI_TOOL in zipalign aidl aapt split-select; do")
+            appendLine("    tar -xJf \"\$STAGE/arm-tools.tar.xz\" -C \"\$STAGE\" \"build-tools/34.0.4/\$DPAI_TOOL\" || exit 1")
+            appendLine("    install -m 755 \"\$STAGE/build-tools/34.0.4/\$DPAI_TOOL\" \"\$SDK/build-tools/${buildTools.substringAfter(';')}/\$DPAI_TOOL\" || exit 1")
+            appendLine("  done")
+            appendLine("  DPAI_ZIP_HELP=\$(\"\$SDK/build-tools/${buildTools.substringAfter(';')}/zipalign\" -h 2>&1 || :)")
+            appendLine("  printf '%s\\n' \"\$DPAI_ZIP_HELP\" | grep -qi zipalign || { echo 'DPAI_ANDROID_ZIPALIGN: не запускается на ARM64'; exit 1; }")
             appendLine("fi")
             if (ndk) {
                 appendLine("if test \"\$ARCH\" = x86_64; then")
@@ -145,6 +158,9 @@ object AndroidSdk {
             appendLine("AAPT=\"\$SDK/dpai/aapt2\"")
             appendLine("test -x \"\$AAPT\" || AAPT=\"\$SDK/build-tools/${buildTools.substringAfter(';')}/aapt2\"")
             appendLine("\"\$AAPT\" version || { echo 'DPAI_ANDROID_AAPT2: не запускается на этом процессоре; нужен совместимый aapt2 или ПК-target'; exit 1; }")
+            appendLine("ZIPALIGN=\"\$SDK/build-tools/${buildTools.substringAfter(';')}/zipalign\"")
+            appendLine("DPAI_ZIP_HELP=\$(\"\$ZIPALIGN\" -h 2>&1 || :)")
+            appendLine("printf '%s\\n' \"\$DPAI_ZIP_HELP\" | grep -qi zipalign || { echo 'DPAI_ANDROID_ZIPALIGN: не запускается на этом процессоре'; exit 1; }")
             if (ndk) {
                 appendLine("CLANG=''")
                 appendLine("for c in \"\$SDK/ndk/${NDK.substringAfter(';')}\"/toolchains/llvm/prebuilt/*/bin/clang \"\$SDK/ndk/community\"/toolchains/llvm/prebuilt/*/bin/clang; do test ! -x \"\$c\" || CLANG=\"\$c\"; done")

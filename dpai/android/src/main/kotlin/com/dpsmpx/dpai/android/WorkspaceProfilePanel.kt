@@ -146,7 +146,7 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
         if (view.target?.inApp == true && kind in setOf(ManualProfileKind.CHECK, ManualProfileKind.BUILD)) {
             val compatible = context.applicationInfo.targetSdkVersion <= 28
             Text("APK внутри приложения: ${if (compatible) "режим совместимости с Termux включён (targetSdk 28)" else "этот APK имеет targetSdk 29+ — Android может запретить запуск JVM"}. " +
-                "В Linux установите openjdk21-jdk (Пакеты), затем «Android SDK…» (aapt2 ARM64 ставится автоматически); выберите шаблон «APK Android». " +
+                "В Linux установите openjdk21-jdk (Пакеты), затем «Android SDK…» (aapt2/zipalign/aidl ARM64 ставятся автоматически); выберите шаблон «APK Android». " +
                 "Перед Gradle приложение проверяет реальный старт JVM. Нативные проекты с C/C++ требуют также ARM64 NDK. SSH-target — запасной вариант.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

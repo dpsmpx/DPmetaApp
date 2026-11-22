@@ -157,6 +157,7 @@ Sysroot сборки proot — пакеты Alpine 3.24 `main` (в APK из ни
 | `commandlinetools-linux-14742923_latest.zip` | cmdline-tools 20.0 | `04453066b540409d975c676d781da1477479dde3761310f1a7eb92a1dfb15af7` | `dl.google.com/android/repository`; архив и запуск `sdkmanager --version` проверены 23 ноября 2026. В 23.0 sdkmanager скачивает отдельный Android CLI; в 20.0 — запускается в JVM без CLI |
 | `platforms;android-37.0`, `build-tools;36.1.0`, `ndk;29.0.14206865` (x86_64) | — | суммы сверяет `sdkmanager` по манифесту Google | `dl.google.com`; для compileSdk 37 идентификатор платформы содержит `.0` |
 | `aapt2-arm64-v8a` | статический AndroidIDE-Dev platform-tools v35.0.2 | `db737b3bbee99dd8a9e56108cc05d032597874d3f8ac557a69f3c5de5efaf57f` | `https://github.com/AndroidIDE-Dev/platform-tools/releases/download/v35.0.2/aapt2-arm64-v8a`; SHA-256 GitHub Release + независимое скачивание и сверка 23 ноября 2026; AAPT2 из AOSP, Apache-2.0 |
+| `build-tools-34.0.4-aarch64.tar.xz` | статические `zipalign`, `aidl`, `aapt`, `split-select` AndroidIDEOfficial v34.0.4 | `4bbbdeee608ff8d3a2c1534d0a5270305a02b1f200403a536c75ac84c41e52fa` | `https://github.com/AndroidIDEOfficial/androidide-tools/releases/download/v34.0.4/build-tools-34.0.4-aarch64.tar.xz`; скачано и SHA-256 сверена 23 ноября 2026, ELF-программы без PT_INTERP, исходники инструментов AOSP Apache-2.0 |
 | NDK для linux-arm64, альтернативный AAPT2 | по выбору автора | вводит автор вместе с адресом | сборки сообщества; приложение сверяет SHA-256, совместимость доказывает отдельная проба |
 
 ## 5. Идеи из экосистемы
