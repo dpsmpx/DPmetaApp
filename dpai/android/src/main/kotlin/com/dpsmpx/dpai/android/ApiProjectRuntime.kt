@@ -207,7 +207,7 @@ internal object ApiProjectRuntime {
         private fun confirmed(plan: AutomationPlan, revision: String, cancel: Cancel, evidence: (JsonObject) -> Unit): Outcome<JsonObject> {
             val hash = plan.proposal(project, revision).hash.hex
             if (hash in deniedEnvironment) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "человек уже отклонил этот план; дождитесь нового поручения")
-            val grant = when (val result = EnvironmentApprovalBroker.shared.await(approvalOwner, project, plan, revision, targetSnapshot.label) { cancel.cancelled }) {
+            val grant = when (val result = EnvironmentApprovalBroker.shared.await(approvalOwner, project, plan, revision, targetSnapshot.label, targetSnapshot) { cancel.cancelled }) {
                 is Outcome.Failure -> { if (result.errors.any { it.code == DiagCode.OPERATION_NOT_ALLOWED }) deniedEnvironment += hash; return result }
                 is Outcome.Success -> result.value
             }
