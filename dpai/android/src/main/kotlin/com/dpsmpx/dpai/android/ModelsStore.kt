@@ -261,7 +261,7 @@ object ModelsStore {
     private fun fullAccessPreferences() = app.getSharedPreferences(CHAT_FULL_ACCESS, Context.MODE_PRIVATE)
 
     private fun accessScope(project: ProjectEntry, target: TargetEntry): String =
-        Hashing.sha256(listOf(project.project.value, project.root, project.worktreeRoot, project.integrationBranch,
+        "v1:sha256:" + Hashing.sha256(listOf(project.project.value, project.root, project.worktreeRoot, project.integrationBranch,
             CanonicalJson.write(TargetBook.toJson(listOf(target)))).joinToString("\u0000")).hex
 
     private fun accessContext(chat: CorrelationId): Pair<ProjectEntry, TargetEntry>? {
