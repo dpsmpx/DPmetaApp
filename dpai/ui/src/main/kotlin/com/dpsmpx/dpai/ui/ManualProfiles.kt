@@ -19,7 +19,7 @@ import com.dpsmpx.dpai.execution.agent.RunState
 import com.dpsmpx.dpai.storage.document.DocumentStore
 import kotlin.time.Duration.Companion.seconds
 
-enum class ManualProfileKind { CHECK, BUILD }
+enum class ManualProfileKind { CHECK, BUILD, DEPENDENCIES }
 
 /** Шаг профиля: имя для человека, argv без shell и таймаут шага в секундах. */
 data class ManualStep(val name: String, val command: List<String>, val timeoutSeconds: Long) {
@@ -40,6 +40,7 @@ data class ManualStep(val name: String, val command: List<String>, val timeoutSe
  * `dpai.manual-profile` v2; v1 (одна команда) читается как один шаг; v3 — ещё
  * свои параметры [params] и окружение шагов [env] (D-183), пишется только с ними; v4 — ещё
  * [needs]: что профилю нужно на target (Android SDK, NDK; D-186), пишется только с ним.
+ * v5 — отдельный вид DEPENDENCIES (D-208); CHECK/BUILD сохраняют прежние версии.
  */
 /** Что профилю нужно на target (D-186): проверяется перед запуском в Linux приложения. */
 enum class ManualNeed(val code: String, val title: String) {
@@ -87,7 +88,7 @@ data class ManualProfile(
 
     fun toJson(): JsonObject {
         val v3 = params.isNotEmpty() || env.isNotEmpty()
-        val version = when { needs.isNotEmpty() -> 4; v3 -> 3; else -> 2 }
+        val version = when { kind == ManualProfileKind.DEPENDENCIES -> 5; needs.isNotEmpty() -> 4; v3 -> 3; else -> 2 }
         val m = linkedMapOf<String, com.dpsmpx.dpai.core.serialization.JsonValue>("format" to JsonString(FORMAT), "version" to JsonNumber.of(version),
             "kind" to JsonString(kind.name),
             "steps" to JsonArray(steps.map { JsonObject.of("name" to JsonString(it.name), "command" to JsonArray(it.command.map(::JsonString)), "timeout" to JsonNumber.of(it.timeoutSeconds)) }))
@@ -148,7 +149,7 @@ data class ManualProfile(
                     val argv = (o["command"] as? JsonArray)?.items?.map { (it as? JsonString)?.value ?: return null } ?: return null
                     listOf(ManualStep(ManualStep.DEFAULT_NAME, argv, o.number("timeout") ?: return null))
                 }
-                2L, 3L, 4L -> ((o["steps"] as? JsonArray)?.items ?: return null).map { v ->
+                2L, 3L, 4L, 5L -> ((o["steps"] as? JsonArray)?.items ?: return null).map { v ->
                     val so = v as? JsonObject ?: return null
                     val argv = (so["command"] as? JsonArray)?.items?.map { (it as? JsonString)?.value ?: return null } ?: return null
                     ManualStep(so.text("name") ?: return null, argv, so.number("timeout") ?: return null)
@@ -166,8 +167,9 @@ data class ManualProfile(
             }.orEmpty()
             val needs = (o["needs"] as? JsonArray)?.items?.map { v -> ManualNeed.of((v as? JsonString)?.value) ?: return null }?.toSet().orEmpty()
             val version = o.number("version")
-            if (version != 3L && version != 4L && (params.isNotEmpty() || env.isNotEmpty())) return null
-            if (version != 4L && needs.isNotEmpty() || version == 4L && needs.isEmpty()) return null
+            if (version !in setOf(3L, 4L, 5L) && (params.isNotEmpty() || env.isNotEmpty())) return null
+            if (version !in setOf(4L, 5L) && needs.isNotEmpty() || version == 4L && needs.isEmpty()) return null
+            if ((kind == ManualProfileKind.DEPENDENCIES) != (version == 5L)) return null
             return ManualProfile(kind, steps, artifacts, params, env, needs).takeIf { it.valid }
         }
 
@@ -179,6 +181,7 @@ data class ManualProfile(
         private const val SAFE = "-_./=:,+@%"
 
         fun templates(kind: ManualProfileKind): List<Template> = when (kind) {
+            ManualProfileKind.DEPENDENCIES -> emptyList()
             ManualProfileKind.BUILD -> listOf(
                 Template("CMake", listOf(
                     Triple("Настройка", "cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON", "600"),
@@ -624,6 +627,13 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
         val run = view.active ?: return blocked
         stopRequested = true
         return finish(client, run, progress(run.id).results, "остановлено пользователем", ManualOutcome.STOPPED)
+    }
+
+    /** Ошибка предварительной проверки — не «остановлено пользователем» и не ошибка запущенной команды. */
+    fun failBeforeLaunch(client: AgentClient, reason: String): Boolean {
+        val run = view.active ?: return blocked
+        if (view.step != null || progress(run.id).intent != null) return true
+        return finish(client, run, emptyList(), "до запуска команды: ${Redactor.STANDARD.redact(reason)}", ManualOutcome.FAILED)
     }
 
     private fun finish(client: AgentClient, run: ManualRun, results: List<ManualStepResult>, result: String, outcome: ManualOutcome): Boolean {

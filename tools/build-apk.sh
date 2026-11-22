@@ -1,15 +1,14 @@
 #!/bin/sh
 # APK DPmetaApp — приложение корня :shell (D-35, D-53): пульт первым экраном, оболочка
 # «AI» вкладкой, — на любом Linux с JDK 21 и Android SDK (D-31): телефон автора
-# (proot, ярлык tools/termux/apk-build.sh), компьютер, облачная сессия. Отдельная
-# сборка «AI» — `cd dpai && ./gradlew :android-app:assemble…` (D-35).
+# (proot, ярлык tools/termux/apk-build.sh), компьютер, облачная сессия. Единый APK —
+# :shell (D-173); отдельная упаковка подсистемы снята.
 #
-#   tools/build-apk.sh [release|debug] [ai]     по умолчанию release; ai — отдельная сборка
-#                                               «AI» dpai/android-app (D-35), тот же ключ
+#   tools/build-apk.sh [release|debug] [app]    по умолчанию release, единый APK DP_IDE
 #
 # release — как у DPpass (DP_AI_Orcestrator:D-97, ответ автора 2 ноября 2026):
 # подписан ключом выпуска из свойств dpai.release.* в ~/.gradle/gradle.properties
-# (shell/build.gradle.kts — тот же ключ, что у сборки «AI»: APK ставится поверх). Без них Gradle подписал бы отладочным ключом —
+# (shell/build.gradle.kts — тот же ключ, что у прежней сборки «AI»). Без них Gradle подписал бы отладочным ключом —
 # такой APK не встанет поверх подписанного, поэтому сценарий его не выдаёт:
 # отказ, если только не задано DPAI_RELEASE_DEBUG_KEY=1 (замеры у себя, D-24).
 # После сборки — apksigner verify: подпись v2/v3, отпечаток SHA-256 сертификата;
@@ -26,8 +25,7 @@ MODE="${1:-release}"
 WHAT="${2:-app}"
 case "$WHAT" in
   app) DIR="$ROOT"; MODULE=":shell"; OUT_DIR="$ROOT/shell" ;;
-  ai) DIR="$ROOT/dpai"; MODULE=":android-app"; OUT_DIR="$ROOT/dpai/android-app" ;;
-  *) echo "✗ сборка $WHAT: есть app (DPmetaApp) и ai (отдельная «AI»)"; exit 2 ;;
+  *) echo "✗ сборка $WHAT: поддерживается app (единый APK DP_IDE)"; exit 2 ;;
 esac
 case "$MODE" in
   release) TASK=assembleRelease ;;

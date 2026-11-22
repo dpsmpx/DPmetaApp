@@ -55,6 +55,25 @@ object Assist {
      * сразу после вставленного.
      */
     fun complete(text: String, cursor: Int, item: CompletionItem): Outcome<Applied> {
+        if (item.snapshot != null && item.snapshot.second != text) return Outcome.failure(DiagCode.STATE_CONFLICT, "дополнение рассчитано для другого текста")
+        val prepared = item.prepared
+        if (prepared != null) {
+            val uri = item.uri ?: return Outcome.failure(DiagCode.LSP_REPLY_INVALID, "нет документа дополнения")
+            val expected = prepared.versions[uri]
+            if (expected != null && expected != item.snapshot?.first) return Outcome.failure(DiagCode.STATE_CONFLICT, "версия дополнения изменилась")
+            return when (val edits = editsForFile(prepared, uri)) {
+                is Outcome.Failure -> edits
+                is Outcome.Success -> when (val applied = applyEdits(text, cursor, edits.value)) {
+                    is Outcome.Failure -> applied
+                    is Outcome.Success -> {
+                        val at = item.preparedCaret?.let { LineIndex(applied.value.text).offset(it) }
+                        if (item.preparedCaret != null && at == null) Outcome.failure(DiagCode.LSP_REPLY_INVALID, "курсор дополнения за концом текста")
+                        else Outcome.success(applied.value.copy(cursor = at ?: applied.value.cursor))
+                    }
+                }
+            }
+        }
+        if (item.unsupported) return Outcome.failure(DiagCode.LSP_REPLY_INVALID, "дополнение требует неподдерживаемую команду или snippet; текст не изменён")
         val at = cursor.coerceIn(0, text.length)
         val index = LineIndex(text)
         val main = item.edit ?: TextEdit(Range(index.position(at - typedPrefix(text, at).length), index.position(at)), item.insertText)
@@ -70,7 +89,7 @@ object Assist {
 
     /** Варианты, подходящие набранному [prefix], в порядке службы (`sortText`), не больше [limit]. */
     fun filter(items: List<CompletionItem>, prefix: String, limit: Int = 100): List<CompletionItem> = items
-        .filter { (it.filterText ?: it.insertText).startsWith(prefix, ignoreCase = true) }
+        .filter { (it.filterText ?: it.label).startsWith(prefix, ignoreCase = true) }
         .sortedWith(compareBy({ it.sortText ?: it.label }, { it.label }))
         .take(limit)
 
@@ -211,7 +230,7 @@ object Assist {
     data class Fixes(val applicable: List<CodeAction>, val commands: Int)
 
     fun fixes(actions: List<CodeAction>): Fixes {
-        val (withEdit, without) = actions.partition { it.edit != null }
+        val (withEdit, without) = actions.filter { it.disabledReason == null }.partition { !it.requiresCommand && (it.edit != null || it.resolvable) }
         return Fixes(withEdit.sortedWith(compareBy({ !it.preferred }, { it.title })), without.size)
     }
 
@@ -230,13 +249,14 @@ object Assist {
      * других файлов или с пересечением уже взятых — замечание остаётся (его — человеку или
      * ИИ). Одинаковая правка для двух замечаний берётся один раз.
      */
-    fun fixAll(uri: String, perDiagnostic: List<List<CodeAction>>): FixAll {
+    fun fixAll(uri: String, perDiagnostic: List<List<CodeAction>>, version: (CodeAction) -> Int? = { null }): FixAll {
         val taken = mutableListOf<TextEdit>()
         var fixed = 0
         var skipped = 0
         for (actions in perDiagnostic) {
             val edits = actions.asSequence()
-                .filter { it.preferred && it.edit != null && (it.kind == null || it.kind.startsWith("quickfix")) }
+                .filter { it.disabledReason == null && !it.requiresCommand && it.preferred && it.edit != null && (it.kind == null || it.kind.startsWith("quickfix")) }
+                .filter { a -> a.edit!!.versions[uri]?.let { it == version(a) } ?: true }
                 .mapNotNull { a -> (editsForFile(a.edit!!, uri) as? Outcome.Success)?.value?.takeIf { it.isNotEmpty() } }
                 .firstOrNull()
             if (edits == null) { skipped++; continue }

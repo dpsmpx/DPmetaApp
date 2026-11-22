@@ -10,7 +10,6 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpmeta.app.screens.AskActions
-import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.sync.DirectoryReader
 import com.dpsmpx.dpmeta.sync.Sync
@@ -33,7 +32,7 @@ class AskActionsTest {
     private val now = Timestamp(Instant.parse("2026-11-01T10:00:00Z").toEpochMilli())
 
     private fun snapshot(): AskActions.Snapshot {
-        val reg = (RegistryFormat.parse(Files.readString(corpus.resolve("registry.toml"))) as Outcome.Success).value
+        val reg = corpusProjects(corpus)
         val r = Sync.run(Sync.plan(reg), DirectoryReader(corpus), ManualClock(now))
         return AskActions.Snapshot(EcosystemState.derive(reg, r.observations, r.failures, null, now), emptyList(), emptyList(), now)
     }
@@ -43,7 +42,7 @@ class AskActionsTest {
     @Test
     fun toolsAreReadOnlyAndWellFormed() {
         val names = AskActions.TOOLS.map { it.name }
-        assertEquals(listOf("ecosystem_summary", "project_card", "pull_requests", "questions_to_author", "recent_events", "metric_history"), names)
+        assertEquals(listOf("ecosystem_summary", "project_card", "pull_requests", "recent_events", "metric_history"), names)
         for (t in AskActions.TOOLS) {
             assertEquals("object", (t.schema["type"] as JsonString).value, t.name)
             assertEquals(JsonBool(false), t.schema["additionalProperties"], "${t.name}: лишние поля запрещены")
@@ -65,7 +64,7 @@ class AskActionsTest {
         val drafts = AskActions.run(s, "pull_requests", input("""{"filter":"drafts"}"""))
         assertTrue("#3 Этап 1" in drafts.first && "PR (Черновики): 1" in drafts.first, drafts.first)
         assertTrue("PR (Ждут автора, Alpha): 0" in AskActions.run(s, "pull_requests", input("""{"filter":"waiting","project":"Alpha"}""")).first)
-        assertTrue("ВОПРОСЫ АВТОРУ" in AskActions.run(s, "questions_to_author", input("{}")).first)
+        assertTrue(AskActions.run(s, "questions_to_author", input("{}")).second, "снятый инструмент недоступен")
         assertTrue("ЛЕНТА: 0" in AskActions.run(s, "recent_events", input("{}")).first)
         val metric = AskActions.run(s, "metric_history", input("""{"metric":"repo.pr.open","period":"week"}"""))
         assertFalse(metric.second)

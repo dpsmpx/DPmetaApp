@@ -36,7 +36,7 @@ data class ChatEntry(
  * Разговор с API-профилем (D-98): переписка — в данных приложения, без
  * ключей; в журнал событий и в контекст задач не попадает.
  */
-data class Conversation(val id: CorrelationId, val profile: AccountId, val title: String, val entries: List<ChatEntry>) {
+data class Conversation(val id: CorrelationId, val profile: AccountId, val title: String, val entries: List<ChatEntry>, val project: com.dpsmpx.dpai.core.ids.ProjectId? = null) {
     /**
      * Переписка для следующего запроса: ответы, прерванные и неудачные, не
      * уходят — модель продолжала бы оборванный или отвергнутый текст;
@@ -55,13 +55,13 @@ data class Conversation(val id: CorrelationId, val profile: AccountId, val title
 }
 
 /**
- * Переписка чатов — документ `dpai.api-chats` v1 (`docs/DATA_MODEL.md`).
+ * Переписка чатов — документ `dpai.api-chats` v2, читает v1 (D-214) (`docs/DATA_MODEL.md`).
  * Пределы держат документ небольшим: старые разговоры и реплики
  * вытесняются новыми; текст длиннее [MAX_TEXT] обрезается при записи.
  */
 object ChatBook {
     const val FORMAT = "dpai.api-chats"
-    const val VERSION = 1
+    const val VERSION = 2
     const val MAX_CONVERSATIONS = 50
     const val MAX_ENTRIES = 400
     const val MAX_TEXT = 200_000
@@ -71,12 +71,12 @@ object ChatBook {
             *FormatHeader.write(FORMAT, VERSION),
             "conversations" to JsonArray(
                 conversations.takeLast(MAX_CONVERSATIONS).map { c ->
-                    JsonObject.of(
+                    JsonObject(linkedMapOf<String, JsonValue>(
                         "id" to JsonString(c.id.value),
                         "profile" to JsonString(c.profile.value),
                         "title" to JsonString(c.title),
                         "entries" to JsonArray(c.entries.takeLast(MAX_ENTRIES).map(::entry)),
-                    )
+                    ).also { fields -> c.project?.let { fields["project"] = JsonString(it.value) } })
                 },
             ),
         ),
@@ -99,7 +99,7 @@ object ChatBook {
     fun fromJson(value: JsonValue): Outcome<List<Conversation>> {
         val d = DiagnosticCollector()
         val f = JsonFields.root(value, d) ?: return Outcome.Failure(d.all)
-        FormatHeader.read(f, FORMAT, 1..VERSION, d) ?: return Outcome.Failure(d.all)
+        val version = FormatHeader.read(f, FORMAT, 1..VERSION, d) ?: return Outcome.Failure(d.all)
         val items = f.array("conversations")?.items.orEmpty()
         f.finish()
         val out = items.takeLast(MAX_CONVERSATIONS).mapIndexedNotNull { i, item ->
@@ -109,13 +109,17 @@ object ChatBook {
             val id = c.string("id")?.let { IdKinds.CORRELATION.parse(it).valueOrNull() }
             val profile = c.string("profile")?.let { IdKinds.ACCOUNT.parse(it).valueOrNull() }
             val title = c.string("title")
+            val projectText = c.optString("project")
+            if (version == 1 && projectText != null) d.error(DiagCode.VALUE_INVALID, "привязка проекта требует версии 2", "$at.project")
+            val project = projectText?.let { IdKinds.PROJECT.parse(it).valueOrNull() }
+            if (projectText != null && project == null) d.error(DiagCode.VALUE_INVALID, "неверный id проекта разговора", "$at.project")
             val entries = c.array("entries")?.items.orEmpty().takeLast(MAX_ENTRIES).mapIndexedNotNull { j, e -> entry(e, "$at.entries[$j]", d) }
             c.finish()
             if (id == null || profile == null || title == null) {
                 d.error(DiagCode.VALUE_INVALID, "разговор неполон или id чужого вида", at)
                 null
             } else {
-                Conversation(id, profile, title, entries)
+                Conversation(id, profile, title, entries, project)
             }
         }
         return if (d.hasErrors) Outcome.Failure(d.all) else Outcome.success(out)

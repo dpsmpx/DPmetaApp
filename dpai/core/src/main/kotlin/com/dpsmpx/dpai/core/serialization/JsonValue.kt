@@ -26,12 +26,17 @@ data class JsonString(val value: String) : JsonValue {
  * Число в исходной записи. Равенство — по канонической записи
  * ([CanonicalJson]): `1`, `1.0` и `1e0` — одно число.
  */
-class JsonNumber(val literal: String) : JsonValue {
+class JsonNumber private constructor(val literal: String, private val knownCanonical: String?) : JsonValue {
+    constructor(literal: String) : this(literal, integerCanonical(literal))
+
     init {
-        require(GRAMMAR.matches(literal) && literal.length <= 1000) { "не число JSON" }
+        if (knownCanonical == null) require(GRAMMAR.matches(literal) && literal.length <= 1000) { "не число JSON" }
     }
 
-    val canonical: String by lazy { canonicalNumber(BigDecimal(literal)) }
+    // Строка Long уже канонична: для счётчиков/времени не нужны Matcher,
+    // BigDecimal и отдельный Lazy. Произвольный ввод проверяется как прежде.
+    private val normalized = if (knownCanonical == null) lazy { canonicalNumber(BigDecimal(literal)) } else null
+    val canonical: String get() = knownCanonical ?: normalized!!.value
 
     fun toBigDecimal(): BigDecimal = BigDecimal(literal)
 
@@ -40,10 +45,13 @@ class JsonNumber(val literal: String) : JsonValue {
      * `BigDecimal.longValueExact`, а не `BigInteger.longValueExact`: второго
      * в Android 11 нет (`check_android_api.py`).
      */
-    fun toLongExact(): Long? = try {
-        toBigDecimal().stripTrailingZeros().let { if (it.scale() > 0) null else it.longValueExact() }
-    } catch (_: ArithmeticException) {
-        null
+    fun toLongExact(): Long? {
+        literal.toLongOrNull()?.let { return it }
+        return try {
+            toBigDecimal().stripTrailingZeros().let { if (it.scale() > 0) null else it.longValueExact() }
+        } catch (_: ArithmeticException) {
+            null
+        }
     }
 
     override fun equals(other: Any?): Boolean = other is JsonNumber && canonical == other.canonical
@@ -53,9 +61,17 @@ class JsonNumber(val literal: String) : JsonValue {
     override fun toString(): String = canonical
 
     companion object {
-        fun of(v: Long): JsonNumber = JsonNumber(v.toString())
+        private fun integerCanonical(literal: String): String? {
+            val value = literal.toLongOrNull() ?: return null
+            val canonical = value.toString()
+            // toLongOrNull принимает +1 и ведущие нули, JSON — нет.
+            // Только точное совпадение (либо допустимый -0) обходит общую грамматику.
+            return canonical.takeIf { literal == it || literal == "-0" }
+        }
 
-        fun of(v: Int): JsonNumber = JsonNumber(v.toString())
+        fun of(v: Long): JsonNumber = v.toString().let { JsonNumber(it, it) }
+
+        fun of(v: Int): JsonNumber = of(v.toLong())
 
         fun of(v: BigInteger): JsonNumber = JsonNumber(v.toString())
 

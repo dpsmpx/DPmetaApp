@@ -6,8 +6,8 @@ import com.dpsmpx.dpai.core.result.Outcome
 
 /**
  * Команда создания ключа выпуска (`DPmetaApp:D-158`, `DPmetaApp:D-160`): поля формы
- * приложения — в готовую команду `keytool` для Termux/Linux или PowerShell, в буфер
- * обмена. Приложение эти данные не хранит. Termux/bash/zsh: пароль — в переменной
+ * приложения — в готовую команду `keytool` для Linux или PowerShell, в буфер
+ * обмена. Приложение эти данные не хранит. bash/zsh: пароль — в переменной
  * окружения только для `keytool` (`-storepass:env`), а не в аргументах процесса; строка
  * начинается с пробела (`ignorespace`/`hist_ignore_space`) и убирает себя из истории сама:
  * bash — `history -d -1`, zsh — история сеанса не сохраняется (там `history -d` только

@@ -40,7 +40,7 @@ object ScreenText {
 
     /** Карточка (UX-8): то, что рисует экран, — «Внимание», документы, разделы с итогом и их содержимое. */
     fun card(c: Screens.Card): String = buildString {
-        appendLine("${c.name} — ${c.place}, ${c.working}")
+        appendLine("${c.name} — ${c.working}")
         val v = Screens.cardView(c)
         if (v.attention.isNotEmpty()) {
             appendLine("ВНИМАНИЕ:")
@@ -60,12 +60,4 @@ object ScreenText {
         for (r in rows) appendLine("  ${r.time} ${r.project} [${r.kind}] ${r.text}")
     }
 
-    /** Вопросы автору (UX-17): по проектам, метка, куда ведёт касание. */
-    fun questions(q: List<Screens.Question>): String = buildString {
-        appendLine("ВОПРОСЫ АВТОРУ: ${q.size}")
-        for ((project, items) in Screens.questionGroups(q)) {
-            appendLine("$project:")
-            for (i in items) appendLine("  ${i.label?.let { "[$it] " } ?: ""}${i.title}" + (i.path?.let { " → $project:$it" + (i.section?.let { s -> " «$s»" } ?: "") } ?: ""))
-        }
-    }
 }

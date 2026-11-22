@@ -13,9 +13,10 @@ import com.dpsmpx.dpmeta.app.screens.CommandActions
 import com.dpsmpx.dpmeta.app.screens.CommandActions.Facts
 import com.dpsmpx.dpmeta.app.screens.CommandActions.Linux
 import com.dpsmpx.dpmeta.formats.CommandFormat
-import com.dpsmpx.dpmeta.formats.RegistryFormat
+import com.dpsmpx.dpmeta.model.ProjectList
+import com.dpsmpx.dpai.core.git.RepoRef
 import com.dpsmpx.dpmeta.git.Clones
-import com.dpsmpx.dpmeta.model.ActionLevel
+import com.dpsmpx.dpai.core.operations.ActionLevel
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -29,41 +30,17 @@ class CommandActionsTest {
     @TempDir
     lateinit var dir: Path
 
-    private val registry = RegistryFormat.parse(
-        """
-        schema = 1
-
-        [[repo]]
-        name = "DPmetaApp"
-        slug = "dpsmpx/DPmetaApp"
-        place = "control"
-
-        [[repo]]
-        name = "DPmeta"
-        slug = "dpsmpx/DPmeta"
-        place = "sync"
-        dir = "dpmeta"
-
-        [[repo]]
-        name = "DPlearn"
-        slug = "dpsmpx/DPlearn"
-        place = "core"
-
-        [[repo]]
-        name = "Old"
-        slug = "dpsmpx/Old"
-        place = "archive"
-        """.trimIndent(),
-    ).valueOrNull()!!
+    private val registry = listOf("example/Hub", "example/Engine", "example/Tools", "example/Old")
+        .fold(ProjectList()) { list, repo -> list.add(RepoRef.parse(repo).valueOrNull()!!).valueOrNull()!! }.forSync()
 
     private val commands = CommandFormat.parse(
         """
         schema = 1
 
         [[command]]
-        id = "dpmeta.check"
-        title = "Проверки DPmeta"
-        project = "DPmeta"
+        id = "engine.check"
+        title = "Проверки Engine"
+        project = "Engine"
         workdir = "tools"
         path = "/bin/bash"
         args = ["check.sh"]
@@ -72,9 +49,9 @@ class CommandActionsTest {
         packages = ["bash", "python3"]
 
         [[command]]
-        id = "dplearn.next"
+        id = "tools.next"
         title = "План"
-        project = "DPlearn"
+        project = "Tools"
         path = "dpl"
         plan = "background"
         level = 0
@@ -93,19 +70,19 @@ class CommandActionsTest {
         """.trimIndent(),
     ).valueOrNull()!!
 
-    private val check = commands.byId("dpmeta.check")!!
-    private val next = commands.byId("dplearn.next")!!
+    private val check = commands.byId("engine.check")!!
+    private val next = commands.byId("tools.next")!!
     private val ff = commands.byId("repo.ff")!!
 
     @Test
-    fun subsystemRunsInItsDirOfTheControlClone() {
+    fun commandUsesItsOwnRepositoryAndRelativeWorkdir() {
         val s = CommandActions.spot(check, registry, null).valueOrNull()!!
-        assertEquals("dpsmpx/DPmetaApp", "${s.repo}")
-        assertEquals("/root/projects/dpsmpx/DPmetaApp/dpmeta/tools", s.guestDir)
-        assertEquals("dpmeta/tools/check.sh", CommandActions.scriptInClone(check, s))
+        assertEquals("example/Engine", "${s.repo}")
+        assertEquals("/root/projects/example/Engine/tools", s.guestDir)
+        assertEquals("tools/check.sh", CommandActions.scriptInClone(check, s))
         assertEquals(listOf("/bin/bash", "check.sh"), CommandActions.argv(check))
         val own = CommandActions.spot(next, registry, null).valueOrNull()!!
-        assertEquals("/root/projects/dpsmpx/DPlearn", own.guestDir)
+        assertEquals("/root/projects/example/Tools", own.guestDir)
         assertEquals(listOf("./dpl"), CommandActions.argv(next), "программа клона без «/» — от каталога, не из PATH")
         assertEquals("dpl", CommandActions.scriptInClone(next, own))
     }
@@ -113,11 +90,11 @@ class CommandActionsTest {
     @Test
     fun anyProjectIsChosenAmongOwnClonesOnly() {
         assertEquals(DiagCode.FIELD_MISSING, (CommandActions.spot(ff, registry, null) as Outcome.Failure).errors.single().code)
-        assertEquals(DiagCode.VALUE_INVALID, (CommandActions.spot(ff, registry, "DPmeta") as Outcome.Failure).errors.single().code, "подсистема — не свой клон")
-        assertEquals(DiagCode.ENTITY_NOT_FOUND, (CommandActions.spot(ff, registry, "Old") as Outcome.Failure).errors.single().code, "архив — не проект")
-        assertEquals("/root/projects/dpsmpx/DPlearn", CommandActions.spot(ff, registry, "DPlearn").valueOrNull()!!.guestDir)
-        assertEquals(listOf("DPmetaApp"), CommandActions.anyProjects(registry) { "$it" == "dpsmpx/DPmetaApp" })
-        assertEquals(null, CommandActions.scriptInClone(ff, CommandActions.spot(ff, registry, "DPlearn").valueOrNull()!!), "у git скрипта нет")
+        assertEquals("example/Engine", CommandActions.spot(ff, registry, "Engine").valueOrNull()!!.repo.toString())
+        assertEquals("example/Old", CommandActions.spot(ff, registry, "Old").valueOrNull()!!.repo.toString(), "выбранный проект не скрывается ролью")
+        assertEquals("/root/projects/example/Tools", CommandActions.spot(ff, registry, "Tools").valueOrNull()!!.guestDir)
+        assertEquals(listOf("Hub"), CommandActions.anyProjects(registry) { "$it" == "example/Hub" })
+        assertEquals(null, CommandActions.scriptInClone(ff, CommandActions.spot(ff, registry, "Tools").valueOrNull()!!), "у git скрипта нет")
     }
 
     @Test
@@ -133,7 +110,7 @@ class CommandActionsTest {
         val noClone = CommandActions.readiness(check, s, ok.copy(clone = false, workdir = false, script = false))
         assertTrue(noClone.first { !it.ok }.hint!!.contains("Клоны"))
         val noScript = CommandActions.readiness(check, s, ok.copy(script = false))
-        assertEquals("Скрипта dpmeta/tools/check.sh нет", noScript.single { !it.ok }.title)
+        assertEquals("Скрипта tools/check.sh нет", noScript.single { !it.ok }.title)
     }
 
     @Test
@@ -149,7 +126,7 @@ class CommandActionsTest {
         val clock = ManualClock()
         val log = ActionLog(NioVfs(dir), clock, RandomSource.seeded(1))
         val actions = Actions(log, clock, RandomSource.seeded(2))
-        val s = CommandActions.spot(ff, registry, "DPlearn").valueOrNull()!!
+        val s = CommandActions.spot(ff, registry, "Tools").valueOrNull()!!
         val tree = Clones.Worktree("main", "a".repeat(40), "b".repeat(40))
         val c = CommandActions.command(ff, s, tree)
         assertEquals(ActionKind.COMMAND_RUN to ActionLevel.REVERSIBLE, c.kind to c.level)

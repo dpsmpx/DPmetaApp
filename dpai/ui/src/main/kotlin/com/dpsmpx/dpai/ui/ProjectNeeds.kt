@@ -97,7 +97,7 @@ object ProjectNeeds {
 
     /** Строка проверки для экрана. */
     fun text(c: Check): String = buildString {
-        if (c.ok) { append("всё нужное есть"); if (c.needs.isNotEmpty()) append(": ${c.needs.joinToString { it.command }}"); return@buildString }
+        if (c.ok) { append("объявленные пакеты и пути найдены, но запуск инструментов не проверен"); if (c.needs.isNotEmpty()) append(": ${c.needs.joinToString { it.command }}"); return@buildString }
         if (c.missing.isNotEmpty()) append("нет: " + c.missing.joinToString { n -> n.command + (n.install?.let { " (пакет $it)" } ?: " (пакет не найден)") })
         if (c.sdk.isNotEmpty()) { if (isNotEmpty()) append("; "); append("Android SDK: нет ${c.sdk.joinToString()}") }
     }

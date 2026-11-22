@@ -28,6 +28,8 @@ import subprocess
 import sys
 import time
 import traceback
+import struct
+import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SHOW = 5
@@ -46,7 +48,7 @@ ROOT_ALLOW = {
     ".claude", ".github", "docs", "ROADMAP", "tools", "tests",
     "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
     "gradle", "build-logic", "app", "shell", "core", "cli", "config",
-    "dpai", "dpmeta",
+    "dpai",
 }
 # Пакетный файл Windows создан Gradle с CRLF — так и хранится (`.gitattributes`).
 CRLF_ALLOWED = {"gradlew.bat"}
@@ -58,16 +60,13 @@ WRAPPER_SOURCE = "dpai/"
 # строка — команда с аргументом `static`, кортеж — команда со своими аргументами.
 SUBSYSTEMS = {
     "dpai": "dpai/tools/verify/run.sh",
-    "dpmeta": ("dpmeta/tools/check.sh",),
 }
 # Строка шага в выводе команды подсистемы: «- ✓ шаг» (dpai), «  ✓ id  итог» (DP Verify),
 # «✓ id — что проверено» (SocialMediaImage) или «✓ id (0.0 с)»;
 # итог прогона («✓ static пройден», «✓ tools/check.sh: всё зелёное») — не шаг.
 SUBSYSTEM_STEP = re.compile(r"^(?:(?:- |  )([✓✗]) (.+)|([✓✗]) (\S+ (?:— |\().+))$", re.M)
-# Свой вид строки шага: у DPmeta шаг — «✓ документы: ссылки, …», итог — «✓ DPmeta: всё зелёное» (D-43).
-SUBSYSTEM_STEP_OWN = {"dpmeta": re.compile(r"^([✓✗]) (?!DPmeta: )(.+)$", re.M)}
 # Единое ядро (D-28): эти типы объявлены один раз — в ядре подсистемы dpai.
-CORE_TYPES = ("Outcome", "OperationResult", "Diagnostic", "DiagCode", "Secret", "Clock")
+CORE_TYPES = ("Outcome", "OperationResult", "Diagnostic", "DiagCode", "Secret", "Clock", "ActionLevel", "RepoRef")
 CORE_HOME = "dpai/core/src/main/"
 CORE_DECL = re.compile(r"^[ \t]*(?:(?:public|internal|private|sealed|data|value|enum|abstract|open|fun|inline)\s+)*"
                        r"(?:class|interface|object|typealias)\s+(" + "|".join(CORE_TYPES) + r")\b", re.M)
@@ -539,16 +538,16 @@ ROOT_MODULES = {
     ":core:sync": {":core:model", ":core:formats", ":core:net", ":core:github", ":core:git", ":core:site", ":core:social"},
 }
 # Оболочки и тесты зависят от всех (ТЗ, §6.2); :shell — приложение из корня (D-35, D-53).
-ROOT_SHELLS = (":cli", ":app", ":shell", ":tests:")
+ROOT_SHELLS = (":app", ":shell", ":tests:")
 DPAI_CORE = {"core", "storage", "security", "notifications"}
 MODULE_DEP = re.compile(r'project\(\s*"(:[\w:-]+)"\s*\)|"com\.dpsmpx\.dpai:([\w-]+)"')
 # Код модулей корня (не оболочек): правила кода CLAUDE.md — Android только в оболочке,
-# время — Clock, печать — только cli, секрет раскрывается в одном месте сети.
+# время — Clock, вывод — Diagnostic, секрет раскрывается в одном месте сети.
 MODULE_CODE_RULES = (
     (re.compile(r"^\s*import\s+(?:android|androidx)\."), "Android-типы — только в оболочке (D-03)"),
     (re.compile(r"System\.currentTimeMillis|Instant\.now\(|LocalDateTime\.now\("), "время — через Clock ядра"),
-    (re.compile(r"Thread\.sleep|GlobalScope|runBlocking"), "без сна и глобальных корутин вне cli"),
-    (re.compile(r"(?<![\w.])println\(|System\.out|System\.err"), "печать — только в cli; остальное — Diagnostic"),
+    (re.compile(r"Thread\.sleep|GlobalScope|runBlocking"), "без сна и глобальных корутин в модулях ядра"),
+    (re.compile(r"(?<![\w.])println\(|System\.out|System\.err"), "печать — в оболочке; здесь — Diagnostic"),
 )
 REVEAL = re.compile(r"\.reveal\s*\(\s*\)")
 REVEAL_HOME = "core/net/src/main/kotlin/com/dpsmpx/dpmeta/net/Auth.kt"
@@ -714,7 +713,7 @@ def check_subsystems(root, subsystems=None):
             r.add(cmd, "нет команды проверок подсистемы")
         else:
             p = subprocess.run(["bash", path, *args], cwd=root, capture_output=True, text=True)
-            found = SUBSYSTEM_STEP_OWN.get(name, SUBSYSTEM_STEP).findall(p.stdout)
+            found = SUBSYSTEM_STEP.findall(p.stdout)
             steps = [(m[0] or m[2], m[1] or m[3]) if len(m) == 4 else m for m in found]
             r.scanned = len(steps)
             r.findings.extend(f"{cmd}: {what}" for mark, what in steps if mark == "✗")
@@ -793,7 +792,6 @@ def check_gradle(root, java=None, sdk=None, run=gradle_run):
 
 
 COMMANDS = "config/commands.toml"
-REGISTRY = "dpmeta/tools/ecosystem.toml"
 COMMAND_KEYS = {"id", "title", "project", "workdir", "path", "args", "plan", "level", "packages", "expect", "timeout"}
 COMMAND_ID = re.compile(r"[a-z0-9][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)*")
 COMMAND_PART = re.compile(r"[A-Za-z0-9._+-]+")
@@ -805,8 +803,8 @@ def _relative(p):
     return bool(p) and not p.startswith("/") and all(x and x not in (".", "..") and COMMAND_PART.fullmatch(x) for x in p.split("/"))
 
 
-def _command_problems(c, names, homes, repo):
-    """Что не так с одной командой реестра: ключи, значения, проект, файл скрипта в своём репозитории."""
+def _command_problems(c):
+    """Поставляемая команда — для выбранного проекта пользователя (D-176), без привязки к реестру."""
     out = []
     unknown = sorted(set(c) - COMMAND_KEYS)
     if unknown:
@@ -845,22 +843,14 @@ def _command_problems(c, names, homes, repo):
             out.append("программа гостя — из /bin, /usr/bin, /usr/local/bin, без «..»")
     elif not _relative(path):
         out.append("path — путь от workdir без «..» или абсолютный путь гостя")
-    project = c["project"]
-    if project != "*" and project not in names:
-        out.append(f"проекта «{project}» нет в реестре DPmeta (или он в архиве)")
-    # Скрипт подсистемы или самого DPmetaApp лежит здесь — его можно найти; чужой репозиторий — нет.
-    home = homes.get(project)
-    if home is not None and not out:
-        base = "/".join(x for x in (home, workdir) if x)
-        script = path if not path.startswith("/") else next((a for a in args[:1] if _relative(a) and ("/" in a or "." in a)), None)
-        if script and not repo.exists("/".join(x for x in (base, script) if x)):
-            out.append(f"нет файла `{'/'.join(x for x in (base, script) if x)}`")
+    if c["project"] != "*":
+        out.append("project — только *: поставляемая команда работает с выбранным проектом пользователя (D-176)")
     return out
 
 
 def check_commands(repo, r):
     """config.commands — реестр команд `config/commands.toml` разбирается (схема 1, ключи, уровни 0–1,
-    пути без «..»), id не повторяются, проекты — из реестра DPmeta, скрипт подсистемы — на месте (F-43, D-82)."""
+    пути без «..»), id не повторяются, только выбранный проект пользователя (F-43, D-82, D-176)."""
     import tomllib
     if not repo.exists(COMMANDS):
         r.add(COMMANDS, "нет реестра команд (ТЗ, F-40)")
@@ -870,15 +860,6 @@ def check_commands(repo, r):
     except tomllib.TOMLDecodeError as e:
         r.add(COMMANDS, f"не TOML: {e}")
         return
-    try:
-        registry = tomllib.loads(repo.text(REGISTRY) or "") if repo.exists(REGISTRY) else {}
-    except tomllib.TOMLDecodeError as e:
-        r.add(REGISTRY, f"не TOML: {e}")
-        return
-    rows = [x for x in registry.get("repo", []) if isinstance(x, dict) and x.get("place") != "archive"]
-    names = {x.get("name") for x in rows}
-    homes = {x.get("name"): x.get("dir") for x in rows if x.get("dir")}
-    homes.update({x.get("name"): "" for x in rows if x.get("place") == "control"})
     if set(doc) - {"schema", "command"}:
         r.add(COMMANDS, f"неизвестный ключ «{sorted(set(doc) - {'schema', 'command'})[0]}»")
     if doc.get("schema") != 1:
@@ -895,7 +876,7 @@ def check_commands(repo, r):
         if not isinstance(c, dict):
             r.add(where, "команда — не таблица")
             continue
-        for problem in _command_problems(c, names, homes, repo):
+        for problem in _command_problems(c):
             r.add(where, problem)
         if c.get("id") in seen:
             r.add(where, f"id «{c.get('id')}» — уже был")
@@ -944,6 +925,117 @@ def check_files(repo, r):
             r.add(rel, "обязательный файл процесса отсутствует")
 
 
+# D-176: имена пакетов/applicationId и ключи старых данных сохраняются;
+# адреса автора, предметные шаблоны и его соглашения о ветках не поставляются.
+PERSONAL_PULT = re.compile(
+    r"(?<![A-Za-z0-9_./])(?:https?://(?:api\.)?github\.com/(?:repos/)?)?dpsmpx/[A-Za-z0-9_.-]+|"
+    r"(?:www\.)?dpsmpx\.com|"
+    r"(?<![A-Za-z0-9_])(?:DPmeta|DPpass|DPvisualisation|Galdhold|DPlang|SocialMediaImage|DPprofile)(?![A-Za-z0-9_])|"
+    r"windows-debug-build|win_debug_builds|apk-builds|linux-debug"
+)
+RETIRED_PULT_CLASSES = (
+    "model/Registry", "model/ProjectEntry", "model/Place", "model/IdSource",
+    "formats/RegistryFormat", "formats/DecisionLog", "formats/TodoList", "formats/Roadmap", "metrics/Readiness",
+)
+
+
+def personal_pult(text):
+    return sorted({m.group() for m in PERSONAL_PULT.finditer(text)})
+
+
+def check_pult_universal(repo, r):
+    """pult.universal — поставляемые настройки и литералы пульта без проектов автора."""
+    for rel, text in repo.texts():
+        config = rel.startswith("config/")
+        source = rel.split("/", 1)[0] in {"app", "core", "shell"} and "/src/main/" in rel
+        if not (config or source):
+            continue
+        r.scanned += 1
+        if config or not rel.endswith((".kt", ".java")):
+            values = [rel, text]
+        else:
+            # Комментарии и пространства имён не являются настройками приложения.
+            values = re.findall(r'"""[\s\S]*?"""|"(?:\\.|[^"\\\n])*"', text)
+        for value in values:
+            for found in personal_pult(value):
+                r.add(rel, f"личная привязка в поставляемом пульте: {found}")
+        if rel.startswith("config/briefs/dpmeta-") or rel.startswith("config/projects/"):
+            r.add(rel, "предметные настройки проектов автора не поставляются")
+
+
+def dex_strings(data):
+    """Таблица строк DEX; дескрипторы классов не принимаются за адрес репозитория."""
+    if len(data) < 112 or not re.fullmatch(rb"dex\n0[0-9]{2}\x00", data[:8]):
+        raise ValueError("неверный заголовок DEX")
+    size, offset = struct.unpack_from("<II", data, 56)
+    if offset < 112 or offset + size * 4 > len(data):
+        raise ValueError("таблица строк за границами DEX")
+    for i in range(size):
+        start = struct.unpack_from("<I", data, offset + i * 4)[0]
+        if start >= len(data):
+            raise ValueError("адрес строки за границами DEX")
+        for _ in range(5):
+            if start >= len(data):
+                raise ValueError("обрезанная длина строки DEX")
+            byte = data[start]
+            start += 1
+            if byte < 128:
+                break
+        else:
+            raise ValueError("неверная длина строки DEX")
+        end = data.find(b"\0", start)
+        if end < 0:
+            raise ValueError("обрезанная строка DEX")
+        # Ищутся ASCII-маркеры; MUTF-8 прочих символов не влияет на них.
+        yield data[start:end].decode("utf-8", errors="replace")
+
+
+def check_pult_apk(path, r):
+    """Проверяется реальная упаковка, включая устаревшие generated assets."""
+    with zipfile.ZipFile(path) as apk:
+        names = apk.namelist()
+        dex = [n for n in names if re.fullmatch(r"classes[0-9]*\.dex", n)]
+        if not dex:
+            r.add(str(path), "в APK нет DEX")
+        for name in dex:
+            r.scanned += 1
+            for value in dex_strings(apk.read(name)):
+                for found in personal_pult(value):
+                    r.add(f"{path}:{name}", f"личная привязка: {found}")
+                for old in RETIRED_PULT_CLASSES:
+                    if re.search(re.escape("Lcom/dpsmpx/dpmeta/" + old) + r"[;$]", value):
+                        r.add(f"{path}:{name}", f"снятый runtime-класс: {old}")
+        for name in names:
+            if name.startswith(("assets/briefs/", "assets/projects/")) or name in {
+                "assets/commands.toml", "assets/events.toml", "assets/alerts.toml",
+            }:
+                r.scanned += 1
+                for found in personal_pult(apk.read(name).decode("utf-8")):
+                    r.add(f"{path}:{name}", f"личная привязка: {found}")
+                if name.startswith(("assets/projects/", "assets/briefs/dpmeta-")):
+                    r.add(f"{path}:{name}", "предметные настройки проектов автора не поставляются")
+
+
+def check_pult_packages(root, sdk=None):
+    r = Result("pult.apk")
+    if not (android_sdk(root) if sdk is None else sdk):
+        r.skipped.append("нет Android SDK — состав APK не проверен")
+        return r
+    import glob
+    for variant in ("debug", "release"):
+        directory = os.path.join(root, "shell/build/outputs/apk", variant)
+        paths = glob.glob(os.path.join(directory, "*.apk"))
+        if len(paths) != 1:
+            r.add(directory, "ожидался один APK для проверки состава")
+            continue
+        path = paths[0]
+        try:
+            check_pult_apk(path, r)
+        except (OSError, ValueError, zipfile.BadZipFile, struct.error) as e:
+            r.add(path, f"не удалось проверить APK: {e}")
+    return r
+
+
 CHECKS = [
     ("repo.layout", check_layout),
     ("format.text", check_format),
@@ -963,6 +1055,7 @@ CHECKS = [
     ("build.wrapper", check_wrapper),
     ("build.verification", check_verification),
     ("config.commands", check_commands),
+    ("pult.universal", check_pult_universal),
     ("about.licenses", check_about),
 ]
 
@@ -1064,6 +1157,7 @@ def main(argv):
         results.append(selftest(ROOT))
         results.extend(check_subsystems(ROOT))
         results.append(check_gradle(ROOT))
+        results.append(check_pult_packages(ROOT))
     return report(results, level, verbose, time.monotonic() - t0, strict)
 
 

@@ -10,6 +10,10 @@ import java.io.PipedOutputStream
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -23,8 +27,8 @@ import kotlin.time.Duration.Companion.seconds
  * связь; разбор сигнатур для экрана.
  */
 class JdwpPeerTest {
-    /** ВМ-двойник: [answer] — данные ответа на команду (`null` — ошибка [ERROR]). */
-    private class FakeVm(handshake: String = "JDWP-Handshake", private val answer: (set: Int, cmd: Int, data: ByteArray) -> ByteArray?) {
+    /** ВМ-двойник: [answer] — данные ответа на команду (`null` — ошибка [error]). */
+    private class FakeVm(handshake: String = "JDWP-Handshake", private val error: Int = ERROR, private val answer: (set: Int, cmd: Int, data: ByteArray) -> ByteArray?) {
         private val toVm = PipedOutputStream()
         private val vmIn = DataInputStream(PipedInputStream(toVm, 1 shl 16))
         private val fromVm = PipedOutputStream()
@@ -50,7 +54,7 @@ class JdwpPeerTest {
                         commands += set to cmd
                         val body = answer(set, cmd, data)
                         synchronized(out) {
-                            out.writeInt(11 + (body?.size ?: 0)); out.writeInt(id); out.writeByte(0x80); out.writeShort(if (body == null) ERROR else 0)
+                            out.writeInt(11 + (body?.size ?: 0)); out.writeInt(id); out.writeByte(0x80); out.writeShort(if (body == null) error else 0)
                             body?.let { out.write(it) }
                             out.flush()
                         }
@@ -126,6 +130,48 @@ class JdwpPeerTest {
         e.out.close()
         assertTrue(eof.closed.await(5, TimeUnit.SECONDS))
         assertEquals(DiagCode.JDWP_CONNECTION_LOST, eof.reason?.code)
+    }
+
+    /** Временный CLASS_NOT_PREPARED не должен навсегда скрыть точку после CLASS_PREPARE. */
+    @ParameterizedTest
+    @ValueSource(strings = ["source", "methods", "lines"])
+    fun metadataRefusalIsRetriedWhenClassIsPrepared(part: String) {
+        val ready = AtomicBoolean(false)
+        val ids = AtomicInteger()
+        val sizes = JdwpSizes()
+        fun out() = JdwpOut(sizes)
+        val vm = FakeVm(error = 22) { set, cmd, _ ->
+            when (set to cmd) {
+                1 to 7 -> out().int(8).int(8).int(8).int(8).int(8).bytes()
+                1 to 1 -> out().string("двойник").int(1).int(8).string("21").string("тестовая ВМ").bytes()
+                // Класс уже известен, но до события CLASS_PREPARE ещё не подготовлен.
+                1 to 3 -> out().int(1).byte(1).typeId(11).string("Lapp/Main;").int(1).bytes()
+                2 to 7 -> if (part == "source" && !ready.get()) null else out().string("Main.java").bytes()
+                2 to 5 -> if (part == "methods" && !ready.get()) null else
+                    out().int(1).methodId(21).string("main").string("()V").int(8).bytes()
+                6 to 1 -> if (part == "lines" && !ready.get()) null else out().long(0).long(5).int(1).long(0).int(7).bytes()
+                15 to 1 -> out().int(ids.incrementAndGet()).bytes()
+                else -> ByteArray(0)
+            }
+        }
+        val sources = object : JvmSources {
+            override fun packageOf(path: String) = "app"
+            override fun find(pkg: String, file: String) = "app/$file"
+        }
+        val verified = CountDownLatch(1)
+        val session = JdwpSession(vm.clientIn, vm.clientOut, sources, { view ->
+            if (view.breakpoints["app/Main.java"].orEmpty().any { it.verified }) verified.countDown()
+        })
+        try {
+            assertIs<Outcome.Success<Unit>>(session.attach(mapOf("app/Main.java" to listOf(7))))
+            assertFalse(session.view.breakpoints.getValue("app/Main.java").single().verified)
+            ready.set(true)
+            vm.event(out().byte(1).int(1).byte(8).int(1).objectId(7).byte(1).typeId(11).string("Lapp/Main;").int(3).bytes())
+            assertTrue(verified.await(5, TimeUnit.SECONDS), "$part: ${session.view}")
+            assertEquals(listOf(7), session.view.breakpoints.getValue("app/Main.java").filter { it.verified }.map { it.line })
+        } finally {
+            session.stop()
+        }
     }
 
     @Test

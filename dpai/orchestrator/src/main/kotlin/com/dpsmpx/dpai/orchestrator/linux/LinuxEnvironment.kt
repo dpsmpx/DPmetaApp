@@ -319,6 +319,12 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
 
         /** Обновить только названные пакеты (D-191, экран «Окружение»); индекс — тем же вызовом. */
         UPGRADE_SOME(listOf("upgrade", "-U", "--no-progress"), true),
+        ;
+
+        /** Ревизия нынешней команды для общего каталога, без раскрытия argv наружу (D-215). */
+        val descriptionHash: String get() = com.dpsmpx.dpai.core.hashing.Hashing.sha256(
+            (args + needsPackages.toString()).joinToString("\u0000"),
+        ).hex
     }
 
     companion object {

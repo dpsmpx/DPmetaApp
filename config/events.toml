@@ -5,8 +5,8 @@
 #
 #   type     тип латиницей, части через точку
 #   title    подпись для экрана
-#   source   sync — синхронизация, push — мгновенный канал, listener — слушатель
-#            уведомлений, app — само приложение
+#   source   sync — синхронизация, app — само приложение; push и listener —
+#            только чтение прежней ленты и правил снятых источников (D-173)
 #   channel  вид канала уведомлений (F-38): claude, dev, social, site, questions, sync
 #   fields   текстовые поля для условий; проект и текст события — у всех
 #   numbers  числовые поля для условий «не меньше / не больше»
@@ -131,14 +131,14 @@ fields = ["source"]
 
 [[event]]
 type = "dpmeta.report.new"
-title = "Новый срез DPmeta"
+title = "Прежний срез проекта (источник удалён)"
 source = ["sync"]
 channel = "dev"
 fields = ["number"]
 
 [[event]]
 type = "dpmeta.risk.changed"
-title = "Изменился статус риска DPmeta"
+title = "Прежний статус риска (источник удалён)"
 source = ["sync"]
 channel = "dev"
 fields = ["number"]
@@ -155,30 +155,32 @@ title = "Проект — «свободен»"
 source = ["app"]
 channel = "dev"
 
+# Прежние типы канала (D-173): только совместимость сохранённых правил и истории.
+# Новых событий этих типов приложение не получает; стандартных правил для них нет.
 [[event]]
 type = "claude.turn.done"
-title = "Claude закончил ответ"
+title = "Claude закончил ответ (прежний канал удалён)"
 source = ["push"]
 channel = "claude"
 fields = ["branch", "session", "reason"]
 
 [[event]]
 type = "claude.needs_input"
-title = "Claude ждёт разрешения или ввода"
+title = "Claude ждёт разрешения или ввода (прежний канал удалён)"
 source = ["push"]
 channel = "claude"
 fields = ["session", "kind"]
 
 [[event]]
 type = "claude.turn.failed"
-title = "Ход Claude оборвался ошибкой API"
+title = "Ход Claude оборвался ошибкой API (прежний канал удалён)"
 source = ["push"]
 channel = "claude"
 fields = ["session"]
 
 [[event]]
 type = "claude.session.ended"
-title = "Сессия Claude завершена"
+title = "Сессия Claude завершена (прежний канал удалён)"
 source = ["push"]
 channel = "claude"
 fields = ["session"]
@@ -313,7 +315,7 @@ fields = ["platform", "account"]
 
 [[event]]
 type = "termux.command.done"
-title = "Команда Termux завершилась"
+title = "Команда Termux завершилась (мост удалён)"
 source = ["app"]
 channel = "dev"
 fields = ["command"]
@@ -321,7 +323,7 @@ numbers = ["code"]
 
 [[event]]
 type = "termux.command.failed"
-title = "Команда Termux не удалась"
+title = "Команда Termux не удалась (мост удалён)"
 source = ["app"]
 channel = "dev"
 fields = ["command"]
@@ -337,7 +339,7 @@ numbers = ["count"]
 
 [[event]]
 type = "app.notification"
-title = "Уведомление приложения из белого списка"
+title = "Уведомление приложения (слушатель удалён)"
 source = ["listener"]
 channel = "claude"
 fields = ["package", "title"]

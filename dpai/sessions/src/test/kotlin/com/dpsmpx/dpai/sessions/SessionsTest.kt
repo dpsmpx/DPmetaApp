@@ -39,6 +39,28 @@ import kotlin.time.Duration.Companion.seconds
  * heartbeat без поспешного «упала», идемпотентность, сверка слота.
  */
 class SessionsTest {
+    @Test
+    fun batchProjectionKeepsEarlierStatesAndRejectsPartialMutation() {
+        val id = ids.next(IdKinds.SESSION)
+        val at = clock.now()
+        val original = SessionRecord(id, "batch", ids.next(IdKinds.TASK), ids.next(IdKinds.ACCOUNT),
+            ids.next(IdKinds.SUBSCRIPTION), ids.next(IdKinds.TARGET), "/config", ProviderSessionId.newUuid(RandomSource.seeded(7)), null,
+            SessionState.RUNNING, createdAt = at, updatedAt = at)
+        val before = SessionsState(mapOf(id to original))
+        val events = listOf(SessionEvent.Heartbeat(id, at + 1.seconds, 4),
+            SessionEvent.TurnStarted(id, 2, at + 2.seconds),
+            SessionEvent.StateChanged(id, SessionState.RUNNING, SessionState.COMPLETED, null, at + 3.seconds))
+        val result = Sessions.applyAll(before, events).sessions.getValue(id)
+        assertEquals(SessionState.COMPLETED, result.state)
+        assertEquals(4L, result.agentSequence)
+        assertEquals(2, result.turn)
+        assertEquals(at + 2.seconds, result.lastHeartbeat)
+        kotlin.test.assertFailsWith<IllegalStateException> {
+            Sessions.applyAll(before, events + SessionEvent.StateChanged(id, SessionState.COMPLETED, SessionState.RUNNING, null, at + 4.seconds))
+        }
+        assertEquals(original, before.sessions.getValue(id))
+    }
+
     private val clock = ManualClock()
     private val ids = IdGenerator(clock, RandomSource.seeded(21))
     private val accountsLogic = Accounts()

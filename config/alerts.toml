@@ -21,31 +21,6 @@
 schema = 1
 
 [[rule]]
-id = "site.down"
-title = "Сайт не отвечает или отвечает не 200"
-on = "site.down"
-action = "notify"
-importance = "high"
-limit = 1
-window = 60
-
-[[rule]]
-id = "site.header"
-title = "Пропал или изменился заголовок сайта"
-on = "site.header.changed"
-action = "notify"
-
-[[rule]]
-id = "site.tls"
-title = "Сертификат сайта истекает меньше чем через 14 дней"
-on = "site.tls.expiring"
-action = "notify"
-field = "days"
-at_most = 13
-limit = 1
-window = 1440
-
-[[rule]]
 id = "pr.waiting"
 title = "PR ждёт автора больше 2 суток"
 on = "pr.waiting_author"
@@ -54,12 +29,6 @@ field = "hours"
 at_least = 48
 limit = 1
 window = 1440
-
-[[rule]]
-id = "question.new"
-title = "Новый вопрос автору"
-on = "question.new"
-action = "notify"
 
 [[rule]]
 id = "branch.stale"
@@ -97,20 +66,6 @@ action = "notify"
 field = "left"
 at_most = 4
 
-[[rule]]
-id = "claude.done"
-title = "Claude закончил ответ"
-on = "claude.turn.done"
-action = "notify"
-
-[[rule]]
-id = "claude.input"
-title = "Claude ждёт разрешения или ввода"
-on = "claude.needs_input"
-action = "notify"
-importance = "high"
-quiet = false
-
 # Ответ чата «Спросить Claude» дописан, пока приложение в фоне (F-58; D-161): только «Ответ готов».
 [[rule]]
 id = "chat.done"
@@ -124,36 +79,6 @@ id = "routine.pr"
 title = "PR от запуска маршрута"
 on = "pr.opened"
 regex = "^PR #[0-9]+ от маршрута"
-action = "notify"
-
-# Слушатель уведомлений (F-57; D-155): сам выключен по умолчанию; включили — уведомления Claude идут сюда.
-[[rule]]
-id = "app.claude"
-title = "Уведомление приложения Claude"
-on = "app.notification"
-contains = "com.anthropic.claude"
-action = "notify"
-
-[[rule]]
-id = "social.comment"
-title = "Новый комментарий в соцсети"
-on = "social.comment.new"
-action = "notify"
-
-[[rule]]
-id = "social.unanswered"
-title = "Комментарий без ответа больше 12 часов"
-on = "social.comment.unanswered"
-action = "notify"
-field = "hours"
-at_least = 12
-limit = 1
-window = 720
-
-[[rule]]
-id = "social.milestone"
-title = "Подписчики перешли веху"
-on = "social.followers.milestone"
 action = "notify"
 
 # Обычные уведомления ИИ; обязательные решения/безопасность сюда не передаются.

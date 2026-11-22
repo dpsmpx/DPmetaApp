@@ -30,8 +30,6 @@ import com.dpsmpx.dpai.ui.SetupGuide
 import com.dpsmpx.dpai.ui.TargetBook
 import com.dpsmpx.dpai.ui.TargetEntry
 import com.dpsmpx.dpai.ui.TargetForm
-import com.dpsmpx.dpai.ui.TermuxRestore
-import com.dpsmpx.dpai.ui.WorkspaceLink
 import java.io.File
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -78,18 +76,28 @@ object KeystoreKey {
         return try { decode(String(plain, Charsets.UTF_8)) } finally { plain.fill(0) }?.also { cached = it }
     }
 
-    private fun decode(text: String): java.security.KeyPair? = runCatching {
+    internal fun decode(text: String): java.security.KeyPair? = runCatching {
         val o = com.dpsmpx.dpai.core.serialization.JsonParser().parse(text).valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject
         require((o["format"] as com.dpsmpx.dpai.core.serialization.JsonString).value == FORMAT)
+        require((o["version"] as com.dpsmpx.dpai.core.serialization.JsonNumber).toLongExact() == 1L)
         val f = java.security.KeyFactory.getInstance("EC")
         val b64 = java.util.Base64.getDecoder()
         val priv = f.generatePrivate(java.security.spec.PKCS8EncodedKeySpec(b64.decode((o["private"] as com.dpsmpx.dpai.core.serialization.JsonString).value)))
         val pub = f.generatePublic(java.security.spec.X509EncodedKeySpec(b64.decode((o["public"] as com.dpsmpx.dpai.core.serialization.JsonString).value))) as ECPublicKey
         require(pub.params.curve.field.fieldSize == 256)
+        // Формально корректные ключи могут принадлежать разным парам: такая
+        // копия не должна заменить рабочий ключ и лишить доступа к target.
+        val probe = "dpai ssh key pair".toByteArray(Charsets.US_ASCII)
+        val signature = Signature.getInstance("SHA256withECDSA").run {
+            initSign(priv); update(probe); sign()
+        }
+        require(Signature.getInstance("SHA256withECDSA").run {
+            initVerify(pub); update(probe); verify(signature)
+        })
         java.security.KeyPair(pub, priv)
     }.getOrNull()
 
-    private fun encode(pair: java.security.KeyPair): String {
+    internal fun encode(pair: java.security.KeyPair): String {
         val b64 = java.util.Base64.getEncoder()
         return com.dpsmpx.dpai.core.serialization.CanonicalJson.write(com.dpsmpx.dpai.core.serialization.JsonObject.of(
             "format" to com.dpsmpx.dpai.core.serialization.JsonString(FORMAT),
@@ -152,10 +160,15 @@ object KeystoreKey {
     fun importValue(text: String): Outcome<Unit> {
         val pair = decode(text) ?: return Outcome.failure(DiagCode.VALUE_INVALID, "ключ SSH в копии не читается")
         val base = app ?: return Outcome.failure(DiagCode.STATE_CONFLICT, "приложение не готово")
-        if (legacy()) runCatching { store().deleteEntry(ALIAS) }
         return when (val w = KeyWrap.write(base, WRAP, userAuth = false, FILE, encode(pair).toByteArray(Charsets.UTF_8))) {
             is Outcome.Failure -> w
-            is Outcome.Success -> { cached = pair; Outcome.success(Unit) }
+            is Outcome.Success -> {
+                // Новая переносимая копия уже записана: при отказе записи прежний
+                // неизвлекаемый ключ остаётся и продолжает открывать target.
+                cached = pair
+                if (legacy()) runCatching { store().deleteEntry(ALIAS) }
+                Outcome.success(Unit)
+            }
         }
     }
 
@@ -177,9 +190,11 @@ object KeystoreKey {
  * `dpai.app-targets` через `DocumentStore` (атомарная замена, D-24).
  * Вызовы сети — с фонового потока.
  */
-class Controller(private val root: File, val version: String?) {
+class Controller(private val root: File, val version: String?, workspaceCopyRoot: File = File(root, "workspace-changes")) {
     private val vfs = NioVfs(root.toPath())
     private val docs = DocumentStore(vfs, "docs")
+    val workspaceChanges = com.dpsmpx.dpai.ui.WorkspaceChangeStore(
+        NioVfs(workspaceCopyRoot.toPath()), DraftEncryption)
 
     val manualProfiles = com.dpsmpx.dpai.ui.ManualProfiles(
         DocumentStore(NioVfs(File(root.parentFile, "manual-profiles").toPath()), "docs"), IdGenerator(Clock.SYSTEM, RandomSource.secure()), Clock.SYSTEM)
@@ -386,7 +401,7 @@ class Controller(private val root: File, val version: String?) {
             quarantineConfirmed = confirmed,
             inAppHost = inAppHost,
             inAppGuest = inAppGuest,
-            externalPause = { manualProfiles.blocked },
+            externalPause = { manualProfiles.blocked || project?.let { workspaceChanges.blocked(it.project.value) } == true },
             neighbours = neighbours,
         ).also { if (confirmed) runCatching { dir.delete(QUARANTINE_CONFIRMED) } }
     }
@@ -513,127 +528,6 @@ class Controller(private val root: File, val version: String?) {
         return setProject(s.project)
     }
 
-    /**
-     * Связать Claude в Termux [termux] с деревом на ПК [pc] (D-53): ключ в
-     * proot, его строка на ПК, ключ хоста ПК (уже подтверждённый) в
-     * known_hosts proot, проверка входа. Каждый шаг — короткая команда по
-     * SSH с ключом приложения; [progress] — что сейчас идёт, для экрана.
-     */
-    fun linkWorkspace(termux: TargetEntry, pc: TargetEntry, progress: (String) -> Unit = {}): Outcome<Unit> {
-        fun host(e: TargetEntry) = JschProcessHost(checkNotNull(e.toTarget(knownHostsFile).ssh), e.platform, identities = listOf(KeystoreKey.identity()))
-        fun step(e: TargetEntry, what: String, command: List<String>, stdin: String? = null, timeout: kotlin.time.Duration = 1.minutes, accept: (Completed) -> Boolean = { it.ok }): Outcome<Completed> {
-            progress(what)
-            return when (val r = host(e).run(ProcessSpec(command, stdin = stdin), timeout)) {
-                is Outcome.Failure -> Outcome.Failure(listOf(Diagnostic.of(DiagCode.TARGET_CHECK_FAILED, "$what: не выполнено", causes = r.diagnostics)))
-                is Outcome.Success -> if (accept(r.value)) {
-                    r
-                } else {
-                    val tail = (r.value.stderr + r.value.stdout).lastOrNull { it.isNotBlank() }.orEmpty()
-                    Outcome.failure(DiagCode.TARGET_CHECK_FAILED, "$what: код ${r.value.exitCode} $tail".trim(), e.label)
-                }
-            }
-        }
-        val hostLines = WorkspaceLink.hostLines(vfs.read(KNOWN_HOSTS)?.toString(Charsets.UTF_8).orEmpty(), pc)
-        if (hostLines.isEmpty()) return Outcome.failure(DiagCode.VALUE_INVALID, "ключ хоста ${pc.label} не подтверждён: удалите и добавьте target заново", pc.label)
-        val made = when (val r = step(termux, "ключ в Termux", WorkspaceLink.termuxKey(), timeout = 3.minutes)) {
-            is Outcome.Failure -> return r
-            is Outcome.Success -> r.value
-        }
-        val key = WorkspaceLink.publicKey(made.stdout) ?: return Outcome.failure(DiagCode.VALUE_INVALID, "Termux не вернул открытый ключ", termux.label)
-        step(pc, "ключ на ${pc.label}", WorkspaceLink.pcAuthorize(key, pc.platform)).let { if (it is Outcome.Failure) return it }
-        step(termux, "ключ хоста ${pc.label} в Termux", WorkspaceLink.termuxKnownHosts(pc), stdin = hostLines.joinToString("\n", postfix = "\n"))
-            .let { if (it is Outcome.Failure) return it }
-        // Ответ агента — строка JSON и при `"ok":false` (на ПК нет Claude Code — так и задумано): важен вход ключом.
-        val check = when (val c = WorkspaceLink.termuxCheck(pc)) {
-            is Outcome.Failure -> return c
-            is Outcome.Success -> c.value
-        }
-        return when (val r = step(termux, "вход с Termux на ${pc.label}", check, accept = { WorkspaceLink.checked(it.stdout) })) {
-            is Outcome.Failure -> r
-            is Outcome.Success -> Outcome.success(Unit)
-        }
-    }
-
-    /** Раздел «Инструкции» с командой настройки ПК: 10 — Windows, 11 — Linux (D-70). */
-    private fun guideSection(pc: TargetEntry): Int = if (pc.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.WINDOWS) 10 else 11
-
-    /** Копия настроек — и в Termux (D-54): переживает удаление приложения и читается без выбора файла. */
-    fun mirrorSettings(text: String): Outcome<Unit> {
-        val termux = targets().firstOrNull { it.host == TermuxRestore.HOST && it.port == TermuxRestore.PORT }
-            ?: return Outcome.failure(DiagCode.VALUE_INVALID, "нет target Termux")
-        val r = JschProcessHost(checkNotNull(termux.toTarget(knownHostsFile).ssh), termux.platform, identities = listOf(KeystoreKey.identity()))
-            .run(ProcessSpec(TermuxRestore.mirror(), stdin = text), 30.seconds)
-        return when {
-            r is Outcome.Failure -> r
-            (r as Outcome.Success).value.ok -> Outcome.success(Unit)
-            else -> Outcome.failure(DiagCode.STORAGE_IO_FAILED, "копия в Termux не записана: код ${r.value.exitCode}", termux.label)
-        }
-    }
-
-    /**
-     * Восстановление после переустановки (D-54): человек вставил в Termux
-     * команду с кодом [nonce] ([TermuxRestore.command]). Ключ хоста Termux
-     * принимается, только если сервер вернул этот код; затем — настройки из
-     * копии в Termux (если своих нет), targets по слотам со входом Claude,
-     * новый ключ приложения на ПК через ключ связки (D-53). [termuxUser] —
-     * пользователь Termux по его uid. Итог — строки отчёта.
-     */
-    fun restoreAccess(nonce: String, termuxUser: String, progress: (String) -> Unit = {}): Outcome<List<String>> = synchronized(restoring) {
-        restoreAccessLocked(nonce, termuxUser, progress)
-    }
-
-    /** Одно восстановление за раз; общий замок контроллера не держится минутами сети. */
-    private val restoring = Any()
-
-    private fun restoreAccessLocked(nonce: String, termuxUser: String, progress: (String) -> Unit): Outcome<List<String>> {
-        progress("ключ хоста Termux")
-        val probed = when (val p = HostKeyProbe.fetch(TermuxRestore.HOST, TermuxRestore.PORT)) {
-            is Outcome.Failure -> return Outcome.failure(DiagCode.TARGET_CHECK_FAILED, "sshd Termux не отвечает: вставьте команду в Termux", "127.0.0.1:${TermuxRestore.PORT}")
-            is Outcome.Success -> p.value
-        }
-        val pending = "$KNOWN_HOSTS.restore"
-        val found = try {
-            vfs.write(pending, (probed.knownHostsLine + "\n").toByteArray())
-            val probe = TargetForm.validate(ids.next(IdKinds.TARGET), "Termux", TermuxRestore.HOST, TermuxRestore.PORT.toString(), termuxUser, false, SetupGuide.AGENT).valueOrNull()
-                ?: return Outcome.failure(DiagCode.VALUE_INVALID, "пользователь Termux недопустим: $termuxUser")
-            progress("вход в Termux")
-            val host = JschProcessHost(checkNotNull(probe.toTarget(File(root, pending).path).ssh), probe.platform, identities = listOf(KeystoreKey.identity()))
-            when (val r = host.run(ProcessSpec(TermuxRestore.discover()), 2.minutes)) {
-                is Outcome.Failure -> return Outcome.Failure(listOf(Diagnostic.of(DiagCode.TARGET_CHECK_FAILED, "вход в Termux не удался: вставьте команду в Termux", causes = r.diagnostics)))
-                is Outcome.Success -> TermuxRestore.parse(r.value.stdout)
-            }
-        } finally {
-            runCatching { vfs.delete(pending) }
-        }
-        if (!TermuxRestore.codeMatches(found, nonce)) {
-            return Outcome.failure(DiagCode.SSH_HOST_KEY_REJECTED, "код не совпал — ключ хоста не принят: скопируйте команду заново и вставьте в Termux")
-        }
-        progress("настройки")
-        val (merged, report) = TermuxRestore.merge(snapshot(), found, probed.knownHostsLine, ids)
-        restore(merged).let { if (it is Outcome.Failure) return it }
-        val lines = report.toMutableList()
-        val termux = merged.targets.first { it.host == TermuxRestore.HOST && it.port == TermuxRestore.PORT }
-        val shell = JschProcessHost(checkNotNull(termux.toTarget(knownHostsFile).ssh), termux.platform, identities = listOf(KeystoreKey.identity()))
-        shell.run(ProcessSpec(TermuxRestore.cleanup()), 30.seconds)
-        val key = publicKeyLine()
-        for (pc in merged.targets.filter { it.host != TermuxRestore.HOST && it.host != "localhost" }) {
-            if (!found.workspace) {
-                lines += "${pc.label}: ключа связки в Termux нет — новый ключ приложения добавьте командой из «Инструкция → ${guideSection(pc)}»"
-                continue
-            }
-            progress("ключ приложения на ${pc.label}")
-            val r = shell.run(ProcessSpec(TermuxRestore.pcReauthorize(pc, key)), 1.minutes)
-            lines += when {
-                r is Outcome.Success && TermuxRestore.reauthorized(r.value.stdout) -> "${pc.label}: новый ключ приложения добавлен"
-                r is Outcome.Success -> "${pc.label}: не вышло (${(r.value.stderr + r.value.stdout).lastOrNull { it.isNotBlank() } ?: "код ${r.value.exitCode}"}) — команда из «Инструкция → ${guideSection(pc)}»"
-                else -> "${pc.label}: не вышло (${(r as Outcome.Failure).diagnostics.first().message}) — команда из «Инструкция → ${guideSection(pc)}»"
-            }
-        }
-        mirrorSettings(com.dpsmpx.dpai.ui.SettingsBackup.write(merged, Clock.SYSTEM.now().epochMillis, version))
-        lines += "доступ к Termux восстановлен; targets: ${merged.targets.size}"
-        return Outcome.success(lines)
-    }
-
     /** `dpai agent doctor` на target — по SSH с ключом приложения; «в приложении» — агентом процесса [inAppHost] (D-75). */
     fun doctor(entry: TargetEntry, inAppHost: com.dpsmpx.dpai.execution.process.ProcessHost? = null): Outcome<DoctorResult> {
         val manager = ExecutionTargetManager(
@@ -665,8 +559,12 @@ class Controller(private val root: File, val version: String?) {
          * `doctor` сверяет версию агента. Кто бы ни создал контроллер первым (экран, служба после
          * перезапуска, терминал), версия та же — и в приложении DPmetaApp, где у APK своя версия.
          */
+        private var workspaceCopyDir: File? = null
+        fun install(context: Context) { workspaceCopyDir = File(context.applicationContext.noBackupFilesDir, "workspace-changes") }
+
         fun get(filesDir: File): Controller = instance ?: synchronized(this) {
-            instance ?: Controller(File(filesDir, "controller"), BuildConfig.DPAI_VERSION).also { instance = it }
+            instance ?: Controller(File(filesDir, "controller"), BuildConfig.DPAI_VERSION,
+                workspaceCopyDir ?: File(filesDir, "workspace-changes")).also { instance = it }
         }
     }
 }

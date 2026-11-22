@@ -8,6 +8,7 @@ import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonArray
 import com.dpsmpx.dpai.core.serialization.JsonBool
 import com.dpsmpx.dpai.core.serialization.JsonNumber
+import com.dpsmpx.dpai.core.serialization.JsonNull
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonValue
 import java.net.URLEncoder
@@ -18,7 +19,7 @@ import java.net.URLEncoder
  * параметром адреса: адрес попадает в журналы прокси и серверов.
  * Рассуждения модели (`thought`) в текст ответа не попадают.
  */
-class GeminiProvider(profile: ApiProfile, key: Secret?, transport: Transport) : HttpProvider(profile, key, transport) {
+class GeminiProvider(profile: ApiProfile, key: Secret?, transport: Transport) : HttpProvider(profile, key, transport), ToolChat {
     private val headers = mapOf("content-type" to "application/json")
 
     private fun secret() = key?.let { SecretHeader("x-goog-api-key", "", it) }
@@ -96,6 +97,54 @@ class GeminiProvider(profile: ApiProfile, key: Secret?, transport: Transport) : 
         if (r is Outcome.Failure) return r
         if (stop == null) return Outcome.failure(DiagCode.PROVIDER_REPLY_INVALID, "поток оборвался без причины остановки", subject)
         return Outcome.success(ChatReply(text.toString(), stopKind(stop), stop, ChatUsage.of(input, output)))
+    }
+
+    /** Function calling Gemini сохраняет исходные parts, включая подписи рассуждений (D-214). */
+    override fun chatWithTools(request: ChatRequest, tools: List<ToolSpec>, cancel: Cancel, onText: (String) -> Unit, run: (ToolCall) -> ToolResult): Outcome<ChatReply> {
+        if (tools.isEmpty()) return chat(request, cancel, onText)
+        keyMissing()?.let { return it }
+        val model = request.model.removePrefix("models/")
+        if (!MODEL.matches(model)) return Outcome.failure(DiagCode.PROVIDER_REQUEST_REJECTED, "недопустимое имя модели Gemini")
+        val messages = request.messages.map { JsonObject.of("role" to jstr(if (it.role == ChatRole.USER) "user" else "model"), "parts" to JsonArray(listOf(JsonObject.of("text" to jstr(it.text))))) }.toMutableList<JsonValue>()
+        var serial = 0
+        val providerIds = hashMapOf<String, String>()
+        return ToolLoop.run(messages, tools, cancel, onText, turn = turn@{ history ->
+            val body = linkedMapOf<String, JsonValue>("contents" to JsonArray(history), "tools" to JsonArray(listOf(JsonObject.of("functionDeclarations" to JsonArray(tools.map(ToolLoop::schema))))))
+            request.system?.let { body["systemInstruction"] = JsonObject.of("parts" to JsonArray(listOf(JsonObject.of("text" to jstr(it))))) }
+            request.maxOutputTokens?.let { body["generationConfig"] = JsonObject.of("maxOutputTokens" to JsonNumber.of(it)) }
+            val reply = when (val r = json(HttpCall("POST", url("/models/$model:generateContent"), headers, CanonicalJson.write(JsonObject(body)).toByteArray(Charsets.UTF_8), secret()), cancel)) {
+                is Outcome.Failure -> return@turn r
+                is Outcome.Success -> r.value
+            }
+            val candidate = reply["candidates"].arr().singleOrNull().obj()
+            val content = candidate?.get("content").obj()
+            val reason = candidate?.get("finishReason").str()
+            if (content == null || reason == null) return@turn Outcome.failure(DiagCode.PROVIDER_REPLY_INVALID, "нет завершённого ответа Gemini")
+            val parts = content["parts"].arr()
+            val calls = arrayListOf<ToolCall>()
+            val seenIds = hashSetOf<String>()
+            providerIds.clear()
+            for (part in parts) {
+                val call = part.obj()?.get("functionCall").obj() ?: continue
+                val name = call["name"].str()
+                // Gemini может не прислать args у функции без обязательных аргументов.
+                val args = if (call["args"] == null || call["args"] == JsonNull) JsonObject.of() else call["args"].obj()
+                if (name == null || args == null) return@turn Outcome.failure(DiagCode.PROVIDER_REPLY_INVALID, "неверный вызов функции Gemini")
+                val suppliedId = call["id"].str()
+                if (suppliedId != null && (suppliedId.isEmpty() || !seenIds.add(suppliedId))) return@turn Outcome.failure(DiagCode.PROVIDER_REPLY_INVALID, "повторный id функции Gemini")
+                val localId = "gemini-${serial++}"
+                if (suppliedId != null) providerIds[localId] = suppliedId
+                calls += ToolCall(localId, name, args)
+            }
+            val text = parts.mapNotNull { p -> p.obj()?.takeIf { it["thought"] != JsonBool(true) }?.get("text").str() }.joinToString("")
+            val usage = reply["usageMetadata"].obj()
+            Outcome.success(ToolLoop.Round(text, stopKind(reason), reason, usage?.get("promptTokenCount").long(), usage?.get("candidatesTokenCount").long(), content, calls, reason == "STOP"))
+        }, results = { values -> JsonObject.of("role" to jstr("user"), "parts" to JsonArray(values.map { (call, result) ->
+            // id возвращается лишь если он действительно был в functionCall; локальный счётчик не выдаётся за id сервера.
+            val fields = linkedMapOf<String, JsonValue>("name" to jstr(call.name), "response" to JsonObject.of("output" to jstr(result.text), "isError" to JsonBool(result.isError)))
+            providerIds[call.id]?.let { fields["id"] = jstr(it) }
+            JsonObject.of("functionResponse" to JsonObject(fields))
+        })) }, execute = run)
     }
 
     companion object {

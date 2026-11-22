@@ -44,17 +44,19 @@ data class ProjectWorkspaceView(
     val ready: Boolean,
     val tasks: List<WorkspaceTask>,
     val paused: Boolean = false,
+    val pendingEdit: Boolean = false,
 ) {
     val main: WorkspaceLocation get() = WorkspaceLocation(project.project, project.repository, project.target, null, null, project.root, project.integrationBranch)
 
     fun location(task: TaskId?): WorkspaceLocation? = if (task == null) main else tasks.firstOrNull { it.id == task }?.location
 
     /** Проверять заново под замком контура перед действием, а не доверять снимку экрана. */
-    fun allow(expectedProject: ProjectEntry, location: WorkspaceLocation, write: Boolean): Outcome<Unit> {
+    fun allow(expectedProject: ProjectEntry, location: WorkspaceLocation, write: Boolean, recoveringEdit: Boolean = false): Outcome<Unit> {
         if (!ready || target == null || project != expectedProject || location != this.location(location.task)) {
             return Outcome.failure(DiagCode.STATE_CONFLICT, "проект или рабочее дерево изменились; откройте папку заново")
         }
         if (write && paused) return Outcome.failure(DiagCode.WORKTREE_OWNED, "проект на паузе: выполняется ручной профиль")
+        if (write && pendingEdit && !recoveringEdit) return Outcome.failure(DiagCode.WORKTREE_OWNED, "сначала восстановите прерванную проектную правку")
         if (write && location.task != null && tasks.first { it.id == location.task }.owner != null) {
             return Outcome.failure(DiagCode.WORKTREE_OWNED, "дерево занято сессией ИИ; доступно только чтение")
         }
@@ -93,11 +95,11 @@ object WorkspacePaths {
 
 /** Свежая проверка и действие под одним замком с запуском ИИ, без ожидания занятого такта (D-132). */
 class WorkspaceWriteGate(private val lock: ReentrantLock, private val current: () -> ProjectWorkspaceView?) {
-    fun <T> perform(project: ProjectEntry, location: WorkspaceLocation, action: () -> Outcome<T>): Outcome<T> {
+    fun <T> perform(project: ProjectEntry, location: WorkspaceLocation, recoveringEdit: Boolean = false, action: () -> Outcome<T>): Outcome<T> {
         if (!lock.tryLock()) return Outcome.failure(DiagCode.WORKTREE_OWNED, "контроллер занят; повторите действие")
         return try {
             val view = current() ?: return Outcome.failure(DiagCode.STATE_CONFLICT, "проект отключён")
-            when (val allowed = view.allow(project, location, true)) {
+            when (val allowed = view.allow(project, location, true, recoveringEdit)) {
                 is Outcome.Failure -> allowed
                 is Outcome.Success -> action()
             }

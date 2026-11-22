@@ -64,7 +64,7 @@ claude.ai (D-27), не принимает решений планировщик�
 | Что | Версия | Где |
 |---|---|---|
 | Модули, jar, дистрибутив `dpai` | `0.1.0-dev.10` (сборка для проверки на устройстве — ветка `apk_debug` DPmetaApp, каталог `dpai/`, D-81, `DPmetaApp:D-33`) | `gradle.properties`, `version`; в jar `cli` — `Implementation-Version`, его печатает `dpai version` |
-| Приложение Android | отдельная сборка «AI»: `versionName` — версия проекта, `versionCode` — 10; в приложении DPmetaApp — версия DPmetaApp (`DPmetaApp:D-54`), версия «AI» — `BuildConfig.DPAI_VERSION` (D-103) | `android-app/build.gradle.kts`, `android/build.gradle.kts` |
+| Приложение Android | единый APK DPmetaApp::shell: версия DPmetaApp (`DPmetaApp:D-54`), версия подсистемы — `BuildConfig.DPAI_VERSION` библиотеки (D-103, D-201) | `DPmetaApp:shell/build.gradle.kts`, `android/build.gradle.kts` |
 | Форматы хранения | свой номер у каждого (раздел 10) | `docs/DATA_MODEL.md`, §4 |
 | Реестры | 116 кодов диагностики, 67 типов событий (8 октября 2026) | `tools/verify/registry/` |
 | Решения | D-01…D-39, заменённых нет | `docs/direction/DECISIONS.md` |
@@ -455,8 +455,7 @@ Gradle 9.8.0 — через wrapper со сверкой SHA-256 дистрибу
 модулей — `docs/ARCHITECTURE.md`, §2 (D-21).
 
 Внешние программы — не зависимости сборки, а инструменты на target,
-вызываемые процессами: Claude Code CLI (на телефоне — в `proot-distro`
-Alpine через `tools/termux/claude-proot.sh`, D-33), Java 17+ для агента,
+вызываемые процессами: CLI исполнителя (на телефоне — Linux приложения, D-202), Java 17+ для агента,
 `git`, OpenSSH (клиент `ssh` на JVM, `sshd` на targets), `gh`, команда
 DP-Verify как шаг профиля проверки (D-16).
 

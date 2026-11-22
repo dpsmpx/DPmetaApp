@@ -3,7 +3,7 @@ package com.dpsmpx.dpmeta.app.screens
 import com.dpsmpx.dpmeta.actions.ActionCommand
 import com.dpsmpx.dpmeta.actions.ActionKind
 import com.dpsmpx.dpmeta.actions.ActionTarget
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 
 /**
  * Issue из пульта (F-26; D-07): задача, записанная с телефона, — уровень 1, окно «что

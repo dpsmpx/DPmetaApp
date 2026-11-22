@@ -122,12 +122,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.collectAsState
 import com.dpsmpx.dpmeta.app.screens.Links
-import com.dpsmpx.dpmeta.app.screens.Panels
 import com.dpsmpx.dpmeta.app.screens.Screens
 import com.dpsmpx.dpmeta.app.screens.Screens.DevTab
 import com.dpsmpx.dpmeta.app.screens.Screens.Section
 import com.dpsmpx.dpmeta.app.screens.Stats
-import com.dpsmpx.dpmeta.formats.Panel
 import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.metrics.Feed
@@ -328,11 +326,8 @@ interface Loader {
     fun saveProjectPaths(project: String, docs: List<String>, checklists: List<String>): Outcome<Unit> =
         Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "проектов пульта здесь нет", project)
 
-    /** Панель проекта (F-10) — `config/projects/<Проект>.toml` в APK; нет файла — `null`. */
-    fun panel(project: String): Outcome<Panel>? = null
-
     /** PR перед действием (F-12): репозиторий проекта и свежий PR с GitHub. */
-    fun pull(project: String, number: Int, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, PullDetail>>) -> Unit) =
+    fun pull(project: String, number: Int, done: (Outcome<Pair<com.dpsmpx.dpai.core.git.RepoRef, PullDetail>>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "действий с PR здесь нет", project))
 
     /** Карточка PR (F-11): коммиты, файлы, обсуждение — по кнопке, свежие с GitHub. */
@@ -352,7 +347,7 @@ interface Loader {
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "публикации здесь нет", project.name))
 
     /** Репозиторий проекта — для действий над ним (issue, F-26). */
-    fun repo(project: String, done: (Outcome<com.dpsmpx.dpmeta.model.RepoRef>) -> Unit) =
+    fun repo(project: String, done: (Outcome<com.dpsmpx.dpai.core.git.RepoRef>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "действий здесь нет", project))
 
     /** Файл к правке (F-69): с основной ветки, с блобом — свежий. */
@@ -386,7 +381,7 @@ interface Loader {
     fun briefs(done: (Outcome<List<com.dpsmpx.dpmeta.formats.Brief>>) -> Unit) = done(Outcome.success(emptyList()))
 
     /** Репозиторий проекта и основная ветка — места шаблона (F-23). */
-    fun base(project: String, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, String>>) -> Unit) =
+    fun base(project: String, done: (Outcome<Pair<com.dpsmpx.dpai.core.git.RepoRef, String>>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "поручений здесь нет", project))
 
     /** Реестр команд (F-40; D-82): команды, реестр проектов, проекты с клоном; без оболочки — отказ. */
@@ -394,7 +389,7 @@ interface Loader {
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "команд здесь нет", "commands"))
 
     /** Готовность команды на месте: шаги, рабочее дерево клона. */
-    fun commandCheck(spec: CommandSpec, registry: com.dpsmpx.dpmeta.model.Registry, project: String?, done: (Outcome<CommandActions.Checked>) -> Unit) =
+    fun commandCheck(spec: CommandSpec, registry: com.dpsmpx.dpmeta.model.ProjectCatalog, project: String?, done: (Outcome<CommandActions.Checked>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "команд здесь нет", spec.id))
 
     /** Поставить пакеты Alpine в Linux-среду. */
@@ -403,23 +398,6 @@ interface Loader {
 
     /** Запуск: итог и вывод — в [CommandSession]; уровень 1 — уже после окна «что изменится». */
     fun commandStart(spec: CommandSpec, checked: CommandActions.Checked) {}
-
-    /** Папка проектов Termux (D-83, D-84): сохранённая или по умолчанию. */
-    fun termuxFolder(): String = com.dpsmpx.dpmeta.app.screens.TermuxActions.DEFAULT_FOLDER
-
-    /** Сохранить папку проектов Termux из ввода: итог — путь, как он сохранён, или что не так. */
-    fun setTermuxFolder(input: String): Outcome<String> =
-        Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "настроек Termux здесь нет", "termux")
-
-    /** Готовность команды в Termux по шагам (F-42): с пробой папки, клона и программы. */
-    fun termuxCheck(spec: CommandSpec, registry: com.dpsmpx.dpmeta.model.Registry, project: String?, done: (Outcome<CommandActions.Checked>) -> Unit) =
-        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "Termux здесь нет", spec.id))
-
-    /** Попросить разрешение «Запуск команд в Termux»; [done] — когда человек ответил. */
-    fun termuxPermit(done: () -> Unit) = done()
-
-    /** Страница приложения в настройках Android — там «Другие разрешения», если окна запроса нет. */
-    fun appSettings() {}
 
     /** Поделиться текстом (экспорт журнала, F-44). */
     fun share(subject: String, text: String) {}
@@ -470,11 +448,8 @@ private sealed interface Nav {
     /** Правка файла проекта (F-69) — из документа. */
     data class Edit(val project: String, val path: String) : Nav
 
-    /**
-     * Поручение Claude маршрутом (F-22, F-23) — из карточки; ответ на вопрос (F-25) — из
-     * «Вопросов»: [brief] — шаблон, [source] и [question] — его поля.
-     */
-    data class Brief(val project: String, val brief: String?, val source: String?, val question: String?) : Nav
+    /** Поручение Claude маршрутом (F-22, F-23) — из карточки проекта. */
+    data class Brief(val project: String, val brief: String?) : Nav
 
     /** «Спросить Claude» (F-21) — из «Ещё»; из документа — с приложенным файлом [project]:[path]. */
     data class Ask(val project: String?, val path: String?) : Nav
@@ -495,7 +470,7 @@ private sealed interface Nav {
             Journal -> listOf("journal")
             is Branch -> listOf("branch", n.project, n.name)
             is Edit -> listOf("edit", n.project, n.path)
-            is Brief -> listOf("brief", n.project, n.brief.orEmpty(), n.source.orEmpty(), n.question.orEmpty())
+            is Brief -> listOf("brief", n.project, n.brief.orEmpty())
             is Ask -> listOf("ask", n.project.orEmpty(), n.path.orEmpty())
             Commands -> listOf("commands")
         }.joinToString(SEP)
@@ -511,7 +486,7 @@ private sealed interface Nav {
                 "journal" -> Journal
                 "branch" -> if (p.size >= 3) Branch(p[1], p[2]) else null
                 "edit" -> if (p.size >= 3) Edit(p[1], p[2]) else null
-                "brief" -> if (p.size >= 5) Brief(p[1], p[2].ifEmpty { null }, p[3].ifEmpty { null }, p[4].ifEmpty { null }) else null
+                "brief" -> if (p.size >= 3) Brief(p[1], p[2].ifEmpty { null }) else null
                 "ask" -> if (p.size >= 3) Ask(p[1].ifEmpty { null }, p[2].ifEmpty { null }) else null
                 "commands" -> Commands
                 else -> null
@@ -565,6 +540,8 @@ fun PultApp(
     /** «Ответ готов» из уведомления (F-58; D-161): открыть чат «Спросить Claude»; [onAskOpened] — сбросить. */
     openAsk: Boolean = false,
     onAskOpened: () -> Unit = {},
+    openCommands: Boolean = false,
+    onCommandsOpened: () -> Unit = {},
     onGoTo: () -> Unit = {},
     onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null,
     /** «Клоны…» в настройках (D-70). */
@@ -628,6 +605,12 @@ fun PultApp(
         tab = Section.MORE
         stacks[Section.MORE] = listOf(Nav.Ask(null, null))
         onAskOpened()
+    }
+    LaunchedEffect(openCommands) {
+        if (!openCommands) return@LaunchedEffect
+        tab = Section.MORE
+        stacks[Section.MORE] = listOf(Nav.Commands)
+        onCommandsOpened()
     }
     val stack = stacks[tab].orEmpty()
     val open: (Nav) -> Unit = { stacks[tab] = stacks[tab].orEmpty() + it }
@@ -1010,25 +993,14 @@ private fun Summary(
 private const val SUMMARY_EVENTS = 3
 
 /**
- * Список проектов (UX-18): место — заголовком, строка — имя и состояние
- * словом и цветом, ниже — ROADMAP, PR, TODO без «неизвестно» трижды;
+ * Список пользователя (D-176): порядок из состояния, без карты и мест.
+ * Строка — имя и состояние, ниже — ROADMAP, PR, TODO без «неизвестно» трижды;
  * ошибки источников — «⚠ N» цветом ошибки; решения — в карточке.
  */
 @Composable
 private fun Projects(groups: List<Screens.Group>, selected: String? = null, onOpen: (String) -> Unit) {
-    var map by rememberSaveable { mutableStateOf(true) }
-    var all by rememberSaveable { mutableStateOf(false) }
-    val shown = if (map) com.dpsmpx.dpmeta.app.screens.ProjectMap.groups(groups, all) else groups
     LazyColumn(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
-        item {
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = map, onClick = { map = true }, label = { Text("Карта") })
-                FilterChip(selected = !map, onClick = { map = false }, label = { Text("Список") })
-                if (map) FilterChip(selected = all, onClick = { all = !all }, label = { Text("С периферией") })
-            }
-            if (map) Text("Основные проекты реестра DPmeta. Любой другой репозиторий можно открыть в IDE; клонирование не добавляет его на карту.", style = MaterialTheme.typography.bodySmall)
-        }
-        for (g in shown) {
+        for (g in groups) {
             item { Text(g.title, style = MaterialTheme.typography.titleMedium) }
             items(g.rows, key = { "row:${g.title}:${it.name}" }) { r ->
                 // Открытый в соседней панели (UX-24) — выделен цветом и для TalkBack.
@@ -1048,7 +1020,6 @@ private fun Projects(groups: List<Screens.Group>, selected: String? = null, onOp
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Text(Screens.projectLine(r), style = MaterialTheme.typography.bodySmall)
-                        if (map) Text(com.dpsmpx.dpmeta.app.screens.ProjectMap.role(r.name), style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -1056,39 +1027,15 @@ private fun Projects(groups: List<Screens.Group>, selected: String? = null, onOp
     }
 }
 
-/** Пункт панели (F-10): читается при показе карточки; документ — переход в просмотр (F-09). */
-@Composable
-private fun PanelRow(project: String, item: Panel.Item, loader: Loader, open: (Nav) -> Unit) {
-    if (item.kind == Panel.Kind.DOCUMENT) {
-        TextButton(onClick = { open(Nav.Doc(project, item.path, null)) }) { Text(item.title) }
-        return
-    }
-    var lines by remember(project, item) { mutableStateOf<List<String>?>(null) }
-    LaunchedEffect(project, item) {
-        if (item.kind == Panel.Kind.COUNT) {
-            loader.directory(project, item.path) { r -> lines = if (r is Outcome.Success) Panels.fromDirectory(item, r.value) else Panels.failed(r as Outcome.Failure) }
-        } else {
-            loader.document(project, item.path) { r -> lines = if (r is Outcome.Success) Panels.fromText(item, r.value) else Panels.failed(r as Outcome.Failure) }
-        }
-    }
-    val shown = lines
-    Column {
-        Text("${item.title}: ${shown?.firstOrNull() ?: "…"}")
-        shown?.drop(1)?.forEach { Text("  $it", style = MaterialTheme.typography.bodySmall) }
-    }
-}
-
 @Composable
 private fun CardScreen(c: Screens.Card, studio: List<Screens.StudioWork>?, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) {
-    // Панель (F-10) — один раз на карточку: файл из APK и его разбор не повторяются при перерисовке.
-    val panel = remember(c.name) { loader.panel(c.name) }
     // Пути пользователя (D-176) — из списка проектов; после сохранения перечитываются.
     var pathsVersion by remember(c.name) { mutableStateOf(0) }
     val user = remember(c.name, pathsVersion) { loader.projectPaths(c.name) }
     // Работа студии (D-176): рабочий проект — по корню клона пульта.
     val root = remember(c.name) { loader.guestRoot(c.name) }
     val studioSection = Screens.studioSection(root?.let { r -> studio?.firstOrNull { it.root.trimEnd('/') == r } }, studio != null && root != null)
-    CardList(c, panel, user, studioSection, loader, onBack, open) { pathsVersion++ }
+    CardList(c, user, studioSection, loader, onBack, open) { pathsVersion++ }
 }
 
 /** Название документа на чипе: имя файла, а при повторе имени — путь целиком. */
@@ -1106,7 +1053,6 @@ private fun docTitle(path: String, all: List<String>): String {
 @Composable
 private fun CardList(
     c: Screens.Card,
-    panel: Outcome<Panel>?,
     user: com.dpsmpx.dpmeta.model.UserProject?,
     studio: Screens.CardSection?,
     loader: Loader,
@@ -1116,7 +1062,6 @@ private fun CardList(
 ) {
     val view = remember(c) { Screens.cardView(c) }
     val opened = rememberSaveable(c.name, saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() })) { mutableStateListOf<String>() }
-    val decisionsPath = c.files.firstOrNull { it.first == "Решения" }?.second
     var issueOpen by rememberSaveable(c.name) { mutableStateOf(false) }
     var pathsOpen by rememberSaveable(c.name) { mutableStateOf(false) }
     // Документ — в редакторе IDE, если проект рабочий; иначе спросить или читать в пульте (D-177).
@@ -1144,14 +1089,13 @@ private fun CardList(
             ideVersion++
         }
     }
-    val todoPath = c.files.firstOrNull { it.first == "TODO" }?.second
     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         item {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") }
             }
         }
-        item { Text("${c.name} — ${c.place}, ${c.working}", style = MaterialTheme.typography.titleMedium) }
+        item { Text("${c.name} — ${c.working}", style = MaterialTheme.typography.titleMedium) }
         if (view.attention.isNotEmpty()) {
             item {
                 Card(Modifier.fillMaxWidth()) {
@@ -1173,7 +1117,7 @@ private fun CardList(
                 if (user != null) AssistChip(onClick = { pathsOpen = true }, label = { Text("Документы и чек-листы…") })
                 AssistChip(onClick = { open(Nav.Dir(c.name, "")) }, label = { Text("Все файлы") })
                 AssistChip(onClick = { issueOpen = true }, label = { Text("Новый issue…") })
-                AssistChip(onClick = { open(Nav.Brief(c.name, null, null, null)) }, label = { Text("Поручить Claude…") })
+                AssistChip(onClick = { open(Nav.Brief(c.name, null)) }, label = { Text("Поручить Claude…") })
             }
             ideNote?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             if (issueOpen) IssueDialog(c.name, loader) { issueOpen = false }
@@ -1187,19 +1131,16 @@ private fun CardList(
         for (sec in listOfNotNull(studio) + view.sections) {
             val key = sec.kind.name
             val expanded = key in opened
-            val expandable = sec.lines.isNotEmpty() || (sec.kind == Screens.CardSection.Kind.ABOUT && panel != null)
+            val expandable = sec.lines.isNotEmpty()
             item(key = key) {
                 Text(
                     sec.title + when {
-                        sec.kind == Screens.CardSection.Kind.TODO && todoPath != null -> " ▸"
                         !expandable -> ""
                         expanded -> " ▾"
                         else -> " ▸"
                     },
-                    Modifier.fillMaxWidth().clickable(enabled = expandable || (sec.kind == Screens.CardSection.Kind.TODO && todoPath != null)) {
-                        if (sec.kind == Screens.CardSection.Kind.TODO && todoPath != null) {
-                            open(Nav.Doc(c.name, todoPath, null))
-                        } else if (expanded) {
+                    Modifier.fillMaxWidth().clickable(enabled = expandable) {
+                        if (expanded) {
                             opened.remove(key)
                         } else {
                             opened.add(key)
@@ -1209,16 +1150,7 @@ private fun CardList(
                 )
             }
             if (expanded) {
-                if (sec.kind == Screens.CardSection.Kind.DECISIONS) {
-                    // Решение — касанием к журналу на его якоре (F-07); без id — просто строка.
-                    items(c.lastDecisions) { d ->
-                        val anchor = d.id?.let(Links::slug)
-                        Text(
-                            "  ${d.text}",
-                            Modifier.fillMaxWidth().clickable(enabled = anchor != null && decisionsPath != null) { open(Nav.Doc(c.name, decisionsPath!!, anchor)) }.padding(vertical = 4.dp),
-                        )
-                    }
-                } else if (sec.kind == Screens.CardSection.Kind.PULLS) {
+                if (sec.kind == Screens.CardSection.Kind.PULLS) {
                     // PR — касанием к его экрану с действиями (F-12); строки проверок — как прежде.
                     items(c.pulls) { pr ->
                         Text(
@@ -1252,13 +1184,6 @@ private fun CardList(
                     }
                 } else {
                     items(sec.lines) { Text("  $it", style = MaterialTheme.typography.bodySmall) }
-                }
-                if (sec.kind == Screens.CardSection.Kind.ABOUT) {
-                    when (panel) {
-                        null -> Unit
-                        is Outcome.Failure -> item { Text("Панель: ${Panels.failed(panel).first()}", color = MaterialTheme.colorScheme.error) }
-                        is Outcome.Success -> items(panel.value.items) { PanelRow(c.name, it, loader, open) }
-                    }
                 }
             }
         }
@@ -1588,10 +1513,6 @@ private fun Pulls(
 }
 
 /**
- * Вопросы автору (F-24, UX-17): по проектам, метка — чипом, касание —
- * `TODO.md` проекта на разделе вопроса.
- */
-/**
  * «Ждут меня» (D-176, п. 4): запросы ИИ — к «AI» на «Запросах», ревью — к экрану PR, назначенные
  * issues — на GitHub. Ревью и issues отбираются по логину владельца токена.
  */
@@ -1672,7 +1593,7 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
     Text("Вопросы о состоянии проектов — моделью по ключу API из «AI». Claude только читает срез; действий из разговора нет.", style = MaterialTheme.typography.bodySmall)
     TextButton(onClick = onAsk) { Text("Спросить Claude ▸") }
     Text("Команды проектов", style = MaterialTheme.typography.titleMedium)
-    Text("Проверки и отчёты проектов — в Linux-среде приложения или в Termux, в клонах. Только команды из списка; своих здесь не набрать.", style = MaterialTheme.typography.bodySmall)
+    Text("Проверки и отчёты проектов — в Linux-среде приложения, в клонах. Только команды из списка; своих здесь не набрать.", style = MaterialTheme.typography.bodySmall)
     TextButton(onClick = onCommands) { Text("Команды ▸") }
     NotificationSettings(view.feed, onFeed)
     Text("Синхронизация", style = MaterialTheme.typography.titleMedium)
@@ -1792,7 +1713,7 @@ fun ClonesDialog(prompt: ClonePrompt, onDone: (Set<String>?) -> Unit, onDelete: 
                             Column(Modifier.weight(1f).padding(start = 6.dp)) {
                                 Text(o.slug, style = MaterialTheme.typography.bodyMedium)
                                 val marks = listOfNotNull(
-                                    "реестр".takeIf { o.registry },
+                                    "в пульте".takeIf { o.inProjects },
                                     "закрытый".takeIf { o.private },
                                     o.bytes?.let { "склонирован · " + if (it < 1_048_576) "меньше 1 МБ" else "${it / 1_048_576} МБ" },
                                 )
@@ -1864,12 +1785,12 @@ fun ProjectsDialog(prompt: ProjectsPrompt, onDone: (List<String>?) -> Unit) {
                         isError = typedError != null, supportingText = typedError?.let { e -> { Text(e) } }, modifier = Modifier.weight(1f),
                     )
                     TextButton(onClick = {
-                        when (val r = com.dpsmpx.dpmeta.model.RepoRef.parse(typed)) {
+                        when (val r = com.dpsmpx.dpai.core.git.RepoRef.parse(typed)) {
                             is com.dpsmpx.dpai.core.result.Outcome.Failure -> typedError = "нужно «владелец/имя»"
                             is com.dpsmpx.dpai.core.result.Outcome.Success -> {
                                 val slug = r.value.toString()
                                 if (options.none { it.slug.equals(slug, ignoreCase = true) }) {
-                                    options = options + com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(slug, registry = false, private = false, gone = true)
+                                    options = options + com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(slug, inProjects = false, private = false, gone = true)
                                 }
                                 val known = options.first { it.slug.equals(slug, ignoreCase = true) }.slug
                                 if (checked.none { it.equals(known, ignoreCase = true) }) checked = checked + known
@@ -1982,7 +1903,7 @@ private fun PullCardView(project: String, p: PullDetail, loader: Loader) {
  */
 @Composable
 private fun PullScreen(project: String, number: Int, checks: String?, loader: Loader, onBack: () -> Unit) {
-    var loaded by remember(project, number) { mutableStateOf<Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, PullDetail>>?>(null) }
+    var loaded by remember(project, number) { mutableStateOf<Outcome<Pair<com.dpsmpx.dpai.core.git.RepoRef, PullDetail>>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
     LaunchedEffect(project, number, reload) {
         loaded = null
@@ -2129,27 +2050,24 @@ private fun JournalScreen(loader: Loader, onBack: () -> Unit) {
 }
 
 /**
- * Команды проектов (F-40…F-43; D-82, D-84): только из реестра, без ввода аргументов. У
- * команды — где идёт (Linux-среда приложения или Termux), готовность по шагам, рабочее
- * дерево клона; уровень 1 — окно «что изменится» и журнал. Вывод — по ходу (в Termux —
- * целиком в конце); запуск переживает уход с экрана ([CommandSession]).
+ * Команды проектов (F-40, F-43; D-82): реестр, готовность Linux-среды и
+ * рабочее дерево клона. Уровень 1 — окно «что изменится» и журнал. Вывод
+ * по ходу; запуск переживает уход с экрана ([CommandSession]).
  */
 @Composable
 private fun CommandsScreen(loader: Loader, onBack: () -> Unit) {
     var catalog by remember { mutableStateOf<Outcome<CommandActions.Catalog>?>(null) }
     LaunchedEffect(Unit) { loader.commands { catalog = it } }
     var opened by rememberSaveable { mutableStateOf<String?>(null) }
-    var folderRound by remember { mutableIntStateOf(0) }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         item { TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") } }
         item { Text("Команды проектов", style = MaterialTheme.typography.titleMedium) }
         item {
             Text(
-                "Идут в Linux-среде приложения, в клонах ~/projects — там же, где работают терминал, IDE и «AI», или в Termux, в его папке проектов. Чтение — сразу; правка рабочего дерева — после окна «что изменится», с записью в журнал.",
+                "Идут в Linux-среде приложения, в клонах ~/projects — там же, где работают терминал, IDE и «AI». Чтение — сразу; правка рабочего дерева — после окна «что изменится», с записью в журнал.",
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        item { TermuxFolder(loader) { folderRound++ } }
         when (val c = catalog) {
             null -> item { Text("Читаю реестр…", style = MaterialTheme.typography.bodySmall) }
             is Outcome.Failure -> item { Text("Реестр не прочитан: ${c.errors.first().message}", color = MaterialTheme.colorScheme.error) }
@@ -2172,78 +2090,22 @@ private fun CommandsScreen(loader: Loader, onBack: () -> Unit) {
                         }
                         Text(if (open) "▾" else "▸")
                     }
-                    if (open) CommandDetail(spec, c.value, loader, folderRound)
+                    if (open) CommandDetail(spec, c.value, loader)
                 }
             }
         }
     }
 }
 
-/**
- * Папка проектов Termux (D-83, D-84): клоны в ней — под своими именами. Выбор — вводом пути:
- * каталог Termux приложению не виден, есть ли папка — скажет проверка готовности команды.
- */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun TermuxFolder(loader: Loader, onChanged: () -> Unit) {
-    var folder by remember { mutableStateOf(loader.termuxFolder()) }
-    var editing by rememberSaveable { mutableStateOf(false) }
-    var input by rememberSaveable { mutableStateOf("") }
-    var problem by remember { mutableStateOf<String?>(null) }
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("Папка проектов в Termux", fontWeight = FontWeight.SemiBold)
-        if (!editing) {
-            Text(folder, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
-            TextButton(onClick = {
-                input = folder
-                problem = null
-                editing = true
-            }) { Text("Изменить папку") }
-        } else {
-            OutlinedTextField(
-                value = input,
-                onValueChange = {
-                    input = it
-                    problem = null
-                },
-                label = { Text("Путь в Termux") },
-                singleLine = true,
-                isError = problem != null,
-                supportingText = { Text(problem ?: "Клоны — в ней под своими именами: …/DPmetaApp, …/DPlearn. «~/» — домашний каталог Termux.") },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
-                Button(onClick = {
-                    when (val r = loader.setTermuxFolder(input)) {
-                        is Outcome.Success -> {
-                            folder = r.value
-                            editing = false
-                            onChanged()
-                        }
-                        is Outcome.Failure -> problem = r.errors.first().message.replaceFirstChar { it.uppercase() } + "."
-                    }
-                }) { Text("Сохранить") }
-                TextButton(onClick = { input = com.dpsmpx.dpmeta.app.screens.TermuxActions.DEFAULT_FOLDER }) { Text("По умолчанию") }
-                TextButton(onClick = { editing = false }) { Text("Отмена") }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CommandDetail(spec: CommandSpec, catalog: CommandActions.Catalog, loader: Loader, folderRound: Int = 0) {
+private fun CommandDetail(spec: CommandSpec, catalog: CommandActions.Catalog, loader: Loader) {
     var project by rememberSaveable(spec.id) { mutableStateOf(if (spec.anyProject) catalog.anyProjects.firstOrNull() else spec.project) }
-    var where by rememberSaveable(spec.id) { mutableStateOf(CommandActions.Where.LINUX) }
     var round by remember { mutableIntStateOf(0) }
     var checked by remember { mutableStateOf<Outcome<CommandActions.Checked>?>(null) }
-    LaunchedEffect(spec.id, project, round, where, folderRound) {
+    LaunchedEffect(spec.id, project, round) {
         checked = null
         project?.let { p ->
-            if (where == CommandActions.Where.TERMUX) {
-                loader.termuxCheck(spec, catalog.registry, p) { checked = it }
-            } else {
-                loader.commandCheck(spec, catalog.registry, p) { checked = it }
-            }
+            loader.commandCheck(spec, catalog.catalog, p) { checked = it }
         }
     }
     var installing by remember { mutableStateOf(false) }
@@ -2259,31 +2121,20 @@ private fun CommandDetail(spec: CommandSpec, catalog: CommandActions.Catalog, lo
                 }
             }
         }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.Center) {
-            FilterChip(selected = where == CommandActions.Where.LINUX, onClick = { where = CommandActions.Where.LINUX }, label = { Text("Linux в приложении") })
-            FilterChip(selected = where == CommandActions.Where.TERMUX, onClick = { where = CommandActions.Where.TERMUX }, label = { Text("Termux") })
-        }
         Text(spec.line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
         spec.expect?.let { Text("Ждать: $it.", style = MaterialTheme.typography.bodySmall) }
         when (val ch = checked) {
-            null -> if (project != null) Text(if (where == CommandActions.Where.TERMUX) "Спрашиваю Termux…" else "Проверяю готовность…", style = MaterialTheme.typography.bodySmall)
+            null -> if (project != null) Text("Проверяю готовность…", style = MaterialTheme.typography.bodySmall)
             is Outcome.Failure -> Text(ch.errors.first().message.replaceFirstChar { it.uppercase() }, color = MaterialTheme.colorScheme.error)
             is Outcome.Success -> {
                 val v = ch.value
-                val inTermux = v.where == CommandActions.Where.TERMUX
                 Text("Каталог: ${v.dir}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
                 if (v.tree != null) Text(CommandActions.treeLine(v.tree), style = MaterialTheme.typography.bodySmall)
                 for (st in v.steps) {
                     Text((if (st.ok) "✓ " else "✗ ") + st.title, style = MaterialTheme.typography.bodySmall, color = if (st.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
                     if (!st.ok) st.hint?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 16.dp)) }
                 }
-                if (inTermux && v.steps.any { !it.ok && it.title == com.dpsmpx.dpmeta.app.screens.TermuxActions.NO_PERMISSION }) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
-                        OutlinedButton(onClick = { loader.termuxPermit { round++ } }) { Text("Разрешить") }
-                        TextButton(onClick = { loader.appSettings() }) { Text("Настройки приложения") }
-                    }
-                }
-                val key = CommandSession.key(spec.id, v.spot.project, inTermux)
+                val key = CommandSession.key(spec.id, v.spot.project)
                 val run = CommandSession.runs[key]
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
                     if (v.missing.isNotEmpty()) {
@@ -2301,8 +2152,7 @@ private fun CommandDetail(spec: CommandSpec, catalog: CommandActions.Catalog, lo
                         }, enabled = !installing) { Text(if (installing) "Ставлю…" else "Поставить пакеты") }
                     }
                     if (run?.running == true) {
-                        // Termux команду извне не останавливает: кнопки нет, итог придёт сам.
-                        if (!inTermux) OutlinedButton(onClick = { CommandSession.stop(key) }) { Text("Остановить") }
+                        OutlinedButton(onClick = { CommandSession.stop(key) }) { Text("Остановить") }
                     } else {
                         Button(onClick = { if (spec.level == 1) confirming = true else loader.commandStart(spec, v) }, enabled = v.ready) {
                             Text(if (spec.level == 1) "Запустить…" else "Запустить")
@@ -2312,7 +2162,7 @@ private fun CommandDetail(spec: CommandSpec, catalog: CommandActions.Catalog, lo
                 }
                 installed?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 if (run != null) {
-                    if (run.running) Text(if (inTermux) "Идёт в Termux…" else "Идёт…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    if (run.running) Text("Идёт…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                     run.result?.let { Text(it, color = if (run.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) }
                     if (run.lines.isNotEmpty()) {
                         val scroll = rememberScrollState()
@@ -2332,7 +2182,7 @@ private fun CommandDetail(spec: CommandSpec, catalog: CommandActions.Catalog, lo
                     AlertDialog(
                         onDismissRequest = { confirming = false },
                         title = { Text("Запустить «${spec.title}»?") },
-                        text = { Text(CommandActions.preview(spec, v.spot, v.tree, v.where, v.dir).joinToString("\n")) },
+                        text = { Text(CommandActions.preview(spec, v.spot, v.tree).joinToString("\n")) },
                         confirmButton = {
                             TextButton(onClick = {
                                 confirming = false
@@ -2651,11 +2501,8 @@ private fun AskScreen(nav: Nav.Ask, hasSnapshot: Boolean, loader: Loader, onBack
     }
 }
 
-/** Шаблон ответа на вопрос (F-25): `config/briefs/answer-question.md`. */
-private const val ANSWER_BRIEF = "answer-question"
-
 /**
- * Поручение Claude (F-22, F-23, F-25; D-07): маршрут, шаблон и его поля → окно «Что
+ * Поручение Claude (F-22, F-23; D-07): маршрут, шаблон и его поля → окно «Что
  * уйдёт» с текстом целиком → «Поручить» (уровень 1). Маршруты — из подсистемы «AI»;
  * итог — ссылка на облачную сессию (открыть — касанием, D-75) и строка журнала действий.
  */
@@ -2663,7 +2510,7 @@ private const val ANSWER_BRIEF = "answer-question"
 private fun BriefScreen(nav: Nav.Brief, loader: Loader, onBack: () -> Unit) {
     var routes by remember(nav) { mutableStateOf<List<RouteActions.Route>?>(null) }
     var briefs by remember(nav) { mutableStateOf<Outcome<List<com.dpsmpx.dpmeta.formats.Brief>>?>(null) }
-    var base by remember(nav) { mutableStateOf<Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, String>>?>(null) }
+    var base by remember(nav) { mutableStateOf<Outcome<Pair<com.dpsmpx.dpai.core.git.RepoRef, String>>?>(null) }
     var journal by remember(nav) { mutableStateOf<List<ActionEntry>>(emptyList()) }
     var reloadJournal by remember(nav) { mutableIntStateOf(0) }
     LaunchedEffect(nav) {
@@ -2676,8 +2523,6 @@ private fun BriefScreen(nav: Nav.Brief, loader: Loader, onBack: () -> Unit) {
     var briefKey by rememberSaveable(nav) { mutableStateOf(nav.brief) }
     val values = remember(nav) {
         mutableStateMapOf<String, String>().apply {
-            nav.source?.let { put("source", it) }
-            nav.question?.let { put("question", it) }
         }
     }
     var pending by remember { mutableStateOf<Triple<com.dpsmpx.dpmeta.actions.ActionCommand, com.dpsmpx.dpmeta.formats.Brief, String>?>(null) }
@@ -2745,7 +2590,7 @@ private fun BriefScreen(nav: Nav.Brief, loader: Loader, onBack: () -> Unit) {
                             val text = (rendered as Outcome.Success).value
                             result = null
                             link = null
-                            pending = Triple(RouteActions.command(route!!, nav.project, repo, brief, text, nav.question.takeIf { brief.key == ANSWER_BRIEF }), brief, text)
+                            pending = Triple(RouteActions.command(route!!, nav.project, repo, brief, text), brief, text)
                         },
                     ) { Text("Дальше: что уйдёт") }
                 }

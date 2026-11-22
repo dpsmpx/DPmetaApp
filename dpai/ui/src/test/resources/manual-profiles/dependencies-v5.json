@@ -1,0 +1,1 @@
+{"format":"dpai.manual-profile","version":5,"kind":"DEPENDENCIES","steps":[{"name":"Граф","command":["conan","graph","info","."],"timeout":600}]}

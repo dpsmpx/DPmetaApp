@@ -8,6 +8,11 @@ import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonParser
+import com.dpsmpx.dpai.core.serialization.JsonArray
+import com.dpsmpx.dpai.core.serialization.JsonNumber
+import com.dpsmpx.dpai.core.serialization.JsonObject
+import com.dpsmpx.dpai.core.serialization.JsonString
+import com.dpsmpx.dpai.core.serialization.JsonNull
 import com.dpsmpx.dpai.execution.target.TargetPlatform
 import com.dpsmpx.dpai.execution.target.TargetType
 import com.dpsmpx.dpai.storage.vfs.NioVfs
@@ -26,7 +31,20 @@ class TargetsTest {
     private val ids = IdGenerator(ManualClock(), RandomSource.seeded(9))
 
     private fun entry(host: String = "127.0.0.1", port: String = "8022", windows: Boolean = false) =
-        TargetForm.validate(ids.next(IdKinds.TARGET), "телефон", host, port, "u0_a224", windows, "/data/data/com.termux/files/home/dpai/bin/dpai")
+        TargetForm.validate(ids.next(IdKinds.TARGET), "SSH", host, port, "builder", windows, "/home/builder/dpai/bin/dpai")
+
+    /** В старом SSH-документе kind не было; поля tmux/sessions оставляем для проверки их границ версий. */
+    private fun legacyJson(entries: List<TargetEntry>, version: Int): String {
+        require(version in 3..6)
+        val current = TargetBook.toJson(entries)
+        val targets = (current["targets"] as JsonArray).items.map { item ->
+            val target = item as JsonObject
+            if (target["kind"] == JsonString("ssh")) JsonObject(target.fields - "kind") else target
+        }
+        return CanonicalJson.write(JsonObject(current.fields + mapOf(
+            "version" to JsonNumber.of(version), "targets" to JsonArray(targets),
+        )))
+    }
 
     @Test
     fun formRejectsOptionLikeHostAndBadPort() {
@@ -36,8 +54,8 @@ class TargetsTest {
     }
 
     @Test
-    fun typeFollowsHostAndPlatform() {
-        assertEquals(TargetType.TERMUX_LOCAL, entry().valueOrNull()!!.type)
+    fun typeFollowsPlatformWithoutInferringAnAppFromLoopback() {
+        assertEquals(TargetType.LINUX_SSH, entry().valueOrNull()!!.type)
         assertEquals(TargetType.LINUX_SSH, entry(host = "build.lan").valueOrNull()!!.type)
         assertEquals(TargetType.WINDOWS_REMOTE, entry(host = "pc.lan", windows = true).valueOrNull()!!.type)
         assertEquals(TargetPlatform.WINDOWS, entry(host = "pc.lan", windows = true).valueOrNull()!!.platform)
@@ -46,8 +64,46 @@ class TargetsTest {
     @Test
     fun bookRoundTripsThroughCanonicalJson() {
         val list = listOf(entry().valueOrNull()!!, entry(host = "pc.lan", port = "22", windows = true).valueOrNull()!!)
-        val text = CanonicalJson.write(TargetBook.toJson(list))
+        val json = TargetBook.toJson(list)
+        assertEquals(JsonNumber.of(7), json["version"])
+        assertTrue((json["targets"] as JsonArray).items.all { (it as JsonObject)["kind"] == JsonString("ssh") })
+        val text = CanonicalJson.write(json)
         assertEquals(list, TargetBook.fromJson(JsonParser().parse(text).valueOrNull()!!).valueOrNull())
+    }
+
+    @Test
+    fun versionSixLoopbackKeepsTheWholeSshEndpointAndSlot() {
+        for (host in listOf("127.0.0.1", "localhost", "::1")) {
+            val id = ids.next(IdKinds.TARGET)
+            val legacy = """{"format":"dpai.app-targets","version":6,"targets":[{"id":"$id","label":"сохранённый адрес","host":"$host","port":8022,"user":"legacy","platform":"posix","agent":"/legacy/bin/dpai","configDir":"/legacy/slot","executor":"codex","tmux":false,"sessions":3}]}"""
+            val saved = TargetBook.fromJson(JsonParser().parse(legacy).valueOrNull()!!).valueOrNull()!!.single()
+            assertEquals(id, saved.id)
+            assertEquals("сохранённый адрес", saved.label)
+            assertEquals(TargetType.LINUX_SSH, saved.type)
+            val endpoint = saved.toTarget("/kh").ssh!!
+            assertEquals(host, endpoint.host)
+            assertEquals(8022, endpoint.port)
+            assertEquals("legacy", endpoint.user)
+            assertEquals("/legacy/bin/dpai", saved.agent)
+            assertEquals("/legacy/slot", saved.configDir)
+            assertEquals(com.dpsmpx.dpai.core.ids.Executor.CODEX, saved.executor)
+            assertEquals(false, saved.tmux)
+            assertEquals(3, saved.sessions)
+            assertEquals(listOf(saved), TargetBook.fromJson(TargetBook.toJson(listOf(saved))).valueOrNull())
+        }
+    }
+
+    @Test
+    fun versionSevenRequiresKnownExplicitKind() {
+        val valid = TargetBook.toJson(listOf(entry().valueOrNull()!!))
+        val original = (valid["targets"] as JsonArray).items.single() as JsonObject
+        fun document(target: JsonObject, version: Int = 7) = JsonObject(valid.fields + mapOf(
+            "version" to JsonNumber.of(version), "targets" to JsonArray(listOf(target)),
+        ))
+        assertTrue(TargetBook.fromJson(document(JsonObject(original.fields - "kind"))) is Outcome.Failure)
+        assertTrue(TargetBook.fromJson(document(JsonObject(original.fields + ("kind" to JsonString("unknown"))))) is Outcome.Failure)
+        assertTrue(TargetBook.fromJson(document(original, version = 6)) is Outcome.Failure, "kind=ssh появился только в v7")
+        assertTrue(TargetBook.fromJson(document(JsonObject(original.fields + ("kind" to JsonNull)), version = 6)) is Outcome.Failure, "присутствующий kind=null не равен отсутствующему полю старой версии")
     }
 
     @Test
@@ -156,11 +212,12 @@ class TargetsTest {
         assertTrue("\"tmux\":true" !in json)
         assertEquals(listOf(on, off, inApp), TargetBook.fromJson(JsonParser().parse(json).valueOrNull()!!).valueOrNull())
         // Документ v4 (до D-111): поля нет — включено и у старых targets.
-        val v4 = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(TargetBook.toJson(listOf(on))).replace("\"version\":${TargetBook.VERSION}", "\"version\":4")
+        val v4 = legacyJson(listOf(on), 4)
         assertTrue(TargetBook.fromJson(JsonParser().parse(v4).valueOrNull()!!).valueOrNull()!!.single().tmux)
         // В v4 поля tmux не было: оно там — неизвестное поле (D-09).
-        val v4off = json.replace("\"version\":${TargetBook.VERSION}", "\"version\":4")
-        assertTrue(TargetBook.fromJson(JsonParser().parse(v4off).valueOrNull()!!) is com.dpsmpx.dpai.core.result.Outcome.Failure)
+        val v4off = legacyJson(listOf(on, off, inApp), 4)
+        val rejectedV4 = TargetBook.fromJson(JsonParser().parse(v4off).valueOrNull()!!)
+        assertTrue(rejectedV4 is Outcome.Failure && rejectedV4.diagnostics.any { it.code == DiagCode.FIELD_UNKNOWN })
     }
 
     /** D-180: места для сессий — в v6 пишется только не 1; до v6 и без поля — 1; вне 1…4 — отказ. */
@@ -175,9 +232,10 @@ class TargetsTest {
         assertEquals(2, Regex("\"sessions\":").findAll(json).count(), "пишется только не 1")
         assertEquals(listOf(one, two, slot), TargetBook.fromJson(JsonParser().parse(json).valueOrNull()!!).valueOrNull())
         // Документ v5 (до D-180): поля нет — одно место; поле в v5 — неизвестное (D-09).
-        val v5 = CanonicalJson.write(TargetBook.toJson(listOf(one))).replace("\"version\":${TargetBook.VERSION}", "\"version\":5")
+        val v5 = legacyJson(listOf(one), 5)
         assertEquals(1, TargetBook.fromJson(JsonParser().parse(v5).valueOrNull()!!).valueOrNull()!!.single().sessions)
-        assertTrue(TargetBook.fromJson(JsonParser().parse(json.replace("\"version\":${TargetBook.VERSION}", "\"version\":5")).valueOrNull()!!) is Outcome.Failure)
+        val rejectedV5 = TargetBook.fromJson(JsonParser().parse(legacyJson(listOf(one, two, slot), 5)).valueOrNull()!!)
+        assertTrue(rejectedV5 is Outcome.Failure && rejectedV5.diagnostics.any { it.code == DiagCode.FIELD_UNKNOWN })
         for (bad in listOf(0, 5)) {
             val broken = CanonicalJson.write(TargetBook.toJson(listOf(one.copy(sessions = 2)))).replace("\"sessions\":2", "\"sessions\":$bad")
             val r = TargetBook.fromJson(JsonParser().parse(broken).valueOrNull()!!)

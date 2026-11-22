@@ -23,6 +23,43 @@ import kotlin.time.Duration.Companion.minutes
  * ограничены, голодания нет, циклы и петли останавливаются.
  */
 class TasksTest {
+    @Test
+    fun batchProjectionPreservesInputAndAppliesTransitionsInOrder() {
+        val id = task()
+        val before = state
+        val events = listOf(TaskEvent.ScopeChanged(id, setOf("src"), clock.now()),
+            TaskEvent.StateChanged(id, TaskState.QUEUED, TaskState.READY, null, null, clock.now()),
+            TaskEvent.StateChanged(id, TaskState.READY, TaskState.RUNNING, null, null, clock.now()))
+        val result = Tasks.applyAll(before, events)
+        assertEquals(TaskState.RUNNING, result.tasks.getValue(id).state)
+        assertEquals(setOf("src"), result.tasks.getValue(id).scope)
+        kotlin.test.assertFailsWith<IllegalStateException> {
+            Tasks.applyAll(before, listOf(events.first(), TaskEvent.StateChanged(id, TaskState.QUEUED, TaskState.VERIFIED, null, null, clock.now())))
+        }
+        assertEquals(TaskState.QUEUED, before.tasks.getValue(id).state)
+        assertEquals(null, before.tasks.getValue(id).scope)
+    }
+
+    @Test
+    fun promotionDependsOnDependencyStatesAndKeepsStableEventOrder() {
+        val done = task()
+        val failed = task()
+        val ready = task(deps = setOf(done))
+        val blocked = task(deps = setOf(done, failed))
+        val waiting = task(deps = setOf(ready))
+        val records = state.tasks + (done to state.tasks.getValue(done).copy(state = TaskState.DONE)) +
+            (failed to state.tasks.getValue(failed).copy(state = TaskState.FAILED))
+        val before = TasksState(records)
+        val reversed = TasksState(records.entries.reversed().associate { it.toPair() })
+        val changes = tasks.promote(before, clock.now())
+        assertEquals(changes, tasks.promote(reversed, clock.now()))
+        assertEquals(listOf(ready, blocked).sortedBy { it.value }, changes.map { it.task })
+        val after = Tasks.applyAll(before, changes)
+        assertEquals(TaskState.READY, after.tasks.getValue(ready).state)
+        assertEquals(TaskState.BLOCKED, after.tasks.getValue(blocked).state)
+        assertEquals(TaskState.QUEUED, after.tasks.getValue(waiting).state)
+    }
+
     private val clock = ManualClock()
     private val ids = IdGenerator(clock, RandomSource.seeded(31))
     private val tasks = Tasks()

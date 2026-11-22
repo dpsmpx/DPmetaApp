@@ -49,7 +49,6 @@ fun SettingsDocument(projects: (@Composable () -> Unit)?, initialQuery: String =
     // Карточки «AI» работают с тем же контроллером и моделью, что окно «AI»: одно приложение — одно состояние (D-151).
     val controller = remember { Controller.get(context.applicationContext.filesDir) }
     val model = remember { DemoModel.get(context.applicationContext) }
-    var restoring by remember { mutableStateOf(false) }
     // Запрос из справки (ссылка «Настройки → тема») — сразу в поиске; новый запрос — новый поиск.
     var query by rememberSaveable(initialQuery) { mutableStateOf(initialQuery) }
     val list = rememberLazyListState()
@@ -86,7 +85,7 @@ fun SettingsDocument(projects: (@Composable () -> Unit)?, initialQuery: String =
                         APP_BACKUP -> AppBackupCard()
                         AI_LINUX -> {
                             Entry("Linux в приложении", "Alpine, пакеты, слоты ИИ") { onAiSettings(SETTINGS_LINUX) }
-                            Entry("Инструкция", "Termux, агент, ключ, вход, проект, dpai — по шагам") { onAiSettings(SETTINGS_GUIDE) }
+                            Entry("Инструкция", "Linux приложения и ПК по SSH — по шагам") { onAiSettings(SETTINGS_GUIDE) }
                             AppDiskCard()
                         }
                         AI_ACCESS -> {
@@ -101,11 +100,7 @@ fun SettingsDocument(projects: (@Composable () -> Unit)?, initialQuery: String =
                         }
                         AI_COPIES -> Card(Modifier.fillMaxWidth()) {
                             Column {
-                                BackupCard(controller, framed = false, onRestoreAccess = { restoring = true }) {}
-                                if (restoring) {
-                                    HorizontalDivider()
-                                    RestoreCard(controller, framed = false, onHide = { restoring = false }) {}
-                                }
+                                BackupCard(controller, framed = false) {}
                                 HorizontalDivider()
                                 CloudCard(model, framed = false)
                             }
@@ -157,13 +152,13 @@ private fun sections(pult: Boolean): List<Section> = listOfNotNull(
     Section(APP_BACKUP, "Резервная копия приложения", "Копия разделов в файл — с секретами только под паролем; восстановление выбранных разделов; сама раз в сутки без секретов.",
         "резервная копия бэкап backup восстановить восстановление новый телефон перенос пароль секреты загрузки разделы"),
     Section(AI_LINUX, "Linux и диск приложения", "Linux в приложении, инструкция по шагам, диск приложения в менеджере файлов.",
-        "ai linux alpine пакеты слоты termux агент инструкция шаги диск файлы менеджер targets пк"),
+        "ai linux alpine пакеты слоты агент инструкция шаги диск файлы менеджер targets пк"),
     Section(AI_ACCESS, "Управление и доступ", "Пауза и автономность контура, ключ приложения для targets, команда dpai, окно запросов поверх приложений.",
         "ai управление пауза автономный режим контур ключ доступа ssh публичный targets dpai cli команда канал окно запросов поверх приложений подтверждение"),
     Section(AI_SERVICES, "GitHub и маршруты", "PR проекта через gh и маршруты Claude Code для поручений.",
         "ai github pr gh проверки отзывы маршруты claude code routine облачные сессии поручения токен"),
-    Section(AI_COPIES, "Копии и восстановление", "Копия настроек в «Загрузках», восстановление доступа после переустановки, облачная копия контура.",
-        "ai копия настроек загрузки backup восстановление доступа переустановка termux облако облачная копия пароль токен репозиторий"),
+    Section(AI_COPIES, "Копии и восстановление", "Копия настроек в «Загрузках», загрузка сохранённой копии, облачная копия контура.",
+        "ai копия настроек загрузки backup восстановление доступа переустановка облако облачная копия пароль токен репозиторий"),
     Section(AI_LOG, "Журнал и остальное", "Журнал приложения и окно «AI» целиком.",
         "ai журнал лог отладка выгрузка ошибки настройки targets"),
 )

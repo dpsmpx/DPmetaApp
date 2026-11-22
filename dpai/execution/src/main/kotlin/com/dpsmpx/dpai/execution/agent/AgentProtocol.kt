@@ -159,6 +159,7 @@ data class DoctorReport(
     val arch: String,
     val javaVersion: String,
     val timeMillis: Long,
+    /** Прежний wire-признак окружения; D-202 не использует его как вид target. */
     val termux: Boolean,
     val diskFreeBytes: Long?,
     val memoryTotalBytes: Long?,

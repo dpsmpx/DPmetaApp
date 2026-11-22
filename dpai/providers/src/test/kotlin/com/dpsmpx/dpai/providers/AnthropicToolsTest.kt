@@ -57,6 +57,22 @@ class AnthropicToolsTest {
     private fun body(t: FakeTransport, i: Int) = JsonParser().parse(t.bodyOf(t.calls[i])).valueOrNull() as JsonObject
 
     @Test
+    fun duplicateToolIdsRejectTheWholeBatchBeforeExecution() {
+        val turn = sse(
+            "message_start" to """{"type":"message_start","message":{"usage":{"input_tokens":1,"output_tokens":1}}}""",
+            "content_block_start" to """{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"same","name":"get_project","input":{}}}""",
+            "content_block_stop" to """{"type":"content_block_stop","index":0}""",
+            "content_block_start" to """{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"same","name":"get_project","input":{}}}""",
+            "content_block_stop" to """{"type":"content_block_stop","index":1}""",
+            "message_delta" to """{"type":"message_delta","delta":{"stop_reason":"tool_use"}}""",
+            "message_stop" to """{"type":"message_stop"}""",
+        )
+        var invoked = 0
+        assertIs<Outcome.Failure>(chat(FakeTransport { FakeReply(200, turn) }, { invoked++; ToolResult("не должен исполняться") }))
+        assertEquals(0, invoked)
+    }
+
+    @Test
     fun toolRoundThenAnswer() {
         var n = 0
         val t = FakeTransport { FakeReply(200, if (n++ == 0) toolTurn(listOf("{\"proj", "ect\":\"Alpha\"}")) else answer) }

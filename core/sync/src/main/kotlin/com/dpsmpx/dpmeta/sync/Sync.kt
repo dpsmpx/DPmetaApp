@@ -14,11 +14,7 @@ import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpmeta.formats.Checklist
 import com.dpsmpx.dpmeta.formats.Checks
-import com.dpsmpx.dpmeta.formats.DecisionLog
-import com.dpsmpx.dpmeta.formats.ProcessDocument
-import com.dpsmpx.dpmeta.formats.Roadmap
 import com.dpsmpx.dpmeta.formats.StatusBlocks
-import com.dpsmpx.dpmeta.formats.TodoList
 import com.dpsmpx.dpmeta.github.Branch
 import com.dpsmpx.dpmeta.github.CiState
 import com.dpsmpx.dpmeta.github.CommitInfo
@@ -26,15 +22,15 @@ import com.dpsmpx.dpmeta.github.Issue
 import com.dpsmpx.dpmeta.github.PullRequest
 import com.dpsmpx.dpmeta.github.RecentCommit
 import com.dpsmpx.dpmeta.model.Observation
-import com.dpsmpx.dpmeta.formats.DpmetaDocs
+import com.dpsmpx.dpmeta.model.HistorySchema
 import com.dpsmpx.dpmeta.model.ObservationSource
-import com.dpsmpx.dpmeta.model.ProjectEntry
-import com.dpsmpx.dpmeta.model.Registry
+import com.dpsmpx.dpmeta.model.SyncProject
+import com.dpsmpx.dpmeta.model.ProjectCatalog
 import com.dpsmpx.dpmeta.model.SourceFailure
 
 /**
  * Вид источника и его приоритет при нехватке бюджета (ТЗ, §6.4): сводка и
- * открытые PR → последние влитые → ветки → файлы процесса.
+ * открытые PR → последние влитые → ветки → документы.
  */
 enum class SourceKind(val code: String) {
     PULLS("pulls"),
@@ -46,9 +42,6 @@ enum class SourceKind(val code: String) {
 
     /** Последние коммиты основной ветки и CI её головы (D-176). */
     COMMITS("commits"),
-    DECISIONS("decisions"),
-    TODO("todo"),
-    ROADMAP("roadmap"),
     README("readme"),
 
     /** Чекбоксы файлов, выбранных пользователем (D-176): все пути проекта одним наблюдением. */
@@ -56,9 +49,6 @@ enum class SourceKind(val code: String) {
 
     /** История из клона (D-66): только у читателя клонов, последней — она тяжелее остальных. */
     HISTORY("history"),
-
-    /** Счётчики документов DPmeta для `eco.*` (ТЗ, §8): только у проекта DPmeta. */
-    DPMETA("dpmeta"),
 }
 
 /** Получено из источника: значение, отпечаток исходного ответа, признак 304. */
@@ -73,51 +63,51 @@ interface SourceReader {
     val source: ObservationSource
 
     /** Есть ли у проекта PR и ветки в этом источнике; нет — «кто работает» неизвестно, а не «свободен». */
-    fun hasActivity(project: ProjectEntry): Boolean
+    fun hasActivity(project: SyncProject): Boolean
 
-    fun pulls(project: ProjectEntry): Outcome<Got<List<PullRequest>>>
+    fun pulls(project: SyncProject): Outcome<Got<List<PullRequest>>>
 
     /** Последние закрытые PR (влитые — с [PullRequest.mergedAt]). */
-    fun closed(project: ProjectEntry): Outcome<Got<List<PullRequest>>>
+    fun closed(project: SyncProject): Outcome<Got<List<PullRequest>>>
 
-    fun branches(project: ProjectEntry): Outcome<Got<List<Branch>>>
+    fun branches(project: SyncProject): Outcome<Got<List<Branch>>>
 
-    fun commit(project: ProjectEntry, sha: String): Outcome<CommitInfo>
+    fun commit(project: SyncProject, sha: String): Outcome<CommitInfo>
 
-    fun file(project: ProjectEntry, path: String): Outcome<Got<String>>
+    fun file(project: SyncProject, path: String): Outcome<Got<String>>
 
     /** Открытые issues (D-176); `null` — у этого источника их нет: задача пропускается молча. */
-    fun issues(project: ProjectEntry): Outcome<Got<List<Issue>>>? = null
+    fun issues(project: SyncProject): Outcome<Got<List<Issue>>>? = null
 
     /** Последние коммиты основной ветки (D-176); `null` — у этого источника их нет. */
-    fun recentCommits(project: ProjectEntry): Outcome<Got<List<RecentCommit>>>? = null
+    fun recentCommits(project: SyncProject): Outcome<Got<List<RecentCommit>>>? = null
 
     /** CI коммита [sha] (D-176); `null` — у этого источника CI нет (тогда его поля нет — неизвестно). */
-    fun ci(project: ProjectEntry, sha: String): Outcome<Got<CiState>>? = null
+    fun ci(project: SyncProject, sha: String): Outcome<Got<CiState>>? = null
 
     /**
      * История проекта из клона (D-66); `null` — у этого источника её нет
      * (REST, корпус, подсистема, клона нет): задача пропускается молча, без
      * отказа в «Ошибках источников».
      */
-    fun history(project: ProjectEntry): Outcome<Got<com.dpsmpx.dpmeta.git.CommitHistory>>? = null
+    fun history(project: SyncProject): Outcome<Got<com.dpsmpx.dpmeta.git.CommitHistory>>? = null
 
     /**
      * Имена файлов каталога [dir] проекта (от корня проекта); `null` — этот
      * источник каталоги не показывает (тогда счёт по каталогу неизвестен).
      */
-    fun names(project: ProjectEntry, dir: String): Outcome<List<String>>? = null
+    fun names(project: SyncProject, dir: String): Outcome<List<String>>? = null
 }
 
 /** Задача плана: проект, вид источника, пути-кандидаты файла (первый найденный). */
-data class SourceTask(val project: ProjectEntry, val kind: SourceKind, val paths: List<String>)
+data class SourceTask(val project: SyncProject, val kind: SourceKind, val paths: List<String>)
 
 /** Итог прогона: наблюдения, отказы по паре «проект → вид», отложенное из-за бюджета. */
 class SyncResult(val observations: List<Observation>, val failures: List<SourceFailure>, val deferred: Int)
 
 /**
  * Как выполнить независимые запросы (даты коммитов веток): по очереди или
- * пулом потоков оболочки (`dpmeta-cli`). Порядок итогов — порядок задач.
+ * пулом потоков оболочки. Порядок итогов — порядок задач.
  */
 interface Parallel {
     fun <T> all(jobs: List<() -> T>): List<T>
@@ -136,9 +126,6 @@ interface Parallel {
  * откладываются с той же диагностикой («на следующий раз»).
  */
 object Sync {
-    /** Пути ROADMAP по порядку: у репозиториев экосистемы встречаются оба. */
-    val ROADMAP_PATHS: List<String> = listOf("ROADMAP/ROADMAP.md", "docs/direction/ROADMAP/README.md")
-
     /** Источники активности: у подсистем их нет (общие с DPmetaApp), у клонов — тоже. */
     private val ACTIVITY = setOf(SourceKind.PULLS, SourceKind.MERGED, SourceKind.BRANCHES, SourceKind.ISSUES, SourceKind.COMMITS)
 
@@ -154,22 +141,15 @@ object Sync {
     /** «Файла нет» у GitHub и у каталога: следующий путь-кандидат. */
     private val NOT_FOUND = setOf(DiagCode.GITHUB_NOT_FOUND, DiagCode.ENTITY_NOT_FOUND)
 
-    /**
-     * [known] — найденные прежде пути ROADMAP; [skip] — пары «проект → вид»,
-     * которые не спрашиваются в этот раз (файла не было недавно).
-     */
-    fun plan(registry: Registry, known: Map<Pair<String, String>, String> = emptyMap(), skip: Set<Pair<String, String>> = emptySet()): List<SourceTask> {
+    /** [skip] — пары «проект → вид», которых недавно не было. */
+    fun plan(registry: ProjectCatalog, skip: Set<Pair<String, String>> = emptySet()): List<SourceTask> {
         val tasks = mutableListOf<SourceTask>()
         for (kind in SourceKind.entries) {
-            for (p in registry.shown) {
+            for (p in registry.projects) {
                 val paths = when (kind) {
                     SourceKind.PULLS, SourceKind.MERGED, SourceKind.BRANCHES, SourceKind.ISSUES, SourceKind.COMMITS, SourceKind.HISTORY -> emptyList()
-                    SourceKind.DECISIONS -> p.decisions?.let { listOf(it.path) } ?: continue
-                    SourceKind.TODO -> listOf("TODO.md")
-                    SourceKind.ROADMAP -> known[p.name to kind.code]?.let { k -> listOf(k) + (ROADMAP_PATHS - k) } ?: ROADMAP_PATHS
                     SourceKind.README -> listOf("README.md")
                     SourceKind.CHECKLISTS -> p.checklists.ifEmpty { continue }
-                    SourceKind.DPMETA -> if (p.name == DPMETA) listOf(DpmetaDocs.CONTRACTS, DpmetaDocs.RISKS, DpmetaDocs.QUEUE) else continue
                 }
                 if ((p.name to kind.code) !in skip) tasks += SourceTask(p, kind, paths)
             }
@@ -202,7 +182,6 @@ object Sync {
                     val h = reader.history(t.project) ?: continue
                     h.map { g -> historyJson(g.value) to g.rawSha256 }
                 }
-                SourceKind.DPMETA -> dpmeta(t, reader)
                 SourceKind.CHECKLISTS -> checklists(t, reader)
                 SourceKind.ISSUES -> when (val i = reader.issues(t.project) ?: continue) {
                     // Токену не дали Issues (D-176): «нет прав», а не ошибка источника — права по желанию.
@@ -236,7 +215,6 @@ object Sync {
         SourceKind.MERGED -> "github.merged.v1"
         SourceKind.BRANCHES -> "github.branches.v1"
         SourceKind.HISTORY -> HISTORY_SCHEMA
-        SourceKind.DPMETA -> DPMETA_SCHEMA
         SourceKind.CHECKLISTS -> CHECKLISTS_SCHEMA
         SourceKind.ISSUES -> "github.issues.v1"
         SourceKind.COMMITS -> "github.commits.v1"
@@ -296,17 +274,7 @@ object Sync {
                 }
                 is Outcome.Success -> r.value
             }
-            val doc: Outcome<ProcessDocument> = when (t.kind) {
-                SourceKind.DECISIONS -> when (val rx = t.project.decisions!!.regex()) {
-                    is Outcome.Failure -> rx
-                    is Outcome.Success -> DecisionLog.parse(got.value, rx.value, "${t.project.name}:$path")
-                }
-                SourceKind.TODO -> TodoList.parse(got.value, "${t.project.name}:$path")
-                SourceKind.ROADMAP -> Roadmap.parse(got.value, "${t.project.name}:$path")
-                SourceKind.README -> StatusBlocks.parse(got.value, "${t.project.name}:$path")
-                else -> error("не файл: ${t.kind}")
-            }
-            return doc.map { d ->
+            return StatusBlocks.parse(got.value, "${t.project.name}:$path").map { d ->
                 JsonObject(LinkedHashMap<String, JsonValue>(d.toJson().fields).apply {
                     put("schema", JsonString(d.schema))
                     put("path", JsonString(path))
@@ -342,54 +310,6 @@ object Sync {
             },
         ),
     )
-
-    /** Проект реестра с документами экосистемы (`eco.*`): DPmeta, с 25 октября 2026 — подсистема `dpmeta/`. */
-    const val DPMETA = "DPmeta"
-
-    /** Схема счётчиков документов DPmeta. */
-    const val DPMETA_SCHEMA = "dpmeta.counters.v1"
-
-    /**
-     * Счётчики документов DPmeta (`eco.*`): контракты, риски (всего и
-     * открытых), пункты очереди, срезы (файлы `.md` каталога `docs/reports`). Файла нет —
-     * его поля нет (неизвестно, а не ноль); нет ни одного — отказ «файла нет».
-     */
-    private fun dpmeta(t: SourceTask, reader: SourceReader): Outcome<Pair<JsonObject, ContentHash>> {
-        val out = linkedMapOf<String, JsonValue>("schema" to JsonString(DPMETA_SCHEMA))
-        val raws = StringBuilder()
-        var missing: Outcome.Failure? = null
-        for (path in t.paths) {
-            val text = when (val r = reader.file(t.project, path)) {
-                is Outcome.Failure -> if (r.diagnostics.first().code in NOT_FOUND) {
-                    missing = r
-                    continue
-                } else {
-                    return r
-                }
-                is Outcome.Success -> r.value
-            }
-            raws.append(path).append('\u0000').append(text.rawSha256.toString()).append('\n')
-            when (path) {
-                DpmetaDocs.CONTRACTS -> out["contracts"] = JsonNumber.of(DpmetaDocs.contracts(text.value).toLong())
-                DpmetaDocs.QUEUE -> out["syncQueue"] = JsonNumber.of(DpmetaDocs.queue(text.value).toLong())
-                DpmetaDocs.RISKS -> DpmetaDocs.risks(text.value).let { (all, open) ->
-                    out["risks"] = JsonNumber.of(all.toLong())
-                    out["risksOpen"] = JsonNumber.of(open.toLong())
-                }
-            }
-        }
-        if (out.size == 1) return missing ?: Outcome.failure(DiagCode.GITHUB_NOT_FOUND, "документов DPmeta нет", t.project.name)
-        when (val n = reader.names(t.project, DpmetaDocs.REPORTS)) {
-            null -> Unit
-            is Outcome.Failure -> if (n.diagnostics.first().code !in NOT_FOUND) return n
-            is Outcome.Success -> {
-                val reports = n.value.filter { it.endsWith(".md") }
-                out["reports"] = JsonNumber.of(reports.size.toLong())
-                raws.append(DpmetaDocs.REPORTS).append('\u0000').append(reports.sorted().joinToString(",")).append('\n')
-            }
-        }
-        return Outcome.success(JsonObject(out) to com.dpsmpx.dpai.core.hashing.Hashing.sha256(raws.toString()))
-    }
 
     /** CI коммита (D-176): итог, сколько проверок, упавшие по имени, видно ли токену. */
     fun ciJson(c: CiState): JsonObject = JsonObject(
@@ -485,18 +405,19 @@ object Sync {
     }
 
     /** Схема наблюдения истории из клона (D-66). */
-    const val HISTORY_SCHEMA = "clone.history.v1"
+    const val HISTORY_SCHEMA = HistorySchema.CURRENT
 
     /**
-     * История из клона одной строкой JSON: дни — `[дата, коммиты, ИИ, человек,
+     * История из клона одной строкой JSON: дни — `[дата, коммиты, ИИ, прочие,
      * в основной, только в ветках, слияния PR]`, журнал — `[дата, записей]`
      * в дни перемен, ветки впереди основной — имя, коммитов сверх неё, время
      * последнего. Ни авторов, ни сообщений, ни путей.
      */
     fun historyJson(h: com.dpsmpx.dpmeta.git.CommitHistory): JsonObject = JsonObject(
         linkedMapOf<String, JsonValue>(
+            "schema" to JsonString(HISTORY_SCHEMA),
             "complete" to JsonBool(h.complete),
-            "days" to JsonArray(h.days.map { d -> JsonArray(listOf(JsonString(d.date)) + listOf(d.commits, d.ai, d.human, d.mainline, d.branchOnly, d.merges).map { JsonNumber.of(it.toLong()) }) }),
+            "days" to JsonArray(h.days.map { d -> JsonArray(listOf(JsonString(d.date)) + listOf(d.commits, d.ai, d.other, d.mainline, d.branchOnly, d.merges).map { JsonNumber.of(it.toLong()) }) }),
             "decisions" to JsonArray(h.decisions.map { (d, n) -> JsonArray(listOf(JsonString(d), JsonNumber.of(n.toLong()))) }),
             "ahead" to JsonArray(h.ahead.map { a -> JsonObject.of("name" to JsonString(a.name), "commits" to JsonNumber.of(a.commits.toLong()), "last" to JsonNumber.of(a.last.epochMillis)) }),
         ).apply { h.first?.let { put("first", JsonString(it)) } },

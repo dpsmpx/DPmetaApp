@@ -1,5 +1,6 @@
 package com.dpsmpx.dpmeta.github
 
+import com.dpsmpx.dpai.core.git.GitNames
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Redactor
 import com.dpsmpx.dpai.core.diagnostics.Secret
@@ -13,7 +14,7 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import com.dpsmpx.dpmeta.net.Fetched
 import com.dpsmpx.dpmeta.net.HttpRequest
 import com.dpsmpx.dpmeta.net.Net
@@ -96,7 +97,7 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
                 merged = (o["merged"] as? JsonBool)?.value == true,
                 mergeable = (o["mergeable"] as? JsonBool)?.value,
                 mergeableState = str(o, "mergeable_state").orEmpty(),
-                headSha = head?.let { str(it, "sha") }?.takeIf { SHA.matches(it) } ?: return@then missing("head.sha", "$repo#$number"),
+                headSha = head?.let { str(it, "sha") }?.takeIf { GitNames.sha(it) } ?: return@then missing("head.sha", "$repo#$number"),
                 headRef = str(head, "ref").orEmpty(),
                 baseRef = base?.let { str(it, "ref") }.orEmpty(),
                 nodeId = str(o, "node_id").orEmpty(),
@@ -115,7 +116,7 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
     fun pullCommits(repo: RepoRef, number: Int): Outcome<List<PullCommit>> =
         list("repos/$repo/pulls/$number/commits?per_page=$MAX_LIST", "$repo#$number:commits") { o ->
             val c = o["commit"] as? JsonObject
-            val sha = str(o, "sha")?.takeIf { SHA.matches(it) } ?: return@list null
+            val sha = str(o, "sha")?.takeIf { GitNames.sha(it) } ?: return@list null
             val a = c?.get("author") as? JsonObject
             PullCommit(sha, text(str(c, "message").orEmpty().lineSequence().firstOrNull().orEmpty(), MAX_LINE), (o["author"] as? JsonObject)?.let { str(it, "login") } ?: str(a, "name").orEmpty(), str(a, "date").orEmpty())
         }
@@ -161,7 +162,7 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
     /** Ветка: голова и защита — свежие, без кэша. */
     fun branch(repo: RepoRef, name: String): Outcome<BranchDetail> = call("GET", "repos/$repo/branches/${ref(name)}", null, "$repo@$name").then { v ->
         val o = v as? JsonObject ?: return@then invalid("$repo@$name")
-        val sha = (o["commit"] as? JsonObject)?.let { str(it, "sha") }?.takeIf { SHA.matches(it) } ?: return@then missing("commit.sha", "$repo@$name")
+        val sha = (o["commit"] as? JsonObject)?.let { str(it, "sha") }?.takeIf { GitNames.sha(it) } ?: return@then missing("commit.sha", "$repo@$name")
         Outcome.success(BranchDetail(str(o, "name") ?: name, sha, (o["protected"] as? JsonBool)?.value == true))
     }
 
@@ -219,7 +220,7 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
         call("GET", "repos/$repo/contents/${ref(path)}?ref=${java.net.URLEncoder.encode(ref, Charsets.UTF_8)}", null, "$repo:$path").then { v ->
             val o = v as? JsonObject ?: return@then Outcome.failure(DiagCode.VALUE_INVALID, "это каталог, а не файл", path)
             if (str(o, "type") != "file") return@then Outcome.failure(DiagCode.VALUE_INVALID, "это не файл", path)
-            val sha = str(o, "sha")?.takeIf { SHA.matches(it) } ?: return@then missing("sha", path)
+            val sha = str(o, "sha")?.takeIf { GitNames.sha(it) } ?: return@then missing("sha", path)
             val size = int(o, "size") ?: 0
             if (size > MAX_EDIT_BYTES) return@then Outcome.failure(DiagCode.VALUE_INVALID, "файл больше ${MAX_EDIT_BYTES / 1024} КБ — правьте на ПК", path)
             val bytes = try {
@@ -237,7 +238,7 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
 
     /** Новая ветка [name] от коммита [fromSha] (F-69: правка — в своей ветке). Есть такая — отказ. */
     fun createBranch(repo: RepoRef, name: String, fromSha: String): Outcome<Written> {
-        if (!SHA.matches(fromSha)) return Outcome.failure(DiagCode.VALUE_INVALID, "SHA — 40 знаков hex", fromSha)
+        if (!GitNames.sha(fromSha)) return Outcome.failure(DiagCode.VALUE_INVALID, "SHA — 40 знаков hex", fromSha)
         val payload = JsonObject.of("ref" to JsonString("refs/heads/$name"), "sha" to JsonString(fromSha))
         return call("POST", "repos/$repo/git/refs", payload, "$repo@$name").then { Outcome.success(Written(null, fromSha)) }
     }
@@ -305,7 +306,7 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
      * GitHub отвечает 409, и ничего не вливается.
      */
     fun merge(repo: RepoRef, number: Int, headSha: String): Outcome<Written> {
-        if (!SHA.matches(headSha)) return Outcome.failure(DiagCode.VALUE_INVALID, "SHA головы PR — 40 знаков hex", headSha)
+        if (!GitNames.sha(headSha)) return Outcome.failure(DiagCode.VALUE_INVALID, "SHA головы PR — 40 знаков hex", headSha)
         val payload = JsonObject.of("merge_method" to JsonString("merge"), "sha" to JsonString(headSha))
         return call("PUT", "repos/$repo/pulls/$number/merge", payload, "$repo#$number").then { v ->
             val o = v as? JsonObject ?: return@then invalid("$repo#$number")
@@ -351,7 +352,6 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
     }
 
     companion object {
-        private val SHA = Regex("[0-9a-f]{40}")
 
         /** Карточка PR (F-11): одна страница списков, пределы текста описания, реплики и строки. */
         const val MAX_LIST: Int = 100

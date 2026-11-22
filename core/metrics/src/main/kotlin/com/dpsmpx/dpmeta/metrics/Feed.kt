@@ -36,8 +36,8 @@ object Feed {
         "pr.opened" to "PR открыт",
         "pr.merged" to "PR влит",
         "pr.closed" to "PR закрыт",
-        "decision" to "новое решение",
-        "roadmap" to "шаг ROADMAP",
+        "decision" to "новое решение (архив)",
+        "roadmap" to "шаг ROADMAP (архив)",
         "routine" to "запуск маршрута",
     )
 
@@ -47,8 +47,6 @@ object Feed {
         "pr.opened" to "pr.opened",
         "pr.merged" to "pr.merged",
         "pr.closed" to "pr.closed",
-        "decision" to "decision.new",
-        "roadmap" to "roadmap.step.done",
         "routine" to "claude.routine.fired",
     )
 
@@ -99,23 +97,6 @@ object Feed {
                         FeedEvent(at("pulls"), p.name, "pr.closed", "PR #$n закрыт: ${str(o, "title").orEmpty()}")
                     }
                 }
-            }
-            // Новые решения журнала.
-            if (before.sections["decisions"] != null) {
-                val known = objects(payload(before, "decisions"), "entries").mapNotNull { str(it, "id") }.toSet()
-                for (e in objects(payload(p, "decisions"), "entries")) {
-                    val id = str(e, "id") ?: continue
-                    if (id !in known) out += FeedEvent(at("decisions"), p.name, "decision", "новое решение $id — ${str(e, "title").orEmpty()}")
-                }
-            }
-            // Отмечен шаг ROADMAP: выросло число отмеченных шагов (или этапов, если шагов нет).
-            val rb = payload(before, "roadmap")
-            val rn = payload(p, "roadmap")
-            if (rb != null && rn != null) {
-                val key = if ((long(rn, "stepsTotal") ?: 0) > 0) "stepsDone" else "stagesDone"
-                val a = long(rb, key) ?: 0
-                val b = long(rn, key) ?: 0
-                if (b > a) out += FeedEvent(at("roadmap"), p.name, "roadmap", "ROADMAP: отмечено ${if (key == "stepsDone") "шагов" else "этапов"} $a → $b")
             }
         }
         return out.sortedWith(compareByDescending<FeedEvent> { it.at }.thenBy { it.project }.thenBy { it.kind }.thenBy { it.text })

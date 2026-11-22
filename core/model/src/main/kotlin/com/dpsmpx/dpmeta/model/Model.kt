@@ -1,6 +1,7 @@
 package com.dpsmpx.dpmeta.model
 
 import com.dpsmpx.dpai.core.clock.Timestamp
+import com.dpsmpx.dpai.core.operations.ActionLevel
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.hashing.ContentHash
 import com.dpsmpx.dpai.core.hashing.Hashing
@@ -8,55 +9,6 @@ import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
-
-/**
- * Репозиторий GitHub `владелец/имя` (ТЗ, §6.3). Строгая проверка: имя не
- * подставит в запрос путь или параметр.
- */
-@ConsistentCopyVisibility
-data class RepoRef private constructor(val owner: String, val name: String) {
-    override fun toString(): String = "$owner/$name"
-
-    companion object {
-        private val OWNER = Regex("[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?")
-        private val NAME = Regex("[A-Za-z0-9._-]{1,100}")
-
-        fun of(owner: String, name: String): Outcome<RepoRef> = when {
-            !OWNER.matches(owner) -> Outcome.failure(DiagCode.VALUE_INVALID, "владелец репозитория недопустим", owner)
-            !NAME.matches(name) || name == "." || name == ".." || name.endsWith(".git") ->
-                Outcome.failure(DiagCode.VALUE_INVALID, "имя репозитория недопустимо", name)
-            else -> Outcome.success(RepoRef(owner, name))
-        }
-
-        /** Из записи `владелец/имя`. */
-        fun parse(text: String): Outcome<RepoRef> {
-            val parts = text.trim().split('/')
-            if (parts.size != 2) return Outcome.failure(DiagCode.VALUE_INVALID, "ожидалось «владелец/имя»", text)
-            return of(parts[0], parts[1])
-        }
-    }
-}
-
-/**
- * Уровень действия (ТЗ, §6.5; D-07, D-37). Уровень 3 — опасное и
- * необратимое: доступно с красным экраном и вводом имени (D-37, заменило
- * «уровня 3 в коде нет» D-07). Что по-прежнему запрещено (мутирующие вызовы
- * Admin API, скрейпинг площадок и др.) — не уровень, а отсутствие в
- * каталоге действий `:core:actions`.
- */
-enum class ActionLevel(val code: Int, val confirmation: String) {
-    /** Чтение: без подтверждения. */
-    READ(0, "без подтверждения"),
-
-    /** Обратимое, видимое: одно нажатие с показом, что уйдёт. */
-    REVERSIBLE(1, "одно нажатие с показом, что уйдёт"),
-
-    /** Значимое: экран «что изменится» и биометрия или PIN устройства. */
-    SIGNIFICANT(2, "экран «что изменится» и биометрия или PIN"),
-
-    /** Опасное, необратимое: красный экран «что будет потеряно» и ввод имени, без биометрии (D-37). */
-    DANGEROUS(3, "красный экран «что будет потеряно» и ввод имени"),
-}
 
 /** Откуда получено наблюдение (ТЗ, §6.4). */
 enum class ObservationSource(val code: String) {
@@ -67,7 +19,7 @@ enum class ObservationSource(val code: String) {
     SOCIAL("social"),
     MANUAL("manual"),
 
-    /** Каталог на диске: синтетический корпус или клоны репозиториев (`dpmeta-cli sync --corpus`/`--clones`). */
+    /** Каталог на диске: синтетический корпус или клоны репозиториев. */
     DIRECTORY("directory"),
     ;
 

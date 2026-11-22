@@ -9,10 +9,8 @@ import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import java.security.KeyStore
-import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 
 /**
  * Переносимые ключи (D-184, `DPmetaApp:D-157`): закрытый ключ хранится файлом в
@@ -22,8 +20,6 @@ import javax.crypto.spec.GCMParameterSpec
  */
 internal object KeyWrap {
     private const val STORE = "AndroidKeyStore"
-    private const val TRANSFORMATION = "AES/GCM/NoPadding"
-    private const val IV = 12
     const val AUTH_SECONDS = 300
 
     /** [base] — `noBackupFilesDir` приложения: файлы ключей не уходят в облачную копию Android. */
@@ -51,12 +47,30 @@ internal object KeyWrap {
     }
 
     /** Зашифровать [plain] и записать файлом [name]; исходные байты затираются. */
+    @Synchronized
     fun write(base: java.io.File, alias: String, userAuth: Boolean, name: String, plain: ByteArray): Outcome<Unit> = try {
-        val c = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, key(alias, userAuth)) }
-        val sealed = c.iv + c.doFinal(plain)
+        val sealed = try {
+            KeyEnvelope.seal(key(alias, userAuth), alias, name, plain)
+        } catch (e: KeyPermanentlyInvalidatedException) {
+            // Как SecretStore.save: сброшенный ключ не оживёт; прежние файлы
+            // уже не расшифровать, новая внешняя копия получает новую обёртку.
+            store().deleteEntry(alias)
+            KeyEnvelope.seal(key(alias, userAuth), alias, name, plain)
+        }
         val v = vfs(base)
         v.write("$name.tmp", sealed)
+        v.fsync("$name.tmp")
+        // Прочитать именно записанное до замены прежнего файла; неверная
+        // запись или ключ оставляют прежнюю копию на месте.
+        val saved = checkNotNull(v.read("$name.tmp")) { "временная копия ключа не прочитана" }
+        val verify = KeyEnvelope.open(key(alias, userAuth), alias, name, saved)
+        try {
+            check(verify.contentEquals(plain)) { "записанная копия ключа не совпадает" }
+        } finally {
+            verify.fill(0)
+        }
         v.rename("$name.tmp", name)
+        v.fsyncDir("")
         Outcome.success(Unit)
     } catch (e: UserNotAuthenticatedException) {
         Outcome.failure(DiagCode.DEVICE_AUTH_REQUIRED, "нужен вход по PIN или отпечатку", name)
@@ -64,15 +78,28 @@ internal object KeyWrap {
         Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "ключ не записан", e))
     } finally {
         plain.fill(0)
+        runCatching { vfs(base).let { if (it.exists("$name.tmp")) it.delete("$name.tmp") } }
     }
 
-    /** Прочитать и расшифровать файл [name]; нет файла — `null`. */
+    /** Прочитать [name]; старую обёртку переписать v2 до выдачи ключа. Нет файла — `null`. */
+    @Synchronized
     fun read(base: java.io.File, alias: String, userAuth: Boolean, name: String): Outcome<ByteArray?> {
-        val sealed = runCatching { vfs(base).read(name) }.getOrNull() ?: return Outcome.success(null)
-        if (sealed.size <= IV) return Outcome.failure(DiagCode.STORAGE_CORRUPTED, "файл ключа испорчен", name)
+        val sealed = try {
+            vfs(base).read(name)
+        } catch (e: Exception) {
+            return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "файл ключа не прочитан", e))
+        } ?: return Outcome.success(null)
         return try {
-            val c = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.DECRYPT_MODE, key(alias, userAuth), GCMParameterSpec(128, sealed, 0, IV)) }
-            Outcome.success(c.doFinal(sealed, IV, sealed.size - IV))
+            val plain = KeyEnvelope.open(key(alias, userAuth), alias, name, sealed)
+            if (KeyEnvelope.isLegacy(sealed)) {
+                // write затирает свой аргумент; исходник нужен вызывающему только
+                // после проверенной атомарной миграции. Отказ до замены сохраняет старый файл.
+                when (val migrated = write(base, alias, userAuth, name, plain.copyOf())) {
+                    is Outcome.Failure -> { plain.fill(0); return migrated }
+                    is Outcome.Success -> Unit
+                }
+            }
+            Outcome.success(plain)
         } catch (e: UserNotAuthenticatedException) {
             Outcome.failure(DiagCode.DEVICE_AUTH_REQUIRED, "нужен вход по PIN или отпечатку", name)
         } catch (e: KeyPermanentlyInvalidatedException) {
@@ -84,7 +111,20 @@ internal object KeyWrap {
 
     fun exists(base: java.io.File, name: String): Boolean = runCatching { vfs(base).exists(name) }.getOrDefault(false)
 
+    @Synchronized
     fun delete(base: java.io.File, name: String) {
-        runCatching { vfs(base).let { if (it.exists(name)) it.delete(name) } }
+        deleteChecked(base, name)
+    }
+
+    /** Для удаления ключа подписи отказ очистки нельзя скрывать успешным отзывом. */
+    @Synchronized
+    fun deleteChecked(base: java.io.File, name: String): Outcome<Unit> = try {
+        val v = vfs(base)
+        v.delete("$name.tmp")
+        v.delete(name)
+        v.fsyncDir("")
+        Outcome.success(Unit)
+    } catch (e: Exception) {
+        Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "копия ключа не удалена", e, name))
     }
 }

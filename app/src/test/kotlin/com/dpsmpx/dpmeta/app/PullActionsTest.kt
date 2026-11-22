@@ -19,8 +19,8 @@ import com.dpsmpx.dpmeta.github.BranchDetail
 import com.dpsmpx.dpmeta.github.Comparison
 import com.dpsmpx.dpmeta.github.GitHubWrite
 import com.dpsmpx.dpmeta.github.PullDetail
-import com.dpsmpx.dpmeta.model.ActionLevel
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.operations.ActionLevel
+import com.dpsmpx.dpai.core.git.RepoRef
 import com.dpsmpx.dpmeta.net.HttpRequest
 import com.dpsmpx.dpmeta.net.HttpResponse
 import com.dpsmpx.dpmeta.net.Net

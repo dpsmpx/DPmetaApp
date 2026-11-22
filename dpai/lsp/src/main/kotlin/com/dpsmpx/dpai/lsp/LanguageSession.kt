@@ -28,9 +28,28 @@ class LanguageSession(val main: LspClient, val helper: LspClient? = null, privat
 
     fun saved(uri: String): Outcome<Unit> = each { it.saved(uri) }
 
+    /** Записанный проектный набор: открытые документы обновляются, закрытые — событием файлов. */
+    fun filesChanged(files: Map<String, String>, type: Int = 2): Outcome<Unit> = each { client ->
+        for ((uri, text) in files) if (client.document(uri) != null) {
+            val changed = client.update(uri, text)
+            if (changed is Outcome.Failure) return@each changed
+            val saved = client.saved(uri)
+            if (saved is Outcome.Failure) return@each saved
+        }
+        client.filesChanged(files.keys, type)
+    }
+
+    /** Удалённый исходник закрывается у обеих служб, затем идёт событие Deleted. */
+    fun filesDeleted(uris: Set<String>): Outcome<Unit> = each { client ->
+        for (uri in uris) { val result = client.close(uri); if (result is Outcome.Failure) return@each result }
+        client.filesChanged(uris, 3)
+    }
+
     fun close(uri: String): Outcome<Unit> = each { it.close(uri) }
 
     fun completion(uri: String, at: Position, trigger: Char? = null): Outcome<CompletionList> = main.completion(uri, at, trigger)
+
+    fun resolveCompletion(item: CompletionItem): Outcome<CompletionItem> = main.resolveCompletion(item)
 
     fun hover(uri: String, at: Position): Outcome<Hover?> = main.hover(uri, at)
 
@@ -63,6 +82,15 @@ class LanguageSession(val main: LspClient, val helper: LspClient? = null, privat
         val found = results.mapNotNull { (it as? Outcome.Success)?.value }
         return if (found.isNotEmpty()) Outcome.success(found.flatten()) else results.first()
     }
+
+    /** Известная версия именно породившей исправление службы; чужой текст не подтверждается. */
+    fun actionVersion(action: CodeAction, uri: String, text: String): Int? =
+        clients.firstOrNull { it === action.owner }?.document(uri)?.takeIf { it.second == text }?.first
+
+    /** Исправление возвращается той же основной/вспомогательной службе. */
+    fun resolveCodeAction(action: CodeAction): Outcome<CodeAction> =
+        clients.firstOrNull { it === action.owner }?.resolveCodeAction(action)
+            ?: Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, "сеанс исправления изменился; запросите исправления заново")
 
     /** Спросить диагностику [uri] у служб, которые её не присылают: индекс службы → список (`null` — не изменилась). */
     fun pullDiagnostics(uri: String, timeout: Duration = LspClient.SLOW_TIMEOUT): Map<Int, Outcome<List<LspDiagnostic>?>> =

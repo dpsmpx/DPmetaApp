@@ -9,6 +9,8 @@ import stat
 import subprocess
 import tempfile
 import unittest
+import struct
+import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _spec = importlib.util.spec_from_file_location("dpmetaapp_check", os.path.join(ROOT, "tools", "check", "check.py"))
@@ -66,20 +68,11 @@ CLEAN = {
     # Ядро подсистемы dpai (D-28): каждый тип ядра объявлен один раз.
     "dpai/core/src/main/kotlin/Core.kt": (
         "package core\n\nsealed interface Outcome<out T>\nclass OperationResult<out T>\nclass Diagnostic\n"
-        "enum class DiagCode { A }\nclass Secret(private val v: String)\ninterface Clock\n"),
+        "enum class DiagCode { A }\nclass Secret(private val v: String)\ninterface Clock\nenum class ActionLevel { READ }\nclass RepoRef\n"),
     "dpai/core/src/main/kotlin/Use.kt": "package core\n\nclass ManualClock : Clock\nval x: Outcome<Int>? = null\n",
-    # Реестр команд (F-43, D-82): проект подсистемы — из реестра DPmeta, его скрипт — на месте.
-    "dpmeta/tools/ecosystem.toml": (
-        'schema = 1\n\n[[repo]]\nname = "DPmetaApp"\nslug = "dpsmpx/DPmetaApp"\nplace = "control"\n\n'
-        '[[repo]]\nname = "DPmeta"\nslug = "dpsmpx/DPmeta"\nplace = "sync"\ndir = "dpmeta"\n\n'
-        '[[repo]]\nname = "Old"\nslug = "dpsmpx/Old"\nplace = "archive"\n\n'
-        '[[repo]]\nname = "DPlearn"\nslug = "dpsmpx/DPlearn"\nplace = "core"\n'),
-    "dpmeta/tools/check.sh": "#!/bin/sh\nexit 0\n",
+    # Команды пульта универсальны: выбранный проект пользователя, без реестра DPmeta (D-176).
     "config/commands.toml": (
-        'schema = 1\n\n[[command]]\nid = "dpmeta.check"\ntitle = "Проверки"\nproject = "DPmeta"\npath = "/bin/bash"\n'
-        'args = ["tools/check.sh"]\nplan = "background"\nlevel = 0\npackages = ["bash"]\n\n'
-        '[[command]]\nid = "dplearn.next"\ntitle = "План"\nproject = "DPlearn"\npath = "tools/dpl"\nplan = "background"\nlevel = 0\n\n'
-        '[[command]]\nid = "repo.ff"\ntitle = "Догнать"\nproject = "*"\npath = "/usr/bin/git"\n'
+        'schema = 1\n\n[[command]]\nid = "repo.ff"\ntitle = "Догнать"\nproject = "*"\npath = "/usr/bin/git"\n'
         'args = ["merge", "--ff-only", "@{upstream}"]\nplan = "background"\nlevel = 1\ntimeout = 2\n'),
 }
 # Wrapper Gradle: копия в корне — та же, что в dpai/ (D-28); пакетный файл — с CRLF, как его пишет Gradle.
@@ -171,8 +164,77 @@ class LayoutTest(CheckCase):
         self.assertCatches(self.sample({".github/workflows/ci.yml": "on: push\n"}).run("repo.layout"), "D-13")
 
 
-COMMAND = ('[[command]]\nid = "x.y"\ntitle = "Т"\nproject = "DPmeta"\npath = "/bin/bash"\nargs = ["tools/check.sh"]\n'
+COMMAND = ('[[command]]\nid = "x.y"\ntitle = "Т"\nproject = "*"\npath = "/bin/bash"\nargs = ["tools/check.sh"]\n'
            'plan = "background"\nlevel = 0\n')
+
+
+class UniversalPultTest(CheckCase):
+    def test_clean_user_projects_and_stable_package_identity(self):
+        self.assertClean(self.sample({
+            "config/briefs/work.md": "Проверь {{repo}} по правилам проекта.",
+            "app/src/main/kotlin/Identity.kt": 'val id = "com.dpsmpx.dpmeta"\nval key = "dpmeta.state"\n',
+            "docs/PROVENANCE.md": "Источник https://github.com/dpsmpx/DPmetaApp\n",
+        }).run("pult.universal"))
+
+    def test_catches_author_repo_domain_template_and_build_branch(self):
+        for path, text in (
+            ("app/src/main/kotlin/Host.kt", 'val host = "dpsmpx/DPmetaApp"'),
+            ("app/src/main/kotlin/Host.kt", 'val host = "https://github.com/dpsmpx/DPmetaApp"'),
+            ("app/src/main/kotlin/Host.kt", 'val host = "https://api.github.com/repos/dpsmpx/DPmetaApp"'),
+            ("core/net/src/main/kotlin/Host.kt", 'val host = "dpsmpx.com"'),
+            ("config/briefs/work.md", "Сделай проход DPmeta"),
+            ("config/briefs/dpmeta-pass.md", "Поручение"),
+            ("core/metrics/src/main/kotlin/Rules.kt", 'val branch = "windows-debug-build"'),
+        ):
+            with self.subTest(path=path):
+                self.assertCatches(self.sample({path: text}).run("pult.universal"), path)
+
+    @staticmethod
+    def dex(values):
+        data = bytearray(112 + len(values) * 4)
+        data[:8] = b"dex\n039\0"
+        struct.pack_into("<II", data, 56, len(values), 112)
+        for i, value in enumerate(values):
+            encoded = value.encode("utf-8")
+            assert len(encoded) < 128
+            struct.pack_into("<I", data, 112 + 4 * i, len(data))
+            data += bytes([len(value)]) + encoded + b"\0"
+        return data
+
+    def package(self, entries):
+        sample = self.sample()
+        path = os.path.join(sample.root, "sample.apk")
+        with zipfile.ZipFile(path, "w") as apk:
+            for name, data in entries.items():
+                apk.writestr(name, data)
+        result = check.Result("pult.apk")
+        check.check_pult_apk(path, result)
+        return result
+
+    def test_clean_apk_retains_package_and_archive_identifiers(self):
+        self.assertClean(self.package({
+            "classes.dex": self.dex(["Lcom/dpsmpx/dpmeta/app/PultActivity;", "dpmeta.state", "dpmeta.report.new"]),
+            "assets/briefs/work.md": "Проверь {{repo}}",
+            "assets/about/PROVENANCE.md": "Источник dpsmpx/DPmetaApp",
+        }))
+
+    def test_apk_catches_stale_assets_and_dex_in_every_file(self):
+        for name, data, fragment in (
+            ("classes2.dex", self.dex(["dpsmpx/DPmetaApp"]), "личная привязка"),
+            ("classes2.dex", self.dex(["Lcom/dpsmpx/dpmeta/model/Registry$Companion;"]), "снятый runtime-класс"),
+            ("assets/briefs/dpmeta-pass.md", "Проход", "предметные настройки"),
+            ("assets/events.toml", 'title = "Срез DPmeta"', "личная привязка"),
+        ):
+            with self.subTest(name=name):
+                self.assertCatches(self.package({"classes.dex": self.dex(["dpmeta.state"]), name: data}), fragment)
+
+    def test_missing_or_malformed_dex_does_not_pass(self):
+        self.assertCatches(self.package({"assets/briefs/work.md": "Работа"}), "нет DEX")
+        with self.assertRaises(ValueError):
+            self.package({"classes.dex": b"broken"})
+        self.assertCatches(check.check_pult_packages(self.sample().root, sdk="sdk"), "ожидался один APK")
+        unavailable = check.check_pult_packages(self.sample().root, sdk="")
+        self.assertTrue(unavailable.skipped)
 
 
 class CommandsTest(CheckCase):
@@ -183,6 +245,14 @@ class CommandsTest(CheckCase):
 
     def test_clean_registry(self):
         self.assertClean(self.commands(COMMAND))
+
+    def test_bundled_commands_do_not_fix_user_projects(self):
+        self.assertCatches(self.commands(COMMAND.replace('project = "*"', 'project = "DPmeta"')), "project — только *")
+
+    def test_generic_commands_do_not_read_dpmeta_registry(self):
+        generic = COMMAND
+        self.assertClean(self.sample({"config/commands.toml": "schema = 1\n\n" + generic,
+                                      "dpmeta/tools/ecosystem.toml": "сломанный [ TOML"}).run("config.commands"))
 
     def test_missing_registry(self):
         self.assertCatches(self.sample(remove=("config/commands.toml",)).run("config.commands"), "нет реестра команд")
@@ -196,12 +266,12 @@ class CommandsTest(CheckCase):
     def test_duplicate_id(self):
         self.assertCatches(self.commands(COMMAND + "\n" + COMMAND), "уже был")
 
-    def test_project_not_in_registry_or_archived(self):
-        self.assertCatches(self.commands(COMMAND.replace('"DPmeta"', '"Nope"')), "нет в реестре")
-        self.assertCatches(self.commands(COMMAND.replace('"DPmeta"', '"Old"')), "нет в реестре")
+    def test_any_fixed_project_is_forbidden(self):
+        for name in ("Nope", "Old", "DPmeta"):
+            self.assertCatches(self.commands(COMMAND.replace('project = "*"', f'project = "{name}"')), "project — только *")
 
-    def test_subsystem_script_must_exist(self):
-        self.assertCatches(self.commands(COMMAND.replace("tools/check.sh", "tools/gone.sh")), "нет файла `dpmeta/tools/gone.sh`")
+    def test_script_is_resolved_in_selected_project(self):
+        self.assertClean(self.commands(COMMAND.replace("tools/check.sh", "tools/verify.sh")))
 
     def test_paths_stay_inside(self):
         self.assertCatches(self.commands(COMMAND + 'workdir = "../x"\n'), "workdir")
@@ -227,16 +297,9 @@ class SubsystemScopeTest(CheckCase):
     def test_moved_out_projects_are_not_subsystems(self):
         # SocialMediaImage и DPprofile (D-154), DPpass (D-174), DPvisualisation (D-173) живут только
         # в своём репозитории: каталог в корне — находка.
-        for d in ("socialmediaimage", "dpprofile", "dppass", "dpvisualisation"):
+        for d in ("socialmediaimage", "dpprofile", "dppass", "dpvisualisation", "dpmeta"):
             with self.subTest(d):
                 self.assertCatches(self.sample({f"{d}/docs/X.md": "# X\n"}).run("repo.layout"), d)
-
-    def test_dpmeta_is_a_subsystem_too(self):
-        # DPmeta — подсистема со своим процессом (D-43): её номера M-NN без имени проекта — её проверкам.
-        s = self.sample({"dpmeta/docs/X.md": "# X\r\nСм. M-14, `docs/NOPE.md`.\n"})
-        for cid in ("repo.layout", "format.text", "docs.links", "docs.refs"):
-            with self.subTest(cid):
-                self.assertClean(s.run(cid))
 
     def test_secrets_are_searched_in_subsystem_too(self):
         token = "ghp" + "_" + "C3d4" * 9
@@ -244,6 +307,14 @@ class SubsystemScopeTest(CheckCase):
 
 
 class CoreSingleTest(CheckCase):
+    def test_action_levels_cannot_be_redeclared_in_the_dashboard(self):
+        s = self.sample({"core/model/src/main/kotlin/Again.kt": "package m\n\nenum class ActionLevel { READ }\nclass RepoRef\n"})
+        self.assertCatches(s.run("core.single"), "ActionLevel объявлен вне")
+
+    def test_core_rejects_a_second_repository_identity(self):
+        s = self.sample({"core/model/src/main/kotlin/Again.kt": "package m\n\nclass RepoRef\n"})
+        self.assertCatches(s.run("core.single"), "RepoRef объявлен вне")
+
     def test_core_type_outside_core(self):
         s = self.sample({"core/model/src/main/kotlin/Result.kt": "package m\n\nsealed class Outcome\n"})
         self.assertCatches(s.run("core.single"), "Outcome объявлен вне")
@@ -462,21 +533,6 @@ class SubsystemChecksTest(CheckCase):
         # Код 0 нарочно: находку должен дать разбор строки «✗ id (…)», а не запасной хвост вывода.
         out = "printf '✓ process.decisions (0.0 с)\\n✗ docs.refs (0.0 с)\\n    a.md:1: D-9 нигде не определён\\n'"
         self.assertCatches(self.run_sub(f"#!/bin/sh\n{out}\n"), "docs.refs")
-
-    def test_dpmeta_lines_are_steps(self):
-        # Вывод tools/check.sh DPmeta (D-43): «✓ шаг: …»; «○ … пропущено» и итог «✓ DPmeta: …» — не шаги.
-        out = ("printf '✓ документы: ссылки, свои номера, корень\\n✓ самотесты инструментов\\n"
-               "○ ссылки — пропущено: рядом нет клонов\\n✓ DPmeta: всё зелёное\\n'")
-        s = self.sample({"dpmeta/tools/check.sh": f"#!/bin/sh\n{out}\n"})
-        r = check.check_subsystems(s.root, {"dpmeta": ("dpmeta/tools/check.sh",)})[0]
-        self.assertClean(r)
-        self.assertEqual(2, r.scanned)
-
-    def test_dpmeta_failing_step_is_reported(self):
-        # Код 0 нарочно: находку должен дать разбор строки «✗ шаг», а не запасной хвост вывода.
-        out = "printf '✓ самотесты инструментов\\n✗ документы: ссылки, свои номера, корень\\n    a.md:1: нет файла\\n'"
-        s = self.sample({"dpmeta/tools/check.sh": f"#!/bin/sh\n{out}\n"})
-        self.assertCatches(check.check_subsystems(s.root, {"dpmeta": ("dpmeta/tools/check.sh",)})[0], "документы")
 
     def test_dp_verify_failing_check_is_reported(self):
         out = "printf '  ✓ docs.links    ссылок 10\\n  ✗ docs.refs     находок: 1\\n      a.md:1  D-9 не определено\\n'"
@@ -722,7 +778,7 @@ class ModulesTest(CheckCase):
         self.assertCatches(s.run("modules.root"), "модуль :core:store не описан")
 
     def test_shells_depend_on_all(self):
-        s = self.sample({"cli/build.gradle.kts": 'dependencies {\n    implementation(project(":core:sync"))\n    implementation("com.dpsmpx.dpai:orchestrator")\n}\n'})
+        s = self.sample({"app/build.gradle.kts": 'dependencies {\n    implementation(project(":core:sync"))\n    implementation("com.dpsmpx.dpai:orchestrator")\n}\n'})
         self.assertClean(s.run("modules.root"))
 
     def test_code_rules(self):

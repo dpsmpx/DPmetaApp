@@ -11,6 +11,16 @@ import kotlin.test.assertTrue
 
 /** Переписка чата `dpai.api-chats` v1 (D-98): чтение строгое, в запрос — только целые ответы. */
 class ChatLogTest {
+    @Test fun projectBindingSurvivesV2AndOldV1RemainsAnOrdinaryChat() {
+        val project = IdKinds.PROJECT.parse("prj_01J9ZQ3K8M7N6P5R4S3T2V1W0X").valueOrNull()!!
+        val fixture = javaClass.getResource("/api-chats/project-v2.json")!!.readText()
+        assertEquals(project, ChatBook.fromJson(JsonParser().parse(fixture).valueOrNull()!!).valueOrNull()!!.single().project)
+        assertIs<Outcome.Failure>(ChatBook.fromJson(JsonParser().parse(fixture.replace("\"version\":2", "\"version\":1")).valueOrNull()!!))
+        val current = conversation.copy(project = project)
+        assertEquals(project, ChatBook.fromJson(ChatBook.toJson(listOf(current))).valueOrNull()!!.single().project)
+        val text = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(ChatBook.toJson(listOf(conversation))).replace("\"version\":2", "\"version\":1")
+        assertEquals(null, ChatBook.fromJson(JsonParser().parse(text).valueOrNull()!!).valueOrNull()!!.single().project)
+    }
     private val id = IdKinds.CORRELATION.parse("cor_01J9ZQ3K8M7N6P5R4S3T2V1W0X").valueOrNull()!!
     private val acc = IdKinds.ACCOUNT.parse("acc_01J9ZQ3K8M7N6P5R4S3T2V1W0X").valueOrNull()!!
 
@@ -56,7 +66,7 @@ class ChatLogTest {
             good.replace("\"title\":", "\"extra\":1,\"title\":"),
             good.replace("\"status\":\"ok\"", "\"status\":\"maybe\""),
             good.replace("\"profile\":\"acc_", "\"profile\":\"tgt_"),
-            good.replace("\"version\":1", "\"version\":2"),
+            good.replace("\"version\":${ChatBook.VERSION}", "\"version\":${ChatBook.VERSION + 1}"),
         )) {
             assertIs<Outcome.Failure>(ChatBook.fromJson(JsonParser().parse(bad).valueOrNull()!!), bad)
         }

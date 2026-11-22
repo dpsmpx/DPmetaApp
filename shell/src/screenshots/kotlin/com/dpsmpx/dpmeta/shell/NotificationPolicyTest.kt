@@ -11,9 +11,9 @@ import com.dpsmpx.dpai.core.clock.DisplayZone
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.notifications.Notification
 import com.dpsmpx.dpai.notifications.NotificationCategory
-import com.dpsmpx.dpai.ui.NoticePresentation
+import com.dpsmpx.dpai.notifications.NoticePresentation
 import com.dpsmpx.dpmeta.app.data.PultAlerts
-import com.dpsmpx.dpmeta.notify.QuietHours
+import com.dpsmpx.dpai.notifications.QuietHours
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith

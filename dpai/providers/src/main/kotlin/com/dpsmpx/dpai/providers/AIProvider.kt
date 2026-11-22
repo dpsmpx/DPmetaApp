@@ -44,8 +44,8 @@ data class ToolResult(val text: String, val isError: Boolean = false)
 
 /**
  * Провайдер, умеющий ходить с инструментами (D-118): модель просит данные, приложение
- * исполняет [run] и возвращает итог, пока модель не ответит. Инструменты — только чтение:
- * что делает [run], решает вызывающий; провайдер ничего, кроме него, не исполняет.
+ * исполняет [run] и возвращает итог, пока модель не ответит. Полномочия инструментов
+ * определяет вызывающий (D-214); провайдер сам не открывает файлы и не запускает процессы.
  */
 interface ToolChat {
     fun chatWithTools(request: ChatRequest, tools: List<ToolSpec>, cancel: Cancel, onText: (String) -> Unit, run: (ToolCall) -> ToolResult): Outcome<ChatReply>
@@ -55,7 +55,7 @@ interface ToolChat {
 val EFFORT_LEVELS: List<String> = listOf("low", "medium", "high", "xhigh", "max")
 
 /** Модель провайдера: id для запроса, имя для экрана, предел ответа — если провайдер его сообщает. */
-data class ModelInfo(val id: String, val name: String? = null, val maxOutputTokens: Int? = null)
+data class ModelInfo(val id: String, val name: String? = null, val maxOutputTokens: Int? = null, val supportsTools: Boolean? = null)
 
 /** Чем кончился ответ: сам, по пределу длины, отказом модели или иначе (сырое значение — в [ChatReply.stopReason]). */
 enum class StopKind { END, LENGTH, REFUSAL, OTHER }

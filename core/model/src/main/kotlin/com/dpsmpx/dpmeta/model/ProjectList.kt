@@ -1,5 +1,7 @@
 package com.dpsmpx.dpmeta.model
 
+import com.dpsmpx.dpai.core.git.RepoRef
+
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.DiagnosticCollector
 import com.dpsmpx.dpai.core.result.Outcome
@@ -60,19 +62,13 @@ data class ProjectList(val projects: List<UserProject> = emptyList()) {
         return copy(projects = list)
     }
 
-    /**
-     * Реестр для синхронизации (ТЗ, §6.4): имя проекта — имя репозитория; одинаковые имена у
-     * разных владельцев — `владелец/имя`. Места экосистемы нет — общее место «проекты».
-     */
-    fun toRegistry(): Registry {
+    /** Имена субъектов истории сохраняются; каталог не добавляет роли, алиасы и перенаправления. */
+    fun forSync(): ProjectCatalog {
         val clash = projects.groupingBy { it.repo.name.lowercase() }.eachCount()
-        return Registry(
-            schema = 1,
-            projects = projects.map { p ->
-                val name = if ((clash[p.repo.name.lowercase()] ?: 0) > 1) p.repo.toString() else p.repo.name
-                ProjectEntry(name, p.repo, clone = null, place = Place.USER, aliases = emptyList(), names = emptyList(), decisions = null, defs = emptyList(), docs = p.docs, checklists = p.checklists)
-            },
-        )
+        return ProjectCatalog(projects.map { p ->
+            val name = if ((clash[p.repo.name.lowercase()] ?: 0) > 1) p.repo.toString() else p.repo.name
+            SyncProject(name, p.repo, p.docs, p.checklists)
+        })
     }
 
     fun toJson(): JsonObject = JsonObject.of(

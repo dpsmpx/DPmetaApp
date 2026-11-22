@@ -43,14 +43,14 @@ import kotlinx.coroutines.withContext
 
 /**
  * Инструкция «Настройка» в приложении: разделы [SetupGuide] с отметками
- * «готово» по тому, что видит приложение, команды Termux с кнопкой
+ * «готово» по тому, что видит приложение, команды для ПК с кнопкой
  * «Копировать» и сохранение вложенного агента в «Загрузки».
  */
 @Composable
 fun SetupPane(controller: Controller, model: DemoModel, onBack: () -> Unit) {
     val context = LocalContext.current.applicationContext
     var state by remember { mutableStateOf(SetupState()) }
-    // Отметки — заново раз в несколько секунд: человек выполняет шаги в Termux и возвращается.
+    // Отметки — заново раз в несколько секунд: человек выполняет шаги настройки и возвращается.
     Poll(periodMs = 3000) { state = withContext(Dispatchers.IO) { setupState(context, controller, model) } }
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {

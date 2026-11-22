@@ -116,6 +116,8 @@ internal object CodeService {
 
     /** Работающие службы по ключу «язык|корень». */
     private val running = HashMap<String, Service>()
+    // Резервируется под тем же monitor, что start(); длительная загрузка monitor не держит.
+    private var kotlinInstalling = false
 
     private val editors = EditorSessions<Session>()
 
@@ -266,6 +268,7 @@ internal object CodeService {
             main.post { if (!session.closed) session.state = s }
         }
         val language = session.language ?: return state(State.Failed("для этого файла семантической службы нет"))
+        if (language == CodeLanguage.KOTLIN && kotlinInstalling) return state(State.Failed(context.getString(R.string.kotlin_install_busy)))
         state(State.Starting("ищу проект"))
         val host = LinuxSetup.guestHost(context) ?: return state(State.Failed("Linux в приложении не установлен: «AI» → «Настройки AI» → «Linux в приложении»"))
         val plan = when (language) {
@@ -328,11 +331,14 @@ internal object CodeService {
                     override fun stopped(reason: Diagnostic) = stop(key, "${launch.name} остановилась: ${reason.message}", generation)
                 },
                 settings = launch.settings,
+                initializationOptions = launch.initializationOptions,
             )
             clients += client
             when (val r = client.start(if (language == CodeLanguage.KOTLIN) 3.minutes else LspClient.START_TIMEOUT)) {
                 is Outcome.Failure -> return abandon("${launch.name} не ответила: ${r.diagnostics.first().message}")
-                is Outcome.Success -> Unit
+                is Outcome.Success -> if (!KotlinLsp.acceptsIndexDirectory(launch.initializationOptions, r.value.indexDirectory)) {
+                    return abandon(context.getString(R.string.kotlin_index_unmanaged))
+                }
             }
         }
         val pulls = clients.filterIndexed { i, _ -> launches[i].pull }.toSet()
@@ -430,7 +436,7 @@ internal object CodeService {
             is Outcome.Failure -> return Plan.Stop(State.Failed(r.diagnostics.first().message))
             is Outcome.Success -> CodeServerSetup.kotlinFiles(r.value.stdout) ?: return Plan.Stop(State.Failed("сборка kotlin-lsp повреждена — обновите её", listOf(Install.KOTLIN_UPDATE)))
         }
-        val command = when (val r = KotlinLsp.command(files.first, files.second, CodeServerSetup.KOTLIN_HOME, KotlinLsp.JAVA, CodeServerSetup.KOTLIN_SYSTEM, arch)) {
+        val command = when (val r = KotlinLsp.command(files.first, files.second, CodeServerSetup.KOTLIN_HOME, KotlinLsp.JAVA, CodeServerSetup.kotlinSystem(found.root), arch)) {
             is Outcome.Failure -> return Plan.Stop(State.Failed(r.diagnostics.first().message, listOf(Install.KOTLIN_UPDATE)))
             is Outcome.Success -> r.value
         }
@@ -490,6 +496,30 @@ internal object CodeService {
         }
     }
 
+    /** Изменение API-моделью: обновить индекс и открытые документы, включая создание/удаление (D-214). */
+    fun projectFilesChanged(path: String, text: String?, created: Boolean, deletedMessage: String) {
+        val affected = synchronized(lock) { running.filterKeys { key -> path.startsWith(key.substringAfter('|').trimEnd('/') + "/") }.values.toList() }
+        val uri = DocumentUri.ofPath(path)
+        for (service in affected) {
+            if (text == null) service.session.filesDeleted(setOf(uri))
+            else service.session.filesChanged(mapOf(uri to text), if (created) 1 else 2)
+        }
+        if (text == null) main.post { shownSessions[path]?.let { it.state = State.Failed(deletedMessage); it.diagnostics.clear() } }
+    }
+
+    /** После изменения lock/окружения прежний индекс не выдаётся за актуальный. Вне UI-потока. */
+    @Synchronized
+    fun dependenciesChanged(root: String, message: String) {
+        val base = root.trimEnd('/')
+        val prefix = "$base/"
+        // При уходе из «Файлов» files уже пуст, но владелец вкладок держит индекс.
+        val keys = synchronized(lock) { running.filter { (key, service) ->
+            val indexed = key.substringAfter('|').trimEnd('/')
+            indexed == base || indexed.startsWith(prefix) || base.startsWith("$indexed/") || service.files.any { it.file.startsWith(prefix) }
+        }.keys.toList() }
+        keys.forEach { stop(it, message) }
+    }
+
     /** Явное выключение/перенастройка относится к общей службе проекта, включая фоновые вкладки. */
     @Synchronized
     fun disable(session: Session) {
@@ -545,7 +575,20 @@ internal object CodeService {
     fun install(context: Context, what: Install): Outcome<Unit> {
         // Предел хранилища и жёсткий запас 1 ГБ (DPmetaApp:D-113) — до загрузки.
         (StorageSpace.check(context, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.SERVICE, what.need.takeIf { it > 0 }, what.title) as? Outcome.Failure)?.let { return it }
-        return installChecked(context, what).also { if (it is Outcome.Success) StorageMap.refresh(context) }
+        val kotlin = what == Install.KOTLIN || what == Install.KOTLIN_UPDATE
+        if (kotlin) synchronized(this) {
+            if (kotlinInstalling) return Outcome.failure(DiagCode.STATE_CONFLICT, context.getString(R.string.kotlin_install_busy))
+            kotlinInstalling = true
+        }
+        return try {
+            if (kotlin) synchronized(this) {
+                val keys = synchronized(lock) { running.filterValues { it.language == CodeLanguage.KOTLIN }.keys.toList() }
+                keys.forEach { stop(it, context.getString(R.string.kotlin_install_stopped), off = true) }
+            }
+            installChecked(context, what).also { if (it is Outcome.Success) StorageMap.refresh(context) }
+        } finally {
+            if (kotlin) synchronized(this) { kotlinInstalling = false }
+        }
     }
 
     private fun installChecked(context: Context, what: Install): Outcome<Unit> = when (what) {

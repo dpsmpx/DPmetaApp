@@ -105,8 +105,16 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
         // Ключ сборок проекта (D-178): свой, иначе глобальный, иначе нет.
         val projectId = view.project.project.value
         var keysVersion by remember { mutableIntStateOf(0) }
-        var keys by remember { mutableStateOf<Pair<SigningKeys.Choice, SigningKeys.Info?>>(SigningKeys.Choice.NONE to null) }
-        LaunchedEffect(projectId, keysVersion) { keys = withContext(Dispatchers.IO) { SigningKeys.forProject(projectId) } }
+        var keys by remember(projectId, keysVersion) { mutableStateOf<Pair<SigningKeys.Choice, SigningKeys.Info?>>(SigningKeys.Choice.NONE to null) }
+        var keyProblem by remember(projectId, keysVersion) { mutableStateOf<String?>(null) }
+        var keysLoaded by remember(projectId, keysVersion) { mutableStateOf(false) }
+        LaunchedEffect(projectId, keysVersion) {
+            when (val r = withContext(Dispatchers.IO) { SigningKeys.forProject(app, projectId) }) {
+                is Outcome.Success -> { keys = r.value; keyProblem = null }
+                is Outcome.Failure -> { keys = SigningKeys.Choice.NONE to null; keyProblem = r.errors.first().message }
+            }
+            keysLoaded = true
+        }
         val key = keys.second
         var listedAt by remember { mutableStateOf(0L) }
         LaunchedEffect(location, patterns, refresh, version) {
@@ -166,12 +174,19 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
         fun signAll(reviews: List<ApkReview.Review>, why: String) {
             val (choice, info) = keys
             if (info == null) { reviews.forEach(ApkReview::discard); note = SignAfterBuild.NO_KEY; return }
+            if (reviews.any { it.keySha256 != info.certSha256 }) {
+                reviews.forEach(ApkReview::discard)
+                note = "Ключ подписи изменился — откройте сведения об APK заново"
+                return
+            }
             val what = reviews.joinToString { r -> r.meta?.let { "${it.packageName} ${it.versionName ?: ""}".trim() } ?: r.source.name }
             DeviceConfirm.ask(context, "$why ${choice.title}: $what", onOk = {
                 work("Подписываю") {
                     try {
-                        val level = if (choice == SigningKeys.Choice.PROJECT) projectId else null
-                        val pair = withContext(Dispatchers.IO) { SigningKeys.key(level) } ?: return@work "ключа подписи нет"
+                        val pair = when (val r = withContext(Dispatchers.IO) { SigningKeys.key(app, projectId, choice, info.certSha256) }) {
+                            is Outcome.Failure -> return@work r.errors.first().message
+                            is Outcome.Success -> r.value
+                        }
                         val lines = ArrayList<String>()
                         for (r in reviews) {
                             // Копия с ПК — в свою папку подписанных (не рядом со скачанными: их чистит очистка до трёх).
@@ -203,7 +218,8 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
 
         // Подпись после сборки (D-178): новые APK последней успешной сборки, если список уже после неё.
         var autoDone by androidx.compose.runtime.saveable.rememberSaveable(location.key) { mutableStateOf<String?>(null) }
-        LaunchedEffect(built, found, listedAt, keys) {
+        LaunchedEffect(built, found, listedAt, keys, keysLoaded) {
+            if (!keysLoaded) return@LaunchedEffect
             val b = built ?: return@LaunchedEffect
             val list = found ?: return@LaunchedEffect
             if (pc || autoDone == b.run || listedAt < b.finishedAt || busy != null) return@LaunchedEffect
@@ -217,6 +233,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
 
         Text("Шаблоны: ${patterns.ifEmpty { TreeArtifacts.DEFAULT }.joinToString(" ")} — меняются в профиле выше.", style = MaterialTheme.typography.bodySmall)
         SigningKeysPanel(projectId, projectId, busy == null, keysVersion, onChanged = { keysVersion++ }, onNote = { note = it })
+        keyProblem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         busy?.let { Text("$it…", style = MaterialTheme.typography.bodySmall) }
         note?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         val list = found

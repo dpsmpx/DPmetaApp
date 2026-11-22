@@ -95,6 +95,9 @@ fun ModelsPane() {
     val running by ModelsStore.running.collectAsState()
     val problem by ModelsStore.problem.collectAsState()
     var open by rememberSaveable { mutableStateOf<String?>(null) }
+    val requestedChat by ApiQuickStartRequests.chat.collectAsState()
+    LaunchedEffect(requestedChat) { requestedChat?.let { open = it; ApiQuickStartRequests.chat.value = null } }
+    LaunchedEffect(Unit) { if (!ApiQuickStartRequests.seen(context)) ApiQuickStartRequests.request() }
     var usageOf by rememberSaveable { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf<ApiProfile?>(null) }
     var creating by remember { mutableStateOf(false) }
@@ -113,10 +116,11 @@ fun ModelsPane() {
     LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Text(
-                "Модели по ключу API — для чата. Задачи Claude Code идут по подписке, ключ в них не попадает.",
+                androidx.compose.ui.res.stringResource(R.string.api_work_models_intro),
                 style = MaterialTheme.typography.bodySmall,
             )
             problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            androidx.compose.material3.Button(onClick = { ApiQuickStartRequests.request() }) { Text(androidx.compose.ui.res.stringResource(R.string.api_work_title)) }
             // «Добавить профиль» — заметной кнопкой, а не текстом под пояснением (AI:A-26).
             androidx.compose.material3.FilledTonalButton(onClick = { creating = true }, modifier = Modifier.padding(top = 4.dp)) { Text("Добавить профиль") }
         }
@@ -179,6 +183,7 @@ private fun ProfileCard(p: ApiProfile, onChat: () -> Unit, onEdit: () -> Unit, o
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row {
+                TextButton(onClick = { ApiQuickStartRequests.request(profile = p.id.value) }) { Text(androidx.compose.ui.res.stringResource(R.string.api_work_start)) }
                 TextButton(onClick = onChat) { Text("Чат") }
                 // «Удалить» — в окне «Изменить», а не рядом с «Чат» (AI:A-26).
                 TextButton(onClick = onEdit) { Text("Изменить") }
@@ -502,10 +507,21 @@ private fun kindName(k: ProviderKind): String = when (k) {
 /** Чат с моделью профиля: ответ идёт кусками; «Стоп» прерывает его. */
 @Composable
 private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?, onBack: () -> Unit) {
+    EnvironmentApprovalUi(EnvironmentApprovalBroker.chat(c.id.value))
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var input by rememberSaveable(c.id.value) { mutableStateOf("") }
     var note by remember { mutableStateOf<String?>(null) }
+    var fullAccess by remember(c.id.value) { mutableStateOf(ModelsStore.chatFullAccess(c.id)) }
+    var showFullAccess by remember(c.id.value) { mutableStateOf(false) }
+    var typedFullAccess by remember(c.id.value) { mutableStateOf("") }
+    var authenticating by remember(c.id.value) { mutableStateOf(false) }
+    val projectForAccess = c.project?.let { id -> Controller.get(context.filesDir).projects().projects.firstOrNull { it.project == id } }
+    val fullAccessName = projectForAccess?.root?.trimEnd('/')?.substringAfterLast('/')
+    val fullAccessTarget = projectForAccess?.let { project -> Controller.get(context.filesDir).targets().firstOrNull { it.id == project.target }?.label }
+    val fullAccessTitle = androidx.compose.ui.res.stringResource(R.string.chat_full_access_title)
+    val fullAccessScope = ModelsStore.chatFullAccessScope(c.id)
+    LaunchedEffect(c.project, fullAccessScope) { fullAccess = ModelsStore.chatFullAccess(c.id) }
     // Файлы к вопросу (D-99): только выбором человека; текст уходит провайдеру вместе с вопросом.
     var files by remember(c.id.value) { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     val attach = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
@@ -524,6 +540,44 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
     val list = rememberLazyListState()
     val count = c.entries.size + if (live != null) 1 else 0
     LaunchedEffect(count, live?.text?.length) { if (count > 0) list.scrollToItem(count - 1) }
+    if (showFullAccess && fullAccessName != null) AlertDialog(
+        onDismissRequest = { if (!authenticating) showFullAccess = false },
+        containerColor = MaterialTheme.colorScheme.errorContainer,
+        title = { Text(fullAccessTitle) },
+        text = {
+            Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState())) {
+                Text(androidx.compose.ui.res.stringResource(R.string.chat_full_access_warning))
+                Text(androidx.compose.ui.res.stringResource(R.string.chat_full_access_project, fullAccessName),
+                    style = MaterialTheme.typography.titleSmall)
+                fullAccessTarget?.let { Text(it) }
+                OutlinedTextField(typedFullAccess, { typedFullAccess = it }, singleLine = true,
+                    label = { Text(androidx.compose.ui.res.stringResource(R.string.chat_full_access_type, fullAccessName)) })
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !authenticating && typedFullAccess == fullAccessName, onClick = {
+                val scopeBeforeAuth = ModelsStore.chatFullAccessScope(c.id)
+                if (scopeBeforeAuth == null) {
+                    note = context.getString(R.string.chat_full_access_failed)
+                    return@TextButton
+                }
+                authenticating = true
+                DeviceConfirm.ask(context, fullAccessTitle, onOk = {
+                    val ok = ModelsStore.enableChatFullAccess(c.id, typedFullAccess, scopeBeforeAuth)
+                    fullAccess = ModelsStore.chatFullAccess(c.id)
+                    authenticating = false
+                    if (ok && fullAccess) showFullAccess = false
+                    else note = context.getString(R.string.chat_full_access_failed)
+                }, onDenied = { error -> authenticating = false; note = error })
+            }) { Text(androidx.compose.ui.res.stringResource(R.string.chat_full_access_confirm)) }
+        },
+        dismissButton = {
+            TextButton(enabled = !authenticating, onClick = { showFullAccess = false }) {
+                Text(androidx.compose.ui.res.stringResource(R.string.chat_full_access_cancel))
+            }
+        },
+        properties = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn),
+    )
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
@@ -532,11 +586,39 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
                 Text(p?.let { "${it.name} · ${it.model}" } ?: "профиль удалён", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        if (c.project == null) TextButton(onClick = { ApiQuickStartRequests.request(profile = c.profile.value) }) { Text(androidx.compose.ui.res.stringResource(R.string.api_work_connect_project)) }
+        if (c.project != null) FlowRow(Modifier.fillMaxWidth()) {
+            FilterChip(selected = fullAccess, enabled = fullAccess || fullAccessName != null, onClick = {
+                if (fullAccess) {
+                    ModelsStore.revokeChatFullAccess(c.id)
+                    fullAccess = ModelsStore.chatFullAccess(c.id)
+                    if (fullAccess) note = context.getString(R.string.chat_full_access_failed)
+                } else {
+                    typedFullAccess = ""
+                    showFullAccess = true
+                }
+            }, label = { Text(androidx.compose.ui.res.stringResource(
+                if (fullAccess) R.string.chat_full_access_on else R.string.chat_full_access_off)) })
+            TextButton(enabled = live == null, onClick = { scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    val choice = ApiProjectRuntime.choices(context).valueOrNull()?.firstOrNull { it.project == c.project }
+                    if (choice == null) Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, "проект удалён")
+                    else ApiProjectRuntime.prepare(context, choice)
+                }
+                when (result) {
+                    is Outcome.Failure -> note = result.diagnostics.first().message
+                    is Outcome.Success -> context.startActivity(MainActivity.workspace(context))
+                }
+            } }) { Text(androidx.compose.ui.res.stringResource(R.string.api_work_open_project)) }
+        }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (c.entries.isEmpty() && live == null) item { Text("Напишите вопрос — ответит ${p?.model ?: "модель"}.", style = MaterialTheme.typography.bodySmall) }
             // Ответы только дописываются в конец: ключ — номер (AI:A-25).
             items(c.entries.size, key = { it }) { i -> EntryView(c.entries[i]) }
-            live?.let { r -> item { EntryView(ChatEntry(ChatRole.ASSISTANT, r.text.ifEmpty { "…" }, p?.model), streaming = true) } }
+            live?.let { r -> item {
+                if (r.actions.isNotEmpty()) Text(r.actions.takeLast(4).joinToString("\n"), style = MaterialTheme.typography.labelSmall)
+                EntryView(ChatEntry(ChatRole.ASSISTANT, r.text.ifEmpty { "…" }, p?.model), streaming = true)
+            } }
         }
         note?.let { Text(it, Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         if (files.isNotEmpty()) {

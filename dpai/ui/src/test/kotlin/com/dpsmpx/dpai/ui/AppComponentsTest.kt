@@ -91,6 +91,24 @@ class AppComponentsTest {
         assertTrue(Files.exists(root.resolve("root/tools/ide/pyright")), "соседнее не тронуто")
     }
 
+    @Test fun orphanedLegacyKotlinIndexIsVisibleAndDeletionKeepsOtherLanguagesAndProjects() {
+        val id = "a".repeat(32)
+        val base = "root/.cache/JetBrains/IntelliJServer/workspaces/$id/index"
+        file("$base/kotlin-server/rocks/v241/data.sst", "i".repeat(200))
+        file("$base/java-server/keep", "other language")
+        file("root/projects/keep.kt", "source")
+        val component = AppComponents.scan(dir, "aarch64").single { it.id == "kotlin-lsp" }
+        assertEquals(200L, component.size)
+        assertEquals(listOf("старые индексы Kotlin"), component.parts)
+        assertIs<Outcome.Success<Long>>(AppComponents.delete(dir, component.remove as AppComponents.Remove.Tree))
+        assertFalse(Files.exists(dir.resolve("$base/kotlin-server")))
+        assertEquals("other language", Files.readString(dir.resolve("$base/java-server/keep")))
+        assertEquals("source", Files.readString(dir.resolve("root/projects/keep.kt")))
+        for (bad in listOf("/root/.cache/JetBrains/IntelliJServer/workspaces", "/$base", "/$base/java-server", "/$base/kotlin-server/../java-server")) {
+            assertIs<Outcome.Failure>(AppComponents.delete(dir, AppComponents.Remove.Tree(listOf(bad))))
+        }
+    }
+
     @Test
     fun deleteRefusesOutsideComponentPlaces() {
         val root = rootfs()

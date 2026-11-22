@@ -94,6 +94,22 @@ class ProjectWorkspaceTest {
     }
 
     @Test
+    fun pendingProjectEditOnlyPermitsRecoveryAndDoesNotBypassOtherGuards() {
+        var current = view().copy(pendingEdit = true)
+        val location = current.location(task.id)!!
+        val gate = WorkspaceWriteGate(ReentrantLock()) { current }
+        assertIs<Outcome.Success<Unit>>(current.allow(project, location, false))
+        var writes = 0
+        assertIs<Outcome.Failure>(gate.perform(project, location) { writes++; Outcome.success(Unit) })
+        assertIs<Outcome.Success<Unit>>(gate.perform(project, location, recoveringEdit = true) { writes++; Outcome.success(Unit) })
+        current = current.copy(paused = true)
+        assertIs<Outcome.Failure>(gate.perform(project, location, recoveringEdit = true) { writes++; Outcome.success(Unit) })
+        current = view(tree.copy(owner = ids.next(IdKinds.SESSION))).copy(pendingEdit = true)
+        assertIs<Outcome.Failure>(gate.perform(project, location, recoveringEdit = true) { writes++; Outcome.success(Unit) })
+        assertEquals(1, writes)
+    }
+
+    @Test
     fun busyControllerRejectsWriteWithoutCallingItsAction() {
         val lock = ReentrantLock()
         val gate = WorkspaceWriteGate(lock) { view() }

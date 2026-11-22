@@ -113,20 +113,27 @@ object AppComponents {
                 size, cut, parts, Remove.Tree(listOf(CodeServerSetup.ANDROID_SDK)),
             )
         }
-        dir(CodeServerSetup.KOTLIN_HOME.removePrefix("/root/").substringBeforeLast('/'))?.let { k ->
-            val builds = children(k).filter { KotlinLsp.validBuild(it) }
-            val current = runCatching { Files.readSymbolicLink(k.resolve("current")).fileName.toString() }.getOrNull()?.takeIf(KotlinLsp::validBuild)
-            val system = dir(CodeServerSetup.KOTLIN_SYSTEM.removePrefix("/root/"))
-            val (a, cutA) = size(k)
-            val (b, cutB) = system?.let(::size) ?: (0L to false)
+        val kotlin = dir(CodeServerSetup.KOTLIN_HOME.removePrefix("/root/").substringBeforeLast('/'))
+        val system = dir(CodeServerSetup.KOTLIN_SYSTEM_BASE.removePrefix("/root/"))
+        val legacyRoot = CodeServerSetup.KOTLIN_LEGACY_INDEX_BASE.removePrefix("/root/")
+        // Только известный подкаталог производных Kotlin-индексов, не весь общий workspace.
+        val legacy = dir(legacyRoot)?.let(::children).orEmpty().filter { it.matches(Regex("[0-9a-fA-F]{32}")) }.mapNotNull { id ->
+            val rel = "$legacyRoot/$id/index/kotlin-server"
+            dir(rel)?.let { it to "/root/$rel" }
+        }
+        if (kotlin != null || system != null || legacy.isNotEmpty()) {
+            val builds = kotlin?.let(::children).orEmpty().filter { KotlinLsp.validBuild(it) }
+            val current = kotlin?.let { k -> runCatching { Files.readSymbolicLink(k.resolve("current")).fileName.toString() }.getOrNull()?.takeIf(KotlinLsp::validBuild) }
+            val measurements = listOfNotNull(kotlin, system).map(::size) + legacy.map { size(it.first) }
             val sum = arch?.let { runCatching { KotlinLsp.archiveSha256(it) }.getOrNull() }
             out += Component(
                 "kotlin-lsp", Kind.KOTLIN_LSP, "Служба Kotlin (kotlin-lsp)", CodeServerSetup.KOTLIN_HOME.substringBeforeLast('/'),
                 current ?: builds.singleOrNull(), KotlinLsp.PINNED_BUILD,
                 arch?.let { runCatching { KotlinLsp.archiveUrl(KotlinLsp.PINNED_BUILD, it) }.getOrNull() } ?: "download.jetbrains.com", sum,
                 "SHA-256 сборки ${KotlinLsp.PINNED_BUILD} закреплена в APK и сверена до распаковки",
-                if (a == null || b == null) null else a + b, cutA || cutB, builds + listOfNotNull("кеш и индексы".takeIf { system != null }),
-                Remove.Tree(listOfNotNull(CodeServerSetup.KOTLIN_HOME.substringBeforeLast('/'), CodeServerSetup.KOTLIN_SYSTEM.takeIf { system != null })),
+                if (measurements.any { it.first == null }) null else measurements.mapNotNull { it.first }.sum(), measurements.any { it.second },
+                builds + listOfNotNull("кеш и индексы".takeIf { system != null }, "старые индексы Kotlin".takeIf { legacy.isNotEmpty() }),
+                Remove.Tree(listOfNotNull(CodeServerSetup.KOTLIN_HOME.substringBeforeLast('/').takeIf { kotlin != null }, CodeServerSetup.KOTLIN_SYSTEM_BASE.takeIf { system != null }) + legacy.map { it.second }),
             )
         }
         dir(CodeServerSetup.PYRIGHT_HOME.removePrefix("/root/").substringBeforeLast('/'))?.let { p ->
@@ -221,7 +228,7 @@ object AppComponents {
     private fun json(f: Path): JsonObject? {
         if (!Files.isRegularFile(f, LinkOption.NOFOLLOW_LINKS)) return null
         if (runCatching { Files.size(f) }.getOrDefault(Long.MAX_VALUE) > MAX_JSON) return null
-        val text = runCatching { Files.readString(f) }.getOrNull() ?: return null
+        val text = runCatching { Files.newBufferedReader(f, Charsets.UTF_8).use { it.readText() } }.getOrNull() ?: return null
         return (JsonParser().parse(text) as? Outcome.Success)?.value as? JsonObject
     }
 
@@ -262,7 +269,8 @@ object AppComponents {
     internal fun removable(guest: String): Boolean {
         val parts = guest.split('/')
         if (parts.first().isNotEmpty() || parts.drop(1).any { it.isEmpty() || it == "." || it == ".." }) return false
-        return guest == AndroidSdk.HOME || listOf("/root/tools/ide/", "/root/tools/models/").any { guest.startsWith(it) && guest.length > it.length }
+        val legacyIndex = Regex("${Regex.escape(CodeServerSetup.KOTLIN_LEGACY_INDEX_BASE)}/[0-9a-fA-F]{32}/index/kotlin-server").matches(guest)
+        return legacyIndex || guest == AndroidSdk.HOME || listOf("/root/tools/ide/", "/root/tools/models/").any { guest.startsWith(it) && guest.length > it.length }
     }
 
     /**
@@ -274,7 +282,7 @@ object AppComponents {
     fun delete(rootfs: Path, remove: Remove.Tree, vfs: Vfs = NioVfs(rootfs)): Outcome<Long> {
         var freed = 0L
         for (guest in remove.paths) {
-            if (!removable(guest)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "убирать можно только компоненты приложения в ~/tools и ~/android-sdk", guest)
+            if (!removable(guest)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "убирать можно только зарегистрированные компоненты приложения и их индексы", guest)
             val rel = guest.removePrefix("/")
             val parts = rel.split('/')
             for (i in 1 until parts.size) {

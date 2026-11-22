@@ -8,7 +8,7 @@ import com.dpsmpx.dpmeta.model.AlertChannel
 import com.dpsmpx.dpmeta.model.Event
 import com.dpsmpx.dpmeta.notify.Alerts
 import com.dpsmpx.dpmeta.notify.Decision
-import com.dpsmpx.dpmeta.notify.QuietHours
+import com.dpsmpx.dpai.notifications.QuietHours
 import java.time.DayOfWeek
 import java.time.ZoneOffset
 import kotlin.test.Test

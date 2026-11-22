@@ -15,9 +15,9 @@ import com.dpsmpx.dpmeta.github.Issue
 import com.dpsmpx.dpmeta.github.PullRequest
 import com.dpsmpx.dpmeta.github.RecentCommit
 import com.dpsmpx.dpmeta.model.ObservationSource
-import com.dpsmpx.dpmeta.model.ProjectEntry
+import com.dpsmpx.dpmeta.model.SyncProject
 import com.dpsmpx.dpmeta.model.ProjectList
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import com.dpsmpx.dpmeta.sync.Got
 import com.dpsmpx.dpmeta.sync.SourceKind
 import com.dpsmpx.dpmeta.sync.SourceReader
@@ -35,22 +35,22 @@ import kotlin.test.assertTrue
  */
 class GitHubSourcesSyncTest {
     private val now = Timestamp(Instant.parse("2026-11-16T10:00:00Z").toEpochMilli())
-    private val registry = ProjectList().add(RepoRef.parse("alice/app").valueOrNull()!!).valueOrNull()!!.toRegistry()
+    private val registry = ProjectList().add(RepoRef.parse("alice/app").valueOrNull()!!).valueOrNull()!!.forSync()
 
     private open class Fake(val ciLimited: Boolean = false) : SourceReader {
         override val source = ObservationSource.GITHUB
-        override fun hasActivity(project: ProjectEntry) = true
-        override fun pulls(project: ProjectEntry): Outcome<Got<List<PullRequest>>> =
+        override fun hasActivity(project: SyncProject) = true
+        override fun pulls(project: SyncProject): Outcome<Got<List<PullRequest>>> =
             Outcome.success(Got(listOf(PullRequest(5, "Новое", false, "feature", "bob", Timestamp(1), headSha = "b".repeat(40)), PullRequest(6, "Без головы", true, "x", "bob", Timestamp(2))), Hashing.sha256("pulls")))
-        override fun closed(project: ProjectEntry): Outcome<Got<List<PullRequest>>> = Outcome.success(Got(emptyList(), Hashing.sha256("closed")))
-        override fun branches(project: ProjectEntry): Outcome<Got<List<Branch>>> = Outcome.success(Got(emptyList(), Hashing.sha256("branches")))
-        override fun commit(project: ProjectEntry, sha: String): Outcome<CommitInfo> = Outcome.failure(DiagCode.UNSUPPORTED, "нет", sha)
-        override fun file(project: ProjectEntry, path: String): Outcome<Got<String>> = Outcome.failure(DiagCode.GITHUB_NOT_FOUND, "нет", path)
-        override fun issues(project: ProjectEntry): Outcome<Got<List<Issue>>>? =
+        override fun closed(project: SyncProject): Outcome<Got<List<PullRequest>>> = Outcome.success(Got(emptyList(), Hashing.sha256("closed")))
+        override fun branches(project: SyncProject): Outcome<Got<List<Branch>>> = Outcome.success(Got(emptyList(), Hashing.sha256("branches")))
+        override fun commit(project: SyncProject, sha: String): Outcome<CommitInfo> = Outcome.failure(DiagCode.UNSUPPORTED, "нет", sha)
+        override fun file(project: SyncProject, path: String): Outcome<Got<String>> = Outcome.failure(DiagCode.GITHUB_NOT_FOUND, "нет", path)
+        override fun issues(project: SyncProject): Outcome<Got<List<Issue>>>? =
             Outcome.success(Got(listOf(Issue(3, "Баг", "alice", listOf("bob"), listOf("bug"), Timestamp(3), 1)), Hashing.sha256("issues")))
-        override fun recentCommits(project: ProjectEntry): Outcome<Got<List<RecentCommit>>>? =
+        override fun recentCommits(project: SyncProject): Outcome<Got<List<RecentCommit>>>? =
             Outcome.success(Got(listOf(RecentCommit("a".repeat(40), "Голова", "alice", Timestamp(4))), Hashing.sha256("commits")))
-        override fun ci(project: ProjectEntry, sha: String): Outcome<Got<CiState>>? = when {
+        override fun ci(project: SyncProject, sha: String): Outcome<Got<CiState>>? = when {
             ciLimited -> Outcome.failure(DiagCode.GITHUB_RATE_LIMITED, "лимит", sha)
             sha.startsWith("a") -> Outcome.success(Got(CiState(CiState.Verdict.RED, 2, listOf("build")), Hashing.sha256("ci-a")))
             else -> Outcome.success(Got(CiState(CiState.Verdict.GREEN, 1, emptyList()), Hashing.sha256("ci-b")))
@@ -80,9 +80,9 @@ class GitHubSourcesSyncTest {
     @Test
     fun sourcesWithoutThemSkipSilently() {
         val bare = object : Fake() {
-            override fun issues(project: ProjectEntry): Outcome<Got<List<Issue>>>? = null
-            override fun recentCommits(project: ProjectEntry): Outcome<Got<List<RecentCommit>>>? = null
-            override fun ci(project: ProjectEntry, sha: String): Outcome<Got<CiState>>? = null
+            override fun issues(project: SyncProject): Outcome<Got<List<Issue>>>? = null
+            override fun recentCommits(project: SyncProject): Outcome<Got<List<RecentCommit>>>? = null
+            override fun ci(project: SyncProject, sha: String): Outcome<Got<CiState>>? = null
         }
         val r = run(bare, SourceKind.PULLS, SourceKind.ISSUES, SourceKind.COMMITS)
         assertEquals(emptyList(), r.failures)
@@ -93,7 +93,7 @@ class GitHubSourcesSyncTest {
     @Test
     fun hiddenIssuesAreNoAccessNotAFailure() {
         val hidden = object : Fake() {
-            override fun issues(project: ProjectEntry): Outcome<Got<List<Issue>>>? = Outcome.failure(DiagCode.GITHUB_AUTH_EXPIRED, "у токена нет прав на это", "alice/app:issues")
+            override fun issues(project: SyncProject): Outcome<Got<List<Issue>>>? = Outcome.failure(DiagCode.GITHUB_AUTH_EXPIRED, "у токена нет прав на это", "alice/app:issues")
         }
         val r = run(hidden, SourceKind.ISSUES)
         assertEquals(emptyList(), r.failures)
@@ -112,7 +112,7 @@ class GitHubSourcesSyncTest {
     fun ciChangeAloneChangesTheFingerprint() {
         val first = run(Fake(), SourceKind.PULLS).observations.single()
         val changed = object : Fake() {
-            override fun ci(project: ProjectEntry, sha: String): Outcome<Got<CiState>>? =
+            override fun ci(project: SyncProject, sha: String): Outcome<Got<CiState>>? =
                 Outcome.success(Got(CiState(CiState.Verdict.PENDING, 1, emptyList()), Hashing.sha256("ci-b2")))
         }
         val second = run(changed, SourceKind.PULLS).observations.single()

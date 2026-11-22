@@ -25,6 +25,8 @@ import kotlin.time.Duration.Companion.seconds
  * тест пропускается.
  */
 class KotlinLspLiveTest {
+    private fun hostEnvironment(): Map<String, String> = System.getenv().filterKeys { it in setOf("PATH", "HOME", "TMPDIR", "GRADLE_USER_HOME", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "JAVA_TOOL_OPTIONS") }
+
     private fun <T> ok(r: Outcome<T>): T = (r as? Outcome.Success)?.value ?: error("отказ: $r")
 
     private val main = """
@@ -50,28 +52,30 @@ class KotlinLspLiveTest {
         val java = System.getProperty("dpai.test.kotlinjava")
         val gradleJava = System.getProperty("dpai.test.gradlejava")
         assumeTrue(home != null && java != null && gradleJava != null, "dpai.test.kotlinlsp/kotlinjava/gradlejava не заданы")
+        val kotlinVersion = checkNotNull(System.getProperty("dpai.test.kotlin.version"))
         val src = File(dir, "src/main/kotlin/demo").apply { mkdirs() }
         File(src, "Main.kt").writeText(main)
         File(src, "Helper.kt").writeText("package demo\n\nfun helper(x: Int): Int = twice(x) + 1\n")
         File(dir, "settings.gradle.kts").writeText("rootProject.name = \"demo\"\n")
-        File(dir, "build.gradle.kts").writeText("plugins {\n    kotlin(\"jvm\") version \"2.4.10\"\n}\n\nrepositories {\n    mavenCentral()\n}\n")
+        File(dir, "build.gradle.kts").writeText("plugins {\n    kotlin(\"jvm\") version \"$kotlinVersion\"\n}\n\nrepositories {\n    mavenCentral()\n}\n")
         File(dir, "gradle/wrapper").mkdirs()
         File(dir, "gradle/wrapper/gradle-wrapper.properties").writeText("distributionUrl=https\\://services.gradle.org/distributions/gradle-9.8.0-bin.zip\n")
         val arch = if (System.getProperty("os.arch") == "aarch64") "aarch64" else "x86_64"
         val command = ok(KotlinLsp.command(File(home!!, "product-info.json").readText(), File(home, "bin/intellij-server.vmoptions").readText(), home, java!!, File(dir, ".kls").path, arch, heapMb = 1536))
         assertTrue("--data-sharing=none" in command)
         val launch = KotlinLsp.launch(command, null)
-        val process = ok(LocalStreamHost().open(ProcessSpec(launch.command, workDir = dir.path, environment = launch.environment + ("JAVA_HOME" to gradleJava!!))))
+        val process = ok(LocalStreamHost().open(ProcessSpec(launch.command, workDir = dir.path, environment = hostEnvironment() + launch.environment + ("JAVA_HOME" to gradleJava!!))))
         val client = LspClient(
             process.stdout, process.stdin, DocumentUri.ofPath(dir.path),
             object : LspClient.Listener {
                 override fun diagnostics(uri: String, version: Int?, items: List<LspDiagnostic>) = Unit
                 override fun stopped(reason: Diagnostic) = Unit
-            },
+            }, initializationOptions = launch.initializationOptions,
         )
         val session = LanguageSession(client, pull = setOf(client))
         try {
             val info = ok(client.start(2.minutes))
+            assertTrue(KotlinLsp.acceptsIndexDirectory(launch.initializationOptions, info.indexDirectory))
             assertTrue(info.capabilities.pullDiagnostics && info.capabilities.rename && info.capabilities.signatureHelp, info.toString())
             val uri = DocumentUri.ofPath(File(src, "Main.kt").path)
             val broken = main.replace("println(twice(total))", "println(twice(totl))")

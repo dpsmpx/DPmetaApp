@@ -5,6 +5,7 @@ import android.content.Context
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.clock.RandomSource
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -26,19 +27,53 @@ internal object ApkReview {
     private const val RESERVE_BYTES: Long = 64L shl 20
 
     private const val DIR = "apk-review"
+    private val reviewDirectory = Regex("review-[0-9a-f]{32}")
+    private val active = mutableMapOf<String, String>()
 
     /** Что показано человеку: файл дерева, его копия, сведения и строка журнала. */
-    data class Review(val source: File, val copy: File, val meta: ApkInstaller.Meta?, val sha256: String, val text: String, val log: String) {
+    data class Review(val source: File, val copy: File, val meta: ApkInstaller.Meta?, val sha256: String, val text: String, val log: String, val keySha256: String? = null) {
         val self: Boolean get() = meta?.self == true
     }
 
-    /** Копия [file] в [dir]; прежние копии удаляются — проверка идёт одна. */
+    /** Независимая копия для каждого просмотра: пакетная подпись не заменяет уже показанные байты. */
+    @Synchronized
+    fun stage(file: File, root: File, random: RandomSource = RandomSource.secure()): Outcome<File> {
+        if (!file.isFile) return Outcome.failure(DiagCode.VALUE_INVALID, "файл вне дерева или исчез", file.name)
+        return try {
+            if (!root.mkdirs() && !root.isDirectory) return Outcome.failure(DiagCode.STORAGE_IO_FAILED, "нет папки для проверки APK", root.path)
+            val source = file.canonicalPath
+            for (old in root.listFiles() ?: return Outcome.failure(DiagCode.STORAGE_IO_FAILED, "кэш проверки APK не прочитан")) {
+                if (old.canonicalPath == source || source.startsWith(old.canonicalPath + File.separator) || old.canonicalPath in active) continue
+                if (reviewDirectory.matches(old.name)) {
+                    // Плоский собственный каталог; по ссылкам и вложенным деревьям не ходим.
+                    if (!java.nio.file.Files.isSymbolicLink(old.toPath())) old.listFiles()?.forEach { it.delete() }
+                    old.delete()
+                } else if (old.isFile && old.name.endsWith(".apk")) old.delete()
+            }
+            repeat(8) {
+                val id = random.nextBytes(16).joinToString("") { b -> "%02x".format(b.toInt() and 255) }
+                val directory = File(root, "review-$id")
+                if (!directory.mkdir()) {
+                    if (!directory.exists()) return Outcome.failure(DiagCode.STORAGE_IO_FAILED, "нет отдельной папки просмотра APK")
+                    return@repeat
+                }
+                val copied = stageOne(file, directory)
+                if (copied is Outcome.Success) active[directory.canonicalPath] = copied.value.canonicalPath
+                else directory.delete()
+                return copied
+            }
+            Outcome.failure(DiagCode.STATE_CONFLICT, "не выделен независимый просмотр APK")
+        } catch (e: IOException) {
+            Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "просмотр APK не подготовлен", e, file.name))
+        }
+    }
+
+    /** Копия в только что выделенный каталог, с прежними пределами места и размера. */
     // Консервативная проверка фактически свободного места: кэш других приложений не вытесняем.
     @SuppressLint("UsableSpace")
-    fun stage(file: File, dir: File): Outcome<File> {
+    private fun stageOne(file: File, dir: File): Outcome<File> {
         if (!file.isFile) return Outcome.failure(DiagCode.VALUE_INVALID, "файл вне дерева или исчез", file.name)
         if (file.length() > MAX_BYTES) return Outcome.failure(DiagCode.VALUE_INVALID, "APK больше ${MAX_BYTES shr 20} МБ", file.name)
-        dir.deleteRecursively()
         if (!dir.mkdirs() && !dir.isDirectory) return Outcome.failure(DiagCode.STORAGE_IO_FAILED, "нет папки для проверки APK", dir.path)
         // Защита места (D-152): копия и запас под систему.
         val free = dir.usableSpace
@@ -70,16 +105,27 @@ internal object ApkReview {
             val meta = ApkInstaller.meta(context, copy)
             val sig = ApkSign.inspect(copy)
             val sha = ApkSign.fileSha256(copy)
-            Outcome.success(Review(file, copy, (meta as? Outcome.Success)?.value, sha, describe(meta, sig, sha, keySha256), logLine(meta, sig, sha)))
+            Outcome.success(Review(file, copy, (meta as? Outcome.Success)?.value, sha, describe(meta, sig, sha, keySha256), logLine(meta, sig, sha), keySha256))
         } catch (e: IOException) {
-            copy.delete()
+            discardCopy(copy)
             Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "копия APK не прочитана", e, file.name))
         }
     }
 
     /** Убрать копию: установка её уже передала системе, отмена — не нужна. */
     fun discard(review: Review?) {
-        review?.copy?.delete()
+        review?.copy?.let(::discardCopy)
+    }
+
+    @Synchronized
+    private fun discardCopy(copy: File) {
+        val directory = copy.parentFile
+        val own = runCatching { directory != null && active[directory.canonicalPath] == copy.canonicalPath }.getOrDefault(false)
+        copy.delete()
+        if (own && directory != null) {
+            active.remove(directory.canonicalPath)
+            directory.delete()
+        }
     }
 
     /** Сведения словами — для окна «Сведения» и окна перед установкой или подписью. */

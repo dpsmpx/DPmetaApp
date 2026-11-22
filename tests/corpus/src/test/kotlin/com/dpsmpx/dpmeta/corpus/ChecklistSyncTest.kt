@@ -11,9 +11,9 @@ import com.dpsmpx.dpmeta.github.PullRequest
 import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.metrics.ProjectState
 import com.dpsmpx.dpmeta.model.ObservationSource
-import com.dpsmpx.dpmeta.model.ProjectEntry
+import com.dpsmpx.dpmeta.model.SyncProject
 import com.dpsmpx.dpmeta.model.ProjectList
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 import com.dpsmpx.dpmeta.model.UserProject
 import com.dpsmpx.dpmeta.sync.Got
 import com.dpsmpx.dpmeta.sync.SourceKind
@@ -38,12 +38,12 @@ class ChecklistSyncTest {
     /** Файлы по пути; [fail] — путь, на котором источник отказывает не «файла нет». */
     private class Files(val files: Map<String, String>, val fail: String? = null) : SourceReader {
         override val source = ObservationSource.GITHUB
-        override fun hasActivity(project: ProjectEntry) = false
-        override fun pulls(project: ProjectEntry): Outcome<Got<List<PullRequest>>> = Outcome.failure(DiagCode.UNSUPPORTED, "нет", project.name)
-        override fun closed(project: ProjectEntry): Outcome<Got<List<PullRequest>>> = Outcome.failure(DiagCode.UNSUPPORTED, "нет", project.name)
-        override fun branches(project: ProjectEntry): Outcome<Got<List<Branch>>> = Outcome.failure(DiagCode.UNSUPPORTED, "нет", project.name)
-        override fun commit(project: ProjectEntry, sha: String): Outcome<CommitInfo> = Outcome.failure(DiagCode.UNSUPPORTED, "нет", sha)
-        override fun file(project: ProjectEntry, path: String): Outcome<Got<String>> = when {
+        override fun hasActivity(project: SyncProject) = false
+        override fun pulls(project: SyncProject): Outcome<Got<List<PullRequest>>> = Outcome.failure(DiagCode.UNSUPPORTED, "нет", project.name)
+        override fun closed(project: SyncProject): Outcome<Got<List<PullRequest>>> = Outcome.failure(DiagCode.UNSUPPORTED, "нет", project.name)
+        override fun branches(project: SyncProject): Outcome<Got<List<Branch>>> = Outcome.failure(DiagCode.UNSUPPORTED, "нет", project.name)
+        override fun commit(project: SyncProject, sha: String): Outcome<CommitInfo> = Outcome.failure(DiagCode.UNSUPPORTED, "нет", sha)
+        override fun file(project: SyncProject, path: String): Outcome<Got<String>> = when {
             path == fail -> Outcome.failure(DiagCode.GITHUB_RATE_LIMITED, "лимит", path)
             else -> files[path]?.let { Outcome.success(Got(it, Hashing.sha256(it))) } ?: Outcome.failure(DiagCode.GITHUB_NOT_FOUND, "файла нет", path)
         }
@@ -62,7 +62,7 @@ class ChecklistSyncTest {
     )
 
     private fun checklistsOf(reader: SourceReader, l: ProjectList = list, previous: EcosystemState? = null): Pair<EcosystemState, com.dpsmpx.dpmeta.sync.SyncResult> {
-        val reg = l.toRegistry()
+        val reg = l.forSync()
         val tasks = Sync.plan(reg).filter { it.kind == SourceKind.CHECKLISTS }
         val r = Sync.run(tasks, reader, ManualClock(now))
         return EcosystemState.derive(reg, r.observations, r.failures, previous, now) to r
@@ -70,9 +70,9 @@ class ChecklistSyncTest {
 
     @Test
     fun onlyProjectsWithChecklistsArePlannedInTheirOrder() {
-        val tasks = Sync.plan(list.toRegistry()).filter { it.kind == SourceKind.CHECKLISTS }
+        val tasks = Sync.plan(list.forSync()).filter { it.kind == SourceKind.CHECKLISTS }
         assertEquals(listOf("app" to listOf("TODO.md", "docs/plan.md", "missing.md")), tasks.map { it.project.name to it.paths })
-        assertEquals(listOf("docs/plan.md"), list.toRegistry().projects.first().docs)
+        assertEquals(listOf("docs/plan.md"), list.forSync().projects.first().docs)
     }
 
     @Test

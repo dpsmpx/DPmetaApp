@@ -65,6 +65,7 @@ fun AppBackupCard() {
     var plan by remember { mutableStateOf<SavePlan?>(null) }
     var restoreBytes by remember { mutableStateOf<ByteArray?>(null) }
     var archive by remember { mutableStateOf<AppBackup.Archive?>(null) }
+    var archiveEncrypted by remember { mutableStateOf(false) }
     var restarting by remember { mutableStateOf(false) }
     val lastAuto = rememberRead(refresh, initial = null) { AppBackups.lastAuto(app) }
     val applied = rememberRead(Unit, initial = null) { AppBackups.lastApplied(app, clear = true) }
@@ -89,8 +90,8 @@ fun AppBackupCard() {
                 is Outcome.Failure -> "Копия не сохранена: ${r.errors.first().message}"
             }
         }
-        // Токен GitHub пульта открывается только после входа (T-01): сначала вход, потом чтение.
-        if (p.password != null && activity != null) AppSecrets.unlockAll(activity) { u -> if (u is Outcome.Failure) { busy = false; status = "Копия не сохранена: ${u.errors.first().message}" } else go() } else go()
+        // Любые секреты — после входа (в том числе SSH и API-ключи без токена GitHub).
+        if (p.password != null) AppSecrets.unlockAll(activity) { u -> if (u is Outcome.Failure) { busy = false; status = "Копия не сохранена: ${u.errors.first().message}" } else go() } else go()
     }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -103,11 +104,12 @@ fun AppBackupCard() {
                 is Outcome.Failure -> status = "Копия не прочитана: ${r.errors.first().message}"
                 is Outcome.Success -> if (AppBackup.sealed(r.value)) {
                     status = null
+                    archiveEncrypted = true
                     restoreBytes = r.value
                 } else {
                     when (val a = AppBackups.open(r.value, null)) {
                         is Outcome.Failure -> status = "Копия не прочитана: ${a.errors.first().message}"
-                        is Outcome.Success -> { status = null; archive = a.value }
+                        is Outcome.Success -> { status = null; archiveEncrypted = false; archive = a.value }
                     }
                 }
             }
@@ -155,7 +157,7 @@ fun AppBackupCard() {
         }
     }
     archive?.let { a ->
-        RestoreDialog(a, onCancel = { archive = null }) { ids ->
+        RestoreDialog(a, archiveEncrypted, onCancel = { archive = null }) { ids ->
             archive = null
             busy = true
             status = "Восстанавливаю…"
@@ -168,8 +170,8 @@ fun AppBackupCard() {
                     is Outcome.Failure -> status = "Не восстановлено: ${r.errors.first().message}"
                 }
             }
-            // Токен GitHub пульта пишется под ключом, которому нужен вход (T-01).
-            if (AppBackup.SECRETS in ids && activity != null) AppSecrets.unlockAll(activity, includeAbsent = true) { u -> if (u is Outcome.Failure) { busy = false; status = "Не восстановлено: ${u.errors.first().message}" } else go() } else go()
+            // И на новом телефоне, где ещё нет ключей, сначала подтверждение устройства.
+            if (AppBackup.SECRETS in ids) AppSecrets.unlockAll(activity, includeAbsent = true) { u -> if (u is Outcome.Failure) { busy = false; status = "Не восстановлено: ${u.errors.first().message}" } else go() } else go()
         }
     }
     if (restarting) AlertDialog(
@@ -254,7 +256,7 @@ private fun PasswordDialog(onCancel: () -> Unit, onOpen: (Secret, (String?) -> U
 }
 
 @Composable
-private fun RestoreDialog(a: AppBackup.Archive, onCancel: () -> Unit, onRestore: (Set<String>) -> Unit) {
+private fun RestoreDialog(a: AppBackup.Archive, encrypted: Boolean, onCancel: () -> Unit, onRestore: (Set<String>) -> Unit) {
     val known = remember { AppBackups.sections().associateBy { it.id } }
     val present = a.sections.filter { !it.empty }
     // Неизвестный этой версии раздел не выбирается: его некуда разложить.
@@ -265,6 +267,8 @@ private fun RestoreDialog(a: AppBackup.Archive, onCancel: () -> Unit, onRestore:
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Копия от ${dateText(a.createdAt)}" + (a.appVersion?.let { ", версия $it" } ?: "") + ".", style = MaterialTheme.typography.bodySmall)
+                if (!encrypted) Text("Копия без пароля не защищена от подмены: в ней могли изменить адреса ПК, доверенные ключи SSH и команды профилей. Восстанавливайте только свою копию из доверенного места.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 for (s in present) {
                     val title = if (s.id == AppBackup.SECRETS) "${AppBackups.SECRETS_TITLE} (${s.secrets.size})" else known[s.id]?.title ?: "${s.id} — неизвестен этой версии"
                     val what = if (s.id == AppBackup.SECRETS) "записываются сразу, поверх нынешних с тем же именем" else known[s.id]?.what.orEmpty()
@@ -376,7 +380,7 @@ private fun EraseDialog(rows: List<AppSecrets.Row>, onCancel: () -> Unit, onEras
 /**
  * Ключ SSH в копии (D-184): переносимый — уходит в копию под паролем; прежний внутри
  * Keystore не извлекается — его можно сменить на новый переносимый (строку на ПК и в
- * Termux тогда нужно заменить).
+ * SSH-targets тогда нужно заменить).
  */
 @Composable
 private fun PortableSshRow(refresh: Int, onChanged: () -> Unit) {
@@ -390,7 +394,7 @@ private fun PortableSshRow(refresh: Int, onChanged: () -> Unit) {
         null -> return
         true -> Text("Ключ SSH приложения — переносимый: уходит в копию под паролем.", style = MaterialTheme.typography.bodySmall)
         false -> {
-            Text("Ключ SSH приложения — прежний, внутри Keystore: в копию не уходит. Новый переносимый ключ уйдёт в неё, но строку ключа на ПК и в Termux нужно будет заменить.",
+            Text("Ключ SSH приложения — прежний, внутри Keystore: в копию не уходит. Новый переносимый ключ уйдёт в неё, но строку ключа на SSH-targets нужно будет заменить.",
                 style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = { confirm = true }) { Text("Новый переносимый ключ SSH…") }
         }
@@ -399,14 +403,14 @@ private fun PortableSshRow(refresh: Int, onChanged: () -> Unit) {
         Text(l, style = MaterialTheme.typography.bodySmall)
         TextButton(onClick = {
             context.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(android.content.ClipData.newPlainText("ключ SSH", l))
-            note = "Строка скопирована — добавьте её в ~/.ssh/authorized_keys на ПК и в Termux"
+            note = "Строка скопирована — добавьте её в ~/.ssh/authorized_keys на SSH-targets"
         }) { Text("Скопировать строку ключа") }
     }
     note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     if (confirm) AlertDialog(
         onDismissRequest = { confirm = false },
         title = { Text("Новый ключ SSH") },
-        text = { Text("Прежний ключ будет стёрт: подключения к ПК и Termux перестанут работать, пока вы не добавите новую строку ключа в authorized_keys.") },
+        text = { Text("Прежний ключ будет стёрт: подключения к SSH-targets перестанут работать, пока вы не добавите новую строку ключа в authorized_keys.") },
         confirmButton = {
             TextButton(onClick = {
                 confirm = false

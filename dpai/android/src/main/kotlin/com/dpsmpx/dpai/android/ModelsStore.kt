@@ -14,6 +14,11 @@ import com.dpsmpx.dpai.core.ids.AccountId
 import com.dpsmpx.dpai.core.ids.CorrelationId
 import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
+import com.dpsmpx.dpai.core.hashing.Hashing
+import com.dpsmpx.dpai.core.serialization.CanonicalJson
+import com.dpsmpx.dpai.ui.ProjectEntry
+import com.dpsmpx.dpai.ui.TargetBook
+import com.dpsmpx.dpai.ui.TargetEntry
 import com.dpsmpx.dpai.core.measure.Measure
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.JsonObject
@@ -55,10 +60,11 @@ import kotlinx.coroutines.launch
 object ModelsStore {
     private const val PROFILES = "api-profiles"
     private const val CHATS = "api-chats"
+    private const val CHAT_FULL_ACCESS = "dpai.chat-full-access"
     private const val ROUTINES = "routines"
 
     /** Ответ, который идёт сейчас: текст до сих пор и отмена. */
-    data class Running(val text: String, val cancel: Cancel)
+    data class Running(val text: String, val cancel: Cancel, val actions: List<String> = emptyList())
 
     private lateinit var app: Context
     private var docs: DocumentStore? = null
@@ -90,6 +96,10 @@ object ModelsStore {
         profileFlow.value = read(d, PROFILES, "профили") { ApiProfileBook.fromJson(it) }.orEmpty()
         chatFlow.value = read(d, CHATS, "переписка") { ChatBook.fromJson(it) }.orEmpty()
         routineFlow.value = read(d, ROUTINES, "маршруты") { RoutineBook.fromJson(it) }.orEmpty()
+        val interrupted = chatFlow.value.map { c ->
+            if (c.project != null && c.entries.lastOrNull()?.role == ChatRole.USER) c.plus(ChatEntry(ChatRole.ASSISTANT, app.getString(R.string.api_work_interrupted), status = EntryStatus.CANCELLED)) else c
+        }
+        if (interrupted != chatFlow.value) writeChats(interrupted)
         readyFlow.value = true
     }
 
@@ -187,7 +197,7 @@ object ModelsStore {
         if (d.write(PROFILES, ApiProfileBook.toJson(next)) is Outcome.Success) profileFlow.value = next
         ApiKeys.remove(app, id)
         ApiKeys.removeNamed(app, adminName(id))
-        chatFlow.value.filter { it.profile == id }.forEach { c -> runningFlow.value[c.id]?.cancel?.cancel() }
+        chatFlow.value.filter { it.profile == id }.forEach { c -> revokeChatFullAccess(c.id) }
         writeChats(chatFlow.value.filter { it.profile != id })
     }
 
@@ -229,15 +239,94 @@ object ModelsStore {
     /** Новый разговор — в списке сразу, в файле — с первой репликой; пустой разговор профиля — переиспользуется. */
     @Synchronized
     fun newChat(profile: ApiProfile): Conversation {
-        chatFlow.value.firstOrNull { it.profile == profile.id && it.entries.isEmpty() }?.let { return it }
+        chatFlow.value.firstOrNull { it.profile == profile.id && it.project == null && it.entries.isEmpty() }?.let { return it }
         val c = Conversation(ids.next(IdKinds.CORRELATION), profile.id, "", emptyList())
         chatFlow.value = chatFlow.value + c
         return c
     }
 
+    /** Разговор выбранной пары профиль/проект; обычная переписка в него не переносится. */
+    @Synchronized
+    fun newProjectChat(profile: ApiProfile, project: com.dpsmpx.dpai.core.ids.ProjectId): Conversation {
+        chatFlow.value.lastOrNull { it.profile == profile.id && it.project == project }?.let { return it }
+        val c = Conversation(ids.next(IdKinds.CORRELATION), profile.id, "", emptyList(), project)
+        chatFlow.value = chatFlow.value + c
+        return c
+    }
+
+    /**
+     * Подтверждение делегирования не содержится в запросе модели и не берётся из её текста.
+     * В приватных preferences хранится только отпечаток связки проект/target (D-218).
+     */
+    private fun fullAccessPreferences() = app.getSharedPreferences(CHAT_FULL_ACCESS, Context.MODE_PRIVATE)
+
+    private fun accessScope(project: ProjectEntry, target: TargetEntry): String =
+        "v1:sha256:" + Hashing.sha256(listOf(project.project.value, project.root, project.worktreeRoot, project.integrationBranch,
+            CanonicalJson.write(TargetBook.toJson(listOf(target)))).joinToString("\u0000")).hex
+
+    private fun accessContext(chat: CorrelationId): Pair<ProjectEntry, TargetEntry>? {
+        val linked = chatFlow.value.firstOrNull { it.id == chat }?.project ?: return null
+        val controller = Controller.get(app.filesDir)
+        val project = controller.projects().projects.firstOrNull { it.project == linked } ?: return null
+        val target = controller.targets().firstOrNull { it.id == project.target } ?: return null
+        return project to target
+    }
+
+    @Synchronized
+    fun chatFullAccessScope(chat: CorrelationId): String? =
+        accessContext(chat)?.let { (project, target) -> accessScope(project, target) }
+
+    @Synchronized
+    fun chatFullAccess(chat: CorrelationId): Boolean {
+        val (project, target) = accessContext(chat) ?: return false
+        return fullAccessPreferences().getString(chat.value, null) == accessScope(project, target)
+    }
+
+    /** Только оболочка UI вызывает после PIN/биометрии и точного имени; API-инструмента нет. */
+    @SuppressLint("ApplySharedPref")
+    @Synchronized
+    fun enableChatFullAccess(chat: CorrelationId, typedName: String, expectedScope: String): Boolean {
+        val (project, target) = accessContext(chat) ?: return false
+        if (typedName != project.root.trimEnd('/').substringAfterLast('/') || expectedScope != accessScope(project, target)) return false
+        val stored = fullAccessPreferences().edit().putString(chat.value, expectedScope).commit()
+        if (!stored) return false
+        if (!writeChats(chatFlow.value)) {
+            fullAccessPreferences().edit().remove(chat.value).commit()
+            return false
+        }
+        AppLogs.get(app).info("ai", "Полный доступ к проектному API-чату включён человеком")
+        return true
+    }
+
+    /** Проверяется брокером и повторно при consume; сам агент изменить грант не может. */
+    @Synchronized
+    fun fullAccessFor(owner: String, project: ProjectEntry, target: TargetEntry): Boolean {
+        if (!owner.startsWith("chat:")) return false
+        val chat = IdKinds.CORRELATION.parse(owner.removePrefix("chat:")).valueOrNull() ?: return false
+        if (chatFlow.value.none { it.id == chat && it.project == project.project }) return false
+        // Сравниваем также с текущей конфигурацией контроллера: runtime мог
+        // удерживать старый снимок проекта/target после их изменения в UI.
+        val (currentProject, currentTarget) = accessContext(chat) ?: return false
+        val requestedScope = accessScope(project, target)
+        if (requestedScope != accessScope(currentProject, currentTarget)) return false
+        return fullAccessPreferences().getString(chat.value, null) == requestedScope
+    }
+
+    @SuppressLint("ApplySharedPref")
+    @Synchronized
+    fun revokeChatFullAccess(chat: CorrelationId) {
+        if (!fullAccessPreferences().edit().remove(chat.value).commit()) {
+            problemFlow.value = "не удалось отозвать полный доступ: запись настроек отказала"
+            return
+        }
+        runningFlow.value[chat]?.cancel?.cancel()
+        writeChats(chatFlow.value)
+        AppLogs.get(app).info("ai", "Полный доступ к проектному API-чату отозван человеком")
+    }
+
     @Synchronized
     fun deleteChat(id: CorrelationId) {
-        runningFlow.value[id]?.cancel?.cancel()
+        revokeChatFullAccess(id)
         writeChats(chatFlow.value.filter { it.id != id })
     }
 
@@ -247,12 +336,16 @@ object ModelsStore {
     }
 
     @Synchronized
-    private fun writeChats(next: List<Conversation>) {
+    private fun writeChats(next: List<Conversation>): Boolean {
         chatFlow.value = next
-        // Пустые разговоры не пишутся: «новый чат» без реплики не переживает перезапуск.
-        docs?.write(CHATS, ChatBook.toJson(next.filter { it.entries.isNotEmpty() }))?.let { w ->
-            if (w is Outcome.Failure) problemFlow.value = "переписка не сохранена: ${w.errors.first().message}"
+        // Только чат с явным постоянным грантом переживает рестарт даже до первой реплики.
+        val persistent = next.filter { it.entries.isNotEmpty() || (it.project != null && fullAccessPreferences().contains(it.id.value)) }
+        val written = docs?.write(CHATS, ChatBook.toJson(persistent)) ?: return false
+        if (written is Outcome.Failure) {
+            problemFlow.value = "переписка не сохранена: ${written.errors.first().message}"
+            return false
         }
+        return true
     }
 
     /**
@@ -260,6 +353,7 @@ object ModelsStore {
      * неудачный, остаётся в переписке с пометкой, но в следующий запрос не
      * уходит (`Conversation.context`). Итог — текст отказа до отправки или `null`.
      */
+    @Synchronized
     fun send(conversationId: CorrelationId, text: String): String? {
         val conv = chatFlow.value.firstOrNull { it.id == conversationId } ?: return "разговор не найден"
         val profile = profileFlow.value.firstOrNull { it.id == conv.profile } ?: return "профиль разговора удалён"
@@ -267,18 +361,33 @@ object ModelsStore {
         // Сервер телефона не запущен — на его порту может слушать кто угодно (T18): не спрашивать.
         if (LocalModel.isOwn(app, profile) && !LocalModel.usable(profile)) return "сервер llama.cpp на телефоне не запущен: вкладка Linux → «Запустить»"
         if (conversationId in runningFlow.value) return "ответ ещё идёт"
+        val selectedProvider = provider(profile)
         val withUser = conv.plus(ChatEntry(ChatRole.USER, text)).let { if (it.title.isBlank()) it.copy(title = Conversation.title(text)) else it }
         upsert(withUser)
         val cancel = Cancel()
         runningFlow.update { it + (conversationId to Running("", cancel)) }
         scope.launch {
             val sb = StringBuilder()
-            val request = ChatRequest(profile.model, withUser.context(), null, profile.maxOutputTokens)
+            val onText: (String) -> Unit = { piece ->
+                sb.append(piece)
+                runningFlow.update { m -> m[conversationId]?.let { m + (conversationId to it.copy(text = sb.toString())) } ?: m }
+            }
             val r = runCatching {
-                provider(profile).chat(request, cancel) { piece ->
-                    sb.append(piece)
-                    val now = sb.toString()
-                    runningFlow.update { m -> if (conversationId in m) m + (conversationId to Running(now, cancel)) else m }
+                val project = withUser.project
+                if (project == null) selectedProvider.chat(ChatRequest(profile.model, withUser.context(), null, profile.maxOutputTokens), cancel, onText)
+                else when (val opened = ApiProjectRuntime.open(app, project, EnvironmentApprovalBroker.chat(conversationId.value))) {
+                    is Outcome.Failure -> opened
+                    is Outcome.Success -> {
+                        val tools = selectedProvider as? com.dpsmpx.dpai.providers.ToolChat
+                        if (tools == null) Outcome.failure(DiagCode.UNSUPPORTED, "провайдер не поддерживает проектные инструменты")
+                        else opened.value.use { session -> tools.chatWithTools(ChatRequest(profile.model, withUser.context(), session.system(), profile.maxOutputTokens), session.tools, cancel, onText) { call ->
+                            val result = session.run(call, cancel)
+                            val path = ((call.input["path"] as? com.dpsmpx.dpai.core.serialization.JsonString)?.value ?: "").take(200)
+                            val action = app.getString(if (result.isError) R.string.api_work_action_failed else R.string.api_work_action_ok, call.name, path)
+                            runningFlow.update { m -> m[conversationId]?.let { m + (conversationId to it.copy(actions = (it.actions + action).takeLast(64))) } ?: m }
+                            result
+                        } }
+                    }
                 }
             }.getOrElse { e -> Outcome.failure(DiagCode.INTERNAL_ERROR, "сбой: ${e.javaClass.simpleName}", profile.kind.key) }
             val entry = when (r) {
@@ -294,7 +403,9 @@ object ModelsStore {
             }
             synchronized(this@ModelsStore) {
                 val latest = chatFlow.value.firstOrNull { it.id == conversationId }
-                if (latest != null) upsert(latest.plus(entry))
+                val actions = runningFlow.value[conversationId]?.actions.orEmpty()
+                val recorded = if (actions.isEmpty()) entry else entry.copy(text = entry.text + "\n\n" + app.getString(R.string.api_work_actions, actions.joinToString("\n")))
+                if (latest != null) upsert(latest.plus(recorded))
             }
             runningFlow.update { it - conversationId }
         }

@@ -14,9 +14,7 @@ class SetupGuideTest {
         val commands = all.flatMap { it.steps }.mapNotNull { it.command }
         assertTrue(commands.isNotEmpty())
         assertTrue(commands.none { '\n' in it }, "команда в несколько строк рвётся при вставке")
-        val keyLine = all.single { it.id == "key" }.steps.single().command!!
-        assertTrue("echo 'from=\"127.0.0.1,::1\" $key' >> ~/.ssh/authorized_keys" in keyLine, keyLine)
-        assertTrue(all.single { it.id == "agent" }.steps.any { it.action == GuideAction.SAVE_AGENT })
+        assertTrue(all.single { it.id == "pc" }.steps.any { it.action == GuideAction.SAVE_AGENT })
         val pc = all.single { it.id == "pc" }.steps.mapNotNull { it.command }
         assertTrue(pc.any { "from=\"${PcSetup.PRIVATE_NETS}\" $key" in it }, "команда ПК — с ключом приложения")
         val noKey = SetupGuide.sections(SetupState()).single { it.id == "pc" }.steps
@@ -31,7 +29,7 @@ class SetupGuideTest {
         assertEquals(true, done["target"])
         assertEquals(false, done["login"])
         assertEquals(false, done["cli"])
-        assertEquals(null, done["termux"], "что приложение проверить не может — без отметки")
+        assertEquals(null, done["pc-linux"], "шаги на чужом ПК без подтверждения не объявляются выполненными")
     }
 
     /** Выбор пути — первым разделом (AI:A-17): Linux в приложении — три шага с командой npm. */

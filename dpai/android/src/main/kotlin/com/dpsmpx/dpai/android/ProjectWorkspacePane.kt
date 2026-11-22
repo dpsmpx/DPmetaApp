@@ -45,8 +45,9 @@ import com.dpsmpx.dpai.ui.WorkspacePaths
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 
-private enum class WorkspacePage(val title: String) { FILES("Файлы"), AI("ИИ"), CHANGES("Изменения"), CHECKS("Проверки"), BUILD("Сборка"), RUN("Запуск") }
+private enum class WorkspacePage(val title: String, val label: Int? = null) { FILES("Файлы"), AI("ИИ"), CHANGES("Изменения"), CHECKS("Проверки"), BUILD("Сборка"), RUN("Запуск"), DEPENDENCIES("", R.string.dependencies_title), AUTOMATIONS("", R.string.automation_title) }
 
 /** Первый общий рабочий экран: представление одного настроенного проекта (D-132). */
 @Composable
@@ -98,6 +99,13 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
     // «В ИИ» из редактора (D-165): выбранная задача — направление «в сессию».
     aiRequest?.let { req -> EditorAiSheet(model, current.project, selected, req) { aiRequest = null } }
     val zen = ideZen()
+    val context = LocalContext.current
+    var environment by rememberSaveable(project.project.value) { mutableStateOf(false) }
+    if (environment) {
+        androidx.activity.compose.BackHandler { environment = false }
+        EnvironmentScreen(onBack = { environment = false }, controller = Controller.get(context.filesDir), model = model)
+        return
+    }
     Column(Modifier.fillMaxSize()) {
         if (!zen) {
         Row(Modifier.fillMaxWidth()) {
@@ -135,7 +143,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
             }
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
-            for (p in WorkspacePage.entries) FilterChip(selected = page == p.name, onClick = { page = p.name }, label = { Text(p.title) })
+            for (p in WorkspacePage.entries) FilterChip(selected = page == p.name, onClick = { page = p.name }, label = { Text(p.label?.let { androidx.compose.ui.res.stringResource(it) } ?: p.title) })
         }
         }
         }
@@ -144,10 +152,11 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
                 WorkspacePage.FILES.name -> if (location == null) Text("У задачи ещё нет доступного рабочего дерева", Modifier.padding(12.dp)) else {
                     // Файлы проекта: ИИ-дополнение берёт источник и согласие проекта (D-170).
                     androidx.compose.runtime.CompositionLocalProvider(LocalAiCompletion provides AiCompletionPlace(model, project)) {
-                        WorkspaceFiles(model, current, location, readOnly = current.paused || !current.ready || selected?.owner != null, modifier = Modifier.weight(1f), onAi = { aiRequest = it })
+                        WorkspaceFiles(model, current, location, readOnly = current.paused || current.pendingEdit || !current.ready || selected?.owner != null, modifier = Modifier.weight(1f), onAi = { aiRequest = it })
                     }
                 }
                 WorkspacePage.AI.name -> Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
+                    TextButton(onClick = { ApiQuickStartRequests.request(project = project.project.value) }) { Text(androidx.compose.ui.res.stringResource(R.string.api_work_title)) }
                     if (selected == null) Text("Выберите задачу контура, чтобы открыть её чат и действия") else {
                         Text("${selected.title} · ${Words.task(selected.state)}")
                         selected.session?.let { s -> TextButton(onClick = { onSession(s.value) }) { Text("Открыть чат ИИ") } }
@@ -159,6 +168,23 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
                     if (selected == null) Text("Выберите задачу: её изменения сравниваются с веткой интеграции") else ChangesSection(model, selected.id)
                 }
                 WorkspacePage.RUN.name -> WorkspaceRunPanel(model, current, location)
+                WorkspacePage.AUTOMATIONS.name -> if (taskKey != null) Column(Modifier.padding(12.dp)) {
+                    Text(androidx.compose.ui.res.stringResource(R.string.automation_main_tree))
+                    TextButton(onClick = { taskKey = null }) { Text(androidx.compose.ui.res.stringResource(R.string.automation_select_main)) }
+                } else AutomationCenter(project) { definition ->
+                    when (definition.source) {
+                        com.dpsmpx.dpai.automation.AutomationSource.PULT -> AutomationBridge.openPult?.invoke(context)
+                        com.dpsmpx.dpai.automation.AutomationSource.ENVIRONMENT -> environment = true
+                        com.dpsmpx.dpai.automation.AutomationSource.VERIFICATION -> { page = WorkspacePage.AI.name; if (selected != null) taskSheet = true }
+                        com.dpsmpx.dpai.automation.AutomationSource.MANUAL -> page = when (definition.id) {
+                            "manual.check" -> WorkspacePage.CHECKS.name
+                            "manual.build" -> WorkspacePage.BUILD.name
+                            "manual.dependencies" -> WorkspacePage.DEPENDENCIES.name
+                            else -> WorkspacePage.RUN.name
+                        }
+                    }
+                }
+                WorkspacePage.DEPENDENCIES.name -> WorkspaceDependenciesPanel(model, current, location)
                 WorkspacePage.CHECKS.name, WorkspacePage.BUILD.name -> {
                     val kind = if (page == WorkspacePage.CHECKS.name) com.dpsmpx.dpai.ui.ManualProfileKind.CHECK else com.dpsmpx.dpai.ui.ManualProfileKind.BUILD
                     // Место из вывода — во вкладку «Файлов» этого дерева (D-153): запрос ждёт панель дерева, страница переключается.
@@ -184,8 +210,8 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
     }
     val remote = remember(view.project, location) { if (pc) com.dpsmpx.dpai.jsch.ReopeningSftpTree { model.pcFiles(target, location.path, writable = true) } else null }
     androidx.compose.runtime.DisposableEffect(remote) { onDispose { remote?.let { r -> Thread({ r.close() }, "dpai-sftp-close").start() } } }
+    val inner: FileTree = remember(view.project, location) { remote ?: SubTree(GuestPaths.homeTree(context), prefix!!) }
     val tree = remember(view.project, location) {
-        val inner: FileTree = remote ?: SubTree(GuestPaths.homeTree(context), prefix!!)
         object : FileTree {
             override fun list(dir: String) = model.workspaceAccess(view.project, location, false) { inner.list(dir) }
             override fun read(path: String, maxBytes: Long) = model.workspaceAccess(view.project, location, false) { inner.read(path, maxBytes) }
@@ -199,6 +225,10 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
             override fun delete(path: String) = Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "удаление из рабочего экрана пока недоступно")
         }
     }
+    LaunchedEffect(location) {
+        val reloaded = withContext(Dispatchers.IO) { Drafts.reloadWorkspace(location, tree, target?.inApp == true) }
+        if (reloaded is Outcome.Failure) AppLogs.info(context, "файлы проекта", reloaded.diagnostics.first().message)
+    }
     var dir by rememberSaveable(location.key) { mutableStateOf("") }
     val openFiles = rememberOpenEditorFiles(location.key)
     val tabStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
@@ -207,6 +237,54 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
     var error by remember(location, dir) { mutableStateOf<String?>(null) }
     var refresh by remember { mutableStateOf(0) }
     var searching by rememberSaveable(location.key) { mutableStateOf(false) }
+    val editScope = androidx.compose.runtime.rememberCoroutineScope()
+    var editCopy by remember(location) { mutableStateOf<com.dpsmpx.dpai.ui.WorkspaceChangeCopy?>(null) }
+    var copyError by remember(location) { mutableStateOf<String?>(null) }
+    var recovering by remember(location) { mutableStateOf(false) }
+    var applyingChange by remember(location) { mutableStateOf(false) }
+    fun completed() { refresh++ }
+    val apiChanged by ApiProjectRuntime.changed.collectAsState()
+    LaunchedEffect(apiChanged) { if (apiChanged > 0) refresh++ }
+    val editPlace = remember(view.project, location, tree) {
+        ProjectEditPlace(tree, location.path, { Drafts.dirtyIn(location, target?.inApp == true) }, { plan ->
+            val result = model.workspaceChange(view.project, location) { changes -> changes.apply(view.project.project.value, location.key, inner, plan) }
+            val reloaded = Drafts.reloadWorkspace(location, tree, target?.inApp == true)
+            if (result is Outcome.Failure) result else reloaded
+        }, ::completed)
+    }
+    LaunchedEffect(location, refresh) {
+        when (val result = withContext(Dispatchers.IO) { model.workspaceCopy(view.project) }) {
+            is Outcome.Failure -> { copyError = result.diagnostics.first().message; editCopy = null }
+            is Outcome.Success -> { editCopy = result.value; copyError = null }
+        }
+    }
+    if (recovering) androidx.compose.material3.AlertDialog(onDismissRequest = { if (!applyingChange) recovering = false },
+        title = { Text(androidx.compose.ui.res.stringResource(R.string.project_edit_recovery)) },
+        text = { Text(copyError ?: androidx.compose.ui.res.stringResource(if (editCopy?.pending == true) R.string.project_edit_interrupted else R.string.project_edit_undo_hint)) },
+        confirmButton = {
+            fun run(after: Boolean?) {
+                applyingChange = true
+                editScope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        val changed = model.workspaceChange(view.project, location, recovering = editCopy?.pending == true) { changes ->
+                            if (after == null) changes.undo(view.project.project.value, location.key, inner)
+                            else changes.recover(view.project.project.value, location.key, inner, after)
+                        }
+                        val reloaded = Drafts.reloadWorkspace(location, tree, target?.inApp == true)
+                        if (changed is Outcome.Failure) changed else reloaded
+                    }
+                    applyingChange = false
+                    if (result is Outcome.Success) { recovering = false; completed() }
+                    else copyError = (result as Outcome.Failure).diagnostics.first().message
+                }
+            }
+            Column {
+                if (editCopy?.pending == true) {
+                    TextButton(enabled = !applyingChange, onClick = { run(false) }) { Text(androidx.compose.ui.res.stringResource(R.string.project_edit_restore)) }
+                    TextButton(enabled = !applyingChange, onClick = { run(true) }) { Text(androidx.compose.ui.res.stringResource(R.string.project_edit_complete)) }
+                } else if (editCopy?.applied == true) TextButton(enabled = !applyingChange, onClick = { run(null) }) { Text(androidx.compose.ui.res.stringResource(R.string.project_edit_undo)) }
+            }
+        }, dismissButton = { TextButton(enabled = !applyingChange, onClick = { recovering = false }) { Text(androidx.compose.ui.res.stringResource(android.R.string.cancel)) } })
     LaunchedEffect(location, dir, refresh) {
         when (val r = withContext(Dispatchers.IO) { tree.list(dir) }) {
             is Outcome.Success -> { entries = r.value; error = null }
@@ -215,15 +293,16 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
     }
     androidx.activity.compose.BackHandler(enabled = file == null && dir.isNotEmpty()) { dir = FileNames.parent(dir) }
     Column(modifier.fillMaxWidth()) {
+        if (editCopy?.pending == true || copyError != null) TextButton(onClick = { recovering = true }) { Text(androidx.compose.ui.res.stringResource(R.string.project_edit_recovery)) }
         EditorTabsBar(openFiles) { path -> "file:workspace:${location.key}\u0001$path" }
         val path = file
         if (path != null) tabStates.SaveableStateProvider(path) {
             // У дерева ПК нет пути в Linux приложения: службы, запуск файла и отладка из редактора — у деревьев Linux (D-131).
             // Дерево на ПК — предпросмотр интерфейсов может рисовать на самом ПК (D-169).
-            androidx.compose.runtime.CompositionLocalProvider(LocalPcPreview provides if (pc) PcPreviewPlace(model, target, location.path, view.project, location) { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } } else null) {
-                TreeFileView(tree, "workspace:${location.key}", path, readOnly, guestPath = if (pc) null else "${location.path.trimEnd('/')}/$path",
+            androidx.compose.runtime.CompositionLocalProvider(LocalProjectEdits provides if (pc) null else editPlace, LocalPcPreview provides if (pc) PcPreviewPlace(model, target, location.path, view.project, location) { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } } else null) {
+                androidx.compose.runtime.key(refresh) { TreeFileView(tree, "workspace:${location.key}", path, readOnly, guestPath = if (pc) null else "${location.path.trimEnd('/')}/$path",
                     onBrowse = { openFiles.finishedBrowse(path) }, onNext = openFiles::next, onActions = { openFiles.ready(path, it) }, guestRoot = if (pc) null else location.path.trimEnd('/').ifEmpty { "/" }, editorRootKey = location.key,
-                    runGuard = { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } }, onOpen = openFiles::openAt, onAi = onAi) { openFiles.close(path) }
+                    runGuard = { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } }, onOpen = openFiles::openAt, onAi = onAi) { openFiles.close(path) } }
             }
         } else if (searching) {
             TreeSearchPanel(tree, dir, "workspace:${location.key}", onOpen = { searching = false; openFiles.open(it) }, onOpenAt = { found, line -> searching = false; openFiles.openAt(found, line) },
@@ -233,6 +312,7 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
                     else -> null
                 }) { searching = false }
         } else {
+            if (editCopy?.applied == true && editCopy?.root == location.key) TextButton(onClick = { recovering = true }) { Text(androidx.compose.ui.res.stringResource(R.string.project_edit_undo)) }
             Row {
                 TextButton(enabled = dir.isNotEmpty(), onClick = { dir = FileNames.parent(dir) }) { Text("Вверх") }
                 Text(if (dir.isEmpty()) "/" else dir, Modifier.weight(1f).padding(12.dp))

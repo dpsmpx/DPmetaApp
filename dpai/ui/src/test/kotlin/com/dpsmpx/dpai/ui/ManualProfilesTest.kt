@@ -88,6 +88,10 @@ class ManualProfilesTest {
         fun sample(name: String) = (com.dpsmpx.dpai.core.serialization.JsonParser().parse(javaClass.getResource("/manual-profiles/$name.json")!!.readText()).valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject)
         assertEquals(ManualProfileKind.CHECK, ManualProfile.read(sample("check-v1"))!!.kind)
         assertEquals(null, ManualProfile.read(sample("unknown-version")))
+        val dependencies = ManualProfile.read(sample("dependencies-v5"))!!
+        assertEquals(ManualProfileKind.DEPENDENCIES, dependencies.kind)
+        assertEquals(dependencies, ManualProfile.read(dependencies.toJson()))
+        assertEquals(null, ManualProfile.read(JsonObject(dependencies.toJson().fields + ("version" to JsonNumber.of(4)))))
         assertEquals(listOf("Настройка", "Сборка"), ManualProfile.read(sample("build-v2"))!!.steps.map { it.name })
     }
 
@@ -116,6 +120,21 @@ class ManualProfilesTest {
         assertFalse(restored.stop(host.client()))
         assertFalse(store().blocked)
         assertEquals(1, host.starts)
+    }
+
+    @Test fun failedPreflightKeepsCauseWithoutPretendingCommandRanOrUserStoppedIt() {
+        val s = store()
+        val run = s.prepare(project, target, location, profile).valueOrNull()!!
+        val host = Host()
+        assertFalse(s.failBeforeLaunch(host.client(), "фактическая ветка work отличается от main"))
+        val view = s.snapshot()
+        assertEquals(run.id, view.finished)
+        assertFalse(view.complete)
+        assertTrue(view.results.isEmpty())
+        assertTrue(view.note.contains("до запуска команды"))
+        assertTrue(view.note.contains("фактическая ветка work"))
+        assertEquals(0, host.starts)
+        assertEquals(ManualOutcome.FAILED, s.history(project).valueOrNull()!!.single().outcome)
     }
 
     @Test fun lostSupervisorPendingStopAndSurvivorsDoNotReleaseProject() {

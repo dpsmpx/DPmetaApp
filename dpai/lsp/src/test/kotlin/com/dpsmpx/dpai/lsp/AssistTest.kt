@@ -53,6 +53,14 @@ class AssistTest {
     }
 
     @Test
+    fun completionFilterDefaultsToLabelEvenWhenInsertionIsDeferredOrQualified() {
+        val deferred = item("LocalDate", insert = "")
+        val qualified = item("Widget", insert = "demo.Widget")
+        assertEquals(listOf(deferred), Assist.filter(listOf(deferred, qualified), "LocalDa"))
+        assertEquals(listOf(qualified), Assist.filter(listOf(deferred, qualified), "Wi"))
+    }
+
+    @Test
     fun marksCoverRangesAndStayVisible() {
         val text = "int x\nreturn;\n"
         val d = { r: TextEdit, s: LspSeverity -> LspDiagnostic(r.range, s, null, null, "m") }
@@ -133,6 +141,15 @@ class AssistTest {
         val f = Assist.fixes(actions)
         assertEquals(listOf("a: insert ;", "b: add include"), f.applicable.map { it.title })
         assertEquals(1, f.commands)
+    }
+
+    @Test
+    fun fixAllRequiresTheObservedVersionOfTheOriginatingService() {
+        val fix = WorkspaceEdit(mapOf(here to listOf(edit(0, 0, 0, 1, "b"))), mapOf(here to 4))
+        val actions = listOf(listOf(CodeAction("fix", "quickfix", fix, true)))
+        assertEquals(0, Assist.fixAll(here, actions).fixed)
+        assertEquals(0, Assist.fixAll(here, actions) { 3 }.fixed)
+        assertEquals(1, Assist.fixAll(here, actions) { 4 }.fixed)
     }
 
     /** «Исправить всё без ИИ» (D-187): только ★ этого файла, без пересечений, одинаковая правка — раз. */

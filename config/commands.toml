@@ -1,87 +1,15 @@
-# Реестр команд пульта (ТЗ, F-40, F-43, приложение Б; D-82).
-#
-# Команды идут в Linux-среде приложения, в клоне проекта
-# /root/projects/<владелец>/<имя> (D-113; прежний /root/repos — ссылка); у подсистемы (строка реестра DPmeta с `dir`) —
-# в её каталоге клона DPmetaApp. Произвольной команды нет: только эти.
-#
-#   project   имя из реестра DPmeta или "*" — проект выбирается на экране
-#   workdir   каталог внутри проекта, без «..»; нет — корень проекта
-#   path      абсолютный путь гостя (/bin/…, /usr/bin/…) или путь от workdir
-#   args      строки как есть, без оболочки и подстановок
-#   plan      foreground | background — для моста Termux (F-41)
-#   level     0 — чтение (запись только в build/), 1 — правка рабочего дерева клона
-#   packages  пакеты Alpine, без которых команда не идёт
-#   expect    что ждать на выходе — строка для экрана
-#   timeout   минуты, 1…30
-#
-# Те же команды идут и в Termux (F-41, F-42; D-84): клон — в папке проектов
-# Termux (<папка>/<имя>), программа гостя из /bin, /usr/bin — из $PREFIX/bin
-# Termux, аргумент /root/projects (и прежний /root/repos) — папка проектов; другие пути /root/… — не для Termux.
-#
-# Новая команда — правка этого файла; его проверяет tools/check (проверка commands).
-# Команд SocialMediaImage нет, пока сайт на паузе (SocialMediaImage:Д52).
+# Реестр команд пульта (ТЗ, F-40, F-43; D-82, D-176).
+# Команды идут в клоне выбранного проекта пользователя.
+# project — только "*": проект выбирается на экране; привязки к проектам автора запрещены (D-176).
+# workdir — каталог внутри проекта без «..»; нет — корень проекта.
+# path — путь гостя /bin, /usr/bin, /usr/local/bin или путь от workdir.
+# args — строки без оболочки и подстановок; plan — foreground | background.
+# level — 0 (чтение) или 1 (правка дерева); packages — пакеты Alpine.
+# expect — ожидаемый вывод; timeout — минуты, 1…30.
+# Мост Termux снят D-173; plan читается для совместимости прежнего schema=1.
+# Новая команда — правка файла с проверкой tools/check (config.commands).
 
 schema = 1
-
-[[command]]
-id = "dpmeta.check"
-title = "Проверки DPmeta"
-project = "DPmeta"
-path = "/bin/bash"
-args = ["tools/check.sh"]
-plan = "background"
-level = 0
-packages = ["bash", "python3", "git"]
-expect = "строки ✓ и ✗ по шагам; код 0 — всё зелёное"
-timeout = 10
-
-[[command]]
-id = "dpmeta.activity"
-title = "Кто работает — по клонам"
-project = "DPmeta"
-path = "/usr/bin/python3"
-args = ["tools/activity.py", "--root", "/root/projects"]
-plan = "background"
-level = 0
-packages = ["python3", "git"]
-expect = "отчёт Markdown: последний коммит, ветки с невлитой работой, итог по репозиторию"
-timeout = 5
-
-[[command]]
-id = "dpprofile.quick"
-title = "Быстрые проверки DPprofile (компонент SocialMediaImage)"
-project = "SocialMediaImage"
-path = "/bin/bash"
-args = ["dpprofile/tools/verify/run.sh", "--quick"]
-plan = "background"
-level = 0
-packages = ["bash", "python3", "git"]
-expect = "строки ✓ и ✗ по шагам; код 0 — всё прошло"
-timeout = 10
-
-[[command]]
-id = "dpvisualisation.static"
-title = "Проверки DPvisualisation (static)"
-project = "DPvisualisation"
-path = "/bin/sh"
-args = ["tools/check/run.sh"]
-plan = "background"
-level = 0
-packages = ["python3", "git"]
-expect = "итог проверок; код 0 — прошло, 1 — находки, 3 — сбой окружения"
-timeout = 10
-
-[[command]]
-id = "dplearn.next"
-title = "План сессии DPlearn"
-project = "DPlearn"
-path = "/usr/bin/python3"
-args = ["tools/dpl", "next", "--brief"]
-plan = "background"
-level = 0
-packages = ["python3"]
-expect = "что делать в сессии, почему и как проверить"
-timeout = 2
 
 [[command]]
 id = "repo.ff"

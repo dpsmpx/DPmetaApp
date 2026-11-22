@@ -9,7 +9,6 @@ import com.dpsmpx.dpmeta.formats.Checklist
 import com.dpsmpx.dpmeta.formats.CommandFormat
 import com.dpsmpx.dpmeta.formats.DecisionLog
 import com.dpsmpx.dpmeta.formats.EventCatalogFormat
-import com.dpsmpx.dpmeta.formats.PanelFormat
 import com.dpsmpx.dpmeta.formats.PrDescription
 import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.formats.Roadmap
@@ -86,11 +85,6 @@ class CorpusTest {
         }
         "pr" -> PrDescription.parse(text, "").map { p ->
             "template=${p.toJson()["template"]} " + p.sections.keys.joinToString(",").ifEmpty { "-" }
-        }
-        "panel" -> PanelFormat.parse(text, "").map { p ->
-            p.project + " " + p.items.joinToString(",") { i ->
-                "${i.kind.code}:${i.path}" + (i.block?.let { "#$it" } ?: "") + (i.id?.let { "~$it" } ?: "") + (i.glob?.let { "*$it" } ?: "")
-            }
         }
         else -> fail("неизвестный формат корпуса: $format")
     }

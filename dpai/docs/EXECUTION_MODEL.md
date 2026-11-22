@@ -10,20 +10,19 @@
 Mobile Controller (android/ или cli/)
         │  протокол событий с номерами (транспорт — этап 3)
         ▼
-Execution Target  ── TERMUX_LOCAL · LINUX_SSH · WINDOWS_REMOTE · MOCK  (V1, D-26) · IN_APP (D-75)
+Execution Target  ── LINUX_SSH · WINDOWS_REMOTE · MOCK (D-26, D-202) · IN_APP (D-75)
         │  агент оркестратора на target (оболочка cli)
         ▼
 Claude runtime    ── Claude Code CLI (print, stream-json), Claude Agent SDK
 ```
 
-Транспорт к любому target — SSH (D-26): к Termux — на `127.0.0.1` того
-же телефона, к Linux и Windows — с проверкой ключа хоста. На JVM — системный
+SSH-targets — ПК с Linux и Windows, с проверкой ключа хоста (D-202).
+Loopback также допустим как обычный адрес, например для туннеля к ПК. На JVM — системный
 клиент OpenSSH (D-31); вид `LOCAL` — машина самого контроллера, тот же
 агент без SSH; `MOCK` — `MockAgentHost` без процессов (ТЗ, §89);
 `IN_APP` — Linux-среда в самом приложении, агент — в его процессе, без
-SSH (D-75, §8). Работает
-ли Claude Code в Termux на Redmi Note 13 — проверка на устройстве
-(`docs/research/CLAUDE_CODE_CLI.md`, §5; `TODO.md`).
+SSH (D-75, §8). Внешний Termux и запуск его службы сняты D-202;
+исторические результаты остаются в исследовании CLI.
 
 Поля — `docs/DATA_MODEL.md`, §3. Код — пакет `execution.target`:
 `ExecutionTarget`, `ExecutionTargetManager`, `TargetHealthTracker`,
@@ -115,6 +114,11 @@ UTF-8-локаль — из оболочки установщика строка
 `START_FAILED`). Остановленный супервизором ход несёт в событии выхода
 итог остановки — `forced` и `survivors`; по нему `stop` отвечает контроллеру,
 а не «чисто» (ревью A-10).
+На Linux состояние `Z`/`X` в `/proc` означает, что процесс уже не исполняет
+код, даже если JDK ещё считает его живым до `waitpid` родителя. Агент не
+объявляет такой процесс выжившим и не ждёт уборки чужим init. Проверка
+PID и времени старта сохраняется: у завершённого корня могут остаться
+живые потомки сеанса, которые остановка по-прежнему убирает.
 Супервизор запускается в своём сеансе (`setsid`), и на Linux и Android
 остановка хода берёт не только дерево потомков, но и процессы этого сеанса:
 ушедшие в фон (`&`, `nohup`) меняют родителя на init, но сеанс сохраняют
@@ -162,7 +166,7 @@ Windows — `AgentRuntimeTest.stopKillsBackgroundedDescendant`; протокол
 
 ## 2. Предохранитель
 
-Для внешних ресурсов (GitHub, SSH target, провайдер, Termux, сеть) —
+Для внешних ресурсов (GitHub, SSH target, провайдер, сеть) —
 предохранитель (ТЗ, §81), автомат `core`, `CircuitLifecycle`:
 
 | Из | В |
@@ -197,8 +201,8 @@ Windows — `AgentRuntimeTest.stopKillsBackgroundedDescendant`; протокол
 `cancel` — остановка процесса хода; prompt — на стандартный вход.
 `stream` — опрос канала запуска: события агента переводятся в
 `RunnerUpdate` (начало хода, событие провайдера, stderr, heartbeat, итог
-хода `ClaudeTurn`). Где работает target — local, Termux, SSH — решает
-`ProcessHost` агента, поэтому отдельные `RemoteRunner` и `TermuxRunner`
+хода `ClaudeTurn`). Где работает target — local, Linux приложения, SSH — решает
+`ProcessHost` агента, поэтому отдельные реализации ClaudeRunner для каждого транспорта
 не нужны.
 
 Реализации: `ClaudeCodeCliRunner` и `MockRunner`. `MockRunner` (ТЗ, §12,

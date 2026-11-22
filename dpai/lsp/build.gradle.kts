@@ -9,3 +9,9 @@ dependencies {
     // Живой тест с настоящим clangd запускает процесс — только через execution (D-03).
     testImplementation(project(":execution"))
 }
+
+// Живые проекты используют тот же закреплённый стек, что шаблоны приложения.
+tasks.withType<Test>().configureEach {
+    systemProperty("dpai.test.kotlin.version", libs.versions.kotlin.get())
+    systemProperty("dpai.test.agp.version", libs.versions.agp.get())
+}

@@ -14,7 +14,8 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpmeta.model.Observation
-import com.dpsmpx.dpmeta.model.Registry
+import com.dpsmpx.dpmeta.model.HistorySchema
+import com.dpsmpx.dpmeta.model.ProjectCatalog
 import com.dpsmpx.dpmeta.model.SourceFailure
 
 /**
@@ -45,21 +46,10 @@ data class SourceError(val kind: String, val code: String, val message: String, 
 /** Состояние проекта: секции источников и отказы последнего прогона. */
 data class ProjectState(
     val name: String,
-    val place: String,
     val sections: Map<String, SourceSection>,
     val errors: List<SourceError>,
-    /** Виды источников, которых у проекта нет по реестру (D-64): PR подсистемы — у DPmetaApp, журнала решений нет в реестре. */
-    val skipped: Set<String> = emptySet(),
 ) {
     private fun payload(kind: String): JsonObject? = sections[kind]?.payload as? JsonObject
-
-    private fun long(kind: String, field: String): Measure<Long> =
-        (payload(kind)?.get(field) as? JsonNumber)?.toLongExact()?.let { Measure.observed(it) }
-            ?: Measure.unknown("нет данных источника $kind")
-
-    val decisions: Measure<Long> get() = long("decisions", "count")
-    val todoOpen: Measure<Long> get() = long("todo", "open")
-    val forAuthor: Measure<Long> get() = long("todo", "forAuthor")
 
     val openPulls: Measure<Long>
         get() = (payload("pulls")?.get("pulls") as? JsonArray)?.let { Measure.observed(it.items.size.toLong()) }
@@ -120,17 +110,6 @@ data class ProjectState(
      * Доля отмеченного в ROADMAP, в процентах вниз до целого (ТЗ, §8,
      * `repo.roadmap.progress`): по шагам, а если шагов нет — по этапам.
      */
-    val roadmapPercent: Measure<Long>
-        get() {
-            val steps = long("roadmap", "stepsTotal").orNull() ?: 0L
-            val (done, total) = if (steps > 0) {
-                long("roadmap", "stepsDone").orNull() to steps
-            } else {
-                long("roadmap", "stagesDone").orNull() to long("roadmap", "stagesTotal").orNull()
-            }
-            return if (done == null || total == null || total == 0L) Measure.unknown("нет шагов и этапов ROADMAP") else Measure.observed(done * 100 / total)
-        }
-
     /**
      * «Кто работает» (F-16, `DPmeta:M-08`): коммит в `main` за
      * [Rules.MAIN_COMMIT_WINDOW] или ветка, или открытый PR, обновлённые за
@@ -168,17 +147,34 @@ data class ProjectState(
             ChecklistFile(path, false, (o["done"] as? JsonNumber)?.toLongExact() ?: 0L, (o["total"] as? JsonNumber)?.toLongExact() ?: 0L, open)
         }
 
-    /** День истории из клона (D-66): коммиты, из них ИИ и человек, в основной и только в ветках, слияния PR. */
-    data class HistoryDay(val date: String, val commits: Long, val ai: Long, val human: Long, val mainline: Long, val branchOnly: Long, val merges: Long)
+    /** v1 хранит прежнюю категорию «человек», v2 — «прочие»; числа не перекрашиваются (D-176). */
+    data class HistoryDay(
+        val date: String, val commits: Long, val ai: Long,
+        val human: Long?, val other: Long?,
+        val mainline: Long, val branchOnly: Long, val merges: Long,
+    )
 
-    /** Дни истории из клона (`clone.history.v1`); секции нет — `null` (неизвестно, а не «коммитов не было»). */
+    /** Прежние строки читаются для истории, но не участвуют в новых расчётах. */
     val historyDays: List<HistoryDay>?
-        get() = (payload("history")?.get("days") as? JsonArray)?.items?.mapNotNull { d ->
-            val a = (d as? JsonArray)?.items ?: return@mapNotNull null
-            val date = (a.getOrNull(0) as? JsonString)?.value ?: return@mapNotNull null
-            val n = (1..6).map { (a.getOrNull(it) as? JsonNumber)?.toLongExact() ?: return@mapNotNull null }
-            HistoryDay(date, n[0], n[1], n[2], n[3], n[4], n[5])
+        get() {
+            val source = sections["history"] ?: return null
+            val current = when (source.schema) {
+                HistorySchema.LEGACY -> false
+                HistorySchema.FILTERED_BRANCHES, HistorySchema.CURRENT -> true
+                else -> return null
+            }
+            return ((source.payload as? JsonObject)?.get("days") as? JsonArray)?.items?.mapNotNull { d ->
+                val a = (d as? JsonArray)?.items ?: return@mapNotNull null
+                val date = (a.getOrNull(0) as? JsonString)?.value ?: return@mapNotNull null
+                val n = (1..6).map { (a.getOrNull(it) as? JsonNumber)?.toLongExact() ?: return@mapNotNull null }
+                HistoryDay(date, n[0], n[1], n[2].takeUnless { current }, n[2].takeIf { current }, n[3], n[4], n[5])
+            }
         }
+
+    /** Счётчики личного списка v1 не становятся числами всех авторов под новой версией правил. */
+    private fun currentHistory(): JsonObject? = payload("history")?.takeIf {
+        sections["history"]?.schema == HistorySchema.CURRENT && (it["complete"] as? JsonBool)?.value == true
+    }
 
     /** День `ГГГГ-ММ-ДД` по поясу истории ([Rules.HISTORY_ZONE]), [back] дней назад от [now]. */
     private fun day(now: Timestamp, back: Int): String =
@@ -190,49 +186,28 @@ data class ProjectState(
      * Коммитов за окно не было — неизвестно, а не 0 %.
      */
     fun aiShare(now: Timestamp): Measure<Long> {
+        if (currentHistory() == null) return Measure.unknown("нужна свежая история клона")
         val days = historyDays ?: return Measure.unknown("нет истории из клона")
         val from = day(now, Rules.AI_SHARE_DAYS - 1)
-        val window = days.filter { it.date >= from }
+        val today = day(now, 0)
+        val window = days.filter { it.date >= from && it.date <= today }
         val total = window.sumOf { it.commits }
         return if (total == 0L) Measure.unknown("коммитов за ${Rules.AI_SHARE_DAYS} дней нет") else Measure.observed(window.sumOf { it.ai } * 100 / total)
     }
 
-    /** Ветки впереди основной (ТЗ, §8, `repo.branches.unmerged`): сколько и своих коммитов сверх неё. */
+    /** Ветки впереди основной (ТЗ, §8, `repo.branches.unmerged`): сколько и коммитов всех авторов сверх неё. */
     val branchesAhead: Measure<Pair<Long, Long>>
         get() {
-            val list = (payload("history")?.get("ahead") as? JsonArray)?.items?.mapNotNull { it as? JsonObject } ?: return Measure.unknown("нет истории из клона")
+            val list = (currentHistory()?.get("ahead") as? JsonArray)?.items?.mapNotNull { it as? JsonObject } ?: return Measure.unknown("нет истории из клона")
             return Measure.observed(list.size.toLong() to list.sumOf { (it["commits"] as? JsonNumber)?.toLongExact() ?: 0L })
         }
-
-    /**
-     * Новые решения (ТЗ, §8, `repo.decisions.new`): прирост записей журнала
-     * за [Rules.DECISIONS_NEW_DAYS] последних дней по основной ветке клона.
-     * Журнал появился внутри окна — все его записи новые; журнала в
-     * истории нет — неизвестно.
-     */
-    fun decisionsNew(now: Timestamp): Measure<Long> {
-        val points = (payload("history")?.get("decisions") as? JsonArray)?.items?.mapNotNull { p ->
-            val a = (p as? JsonArray)?.items ?: return@mapNotNull null
-            val d = (a.getOrNull(0) as? JsonString)?.value ?: return@mapNotNull null
-            val n = (a.getOrNull(1) as? JsonNumber)?.toLongExact() ?: return@mapNotNull null
-            d to n
-        } ?: return Measure.unknown("нет истории из клона")
-        if (points.isEmpty()) return Measure.unknown("журнала решений в истории нет")
-        val today = day(now, 0)
-        val before = day(now, Rules.DECISIONS_NEW_DAYS)
-        val nowCount = points.lastOrNull { it.first <= today }?.second ?: return Measure.unknown("журнала решений ещё нет")
-        val base = points.lastOrNull { it.first <= before }?.second ?: 0L
-        return Measure.observed((nowCount - base).coerceAtLeast(0))
-    }
 
     fun toJson(now: Timestamp): JsonObject = JsonObject(
         linkedMapOf<String, JsonValue>(
             "name" to JsonString(name),
-            "place" to JsonString(place),
             "sections" to JsonArray(sections.keys.sorted().map { sections.getValue(it).toJson() }),
             "errors" to JsonArray(errors.map { it.toJson() }),
         ).apply {
-            if (skipped.isNotEmpty()) put("skipped", JsonArray(skipped.sorted().map(::JsonString)))
             working(now).orNull()?.let { put("working", JsonBool(it)) }
         },
     )
@@ -271,22 +246,6 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
             return if (known.all { it is Measure.Unknown }) Measure.unknown("ни у одного проекта нет данных об активности") else Measure.observed(known.count { it.orNull() == true }.toLong())
         }
 
-    /** Открытые вопросы автору — пункты «За автором» всех `TODO.md` (F-24). */
-    val questionsOpen: Measure<Long>
-        get() {
-            val known = projects.mapNotNull { it.forAuthor.orNull() }
-            return if (known.isEmpty()) Measure.unknown("нет ни одного TODO.md") else Measure.observed(known.sum())
-        }
-
-    /**
-     * Счётчик документов DPmeta (ТЗ, §8, `eco.*`): поле секции `dpmeta`
-     * (`dpmeta.counters.v1`) проекта DPmeta; секции или поля нет —
-     * неизвестно.
-     */
-    fun dpmetaCount(field: String): Measure<Long> =
-        projects.firstNotNullOfOrNull { (it.sections["dpmeta"]?.payload as? JsonObject)?.get(field) as? JsonNumber }?.toLongExact()
-            ?.let { Measure.observed(it) } ?: Measure.unknown("нет счётчиков DPmeta: $field")
-
     /** Точки истории этого среза: неизвестное — без точки, а не ноль (D-13 подсистемы, D-34). */
     fun points(): List<MetricPoint> {
         val out = mutableListOf<MetricPoint>()
@@ -297,10 +256,7 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
         for (p in projects) {
             add("repo.pr.open", p.name, p.openPulls)
             add("repo.activity.state", p.name, flag(p.working(asOf)))
-            add("repo.decisions.count", p.name, p.decisions)
-            add("repo.todo.items", p.name, p.todoOpen)
-            add("repo.roadmap.progress", p.name, p.roadmapPercent)
-            // С правил 2 (этап 4, D-64): PR, проверки, стадия и шлюз.
+            // PR и проверки остаются независимыми от снятого шлюза (D-176).
             add("repo.pr.open.drafts", p.name, p.draftPulls)
             p.waitingAuthor(asOf).orNull()?.let { (count, oldest) ->
                 add("repo.pr.waiting_author", p.name, Measure.observed(count))
@@ -312,25 +268,14 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                 add("repo.pr.lead_time.p90", p.name, Measure.observed(high))
             }
             add("repo.checks.last", p.name, flag(p.lastChecksGreen))
-            val gate = Readiness.gate(p, asOf)
-            add("repo.stage", p.name, gate.stage.orNull()?.let { Measure.observed(it.number.toLong()) } ?: Measure.unknown(""))
-            if (gate.anyKnown) add("repo.gate.passed", p.name, Measure.observed(gate.passed.toLong()))
-            add("repo.gate.ready", p.name, flag(gate.ready))
             // С правил 5 (D-66): из истории клона.
             add("repo.commits.ai_share", p.name, p.aiShare(asOf))
             p.branchesAhead.orNull()?.let { (count, commits) ->
                 add("repo.branches.unmerged", p.name, Measure.observed(count))
                 add("repo.branches.unmerged.commits", p.name, Measure.observed(commits))
             }
-            add("repo.decisions.new", p.name, p.decisionsNew(asOf))
         }
         add("eco.active_projects", "eco", activeProjects)
-        add("eco.questions_open", "eco", questionsOpen)
-        // С правил 5: документы DPmeta (контракты, открытые риски, очередь, срезы).
-        add("eco.contracts", "eco", dpmetaCount("contracts"))
-        add("eco.risks_open", "eco", dpmetaCount("risksOpen"))
-        add("eco.sync_queue", "eco", dpmetaCount("syncQueue"))
-        add("eco.reports", "eco", dpmetaCount("reports"))
         add("app.sync.health", "app", syncHealth)
         return out
     }
@@ -343,15 +288,16 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
             "projects" to JsonArray(projects.map { it.toJson(asOf) }),
         ).apply {
             activeProjects.orNull()?.let { put("activeProjects", JsonNumber.of(it)) }
-            questionsOpen.orNull()?.let { put("questionsOpen", JsonNumber.of(it)) }
             syncHealthPercent?.let { put("syncHealth", JsonNumber.of(it)) }
         },
     )
 
     companion object {
         const val FORMAT = "dpmeta.state"
-        const val VERSION = 1
+        const val VERSION = 6
+        private val LEGACY_BRANCH_SOURCES = setOf("branches")
         private const val DAY_MS = 24 * 60 * 60 * 1000L
+        private val RETIRED_SOURCES = setOf("dpmeta", "decisions", "todo", "roadmap")
         private val NOT_FOUND = setOf(DiagCode.GITHUB_NOT_FOUND, DiagCode.ENTITY_NOT_FOUND)
 
         /**
@@ -362,42 +308,45 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
          * зависит от порядка наблюдений (N-01).
          */
         fun derive(
-            registry: Registry,
+            registry: ProjectCatalog,
             observations: List<Observation>,
             failures: List<SourceFailure>,
             previous: EcosystemState?,
             now: Timestamp,
         ): EcosystemState {
-            val latest = observations
+            val currentObservations = observations.filter { it.kind !in RETIRED_SOURCES }
+            val currentFailures = failures.filter { it.kind !in RETIRED_SOURCES }
+            val latest = currentObservations
                 .groupBy { it.subject to it.kind }
                 .mapValues { (_, list) -> list.maxWith(compareBy<Observation> { it.asOf }.thenBy { it.id.toString() }) }
-            val projects = registry.shown.map { entry ->
-                val before = previous?.project(entry.name)?.sections.orEmpty()
+            val projects = registry.projects.map { entry ->
+                val old = previous?.project(entry.name)?.sections.orEmpty()
+                // Правила до 10 скрывали ветки по соглашениям автора. Старый
+                // неполный набор не становится новой метрикой при отказе запроса.
+                val before = if (previous != null && previous.rulesVersion < 10) old - LEGACY_BRANCH_SOURCES else old
                 val fresh = latest.filterKeys { it.first == entry.name }.values.associate { o ->
                     o.kind to SourceSection(o.kind, o.schema, o.asOf, o.payload)
                 }
-                val errors = failures.filter { it.project == entry.name }
+                val errors = currentFailures.filter { it.project == entry.name }
                     .sortedWith(compareBy({ it.kind }, { it.diagnostic.code.name }, { it.at }))
                     .map { f -> SourceError(f.kind, f.diagnostic.code.name, f.diagnostic.message, f.at) }
-                val skipped = buildSet {
-                    // История подсистемы — в истории DPmetaApp (D-66): своей нет.
-                    if (entry.dir != null) addAll(listOf("pulls", "merged", "branches", "history"))
-                    if (entry.decisions == null) add("decisions")
-                }
                 // Чек-листы сняты пользователем (D-176) — прежняя секция не остаётся навсегда.
-                val kept = if (entry.checklists.isEmpty()) (before + fresh) - "checklists" else before + fresh
-                ProjectState(entry.name, entry.place.code, kept.toSortedMap(), errors, skipped)
+                // Прежние специальные источники и процесс автора сняты D-173/D-176.
+                // История чисел в журнале остаётся; текущая секция больше не обновляется.
+                val current = (before + fresh) - RETIRED_SOURCES
+                val kept = if (entry.checklists.isEmpty()) current - "checklists" else current
+                ProjectState(entry.name, kept.toSortedMap(), errors)
             }
-            val failed = failures.count { it.diagnostic.code !in NOT_FOUND }
-            val health = (observations.size + failed).takeIf { it > 0 }?.let { observations.size * 100L / it }
+            val failed = currentFailures.count { it.diagnostic.code !in NOT_FOUND }
+            val health = (currentObservations.size + failed).takeIf { it > 0 }?.let { currentObservations.size * 100L / it }
             return EcosystemState(now, Rules.RULES_VERSION, projects, health)
         }
 
-        /** Прежнее состояние из документа: другая версия формата — отказ, а не догадка. */
+        /** v1/v2/v3 сохраняют прежние числа и версию правил; неизвестная версия — отказ. */
         fun fromJson(value: JsonValue): Outcome<EcosystemState> {
             val d = DiagnosticCollector()
             val f = JsonFields.root(value, d) ?: return Outcome.Failure(d.all)
-            FormatHeader.read(f, FORMAT, VERSION..VERSION, d) ?: return Outcome.Failure(d.all)
+            val version = FormatHeader.read(f, FORMAT, 1..VERSION, d) ?: return Outcome.Failure(d.all)
             val asOf = f.long("asOf")
             val rules = f.long("rulesVersion")
             val projects = f.array("projects")
@@ -406,10 +355,10 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
             val health = f.optLong("syncHealth")
             f.finish()
             if (d.hasErrors || asOf == null || rules == null || projects == null) return Outcome.Failure(d.all)
+            var discardedCache = false
             val out = projects.items.map { p ->
                 val o = p as? JsonObject ?: return Outcome.failure(DiagCode.FIELD_TYPE, "проект — не объект", "projects")
                 val name = (o["name"] as? JsonString)?.value ?: return Outcome.failure(DiagCode.FIELD_MISSING, "нет имени проекта", "projects")
-                val place = (o["place"] as? JsonString)?.value ?: return Outcome.failure(DiagCode.FIELD_MISSING, "нет места проекта", name)
                 val sections = (o["sections"] as? JsonArray)?.items.orEmpty().map { s ->
                     val so = s as? JsonObject ?: return Outcome.failure(DiagCode.FIELD_TYPE, "секция — не объект", name)
                     SourceSection(
@@ -428,10 +377,18 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                         Timestamp((eo["at"] as? JsonNumber)?.toLongExact() ?: return Outcome.failure(DiagCode.FIELD_MISSING, "нет времени отказа", name)),
                     )
                 }
-                val skipped = (o["skipped"] as? JsonArray)?.items.orEmpty().mapNotNull { (it as? JsonString)?.value }.toSet()
-                ProjectState(name, place, sections.associateBy { it.kind }.toSortedMap(), errors, skipped)
+                // У прежней роли/подсистемы источником мог быть чужой host-каталог.
+                // Без доказанного соответствия репозиторию нужен свежий запрос, не новый ярлык.
+                val skips = o["skipped"]
+                val noSubsystemFlags = skips == null || (skips is JsonArray &&
+                    skips.items.all { (it as? JsonString)?.value == "decisions" })
+                val reusable = version >= 5 || ((o["place"] as? JsonString)?.value == "user" && noSubsystemFlags)
+                if (!reusable) discardedCache = true
+                val kept = if (reusable) sections.filter { rules >= 10 || it.kind !in LEGACY_BRANCH_SOURCES } else emptyList()
+                if (kept.size != sections.size) discardedCache = true
+                ProjectState(name, kept.associateBy { it.kind }.toSortedMap(), if (reusable) errors else emptyList())
             }
-            return Outcome.success(EcosystemState(Timestamp(asOf), rules.toInt(), out, health))
+            return Outcome.success(EcosystemState(Timestamp(asOf), rules.toInt(), out, health.takeUnless { discardedCache }))
         }
     }
 }

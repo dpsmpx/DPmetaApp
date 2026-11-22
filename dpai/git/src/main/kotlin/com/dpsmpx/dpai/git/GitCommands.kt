@@ -2,6 +2,7 @@ package com.dpsmpx.dpai.git
 
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpai.core.operations.ActionLevel
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.security.Approval
 import com.dpsmpx.dpai.security.ApprovalLedger
@@ -12,41 +13,46 @@ import com.dpsmpx.dpai.security.Proposal
  * возможности вернуть их средствами Git: такие операции — только с
  * одобрением, привязанным к хешу предложения (ТЗ, §68).
  */
-enum class GitOp(val destructive: Boolean, val writes: Boolean) {
-    STATUS(false, false),
-    DIFF(false, false),
-    LOG(false, false),
+enum class GitOp(val level: ActionLevel) {
+    STATUS(ActionLevel.READ),
+    DIFF(ActionLevel.READ),
+    LOG(ActionLevel.READ),
     /** Хеш `HEAD` дерева: коммит, который контур только что сделал (поиск, handoff). */
-    HEAD(false, false),
+    HEAD(ActionLevel.READ),
     /** База ветки задачи и ветки интеграции (D-42: изменения задачи). */
-    MERGE_BASE(false, false),
+    MERGE_BASE(ActionLevel.READ),
     /** Изменения от ревизии до рабочего дерева или до второй ревизии — текст и счёт строк по файлам. */
-    DIFF_FROM(false, false),
-    DIFF_STAT_FROM(false, false),
+    DIFF_FROM(ActionLevel.READ),
+    DIFF_STAT_FROM(ActionLevel.READ),
     /** Коммиты слияния между ревизиями (`from..to`, по пути предков): чем слита ветка задачи (D-42). */
-    MERGES_BETWEEN(false, false),
-    WORKTREE_LIST(false, false),
+    MERGES_BETWEEN(ActionLevel.READ),
+    WORKTREE_LIST(ActionLevel.READ),
     /** Коммит, на который указывает ссылка (ветка): слияние сверяет, что ветка — та, что прошла проверку (аудит O-02). */
-    REV_PARSE(false, false),
+    REV_PARSE(ActionLevel.READ),
     /**
      * Строки дерева по словам (D-171, карта кода): первый аргумент — регулярное
      * выражение (ERE, целые слова), дальше — пути области; без путей — всё дерево.
      */
-    GREP(false, false),
-    FETCH(false, false),
-    ADD(false, true),
-    COMMIT(false, true),
-    BRANCH_CREATE(false, true),
-    WORKTREE_ADD(false, true),
-    WORKTREE_REMOVE(false, true),
-    MERGE(false, true),
-    MERGE_ABORT(false, true),
-    PUSH(false, true),
-    RESET_HARD(true, true),
-    CLEAN_FORCE(true, true),
-    PUSH_FORCE(true, true),
-    BRANCH_DELETE_FORCE(true, true),
-    WORKTREE_REMOVE_FORCE(true, true),
+    GREP(ActionLevel.READ),
+    FETCH(ActionLevel.READ),
+    ADD(ActionLevel.REVERSIBLE),
+    COMMIT(ActionLevel.REVERSIBLE),
+    BRANCH_CREATE(ActionLevel.REVERSIBLE),
+    WORKTREE_ADD(ActionLevel.REVERSIBLE),
+    WORKTREE_REMOVE(ActionLevel.REVERSIBLE),
+    MERGE(ActionLevel.REVERSIBLE),
+    MERGE_ABORT(ActionLevel.REVERSIBLE),
+    PUSH(ActionLevel.REVERSIBLE),
+    RESET_HARD(ActionLevel.DANGEROUS),
+    CLEAN_FORCE(ActionLevel.DANGEROUS),
+    PUSH_FORCE(ActionLevel.DANGEROUS),
+    BRANCH_DELETE_FORCE(ActionLevel.DANGEROUS),
+    WORKTREE_REMOVE_FORCE(ActionLevel.DANGEROUS),
+    ;
+
+    /** Прежние признаки для вызывающего кода, вычисляются из единого уровня. */
+    val destructive: Boolean get() = level == ActionLevel.DANGEROUS
+    val writes: Boolean get() = level != ActionLevel.READ
 }
 
 /**
@@ -66,7 +72,7 @@ class GitCommands(private val approvals: ApprovalLedger, private val git: String
         args.firstOrNull { if (op == GitOp.COMMIT) it.isBlank() || '\u0000' in it else it.startsWith("-") || it.any { c -> c.isISOControl() } || it.isEmpty() }?.let {
             return Outcome.failure(DiagCode.VALUE_INVALID, "аргумент «$it» похож на параметр или пуст: параметры задаёт операция", worktree)
         }
-        if (op.destructive) {
+        if (op.level == ActionLevel.DANGEROUS) {
             when (val r = approvals.consume(proposal(op, worktree, args), approval, now)) {
                 is Outcome.Failure -> return r
                 is Outcome.Success -> Unit

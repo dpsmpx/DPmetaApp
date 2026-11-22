@@ -348,7 +348,7 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
      * отказ.
      */
     fun fileAt(project: String, commit: String, path: String): Outcome<ByteArray?> {
-        if (!Regex("[0-9a-f]{40}").matches(commit)) return failure(DiagCode.VALUE_INVALID, "не SHA коммита", project)
+        if (!com.dpsmpx.dpai.core.git.GitNames.sha(commit)) return failure(DiagCode.VALUE_INVALID, "не SHA коммита", project)
         val parts = path.trim('/').split('/').filter { it.isNotEmpty() }
         if (parts.isEmpty()) return Outcome.success(null)
         return withRepo(project) { repo ->
@@ -407,11 +407,11 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
     }
 
     /**
-     * История проекта из клона (D-66) — теми же определениями, что у наборов
-     * прогресса сайта (`SocialMediaImage:tools/cs/progress/collect.py`):
+     * История проекта из клона (D-66, D-176): без личного списка авторов.
      *
-     * - коммиты своих авторов ([ai] и [human]) во всех ветках GitHub, кроме
-     *   [excluded] (ветки сборок); слияния — не коммиты работы;
+     * - коммиты всех авторов во всех ветках GitHub, кроме [excluded]
+     *   (ветки сборок); [ai] — известные метки ИИ, остальные — прочие;
+     *   слияния — не коммиты работы;
      * - копия изменения после rebase или cherry-pick считается один раз: копия
      *   в ветке — та же пара «автор, время автора», что у учтённого коммита,
      *   и тот же patch-id;
@@ -421,7 +421,7 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
      * - журнал решений [journal] (путь и счёт записей по тексту) — число
      *   записей на конец дня по основной ветке (первый родитель), только в дни,
      *   когда оно менялось;
-     * - ветки впереди основной: свои коммиты сверх неё (копии влитого — не в
+     * - ветки впереди основной: коммиты сверх неё (копии влитого — не в
      *   счёт), время последнего.
      *
      * Имена авторов, сообщения коммитов и пути файлов в итог не идут.
@@ -431,7 +431,6 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
         main: String,
         zone: java.time.ZoneOffset,
         ai: Set<String>,
-        human: Set<String>,
         excluded: (String) -> Boolean,
         journal: Pair<String, (String) -> Int?>? = null,
     ): Outcome<CommitHistory> = withRepo(project) { repo ->
@@ -451,22 +450,24 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
                 all += Seen(c.copy(), who, c.authorIdent?.`when`?.time?.div(1000) ?: c.commitTime.toLong(), c.commitTime.toLong(), c.parentCount, main0,
                     main0 && c.parentCount == 2 && PR_MERGE.containsMatchIn(c.shortMessage))
             }
-            val own = all.filter { it.parents <= 1 && (it.author in ai || it.author in human) }.sortedWith(compareBy({ it.at }, { !it.main }, { it.id.name }))
+            val work = all.filter { it.parents <= 1 }.sortedWith(compareBy({ it.at }, { !it.main }, { it.id.name }))
             // Копии — только среди коммитов с одной парой «автор, время»: patch-id считается лишь у них.
-            val groups = own.groupBy { it.author to it.at }.filterValues { it.size > 1 }
+            val groups = work.groupBy { it.author to it.at }.filterValues { it.size > 1 }
             val patch = HashMap<ObjectId, String?>()
             for (g in groups.values) for (c in g) patch[c.id] = patchId(repo, walk.parseCommit(c.id))
-            val mainPatches = own.filter { it.main }.mapNotNull { patch[it.id] }.toSet()
-            val seenPatches = HashSet<String>()
+            // Один patch-id сам по себе не связывает независимых авторов и время.
+            fun copyKey(c: Seen): Triple<String, Long, String>? = patch[c.id]?.let { Triple(c.author, c.at, it) }
+            val mainCopies = work.filter { it.main }.mapNotNull(::copyKey).toSet()
+            val seenCopies = HashSet<Triple<String, Long, String>>()
             val counted = ArrayList<Seen>()
             val copies = HashSet<ObjectId>()
-            for (c in own) {
-                val p = patch[c.id]
-                if (!c.main && p != null && (p in mainPatches || p in seenPatches)) {
+            for (c in work) {
+                val p = copyKey(c)
+                if (!c.main && p != null && (p in mainCopies || p in seenCopies)) {
                     copies += c.id
                     continue
                 }
-                if (p != null) seenPatches += p
+                if (p != null) seenCopies += p
                 counted += c
             }
             fun day(sec: Long) = java.time.Instant.ofEpochSecond(sec).atOffset(zone).toLocalDate().toString()
@@ -478,7 +479,7 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
                 d[if (c.main) 3 else 4]++
             }
             for (c in all) if (c.prMerge) days.getOrPut(day(c.ct)) { IntArray(6) }[5]++
-            // Ветки впереди основной: свои коммиты сверх неё, кроме копий влитого.
+            // Ветки впереди основной: коммиты всех авторов, кроме копий влитого.
             val ahead = refs.filter { it.objectId != mainId }.mapNotNull { r ->
                 walk.reset()
                 walk.markStart(walk.parseCommit(r.objectId))
@@ -486,8 +487,7 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
                 var n = 0
                 var last = Long.MIN_VALUE
                 for (c in walk) {
-                    val who = c.authorIdent?.name.orEmpty()
-                    if (c.parentCount > 1 || (who !in ai && who !in human) || c.copy() in copies) continue
+                    if (c.parentCount > 1 || c.copy() in copies) continue
                     n++
                     last = maxOf(last, c.authorIdent?.`when`?.time?.div(1000) ?: c.commitTime.toLong())
                 }

@@ -481,8 +481,12 @@ class JdwpSession(
 
     private fun source(id: Long, c: ClassInfo): String? {
         if (!c.sourceRead) {
-            c.source = (call(REFERENCE_TYPE, 7, out().typeId(id).bytes()) as? Outcome.Success)?.let { runCatching { JdwpIn(it.value, sizes).string() }.getOrNull() }
-            c.sourceRead = true
+            val source = (call(REFERENCE_TYPE, 7, out().typeId(id).bytes()) as? Outcome.Success)?.let { runCatching { JdwpIn(it.value, sizes).string() }.getOrNull() }
+            // Отказ до CLASS_PREPARE — не отсутствие исходника навсегда.
+            if (source != null) {
+                c.source = source
+                c.sourceRead = true
+            }
         }
         return c.source
     }
@@ -500,9 +504,10 @@ class JdwpSession(
                     MethodInfo(m, name)
                 }
             }.getOrNull()
-        }.orEmpty()
-        c.methods = list
-        return list
+        }
+        // В том числе CLASS_NOT_PREPARED: при событии подготовки прочитаем снова.
+        if (list != null) c.methods = list
+        return list.orEmpty()
     }
 
     private fun lines(classId: Long, m: MethodInfo): List<Pair<Long, Int>> {
@@ -514,9 +519,9 @@ class JdwpSession(
                 i.long()
                 List(i.int()) { i.long() to i.int() }
             }.getOrNull()
-        }.orEmpty()
-        m.lines = list
-        return list
+        }
+        if (list != null) m.lines = list
+        return list.orEmpty()
     }
 
     /** Путь исходника класса в проекте — по пакету класса и `SourceFile`. */

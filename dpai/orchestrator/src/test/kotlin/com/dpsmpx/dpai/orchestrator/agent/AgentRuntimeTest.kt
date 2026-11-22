@@ -63,6 +63,9 @@ class AgentRuntimeTest {
             outputs(seen).firstOrNull { it.startsWith("grandchild ") }?.removePrefix("grandchild ")?.toLong()
         }
         started += grandchild
+        // Вывод уже доступен после TARGET_PROCESS_STARTED, а run с PID пишется позже.
+        // Это разные записи: вывод внука не заменяет ожидание состояния процесса.
+        RealTime.await(60.seconds, "PID процесса записан") { rt.status(run).run?.pid }
         return channel to grandchild
     }
 
@@ -78,7 +81,11 @@ class AgentRuntimeTest {
         }
     }
 
-    private fun alive(pid: Long) = ProcessHandle.of(pid).map { it.isAlive }.orElse(false)
+    /** Зомби уже не исполняется; уборка записи init не входит в остановку агента. */
+    private fun alive(pid: Long) = ProcessHandle.of(pid).map {
+        val state = com.dpsmpx.dpai.execution.linux.ProcStat.of(pid)?.state
+        it.isAlive && state != 'Z' && state != 'X'
+    }.orElse(false)
 
     @Test
     fun unknownFenceFormatCannotPretendToConfirmSafeExit() {

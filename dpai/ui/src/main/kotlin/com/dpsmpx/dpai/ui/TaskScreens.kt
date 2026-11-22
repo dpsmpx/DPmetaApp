@@ -133,7 +133,7 @@ object TaskScreens {
     }
 
     /**
-     * Имя слота для человека (D-56): target и подписка — «Termux (claude-slot-1) ·
+     * Имя слота для человека (D-56): target и подписка — «Linux (claude-slot-1) ·
      * подписка pro»; неизвестный слот — его target.
      */
     fun slotName(accounts: com.dpsmpx.dpai.accounts.AccountsState?, s: com.dpsmpx.dpai.sessions.SessionRecord, targetLabel: (com.dpsmpx.dpai.core.ids.ExecutionTargetId) -> String): String =

@@ -42,7 +42,7 @@ import com.dpsmpx.dpmeta.model.Event
 import com.dpsmpx.dpmeta.model.EventCatalog
 import com.dpsmpx.dpmeta.notify.Alerts
 import com.dpsmpx.dpmeta.notify.Decision
-import com.dpsmpx.dpmeta.notify.QuietHours
+import com.dpsmpx.dpai.notifications.QuietHours
 import com.dpsmpx.dpmeta.notify.Shown
 import java.io.IOException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -75,7 +75,7 @@ object PultAlerts {
     val issue: StateFlow<String> = policyIssue
 
     /** Каталог и правила из APK. */
-    data class Config(val catalog: EventCatalog, val rules: AlertRules)
+    data class Config(val catalog: EventCatalog, val rules: AlertRules, val validationCatalog: EventCatalog = catalog)
 
     @Volatile
     private var cachedDefaults: Outcome<Config>? = null
@@ -97,7 +97,7 @@ object PultAlerts {
                 is Outcome.Failure -> a
                 is Outcome.Success -> {
                     val catalog = AlertActions.studioCatalog(c.value)
-                    Outcome.success(Config(catalog, a.value.copy(rules = a.value.rules.filter { catalog.matching(it.on).isNotEmpty() })))
+                    Outcome.success(Config(catalog, AlertActions.studioRules(a.value, catalog), c.value))
                 }
             }
         }
@@ -109,7 +109,11 @@ object PultAlerts {
 
     /** Повреждённая личная настройка даёт отказ; включённые правила из APK не подставляются молча. */
     fun config(context: Context): Outcome<Config> = defaults(context).then { base ->
-        user(context).effective(base.rules, base.catalog).map { Config(base.catalog, it) }
+        // Совместимость старых правил проверяется до отбора активных типов.
+        // Исходный пользовательский текст не перезаписывается и не теряется при экспорте.
+        user(context).effective(base.rules, base.validationCatalog).map {
+            Config(base.catalog, AlertActions.studioRules(it, base.catalog), base.validationCatalog)
+        }
     }
 
     fun catalog(context: Context): Outcome<EventCatalog> = defaults(context).map { it.catalog }
@@ -118,19 +122,18 @@ object PultAlerts {
 
     fun defaultsText(context: Context): Outcome<String> = defaults(context).then { AlertFormat.write(it.rules) }
 
-    fun saveRules(context: Context, text: String): Outcome<Unit> = defaults(context).then { user(context).save(text, it.catalog) }
+    fun saveRules(context: Context, text: String): Outcome<Unit> = defaults(context).then { user(context).save(text, it.validationCatalog) }
     fun resetRules(context: Context): Outcome<Unit> = user(context).reset()
 
     /** Настройки уведомлений: тихие часы (`null` — выкл) и приватность экрана блокировки. */
-    data class Settings(val quiet: QuietHours?, val privacy: Boolean)
 
-    fun settings(context: Context): Settings {
+    fun settings(context: Context): com.dpsmpx.dpai.notifications.NotificationSettings {
         val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val from = p.getInt(QUIET_FROM, AlertActions.DEFAULT_QUIET.fromMinute)
         val to = p.getInt(QUIET_TO, AlertActions.DEFAULT_QUIET.toMinute)
         val days = p.getStringSet(QUIET_DAYS, emptySet()).orEmpty().mapNotNull { runCatching { java.time.DayOfWeek.valueOf(it) }.getOrNull() }.toSet()
         val quiet = if (from in 0 until QuietHours.MINUTES_IN_DAY && to in 0 until QuietHours.MINUTES_IN_DAY && from != to) QuietHours(from, to, days) else null
-        return Settings(quiet, p.getBoolean(PRIVACY, true))
+        return com.dpsmpx.dpai.notifications.NotificationSettings(quiet, p.getBoolean(PRIVACY, true))
     }
 
     fun setQuiet(context: Context, quiet: QuietHours?) {
@@ -165,8 +168,8 @@ object PultAlerts {
 
     /** Обязательные решения остаются нативными; обычные сообщения — общим правилам (D-142). */
     @Synchronized
-    fun presentAi(context: Context, notice: com.dpsmpx.dpai.notifications.Notification, render: (com.dpsmpx.dpai.ui.NoticePresentation) -> Boolean) {
-        val event = AiNotices.event(notice) ?: run { render(com.dpsmpx.dpai.ui.NoticePresentation()); return }
+    fun presentAi(context: Context, notice: com.dpsmpx.dpai.notifications.Notification, render: (com.dpsmpx.dpai.notifications.NoticePresentation) -> Boolean) {
+        val event = AiNotices.event(notice) ?: run { render(com.dpsmpx.dpai.notifications.NoticePresentation()); return }
         val config = when (val r = config(context)) {
             is Outcome.Failure -> { policyIssue.value = "Обычные уведомления ИИ остановлены: ${r.diagnostics.first().message}"; return }
             is Outcome.Success -> r.value
@@ -187,7 +190,7 @@ object PultAlerts {
         if (decision !is Decision.Notify) return
         synchronized(presentationLock) {
             val manager = context.getSystemService(NotificationManager::class.java) ?: return
-            val style = com.dpsmpx.dpai.ui.NoticePresentation(channel(manager, decision.channel, decision.importance), decision.silent, settings(context).privacy)
+            val style = com.dpsmpx.dpai.notifications.NoticePresentation(channel(manager, decision.channel, decision.importance), decision.silent, settings(context).privacy)
             if (render(style)) writeShown(context, result.shown)
         }
     }
@@ -241,7 +244,7 @@ object PultAlerts {
         if (events.isEmpty()) "событий нет" else postEvents(context, events.mapNotNull(Feed::event), now, events.size)
 
     /**
-     * То же для готовых событий — и мгновенного канала (D-152): правила, сводка,
+     * То же для готовых событий приложения: правила, сводка,
      * уведомления. [total] — сколько событий пришло (для строки журнала).
      */
     @Synchronized
@@ -304,7 +307,7 @@ object PultAlerts {
         val card = NoticeCard(
             d.tag, channel(manager, d.channel, d.importance), listOfNotNull(d.event.project, typeTitle).joinToString(": "), d.event.text, typeTitle,
             d.event.at.epochMillis, "dpmeta.alert.${d.rule.id}", d.event.project.takeIf { pull != null }, pull,
-            url = com.dpsmpx.dpmeta.notify.PushEvents.sessionUrl(d.event),
+            url = com.dpsmpx.dpmeta.notify.Digest.sessionUrl(d.event),
             ask = d.event.type == CHAT_DONE,
         )
         return present(context, card, d.silent)

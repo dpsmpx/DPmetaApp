@@ -144,6 +144,8 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
         Text("В Linux приложения нужное проверяется до запуска, ANDROID_HOME подставляется сам; на ПК — его SDK.", style = MaterialTheme.typography.bodySmall)
         Text("В командах и окружении: \${PROJECT}, \${ROOT}, \${TREE}, \${BRANCH}, \${TARGET} и свои \${ИМЯ}; сам знак \${ — \$\${.",
             style = MaterialTheme.typography.bodySmall)
+        Text("В sh -c и PowerShell подстановки не экранируются: используйте только доверенные значения. Пути и имена передавайте через окружение, обращения к переменным заключайте в кавычки.",
+            style = MaterialTheme.typography.bodySmall)
         // Выбор вариантов к запуску (D-183): первый — по умолчанию, последний выбор помнится.
         val declared = remember(paramsText) { (com.dpsmpx.dpai.ui.ManualVars.parseParams(paramsText) as? Outcome.Success)?.value.orEmpty() }
         for (prm in declared) {

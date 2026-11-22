@@ -68,6 +68,16 @@ data class DashboardView(
  */
 object Dashboard {
     private val ACTIVE = setOf(SessionState.STARTING, SessionState.RUNNING, SessionState.WAITING, SessionState.NEAR_LIMIT, SessionState.VERIFYING)
+    private val DISPLAY = SessionState.entries.map { DisplayState.valueOf(it.name) }.toTypedArray()
+    private val SESSION_ORDER = Comparator<SessionRecord> { a, b ->
+        val terminal = a.terminal.compareTo(b.terminal)
+        val state = a.state.ordinal.compareTo(b.state.ordinal)
+        when {
+            terminal != 0 -> terminal
+            state != 0 -> state
+            else -> a.id.value.compareTo(b.id.value)
+        }
+    }
 
     fun build(
         sessions: SessionsState,
@@ -78,14 +88,19 @@ object Dashboard {
         sessionsLogic: Sessions,
         now: Timestamp,
     ): DashboardView {
-        val rows = sessions.sessions.values
-            .sortedWith(compareBy({ it.terminal }, { it.state.ordinal }, { it.id.value }))
-            .map { row(it, tasks, sessionsLogic, now) }
+        var activeSessions = 0
+        var blockedSessions = 0
+        val ordered = sessions.sessions.values.sortedWith(SESSION_ORDER)
+        val rows = ordered.map {
+            if (it.state in ACTIVE) activeSessions++
+            if (it.state == SessionState.BLOCKED) blockedSessions++
+            row(it, tasks, sessionsLogic, now)
+        }
         val attention = buildList {
             fun taskOf(s: SessionRecord) = "сессия задачи «${tasks.tasks[s.task]?.title ?: s.task.value}»"
-            sessions.sessions.values.filter { it.state == SessionState.BLOCKED }.sortedBy { it.id.value }
+            ordered.asSequence().filter { it.state == SessionState.BLOCKED }
                 .forEach { add(Attention("session-blocked", it.id.value, it.lastReason?.let { r -> Words.reason(r.name) } ?: "заблокирована", taskOf(it))) }
-            rows.filter { it.state == DisplayState.STALE }.forEach { r ->
+            rows.asSequence().filter { it.state == DisplayState.STALE }.forEach { r ->
                 val title = sessions.sessions[r.session]?.let(::taskOf) ?: r.session.value
                 add(Attention("session-stale", r.session.value, "нет вестей ${r.silentFor.orNull()?.let(Words::duration) ?: "давно"}", title))
             }
@@ -97,9 +112,9 @@ object Dashboard {
                 .forEach { add(Attention("task-failed", it.id.value, it.lastReason?.let { r -> Words.reason(r.name) } ?: "упала", "задача «${it.title}»")) }
         }
         return DashboardView(
-            activeSessions = sessions.sessions.values.count { it.state in ACTIVE },
+            activeSessions = activeSessions,
             queuedTasks = tasks.tasks.values.count { it.state == TaskState.QUEUED || it.state == TaskState.READY },
-            blocked = tasks.tasks.values.count { it.state == TaskState.BLOCKED } + sessions.sessions.values.count { it.state == SessionState.BLOCKED },
+            blocked = tasks.tasks.values.count { it.state == TaskState.BLOCKED } + blockedSessions,
             failed = tasks.tasks.values.count { it.state == TaskState.FAILED },
             waitingApproval = pendingApprovals,
             availableAccounts = accounts.slots.values.count { it.state == AccountState.AVAILABLE },
@@ -113,7 +128,7 @@ object Dashboard {
         val freshness = sessionsLogic.freshness(r, now)
         val display = when {
             r.state in ACTIVE && (freshness == HeartbeatFreshness.STALE || freshness == HeartbeatFreshness.UNKNOWN) -> DisplayState.STALE
-            else -> DisplayState.valueOf(r.state.name)
+            else -> DISPLAY[r.state.ordinal]
         }
         val last = r.lastHeartbeat ?: r.updatedAt
         val task = tasks.tasks[r.task]

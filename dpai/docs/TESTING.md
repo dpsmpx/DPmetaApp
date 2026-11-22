@@ -27,6 +27,20 @@ JUnit замеров — `tests/integration/build/test-results/performanceTest/`
 текстовые числа текущего прогона — `tests/integration/build/perf/results.txt`.
 Выносливость остаётся в обычной `test` и включается явно, как прежде.
 
+Живые пробы окружения D-216 проверяет `ToolchainDoctorTest`: на хосте
+нужны `python3` со стандартными модулями ssl/sqlite3 и рабочий `c++`
+с заголовками и стандартной библиотекой. Это требования тестового хоста,
+а не предположение о готовности гостя. `EnvironmentFlowTest` запускает
+настоящий агент без Git и проверяет отказ JVM после успешного apk;
+внешние apk/JVM там заменены образцами процессов. Одобрение человека
+проверяет `EnvironmentApprovalsTest`, Android/proot — приёмка в TODO
+приложения, а не эти хостовые тесты.
+
+`DependencyAutomationFlowTest` дополнительно требует Python с модулем
+venv/ensurepip: создаёт настоящий venv и выполняет report/pin/restore через
+прежний агент. pip работает с PIP_NO_INDEX и без проверки новой версии;
+сеть и внешний индекс для этого сценария не требуются.
+
 ## 2. Детерминизм
 
 - Время — `ManualClock`: `now()`, `advance()`; `Thread.sleep` в тестах
@@ -188,18 +202,11 @@ Linux-target в облачной сессии (8 октября 2026) — Ubuntu
 отказ с причиной в `index.tsv`, картинка прошлого запуска удалена; около
 22 с.
 
-Termux-target — Realme C21Y по USB (D-33): в Termux `openssh`, `sshd`
-слушает 8022, ключ `dpai_test` — в `~/.ssh/authorized_keys`; с ПК —
-`adb forward tcp:8022 tcp:8022`, затем вход на `127.0.0.1:8022`, ключ
-хоста — в отдельном known_hosts. На время проверки —
-`adb shell settings put global stay_on_while_plugged_in 2`. Агент — копия
-`dpai` в `~/dpai` и `pkg install openjdk-21`. Claude Code — внутри
-`proot-distro login alpine` (`docs/research/CLAUDE_CODE_CLI.md`, §9):
-musl-сборка `@anthropic-ai/claude-code-linux-arm64-musl` распакована в
-`~/.local/share/claude-musl`, а `tools/termux/claude-proot.sh` поставлен
-как `$PREFIX/bin/claude` — агент и `doctor` вызывают `claude` как на
-любом target. Места нужно с запасом: JDK — около 260 МиБ, Claude — около
-230 МиБ.
+Специальный Termux-target и его обёртка сняты D-202. Прежняя проверка
+на Realme C21Y остаётся в [историческом срезе](https://github.com/dpsmpx/DPmetaApp/blob/944db715280cd6aee065e01a3ecc69edfaf24215/dpai/docs/TESTING.md).
+Текущие проверки SSH выполняются на ПК; CLI устанавливается на нём
+самим пользователем. Linux приложения проверяется через ProotHost,
+без внешнего приложения и RUN_COMMAND.
 
 Настоящий Claude Code — `RealClaudeTest` в `cli`: два хода через агента,
 второй — `--resume`. Тратит лимит подписки, поэтому включается только
@@ -226,14 +233,17 @@ musl-сборка `@anthropic-ai/claude-code-linux-arm64-musl` распаков�
 `android` только рисует (D-34). Сборка и установка на устройство по USB:
 
 ```sh
-./gradlew :android-app:assembleDebug
-adb install -r android-app/build/outputs/apk/debug/android-app-debug.apk
-adb shell am start -n com.dpsmpx.dpai/com.dpsmpx.dpai.android.MainActivity
+cd ..  # из dpai/ в корень DPmetaApp
+./gradlew :shell:assembleDebug
+adb install -r shell/build/outputs/apk/debug/shell-debug.apk
+adb shell am start -n com.dpsmpx.dpai/com.dpsmpx.dpmeta.shell.DpmetaActivity
 adb shell dumpsys gfxinfo com.dpsmpx.dpai   # кадры: Janky frames, перцентили
 ```
 
-Кадры меряются на release (`:android-app:assembleRelease`, пока подписан
-отладочным ключом): debug-сборка Compose в разы медленнее. На устройствах
+В приложении откройте вкладку «AI»: её Activity не экспортируется наружу.
+Кадры меряются на release (`:shell:assembleRelease` из корня DPmetaApp,
+подпись — по `docs/PROCESS.md`, §6): debug-сборка Compose в разы медленнее.
+На устройствах
 с выключенным системным журналом (Realme C21Y) причина падения — в
 `files/last-crash.txt` приложения: `adb shell run-as com.dpsmpx.dpai cat
 files/last-crash.txt` (только debug).

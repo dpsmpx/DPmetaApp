@@ -72,11 +72,15 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
     val language = LanguageServers.languageId(guestPath) ?: return
     val title = LanguageServers.language(guestPath)?.title ?: return
     val context = LocalContext.current.applicationContext
+    val projectEdits = LocalProjectEdits.current
+    var projectPlan by remember { mutableStateOf<com.dpsmpx.dpai.ui.WorkspaceEditPlan?>(null) }
+    var projectApplying by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val session = remember(guestPath, editorRootKey, guestRoot) { CodeService.session(guestPath, editorRootKey, guestRoot, relativePath) }
     var note by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var suggestions by remember { mutableStateOf<List<CompletionItem>>(emptyList()) }
+    var suggestionSnapshot by remember { mutableStateOf<Pair<String, Int>?>(null) }
     var details by remember { mutableStateOf<String?>(null) }
     var problems by remember { mutableStateOf(false) }
     var signature by remember { mutableStateOf<Assist.SignatureLine?>(null) }
@@ -136,7 +140,9 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
         if (Assist.endsSignature(text, cursor)) signature = null
         delay(if (wanted || wantsSignature) 250 else 400)
         val result = withClient { client, _, _ -> if (wanted) client.completion(session.uri, LineIndex(text).position(cursor), trigger) else Outcome.success(null) }
-        suggestions = ((result as? Outcome.Success)?.value)?.let { Assist.filter(it.items, prefix, 24) }.orEmpty()
+        suggestions = if (buffer.text == text && buffer.state.selection == selection)
+            ((result as? Outcome.Success)?.value)?.let { Assist.filter(it.items, prefix, 24) }.orEmpty() else emptyList()
+        suggestionSnapshot = (text to cursor).takeIf { suggestions.isNotEmpty() }
         if (wantsSignature) {
             val help = withClient { client, _, _ -> client.signatureHelp(session.uri, LineIndex(text).position(cursor)) }
             signature = Assist.signature((help as? Outcome.Success)?.value)
@@ -159,6 +165,30 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
 
     /** Правка службы для этого файла: другие файлы — отказ целиком; текст ушёл вперёд — повторить. */
     fun applyWorkspace(edit: WorkspaceEdit, before: String, cursor: Int, done: String) {
+        // Обычное исправление текущего буфера остаётся отменяемым и не требует
+        // его предварительной записи; общий предпросмотр нужен для других URI.
+        if (projectEdits != null && edit.changes.keys.any { it != session.uri }) {
+            val client = session.ready() ?: return
+            scope.launch {
+                busy = true
+                try {
+                    val prepared = withContext(Dispatchers.IO) { projectEdits.prepare(edit, client) }
+                    note = when {
+                        buffer.text != before -> context.getString(R.string.project_edit_stale)
+                        prepared is Outcome.Failure -> prepared.diagnostics.first().message
+                        prepared is Outcome.Success && prepared.value.files.isEmpty() -> context.getString(R.string.project_edit_empty)
+                        else -> { projectPlan = (prepared as Outcome.Success).value; null }
+                    }
+                } finally { busy = false }
+            }
+            return
+        }
+        val expected = edit.versions[session.uri]
+        val observed = session.ready()?.main?.document(session.uri)
+        if (expected != null && (observed == null || observed.first != expected || observed.second != before)) {
+            note = context.getString(R.string.project_edit_stale)
+            return
+        }
         when (val mine = Assist.editsForFile(edit, session.uri)) {
             is Outcome.Failure -> note = mine.diagnostics.first().message
             is Outcome.Success -> when {
@@ -302,14 +332,19 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                                 val out = ArrayList<List<CodeAction>>()
                                 for (d in asked) when (val a = c.codeActions(session.uri, d.range, listOf(d))) {
                                     is Outcome.Failure -> return@withClient a
-                                    is Outcome.Success -> out += a.value
+                                    is Outcome.Success -> {
+                                        val preferred = a.value.firstOrNull { it.preferred && it.resolvable && it.disabledReason == null && !it.requiresCommand }
+                                        val resolved = preferred?.let { c.resolveCodeAction(it) }
+                                        if (resolved is Outcome.Failure) return@withClient resolved
+                                        out += a.value.map { if (it === preferred && resolved is Outcome.Success) resolved.value else it }
+                                    }
                                 }
                                 Outcome.success(out)
                             }
                             when (r) {
                                 is Outcome.Failure -> note = r.diagnostics.first().message
                                 is Outcome.Success -> {
-                                    val plan = Assist.fixAll(session.uri, r.value)
+                                    val plan = Assist.fixAll(session.uri, r.value) { session.ready()?.actionVersion(it, session.uri, before) }
                                     val left = plan.skipped + (diagnostics.size - asked.size)
                                     note = when {
                                         plan.edits.isEmpty() -> "Без ИИ исправить нечего: у службы нет уверенных правок (★) — замечаний $left"
@@ -341,10 +376,19 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
             }, Modifier.padding(horizontal = 12.dp).horizontalScroll(rememberScrollState()), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, maxLines = 1)
         }
         if (suggestions.isNotEmpty()) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-            for (item in suggestions) TextButton(enabled = enabled, onClick = {
-                val cursor = buffer.state.selection.end
+            for (item in suggestions) TextButton(enabled = enabled && !busy, onClick = {
+                val snapshot = suggestionSnapshot
                 suggestions = emptyList()
-                apply(Assist.complete(buffer.text, cursor, item), null)
+                if (snapshot == null || buffer.text != snapshot.first || buffer.state.selection.end != snapshot.second) {
+                    note = context.getString(R.string.project_edit_stale)
+                } else launch("…") {
+                    when (val resolved = withClient { c, _, _ -> c.resolveCompletion(item) }) {
+                        is Outcome.Failure -> note = resolved.diagnostics.first().message
+                        is Outcome.Success -> if (buffer.text != snapshot.first || buffer.state.selection.end != snapshot.second) note = context.getString(R.string.project_edit_stale)
+                            else apply(Assist.complete(snapshot.first, snapshot.second, resolved.value), null)
+                        null -> Unit
+                    }
+                }
             }) { Text(item.label.trim().take(40), fontFamily = FontFamily.Monospace) }
         }
     }
@@ -374,7 +418,25 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
         AlertDialog(onDismissRequest = { fixes = null }, title = { Text("Исправления службы") },
             text = { LazyColumn {
                 items(f.applicable) { a: CodeAction ->
-                    TextButton(enabled = enabled, onClick = { fixes = null; a.edit?.let { applyWorkspace(it, before, buffer.state.selection.end, "Исправлено; отмена — ↶") } }) {
+                    TextButton(enabled = enabled && !busy, onClick = {
+                        fixes = null
+                        launch("…") {
+                            when (val resolved = withClient { c, _, _ -> c.resolveCodeAction(a) }) {
+                                is Outcome.Failure -> note = resolved.diagnostics.first().message
+                                is Outcome.Success -> {
+                                    val action = resolved.value
+                                    val edit = action.edit
+                                    when {
+                                        action.disabledReason != null -> note = action.disabledReason
+                                        action.requiresCommand -> note = context.getString(R.string.lsp_command_unsupported)
+                                        edit == null -> note = context.getString(R.string.lsp_action_empty)
+                                        else -> applyWorkspace(edit, before, buffer.state.selection.end, "Исправлено; отмена — ↶")
+                                    }
+                                }
+                                null -> Unit
+                            }
+                        }
+                    }) {
                         Text((if (a.preferred) "★ " else "") + a.title, style = MaterialTheme.typography.bodySmall)
                     }
                 }
@@ -385,7 +447,8 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
     references?.let { found ->
         AlertDialog(onDismissRequest = { references = null }, title = { Text("Использования: ${found.size}") },
             text = { Column {
-                Text("Без индекса проекта — места в этом файле и разобранных заголовках, не все файлы проекта.", style = MaterialTheme.typography.bodySmall)
+                if (language in setOf("c", "cpp") && session.cppProject?.root?.let { CodeService.cppIndex(context, it) } != true)
+                    Text("Без индекса проекта — места в этом файле и разобранных заголовках, не все файлы проекта.", style = MaterialTheme.typography.bodySmall)
                 LazyColumn {
                     items(found) { l ->
                         val target = Assist.target(l, session.uri, guestRoot)
@@ -456,11 +519,30 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
             }) { Text("Принимаю, поставить") } },
             dismissButton = { TextButton(onClick = { license = null }) { Text("Не принимаю") } })
     }
+    projectPlan?.let { plan ->
+        ProjectEditPreview(plan, projectApplying, note, onApply = {
+            val place = projectEdits ?: return@ProjectEditPreview
+            projectApplying = true
+            scope.launch {
+                val result = withContext(Dispatchers.IO) { place.apply(plan) }
+                if (result is Outcome.Success) {
+                    val client = session.ready()
+                    val synced = withContext(Dispatchers.IO) {
+                        client?.filesChanged(plan.files.associate { it.uri to it.after })
+                    }
+                    projectPlan = null
+                    note = if (synced is Outcome.Failure) synced.diagnostics.first().message else context.getString(R.string.project_edit_saved)
+                } else note = (result as Outcome.Failure).diagnostics.first().message
+                projectApplying = false
+                if (result is Outcome.Success) place.changed()
+            }
+        }, onClose = { projectPlan = null; note = null; projectEdits?.changed?.invoke() })
+    }
     renaming?.let { initial ->
         var name by remember(initial) { mutableStateOf(initial) }
         AlertDialog(onDismissRequest = { renaming = null }, title = { Text("Переименовать") },
             text = { Column {
-                Text("Только символ этого файла: другие файлы проекта служба без индекса не видит.", style = MaterialTheme.typography.bodySmall)
+                Text(if (projectEdits == null) "Только символ этого файла: другие файлы проекта служба без индекса не видит." else context.getString(R.string.project_edit_rename_hint), style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(name, { if (it.length <= 255) name = it.trim() }, label = { Text("Новое имя") }, singleLine = true,
                     isError = name.isNotEmpty() && !Assist.validName(name))
             } },
@@ -469,6 +551,20 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                 launch("…") {
                     val before = buffer.text
                     val cursor = buffer.state.selection.end.coerceIn(0, before.length)
+                    if (projectEdits != null) {
+                        val prepared = withClient { c, t, at ->
+                            if (language in setOf("c", "cpp") && session.cppProject?.root?.let { CodeService.cppIndex(context, it) } != true) return@withClient Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, context.getString(R.string.project_edit_need_index))
+                            projectEdits.prepareRename(c, requireProjectIndex = language in setOf("c", "cpp")) { c.rename(session.uri, LineIndex(t).position(at), name) }
+                        }
+                        note = when {
+                            buffer.text != before -> context.getString(R.string.project_edit_stale)
+                            prepared is Outcome.Failure -> prepared.diagnostics.first().message
+                            prepared is Outcome.Success && prepared.value.files.isEmpty() -> context.getString(R.string.project_edit_empty)
+                            prepared is Outcome.Success -> { projectPlan = prepared.value; null }
+                            else -> null
+                        }
+                        return@launch
+                    }
                     val r = withClient { c, t, at ->
                         val place = LineIndex(t).position(at)
                         val places = when (val d = c.declaration(session.uri, place)) {

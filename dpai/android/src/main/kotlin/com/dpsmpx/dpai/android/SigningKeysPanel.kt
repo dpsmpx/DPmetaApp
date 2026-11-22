@@ -48,30 +48,46 @@ import kotlinx.coroutines.withContext
  */
 @Composable
 internal fun SigningKeysPanel(project: String, projectName: String, enabled: Boolean, version: Int, onChanged: () -> Unit, onNote: (String?) -> Unit) {
-    var global by remember { mutableStateOf<SigningKeys.Info?>(null) }
-    var own by remember { mutableStateOf<SigningKeys.Info?>(null) }
-    var loaded by remember { mutableStateOf(false) }
+    val app = LocalContext.current.applicationContext
+    var global by remember(project, version) { mutableStateOf<SigningKeys.Info?>(null) }
+    var own by remember(project, version) { mutableStateOf<SigningKeys.Info?>(null) }
+    var globalFailed by remember(project, version) { mutableStateOf(false) }
+    var ownFailed by remember(project, version) { mutableStateOf(false) }
+    var globalStored by remember(project, version) { mutableStateOf(false) }
+    var ownStored by remember(project, version) { mutableStateOf(false) }
+    var problem by remember(project, version) { mutableStateOf<String?>(null) }
+    var loaded by remember(project, version) { mutableStateOf(false) }
     LaunchedEffect(project, version) {
-        withContext(Dispatchers.IO) { global = SigningKeys.info(null); own = SigningKeys.info(project) }
+        val (g, p, stored) = withContext(Dispatchers.IO) { Triple(SigningKeys.info(app, null), SigningKeys.info(app, project), SigningKeys.allChecked(app)) }
+        global = g.valueOrNull()
+        own = p.valueOrNull()
+        globalFailed = g is Outcome.Failure
+        ownFailed = p is Outcome.Failure
+        globalStored = stored.valueOrNull()?.contains(null) == true
+        ownStored = stored.valueOrNull()?.contains(project) == true
+        problem = listOf(g, p, stored).filterIsInstance<Outcome.Failure>().firstOrNull()?.errors?.firstOrNull()?.message
         loaded = true
     }
     val choice = SigningKeys.choose(own != null, global != null)
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        if (loaded) {
+        if (loaded && problem == null) {
             Text("Сборки этого проекта подписываются ${choice.title}" + if (choice == SigningKeys.Choice.NONE) "." else " — сами после успешной сборки и после «На телефон».", style = MaterialTheme.typography.bodySmall)
             if (choice == SigningKeys.Choice.NONE) Text(SignAfterBuild.NO_KEY, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
-        KeyLevelRow("Ключ проекта «$projectName»", project, own, enabled, onChanged, onNote)
-        KeyLevelRow("Глобальный ключ (все проекты)", null, global, enabled, onChanged, onNote)
-        var release by remember { mutableStateOf(false) }
-        TextButton(onClick = { release = true }) { Text("Ключ выпуска в Termux или на ПК…") }
+        problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        androidx.compose.runtime.key(project, version) {
+            KeyLevelRow("Ключ проекта «$projectName»", project, own, ownFailed, ownStored, enabled && loaded, onChanged, onNote)
+            KeyLevelRow("Глобальный ключ (все проекты)", null, global, globalFailed, globalStored, enabled && loaded, onChanged, onNote)
+        }
+        var release by remember(project, version) { mutableStateOf(false) }
+        TextButton(onClick = { release = true }) { Text("Ключ выпуска на ПК…") }
         if (release) ReleaseKeyDialog(onClose = { release = false }, onNote = onNote)
     }
 }
 
 /**
  * Ключ выпуска вне приложения (`DPmetaApp:D-158`): поля — в команду keytool с паролем в
- * окружении, в буфер обмена (с пометкой «секрет»); для Termux — сразу открыть его.
+ * окружении, в буфер обмена (с пометкой «секрет»).
  * Приложение эти поля не хранит; созданный файл .p12 потом можно «Импортировать…».
  */
 @Composable
@@ -87,7 +103,7 @@ private fun ReleaseKeyDialog(onClose: () -> Unit, onNote: (String?) -> Unit) {
     var repeat by remember { mutableStateOf("") }
     var problem by remember { mutableStateOf<String?>(null) }
     fun clear() { password = ""; repeat = "" }
-    fun copy(shell: com.dpsmpx.dpai.ui.ReleaseKeyCommand.Shell, openTermux: Boolean) {
+    fun copy(shell: com.dpsmpx.dpai.ui.ReleaseKeyCommand.Shell) {
         if (password != repeat) { problem = "Пароли не совпадают"; return }
         val form = com.dpsmpx.dpai.ui.ReleaseKeyCommand.Form(name, org, country, alias, file, years.toIntOrNull() ?: 0, Secret(password))
         when (val r = com.dpsmpx.dpai.ui.ReleaseKeyCommand.build(form, shell)) {
@@ -98,10 +114,8 @@ private fun ReleaseKeyDialog(onClose: () -> Unit, onNote: (String?) -> Unit) {
                 context.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(clip)
                 clear()
                 onClose()
-                val termux = if (openTermux) context.packageManager.getLaunchIntentForPackage("com.termux") else null
-                if (termux != null) context.startActivity(termux.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
                 onNote(
-                    "Команда скопирована — вставьте её в " + (if (shell == com.dpsmpx.dpai.ui.ReleaseKeyCommand.Shell.POWERSHELL) "PowerShell на ПК" else if (openTermux) "Termux" else "терминал") +
+                    "Команда скопирована — вставьте её в " + (if (shell == com.dpsmpx.dpai.ui.ReleaseKeyCommand.Shell.POWERSHELL) "PowerShell на ПК" else "терминал Linux на ПК") +
                         ". Файл ~/${file.trim()} — копия ключа выпуска: храните его и пароль отдельно. В приложение — «Импортировать…» у нужного уровня; " +
                         "для сборки на ПК — свойства dpai.release.* (DPmetaApp:docs/RELEASE.md). После вставки очистите буфер обмена.",
                 )
@@ -115,8 +129,8 @@ private fun ReleaseKeyDialog(onClose: () -> Unit, onNote: (String?) -> Unit) {
             SecureWindow()
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    "Команда keytool создаст ключ RSA 4096 в файле .p12 в домашней папке. В Termux нужен JDK: pkg install openjdk-21. " +
-                        "В Termux (bash, zsh) пароль идёт в команду через окружение, и строка убирает себя из истории; в zsh с share_history или inc_append_history без hist_ignore_space строка попадёт в файл до исполнения — вставьте её в bash. В PowerShell пароль не нужен: его спросит keytool. Приложение поля не хранит.",
+                    "Команда keytool создаст ключ RSA 4096 в файле .p12 в домашней папке. На ПК нужен JDK с keytool. " +
+                        "В bash и zsh пароль идёт в команду через окружение, и строка убирает себя из истории; в zsh с share_history или inc_append_history без hist_ignore_space строка попадёт в файл до исполнения — вставьте её в bash. В PowerShell пароль не нужен: его спросит keytool. Приложение поля не хранит.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 OutlinedTextField(name, { name = it.take(64) }, label = { Text("Имя в сертификате") }, singleLine = true)
@@ -131,9 +145,8 @@ private fun ReleaseKeyDialog(onClose: () -> Unit, onNote: (String?) -> Unit) {
                 OutlinedTextField(repeat, { repeat = it.take(256) }, label = { Text("Пароль ещё раз") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
                 problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                TextButton(onClick = { copy(com.dpsmpx.dpai.ui.ReleaseKeyCommand.Shell.POSIX, openTermux = true) }) { Text("Скопировать и открыть Termux") }
-                TextButton(onClick = { copy(com.dpsmpx.dpai.ui.ReleaseKeyCommand.Shell.POSIX, openTermux = false) }) { Text("Скопировать для Linux/bash") }
-                TextButton(onClick = { copy(com.dpsmpx.dpai.ui.ReleaseKeyCommand.Shell.POWERSHELL, openTermux = false) }) { Text("Скопировать для ПК (PowerShell)") }
+                TextButton(onClick = { copy(com.dpsmpx.dpai.ui.ReleaseKeyCommand.Shell.POSIX) }) { Text("Скопировать для Linux/bash") }
+                TextButton(onClick = { copy(com.dpsmpx.dpai.ui.ReleaseKeyCommand.Shell.POWERSHELL) }) { Text("Скопировать для ПК (PowerShell)") }
             }
         },
         confirmButton = {},
@@ -143,7 +156,7 @@ private fun ReleaseKeyDialog(onClose: () -> Unit, onNote: (String?) -> Unit) {
 
 /** Один уровень ключа: сведения или «не задан»; импорт, создание с копией-файлом, удаление. */
 @Composable
-private fun KeyLevelRow(title: String, level: String?, key: SigningKeys.Info?, enabled: Boolean, onChanged: () -> Unit, onNote: (String?) -> Unit) {
+private fun KeyLevelRow(title: String, level: String?, key: SigningKeys.Info?, unreadable: Boolean, stored: Boolean, enabled: Boolean, onChanged: () -> Unit, onNote: (String?) -> Unit) {
     val context = LocalContext.current
     val app = context.applicationContext
     val scope = rememberCoroutineScope()
@@ -152,6 +165,9 @@ private fun KeyLevelRow(title: String, level: String?, key: SigningKeys.Info?, e
     var creating by remember { mutableStateOf(false) }
     // Имя и пароль нового ключа — до ответа системного окна «Сохранить»; затираются в любом исходе.
     var pending by remember { mutableStateOf<Pair<String, CharArray>?>(null) }
+    androidx.compose.runtime.DisposableEffect(level) {
+        onDispose { picked?.fill(0); pending?.second?.fill('\u0000') }
+    }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
@@ -203,21 +219,21 @@ private fun KeyLevelRow(title: String, level: String?, key: SigningKeys.Info?, e
     Text(title, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.labelLarge)
     if (key == null) {
         Row(Modifier.horizontalScroll(rememberScrollState())) {
-            Text("не задан", Modifier.padding(vertical = 12.dp), style = MaterialTheme.typography.bodySmall)
+            Text(if (unreadable) "не прочитан" else if (stored) "отключён; очистка не завершена" else "не задан", Modifier.padding(vertical = 12.dp), style = MaterialTheme.typography.bodySmall)
             TextButton(enabled = enabled, onClick = { pick.launch(arrayOf("application/x-pkcs12", "application/octet-stream", "*/*")) }) { Text("Импортировать…") }
             TextButton(enabled = enabled, onClick = { creating = true }) { Text("Создать…") }
         }
     } else {
         Text("${key.subject} (${key.algorithm})\nSHA-256: ${key.certSha256}", style = MaterialTheme.typography.bodySmall)
-        TextButton(enabled = enabled, onClick = { deleting = true }) { Text("Удалить ключ…") }
     }
+    if (key != null || unreadable || stored) TextButton(enabled = enabled, onClick = { deleting = true }) { Text("Удалить ключ…") }
     picked?.let { bytes ->
         KeyPasswordDialog(onCancel = { bytes.fill(0); picked = null }) { password, alias ->
             // Вход — до импорта: копия ключа для резервной копии шифруется ключом Keystore со входом (D-184).
             DeviceConfirm.ask(context, "Ключ подписи — в приложение", onOk = { scope.launch {
                 val r = withContext(Dispatchers.IO) { SigningKeys.import(app, bytes, password, alias, level) }
                 when (r) {
-                    is Outcome.Success -> { bytes.fill(0); picked = null; onChanged(); onNote("Ключ импортирован. Файл ключа приложение не хранит.") }
+                    is Outcome.Success -> { bytes.fill(0); picked = null; onChanged(); onNote("Ключ импортирован. " + if (r.warnings.isEmpty()) "Зашифрованная копия для резервного копирования сохранена." else r.warnings.joinToString("; ") { it.message }) }
                     is Outcome.Failure -> {
                         val d = r.diagnostics.first()
                         onNote(d.message)
@@ -239,7 +255,7 @@ private fun KeyLevelRow(title: String, level: String?, key: SigningKeys.Info?, e
     if (deleting) AlertDialog(
         onDismissRequest = { deleting = false },
         title = { Text("Удалить ключ подписи?") },
-        text = { Text("Ключ сотрётся из Keystore телефона — извлечь его оттуда нельзя, восстановить — только импортом из вашего файла. Подписанные им APK останутся.", color = MaterialTheme.colorScheme.error) },
+        text = { Text("Удалятся все сохранённые поколения ключа этого уровня и их копии на телефоне. Восстановление — из вашего файла или внешней резервной копии. Подписанные APK останутся.", color = MaterialTheme.colorScheme.error) },
         confirmButton = { TextButton(onClick = {
             deleting = false
             scope.launch {

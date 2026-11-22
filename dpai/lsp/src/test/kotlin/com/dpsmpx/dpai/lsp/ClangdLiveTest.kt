@@ -76,30 +76,35 @@ class ClangdLiveTest {
         File(dir, "compile_commands.json").writeText(listOf(main, other).joinToString(",", "[", "]") {
             """{"directory":"${dir.path}","file":"${it.path}","arguments":["clang++","-c","${it.path}"]}"""
         })
-        val process = ok(LocalStreamHost().open(ProcessSpec(listOf(clangd!!) + Clangd.command(dir.path, backgroundIndex = true).drop(1), workDir = dir.path)))
-        val seen = Seen()
-        val client = LspClient(process.stdout, process.stdin, DocumentUri.ofPath(dir.path), seen)
-        try {
-            ok(client.start())
-            val uri = DocumentUri.ofPath(main.path)
-            val text = main.readText()
-            ok(client.open(uri, "cpp", text))
-            assertEquals(emptyList(), diagnosticsOf(seen, uri, 1).filter { it.severity == LspSeverity.ERROR })
-            val at = LineIndex(text).position(text.lastIndexOf("twice") + 1)
-            var references = ok(client.references(uri, at))
-            // Фоновая очередь асинхронна; ждём именно появления закрытого файла, а не произвольную задержку.
-            for (attempt in 1..300) {
-                if (references.any { it.uri == DocumentUri.ofPath(other.path) }) break
-                java.util.concurrent.CountDownLatch(1).await(100, TimeUnit.MILLISECONDS)
-                references = ok(client.references(uri, at))
+        // Второй процесс читает кеш первого: завершение очереди нужно видеть и в этом случае.
+        repeat(2) {
+            val process = ok(LocalStreamHost().open(ProcessSpec(listOf(clangd!!) + Clangd.command(dir.path, backgroundIndex = true).drop(1), workDir = dir.path)))
+            val seen = Seen()
+            val client = LspClient(process.stdout, process.stdin, DocumentUri.ofPath(dir.path), seen)
+            var lease: ProjectIndex.Lease? = null
+            try {
+                ok(client.start())
+                val uri = DocumentUri.ofPath(main.path)
+                val text = main.readText()
+                ok(client.open(uri, "cpp", text))
+                assertEquals(emptyList(), diagnosticsOf(seen, uri, 1).filter { it.severity == LspSeverity.ERROR })
+                for (attempt in 1..300) {
+                    lease = (client.projectIndexLease() as? Outcome.Success)?.value
+                    if (lease != null) break
+                    java.util.concurrent.CountDownLatch(1).await(100, TimeUnit.MILLISECONDS)
+                }
+                assertTrue(lease?.valid() == true, "очередь индекса не завершилась")
+                val at = LineIndex(text).position(text.lastIndexOf("twice") + 1)
+                val references = ok(client.references(uri, at))
+                assertEquals(setOf(uri, DocumentUri.ofPath(other.path)), references.map { it.uri }.toSet())
+                val rename = ok(client.rename(uri, at, "doubled"))
+                assertEquals(setOf(uri, DocumentUri.ofPath(other.path)), rename.changes.keys)
+                assertTrue(ok(TextEdits.apply(other.readText(), rename.changes.getValue(DocumentUri.ofPath(other.path)))).contains("int doubled(int"))
+            } finally {
+                client.stop()
+                process.stop(2.seconds)
+                assertTrue(lease?.valid() != true)
             }
-            assertEquals(setOf(uri, DocumentUri.ofPath(other.path)), references.map { it.uri }.toSet())
-            val rename = ok(client.rename(uri, at, "doubled"))
-            assertEquals(setOf(uri, DocumentUri.ofPath(other.path)), rename.changes.keys)
-            assertTrue(ok(TextEdits.apply(other.readText(), rename.changes.getValue(DocumentUri.ofPath(other.path)))).contains("int doubled(int"))
-        } finally {
-            client.stop()
-            process.stop(2.seconds)
         }
     }
 

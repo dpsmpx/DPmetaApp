@@ -6,6 +6,7 @@ import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.measure.Measure
+import com.dpsmpx.dpai.core.operations.ActionLevel
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.security.ApprovalLedger
 import com.dpsmpx.dpai.testkit.Gen
@@ -18,6 +19,17 @@ import kotlin.test.assertTrue
 
 /** Логика Git без процессов: разбор статуса, политика пересечений, команды (ТЗ, §30, §31, §70). */
 class GitLogicTest {
+    @Test
+    fun forcedOperationsKeepTheHighestSharedLevel() {
+        // Каталог рисков независимо от вычисляемых destructive/writes:
+        // перенос типа не должен незаметно разрешить force-команду без одобрения.
+        assertEquals(
+            setOf(GitOp.RESET_HARD, GitOp.CLEAN_FORCE, GitOp.PUSH_FORCE,
+                GitOp.BRANCH_DELETE_FORCE, GitOp.WORKTREE_REMOVE_FORCE),
+            GitOp.entries.filter { it.level == ActionLevel.DANGEROUS }.toSet(),
+        )
+    }
+
     private val clock = ManualClock()
     private val ids = IdGenerator(clock, RandomSource.seeded(61))
 

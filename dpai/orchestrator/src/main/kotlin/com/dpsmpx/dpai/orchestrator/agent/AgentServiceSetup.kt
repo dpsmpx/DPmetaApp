@@ -45,7 +45,7 @@ class AgentServiceSetup(
     private fun unitDir(): String = (env["XDG_CONFIG_HOME"]?.takeIf { it.startsWith("/") } ?: "$userHome/.config") + "/systemd/user"
 
     fun install(): Outcome<Done> {
-        if (termux()) return Outcome.failure(DiagCode.UNSUPPORTED, "служба агента — для ПК; в Termux target запускается по SSH", "service")
+        if (termux()) return Outcome.failure(DiagCode.UNSUPPORTED, "служба агента — для ПК", "service")
         return if (windows) installWindows() else installLinux()
     }
 

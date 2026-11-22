@@ -1,5 +1,7 @@
 package com.dpsmpx.dpmeta.notify
 
+import com.dpsmpx.dpai.notifications.QuietHours
+
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpmeta.model.Event
 import java.time.Instant
@@ -127,6 +129,9 @@ private fun nextOf(after: Timestamp, zone: ZoneId, minutes: List<Int>): Timestam
  * [maxLines]; выпавшие из-за предела накопления — числом.
  */
 object Digest {
+    /** Ссылка события на облачную сессию Claude; произвольные адреса из события не берутся. */
+    fun sessionUrl(e: Event): String? = e.fields["session"]?.takeIf { Regex("session_[A-Za-z0-9]{8,80}").matches(it) }?.let { "https://claude.ai/code/$it" }
+
     const val MAX_PENDING = 200
 
     data class Text(val title: String, val lines: List<String>, val more: Int)

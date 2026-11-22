@@ -36,8 +36,7 @@ fun interface Transport {
 
 /**
  * Список разрешённых адресов (ТЗ, §6.8; D-10). Только HTTPS; HTTP — только
- * для адресов [plainHttp] и без секрета (исключение на время для сайта,
- * A-09).
+ * для явно заданных адресов [plainHttp] и без секрета. В [CORE] таких адресов нет.
  */
 class AllowList(val hosts: Set<String>, val plainHttp: Set<String> = emptySet()) {
     fun check(request: HttpRequest): Outcome<Unit> {
@@ -54,17 +53,11 @@ class AllowList(val hosts: Set<String>, val plainHttp: Set<String> = emptySet())
     }
 
     companion object {
-        /** Адреса ядра (ТЗ, §6.8); площадки добавляются по списку соцсетей на этапе 6. */
+        /** Адреса пульта: GitHub и API ИИ; личных сайтов автора нет (D-176). */
         val CORE: AllowList = AllowList(
-            hosts = setOf("api.github.com", "github.com", "api.anthropic.com", "dpsmpx.com", "www.dpsmpx.com"),
-            plainHttp = setOf("dpsmpx.com"),
+            hosts = setOf("api.github.com", "github.com", "api.anthropic.com"),
         )
 
-        /** Сервер ntfy по умолчанию для мгновенного канала (D-152). */
-        const val NTFY = "ntfy.sh"
-
-        /** Мгновенный канал (D-152, уточняет D-10): `ntfy.sh` и сервер, который задал автор (только https). */
-        fun push(customHost: String?): AllowList = AllowList(setOfNotNull(NTFY, customHost?.lowercase()))
     }
 }
 

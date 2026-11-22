@@ -38,7 +38,7 @@ class Notifier(private val context: Context) {
     fun show(n: Notification) {
         // Запрос человеку показывает RequestPresenter — по ждущим запросам, а не по потоку (D-44).
         if (n.request != null) return
-        fun render(style: com.dpsmpx.dpai.ui.NoticePresentation): Boolean {
+        fun render(style: com.dpsmpx.dpai.notifications.NoticePresentation): Boolean {
             val selectedChannel = style.channel ?: channel(n.category)
             val builder = NotificationCompat.Builder(context, selectedChannel)
                 .setSmallIcon(R.drawable.ic_notify_ai)
@@ -63,7 +63,7 @@ class Notifier(private val context: Context) {
         }
         val app = context.applicationContext as? DpaiApplication
         if (app == null || n.category == NotificationCategory.SECURITY || n.category == NotificationCategory.APPROVAL) {
-            render(com.dpsmpx.dpai.ui.NoticePresentation())
+            render(com.dpsmpx.dpai.notifications.NoticePresentation())
         } else {
             var attempted = false
             app.presentNotice(n) { style -> attempted = true; render(style) }

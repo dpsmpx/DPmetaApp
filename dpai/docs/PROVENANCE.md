@@ -15,6 +15,22 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 
 ## 2. Зависимости
 
+17 ноября 2026 проверена недостающая сумма транзитивного POM
+`org.jetbrains.kotlinx:kotlinx-coroutines-bom:1.8.0` сборочных плагинов:
+SHA-256 `1239e9dbe1397cd5971342956b2511bc3ace7b641842e4372a088dcfa8b9ad55`.
+Файлы из Maven Central (`repo.maven.apache.org`) и его зеркала Google
+(`maven-central.storage-download.googleapis.com`) совпали побайтно.
+Сумма добавлена в реестры корня и подсистемы; строгая проверка зависимостей
+сохранена. Версии прямых зависимостей не менялись.
+
+Тем же способом сверены метаданные холодной сборки: POM
+`com.google.guava:guava-parent:33.4.0-jre`, Gradle module metadata
+`org.junit:junit-bom:5.10.2` и `org.junit:junit-bom:5.11.0-M2`.
+Оба источника совпали; SHA-256 записаны в обоих реестрах проверки.
+Дополнительно сверены POM `org.apache.groovy:groovy-bom:4.0.29`, POM и
+module metadata `org.junit:junit-bom:5.10.1`, POM
+`org.jetbrains.kotlinx:kotlinx-coroutines-bom:1.6.4`.
+
 <!-- provenance: begin -->
 | Компонент | Версия | Лицензия | Куда попадает | Источник | Проверено |
 |---|---|---|---|---|---|
@@ -56,6 +72,10 @@ AGP 9.4.1 берёт по умолчанию; Apache-2.0 и другие сво�
 инструментов, в APK попадает только собранный `libdpai-native.so` из
 своего кода (`android/src/main/cpp/`). Ставятся через `sdkmanager
 "ndk;28.2.13676358" "cmake;3.22.1"` (23 октября 2026).
+
+Установка SDK пользователем (D-185) подтверждает только лицензию явно
+выбранных платформы, build-tools и NDK. Глобальный `sdkmanager --licenses`
+не вызывается: лицензии прочих пакетов каталога не принимаются.
 
 ## 3. Gradle
 
@@ -153,7 +173,7 @@ Sysroot сборки proot — пакеты Alpine 3.24 `main` (в APK из ни
 | Уровни проверки static/affected/full, plan, report | `DP-Verify:README.md` | `tools/verify/`, D-16 |
 | Ссылки `Проект:номер`, общие принципы E-01…E-13 | `DPmeta:docs/NAMING.md`, `DPmeta:docs/PRINCIPLES.md` | `CLAUDE.md`, D-18 |
 | Хук начала сессии с ветками невлитой работы | `DPlang:.claude/hooks/session-start.sh` | `DPmetaApp:.claude/hooks/session-start.sh` (D-55) |
-| Подпись APK ключом автора на телефоне: пароли из `~/.gradle/gradle.properties` только в окружение, сверка сертификата | `~/dppass-build/build.sh` автора (вне репозитория, `DPmetaApp:D-31`), `DPpass:tools/release/sign_apks.py` | `tools/termux/resign-apk.sh` |
+| Подпись APK ключом автора на телефоне: пароли из `~/.gradle/gradle.properties` только в окружение, сверка сертификата | `~/dppass-build/build.sh` автора (вне репозитория, `DPmetaApp:D-31`), `DPpass:tools/release/sign_apks.py` | [resign-apk.sh — прежний код](https://github.com/dpsmpx/DPmetaApp/blob/944db715280cd6aee065e01a3ecc69edfaf24215/dpai/tools/termux/resign-apk.sh) |
 
 ## 6. Идеи из внешних проектов
 
@@ -196,3 +216,31 @@ https://registry.npmjs.org/@anthropic-ai/claude-code/2.1.322 .
 |---|---|
 | editor-0.24.7.aar | cdfdacdb3ac8605b190768d93f504935400c9aa37b773dc6f6c840311faf2b4c |
 | language-textmate-0.24.7.aar | eca50e81595cd4cf1f677cca12c5fa2203d6051eaf87dabc7e7489413dd098f1 |
+
+## Контракт дополнения kotlin-lsp 271
+
+D-211 использует контракт команды jetbrains.kotlin.completion.apply,
+изученный в официальном исходнике выпуска 271.2085.0, commit
+ce29f8446ba2d60ba914d23dd8ddf2f1b410dc6e:
+[LSCompletionProviderHelper](https://github.com/Kotlin/kotlin-lsp/blob/ce29f8446ba2d60ba914d23dd8ddf2f1b410dc6e/features-impl/common/src/com/jetbrains/ls/api/features/impl/common/completion/LSCompletionProviderHelper.kt)
+и Kotlin FileForModificationProvider. Заголовок исходника — Apache-2.0.
+Код не копировался: реализован ограниченный клиент протокола, с честным
+отказом от немедленной записи и последующей проверкой правки буфера.
+Новая закреплённая сборка проверяется живым сценарием заново.
+
+D-213: --help закреплённой 271.2085.0 отделяет --system-path от баз индекса.
+Публичная InitializeOptions.indexDir и подтверждение
+capabilities.experimental.indexDir используются её официальным клиентом:
+[vscode-extension-core](https://github.com/Kotlin/kotlin-lsp/blob/ce29f8446ba2d60ba914d23dd8ddf2f1b410dc6e/vscode-extension-core/src/lspClient.ts).
+Каталог выбирает приложение; произвольный путь ответа не используется
+для удаления. Живой тест проверяет и ответ, и реальные файлы RocksDB.
+
+### Проектный режим API, D-214
+
+Собственная обвязка официальных протоколов, без новых библиотек:
+[OpenAI function calling](https://platform.openai.com/docs/guides/function-calling),
+[stateless Responses](https://platform.openai.com/docs/guides/reasoning),
+[Gemini function calling](https://ai.google.dev/gemini-api/docs/function-calling).
+Responses использует store=false и сохраняет reasoning.encrypted_content
+в памяти продолжения; Gemini возвращает исходные parts с thoughtSignature.
+Ключ передаёт прежний HTTP-транспорт, инструменты исполняет общая защита проекта.

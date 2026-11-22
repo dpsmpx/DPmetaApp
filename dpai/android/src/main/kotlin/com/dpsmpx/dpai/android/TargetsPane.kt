@@ -71,12 +71,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     var guide by rememberSaveable { mutableStateOf(false) }
     var linux by rememberSaveable { mutableStateOf(false) }
     var removing by remember { mutableStateOf<TargetEntry?>(null) }
-    var restoring by remember { mutableStateOf(false) }
-    // «Скрыть» у карточки, показанной по признаку переустановки, — скрывает её (AI:A-3), пока жив экран.
-    var restoreHidden by rememberSaveable { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<TargetEntry?>(null) }
-    // Признак переустановки (AI:A-3): targets нет, а Termux есть — его агент и входы целы.
-    val reinstalled = remember(targets) { targets.isEmpty() && TermuxLauncher.installed(context) }
     renaming?.let { r ->
         RenameDialog(r) { name ->
             if (name == null) {
@@ -126,27 +121,18 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                 Button(onClick = { form = true }) { Text("Добавить") }
             }
         }
-        // Пустой список ведёт дальше (AI:A-17): по шагам или Linux без Termux.
+        // Пустой список ведёт к инструкции или Linux приложения (AI:A-17, D-202).
         if (targets.isEmpty()) {
             item(key = "empty") {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Ещё не настроено: Termux, агент, вход в Claude — по шагам, или Linux в приложении без Termux.", style = MaterialTheme.typography.bodySmall)
+                        Button(onClick = { ApiQuickStartRequests.request() }) { Text(androidx.compose.ui.res.stringResource(R.string.api_work_title)) }
+                        Text("Настройте Linux в приложении или подключите ПК по SSH — шаги есть в инструкции.", style = MaterialTheme.typography.bodySmall)
                         Row {
                             Button(onClick = { guide = true }) { Text("Инструкция") }
                             TextButton(onClick = { linux = true }) { Text("Linux в приложении") }
                         }
                     }
-                }
-            }
-        }
-        if (restoring || (reinstalled && !restoreHidden)) {
-            item(key = "restore") {
-                // После восстановления карточка остаётся с отчётом, пока её не скроют.
-                RestoreCard(controller, onHide = { restoring = false; restoreHidden = true }) {
-                    targets = controller.targets()
-                    projects = controller.projects()
-                    restoring = true
                 }
             }
         }
@@ -196,7 +182,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
  * Карточка target (AI:A-3; терминал §4, п. 7, A-16): на виду — «Проверить» и
  * «Терминал ▾» (оболочка, исполнитель в терминале, вход Codex или Gemini);
  * в ⋮ — «Проверить вход», «Проект», «Имя», «Удалить». Переключатели, слоты,
- * лимиты и Termux — в раскрытии «Настройки target ▸». Адрес и каталог —
+ * лимиты — в раскрытии «Настройки target ▸». Адрес и каталог —
  * одной строкой.
  */
 @Composable
@@ -301,9 +287,8 @@ private fun TargetCard(
                 }
             }
             lines?.forEach { c -> CheckRow(c) }
-            val local = TermuxLauncher.local(t)
             val posix = t.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX
-            if (t.configDir != null || local || posix || !t.inApp) {
+            if (t.configDir != null || posix || !t.inApp) {
                 Text(
                     if (settings) "Настройки target ▾" else "Настройки target ▸",
                     Modifier.fillMaxWidth().clickable { settings = !settings }.padding(vertical = 8.dp),
@@ -317,8 +302,6 @@ private fun TargetCard(
                         SessionsRow(controller, t)
                     }
                     if (posix) TmuxSwitch(controller, t)
-                    // Termux на этом телефоне (D-46) — у его target, а не отдельной карточкой (AI:A-3).
-                    if (local) TermuxCard(t.port, framed = false)
                 }
             }
         }
@@ -454,8 +437,8 @@ private fun CheckRow(c: CheckLine) {
 private fun AddTargetDialog(controller: Controller, onDone: (TargetEntry?) -> Unit) {
     val scope = rememberCoroutineScope()
     var label by remember { mutableStateOf("") }
-    var host by remember { mutableStateOf("127.0.0.1") }
-    var port by remember { mutableStateOf("8022") }
+    var host by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("22") }
     var user by remember { mutableStateOf("") }
     var agent by remember { mutableStateOf("") }
     var configDir by remember { mutableStateOf("") }
@@ -473,14 +456,6 @@ private fun AddTargetDialog(controller: Controller, onDone: (TargetEntry?) -> Un
                 Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     // Заготовки (AI:A-22): хост, порт, команда агента и каталог слота — одним касанием; дальше — правка.
                     androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        androidx.compose.material3.AssistChip(onClick = {
-                            if (label.isBlank()) label = "Termux"
-                            host = "127.0.0.1"
-                            port = "8022"
-                            agent = com.dpsmpx.dpai.ui.SetupGuide.AGENT
-                            configDir = com.dpsmpx.dpai.ui.SetupGuide.SLOT_DIR
-                            windows = false
-                        }, label = { Text("Termux на этом телефоне") })
                         androidx.compose.material3.AssistChip(onClick = {
                             if (label.isBlank()) label = "ПК с Windows"
                             port = "22"
@@ -569,12 +544,10 @@ private fun ProjectDialog(controller: Controller, target: TargetEntry, withClaud
     var trees by remember { mutableStateOf("") }
     var branch by remember { mutableStateOf("main") }
     var check by remember { mutableStateOf("") }
-    var claudeOn by remember { mutableStateOf(withClaude.firstOrNull { it.id == target.id } ?: withClaude.firstOrNull { it.type == com.dpsmpx.dpai.execution.target.TargetType.TERMUX_LOCAL } ?: withClaude.firstOrNull()) }
+    var claudeOn by remember { mutableStateOf(withClaude.firstOrNull { it.id == target.id } ?: withClaude.firstOrNull { it.inApp } ?: withClaude.firstOrNull()) }
     var key by remember { mutableStateOf(com.dpsmpx.dpai.ui.ProjectForm.DEFAULT_IDENTITY) }
     var known by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
-    var linking by remember { mutableStateOf<String?>(null) }
-    var linked by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = { onDone(null) },
         title = { Text("Проект на ${target.label}") },
@@ -594,26 +567,6 @@ private fun ProjectDialog(controller: Controller, target: TargetEntry, withClaud
                 }
                 val on = claudeOn
                 if (on != null && on.id != target.id) {
-                    // Связка D-53: приложение само кладёт ключ Claude на ${target.label} и ключ хоста — в Termux.
-                    Text(
-                        linking ?: if (linked) "✓ Связано: Claude на ${on.label} ходит на ${target.label} ключом $key" else "Claude на ${on.label} ходит на ${target.label} по SSH своим ключом — его можно настроить автоматически.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    TextButton(enabled = linking == null, onClick = {
-                        error = null
-                        scope.launch {
-                            val r = withContext(Dispatchers.IO) { controller.linkWorkspace(on, target) { linking = "… $it" } }
-                            linking = null
-                            when (r) {
-                                is Outcome.Failure -> error = r.diagnostics.first().let { d -> listOfNotNull(d.message, d.causes.firstOrNull()?.message).joinToString(": ") }
-                                is Outcome.Success -> {
-                                    key = com.dpsmpx.dpai.ui.WorkspaceLink.KEY
-                                    known = com.dpsmpx.dpai.ui.WorkspaceLink.KNOWN_HOSTS
-                                    linked = true
-                                }
-                            }
-                        }
-                    }) { Text(if (linked) "Связать заново" else "Связать автоматически") }
                     OutlinedTextField(key, { key = it }, label = { Text("Ключ SSH на ${on.label}") }, singleLine = true)
                     OutlinedTextField(known, { known = it }, label = { Text("known_hosts на нём (необязательно)") }, singleLine = true)
                 }
@@ -635,71 +588,6 @@ private fun ProjectDialog(controller: Controller, target: TargetEntry, withClaud
         },
         dismissButton = { TextButton(onClick = { onDone(null) }) { Text("Отмена") } },
     )
-}
-
-/**
- * Termux на этом телефоне (D-46): разрешение «Запуск команд в среде
- * Termux», слушает ли `sshd`, запуск `sshd` кнопкой. Служба контроллера
- * запускает его и сама, если порт закрыт.
- */
-@Composable
-internal fun TermuxCard(port: Int, framed: Boolean = true) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val scope = rememberCoroutineScope()
-    var permitted by remember { mutableStateOf(TermuxLauncher.permitted(context)) }
-    var listening by remember { mutableStateOf<Boolean?>(null) }
-    var note by remember { mutableStateOf<String?>(null) }
-    // HyperOS отклоняет запрос стороннего разрешения молча, без окна: отказ — открыть страницу приложения в настройках.
-    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ok ->
-        permitted = ok
-        if (!ok) {
-            note = "Окно не появилось: в настройках приложения — «Разрешения» → «Запуск команд в среде Termux»"
-            context.startActivity(TermuxLauncher.appSettings(context))
-        }
-    }
-    Poll(port, periodMs = 3000) {
-        listening = withContext(Dispatchers.IO) { TermuxLauncher.listening(port) }
-        permitted = TermuxLauncher.permitted(context)
-    }
-    Framed(framed) {
-        Column(if (framed) Modifier.padding(12.dp) else Modifier) {
-            Text("Termux на этом телефоне", style = MaterialTheme.typography.titleSmall)
-            Text(
-                "sshd на порту $port: " + when (listening) {
-                    true -> "слушает"
-                    false -> "не слушает"
-                    null -> "проверяю…"
-                },
-                style = MaterialTheme.typography.bodySmall,
-            )
-            if (!TermuxLauncher.installed(context)) {
-                Text("Termux не найден", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            } else if (!TermuxLauncher.supportsRunCommand(context)) {
-                Text(
-                    "Этот Termux (из Google Play) не принимает команды от других приложений. sshd поднимается автозапуском при загрузке телефона " +
-                        "(~/.termux/boot/10-dpai-sshd) или вашим виджетом.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            } else if (!permitted) {
-                Text(
-                    "Чтобы приложение само запускало sshd, разрешите «Запуск команд в среде Termux» и добавьте в Termux строку allow-external-apps = true в ~/.termux/termux.properties.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                TextButton(onClick = { ask.launch(TermuxLauncher.PERMISSION) }) { Text("Разрешить") }
-            } else {
-                Text("Разрешение есть: контроллер сам запустит sshd, если порт закрыт (не чаще раза в 5 минут).", style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = {
-                    scope.launch {
-                        note = when (val r = withContext(Dispatchers.IO) { TermuxLauncher.startSshd(context) }) {
-                            is com.dpsmpx.dpai.core.result.Outcome.Success -> "Команда отправлена в Termux"
-                            is com.dpsmpx.dpai.core.result.Outcome.Failure -> "Не отправлена: ${r.diagnostics.first().message}"
-                        }
-                    }
-                }) { Text("Запустить sshd сейчас") }
-            }
-            note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
-        }
-    }
 }
 
 /**
@@ -802,8 +690,8 @@ private fun TargetSwitches(model: DemoModel, t: TargetEntry) {
 }
 
 /**
- * Командная строка (D-47): `dpai` в Termux на этом телефоне (или с ПК
- * через SSH-туннель) управляет контуром через канал на 127.0.0.1; код
+ * Командная строка (D-47): `dpai` с ПК
+ * через локальный проброс порта управляет контуром через канал на 127.0.0.1; код
  * сопряжения — здесь, на две минуты.
  */
 @Composable
@@ -844,7 +732,7 @@ internal fun CliCard() {
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(c, style = MaterialTheme.typography.headlineMedium)
-                            Text("В Termux: dpai control pair $c — код действует 2 минуты", style = MaterialTheme.typography.bodySmall)
+                            Text("На ПК: dpai control pair $c — код действует 2 минуты", style = MaterialTheme.typography.bodySmall)
                             if (pairingStatus.refusals > 0) {
                                 Text("Отклонено попыток: ${pairingStatus.refusals}", style = MaterialTheme.typography.bodySmall)
                             }
@@ -921,7 +809,7 @@ private fun RemoveDialog(t: TargetEntry, model: DemoModel, onCancel: () -> Unit,
  * строку надо снова добавить в authorized_keys targets.
  */
 @Composable
-internal fun BackupCard(controller: Controller, framed: Boolean = true, onRestoreAccess: () -> Unit, onRestored: () -> Unit) {
+internal fun BackupCard(controller: Controller, framed: Boolean = true, onRestored: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     var last by remember { mutableStateOf(SettingsBackups.last(context)) }
@@ -966,83 +854,6 @@ internal fun BackupCard(controller: Controller, framed: Boolean = true, onRestor
                 }) { Text("Сохранить сейчас") }
                 TextButton(onClick = { pick.launch(arrayOf("application/json", "application/octet-stream", "text/plain", "*/*")) }) { Text("Загрузить…") }
             }
-            TextButton(onClick = onRestoreAccess) { Text("Восстановить доступ после переустановки") }
-        }
-    }
-}
-
-/**
- * Восстановление после переустановки (D-54): одна команда в Termux — и
- * приложение само возвращает доступ по SSH, настройки из копии в Termux,
- * targets по слотам Claude и ключ приложения на ПК. После копирования
- * команды карточка сама ждёт возвращения из Termux и пробует каждые 5 с.
- */
-@Composable
-internal fun RestoreCard(controller: Controller, framed: Boolean = true, onHide: () -> Unit, onRestored: () -> Unit) {
-    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
-    val scope = rememberCoroutineScope()
-    val nonce = remember { SettingsBackups.restoreNonce(context) }
-    val user = remember { SettingsBackups.termuxUser(context) }
-    var command by remember { mutableStateOf<String?>(null) }
-    var waiting by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf<String?>(null) }
-    var message by remember { mutableStateOf<String?>(null) }
-    var report by remember { mutableStateOf<List<String>>(emptyList()) }
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        val line = withContext(Dispatchers.IO) { runCatching { controller.publicKeyLine() } }
-        line.onSuccess { command = com.dpsmpx.dpai.ui.TermuxRestore.command(it, nonce) }
-            .onFailure { message = "Ключ SSH не читается: ${it.message}. «Резервная копия» → «Новый переносимый ключ SSH…»." }
-    }
-    suspend fun attempt(quiet: Boolean): Boolean {
-        val u = user ?: run { message = "Termux не установлен"; return true }
-        busy = "…"
-        val r = withContext(Dispatchers.IO) { controller.restoreAccess(nonce, u) { busy = "… $it" } }
-        busy = null
-        return when (r) {
-            is Outcome.Success -> {
-                SettingsBackups.clearRestoreNonce(context)
-                report = r.value
-                message = "Готово. Проверьте targets кнопкой «Проверить»; вход — ⋮ → «Проверить вход»."
-                onRestored()
-                true
-            }
-            is Outcome.Failure -> {
-                val d = r.diagnostics.first()
-                if (!quiet || d.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.SSH_HOST_KEY_REJECTED) message = d.message
-                d.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.SSH_HOST_KEY_REJECTED
-            }
-        }
-    }
-    androidx.compose.runtime.LaunchedEffect(waiting) {
-        var left = 180
-        while (waiting && left-- > 0) {
-            kotlinx.coroutines.delay(5_000)
-            if (busy == null && withContext(Dispatchers.IO) { TermuxLauncher.listening(com.dpsmpx.dpai.ui.TermuxRestore.PORT) } && attempt(quiet = true)) waiting = false
-        }
-        waiting = false
-    }
-    Framed(framed) {
-        Column(Modifier.padding(12.dp)) {
-            Text("Восстановление после переустановки", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Удаление приложения стёрло его настройки и ключ, но Termux цел: агент, входы Claude, копия настроек. " +
-                    "Скопируйте команду, вставьте в Termux (долгое нажатие → Paste) и вернитесь — остальное приложение сделает само.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Row {
-                TextButton(enabled = command != null, onClick = {
-                    val c = command ?: return@TextButton
-                    Clipboard.copy(context, "dpai", c, sensitive = true)
-                    context.packageManager.getLaunchIntentForPackage("com.termux")?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)?.let(context::startActivity)
-                    message = "Команда скопирована. Вставьте её в Termux и вернитесь сюда."
-                    waiting = true
-                }) { Text("Копировать и открыть Termux") }
-                TextButton(enabled = busy == null, onClick = { scope.launch { attempt(quiet = false) } }) { Text("Восстановить") }
-            }
-            (busy ?: if (waiting) "жду команду в Termux…" else null)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            report.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
-            TextButton(onClick = onHide) { Text("Скрыть") }
         }
     }
 }

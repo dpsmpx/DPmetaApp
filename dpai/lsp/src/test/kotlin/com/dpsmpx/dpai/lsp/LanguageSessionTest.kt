@@ -5,6 +5,7 @@ import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.JsonArray
 import com.dpsmpx.dpai.core.serialization.JsonNull
 import com.dpsmpx.dpai.core.serialization.JsonObject
+import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpai.core.serialization.json
@@ -43,6 +44,32 @@ class LanguageSessionTest {
         error("не дождались: $what")
     }
 
+    @Test fun explicitIndexDirectoryIsSentAndTheServersDirectoryIsObservable() {
+        val fake = FakeServer { method, _ -> if (method == "initialize") parse("""{"capabilities":{"experimental":{"indexDir":"/managed/indexes"}}}""") else JsonNull }
+        val options = JsonObject.of("indexDir" to json("/managed/indexes"))
+        val client = LspClient(fake.clientIn, fake.clientOut, "file:///p", Quiet, initializationOptions = options)
+        val info = (client.start() as Outcome.Success).value
+        assertEquals(options, fake.params("initialize")["initializationOptions"])
+        assertEquals("/managed/indexes", info.indexDirectory)
+        client.stop()
+    }
+
+    @Test fun deletedProjectFileClosesBothDocumentsAndAnnouncesDeletedInsteadOfChanged() {
+        val (main, first) = client("{}")
+        val (helper, second) = client("{}")
+        val session = LanguageSession(main, helper)
+        assertTrue(session.open(uri, "python", "code") is Outcome.Success)
+        assertTrue(session.filesDeleted(setOf(uri)) is Outcome.Success)
+        for ((c, server) in listOf(main to first, helper to second)) {
+            assertNull(c.document(uri))
+            await("событие удаления") { "workspace/didChangeWatchedFiles" in server.methods() }
+            val events = server.params("workspace/didChangeWatchedFiles")["changes"] as JsonArray
+            assertEquals(json(3), (events.items.single() as JsonObject)["type"])
+            assertTrue("textDocument/didClose" in server.methods())
+        }
+        main.stop(); helper.stop()
+    }
+
     @Test
     fun settingsAnswerConfigurationBySectionAndAreAnnounced() {
         val settings = PythonServers.pylsp("/root/.local/share/dpai/projects/k/python/bin/python").settings
@@ -67,6 +94,57 @@ class LanguageSessionTest {
         await("ответ") { server.responses.any { it["id"] == json("c2") } }
         assertEquals(JsonArray(listOf(JsonNull)), server.responses.first { it["id"] == json("c2") }["result"])
         assertTrue("workspace/didChangeConfiguration" !in server.methods())
+        client.stop()
+    }
+
+    @Test
+    fun savedProjectEditUpdatesOpenDocumentsAndAnnouncesClosedFilesToBothServers() {
+        val (main, first) = client("""{"textDocumentSync":2}""")
+        val (helper, second) = client("""{"textDocumentSync":2}""")
+        val session = LanguageSession(main, helper)
+        assertTrue(session.open(uri, "python", "foo") is Outcome.Success)
+        val closed = "file:///p/util.py"
+        assertTrue(session.filesChanged(linkedMapOf(uri to "bar", closed to "bar")) is Outcome.Success)
+        for ((client, server) in listOf(main to first, helper to second)) {
+            assertEquals(2 to "bar", client.document(uri))
+            assertNull(client.document(closed))
+            await("изменения файлов") { "workspace/didChangeWatchedFiles" in server.methods() }
+            val changes = server.params("workspace/didChangeWatchedFiles")["changes"] as JsonArray
+            assertEquals(listOf(uri, closed), changes.items.map { ((it as JsonObject)["uri"] as JsonString).value })
+            assertTrue("textDocument/didSave" in server.methods())
+        }
+        main.stop(); helper.stop()
+    }
+
+    @Test
+    fun temporaryDocumentClosesOnlyWhenLastBorrowerReleasesIt() {
+        val (client, server) = client("""{"textDocumentSync":2}""")
+        val first = (client.borrowDocument(uri, "python", "foo") as Outcome.Success).value
+        val second = (client.borrowDocument(uri, "python", "foo") as Outcome.Success).value
+        assertEquals(1 to "foo", client.document(uri))
+        first.close(); first.close()
+        assertEquals(1 to "foo", client.document(uri))
+        assertTrue("textDocument/didClose" !in server.methods())
+        second.close()
+        assertNull(client.document(uri))
+        await("закрытие временного документа") { "textDocument/didClose" in server.methods() }
+        client.stop()
+    }
+
+    @Test
+    fun editorTakingOverBorrowedDocumentIsNotClosedByTheRename() {
+        val (client, _) = client("""{"textDocumentSync":2}""")
+        val borrowed = (client.borrowDocument(uri, "python", "foo") as Outcome.Success).value
+        assertTrue(client.open(uri, "python", "bar") is Outcome.Success)
+        borrowed.close()
+        assertEquals(2 to "bar", client.document(uri))
+        assertTrue(client.borrowDocument(uri, "python", "disk text") is Outcome.Failure)
+        assertEquals(2 to "bar", client.document(uri))
+        val again = (client.borrowDocument(uri, "python", "bar") as Outcome.Success).value
+        assertTrue(client.close(uri) is Outcome.Success)
+        assertEquals(2 to "bar", client.document(uri))
+        again.close()
+        assertNull(client.document(uri))
         client.stop()
     }
 

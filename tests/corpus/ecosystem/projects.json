@@ -1,0 +1,18 @@
+{
+  "format": "dpmeta.projects",
+  "version": 1,
+  "projects": [
+    {
+      "repo": "example/Alpha"
+    },
+    {
+      "repo": "example/Beta"
+    },
+    {
+      "repo": "example/Pult"
+    },
+    {
+      "repo": "example/DPmeta"
+    }
+  ]
+}

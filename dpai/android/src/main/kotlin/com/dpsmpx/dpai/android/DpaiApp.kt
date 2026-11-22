@@ -152,6 +152,8 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     val scope = rememberCoroutineScope()
 
     val context = androidx.compose.ui.platform.LocalContext.current
+    val quickStart by ApiQuickStartRequests.open.collectAsState()
+    LaunchedEffect(Unit) { if (!ApiQuickStartRequests.seen(context) && incoming == Incoming()) ApiQuickStartRequests.request() }
     val notifier = remember { Notifier(context.applicationContext) }
     // Ключ — и выбранная сессия: её экран грузится сразу, а не через такт (раньше — до 3 с крутилки).
     // Только пока окно видно: свёрнутое приложение не шагает демо и не копит снимки (ревью 8 октября 2026, A-31);
@@ -174,7 +176,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 healthCount = com.dpsmpx.dpai.ui.Health.items(facts).size
                 if (!wizardChecked) {
                     wizardChecked = true
-                    if (!com.dpsmpx.dpai.ui.Health.setupDone(facts) && !SetupWizardPrefs.later(context)) wizard = facts
+                    if (ApiQuickStartRequests.seen(context) && !ApiQuickStartRequests.open.value && !com.dpsmpx.dpai.ui.Health.setupDone(facts) && !SetupWizardPrefs.later(context)) wizard = facts
                 }
             }
             kotlinx.coroutines.delay(HEALTH_EVERY_MS)
@@ -254,7 +256,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     // «Остановить» из уведомления службы (A-18): подтверждение — здесь, с тем, что встанет.
     var confirmStop by remember { mutableStateOf(false) }
     LaunchedEffect(incoming) { if (incoming.stop) confirmStop = true }
-    wizard?.let { f ->
+    wizard?.takeIf { !quickStart }?.let { f ->
         val jobs = remember { LongJobs.get(context) }
         val jobState by jobs.state.collectAsState()
         val busy = LongJobs.GUEST.any { jobState[it]?.running == true }
@@ -278,6 +280,11 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
             wizard = null
         })
     }
+    if (quickStart) ApiQuickStartWizard(
+        onOpen = { ApiQuickStartRequests.chat.value = it.id.value; openTab(AiTab.MODELS) },
+        onAdvanced = { openTab(AiTab.MODELS) },
+        onFiles = { openTab(AiTab.FILES) },
+    )
     // Мастер нового проекта (DPmetaApp:D-150): из «Файлов», рабочего проекта, Targets и пульта.
     val newProject by NewProjectRequests.open.collectAsState()
     if (newProject) {

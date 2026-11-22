@@ -63,7 +63,7 @@ internal class HealthNav(
 internal object LinuxJobs {
     private const val MAX_OUTPUT = 40
 
-    fun install(context: Context): Boolean = LongJobs.get(context).start(LongJobs.LINUX_INSTALL, "Установка Alpine", excludes = LongJobs.GUEST) {
+    fun install(context: Context, onFinished: ((LongJobs.Done) -> Unit)? = null): Boolean = LongJobs.get(context).start(LongJobs.LINUX_INSTALL, "Установка Alpine", excludes = LongJobs.GUEST, onFinished = onFinished) {
         when (val r = LinuxSetup.install(context)) {
             is Outcome.Success -> LongJobs.Done(r.value?.let { "Установлено: файлов ${it.files}, ${it.bytes / 1_048_576} МБ" } ?: "Уже установлено")
             is Outcome.Failure -> LongJobs.Done("Не установлено: ${r.errors.first().message}", failed = true)
@@ -92,9 +92,8 @@ internal fun runHealthAction(context: Context, action: HealthAction, nav: Health
         HealthAction.INSTALL_CLAUDE -> LinuxJobs.claude(context)
         HealthAction.OPEN_TARGETS -> nav.targets()
         HealthAction.OPEN_LOG -> nav.log()
-        HealthAction.TERMUX_GUIDE -> nav.guide()
         HealthAction.GIT_IDENTITY -> askIdentity()
-        HealthAction.APP_SETTINGS -> context.startActivity(TermuxLauncher.appSettings(context))
+        HealthAction.APP_SETTINGS -> context.startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", context.packageName, null)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
         // Секреты и хранилище — в документе настроек приложения (DPmetaApp:D-112); в отдельной сборке — в «Настройках AI».
         HealthAction.OPEN_SECRETS, HealthAction.OPEN_STORAGE ->
             app?.sectionIntent(com.dpsmpx.dpai.ui.AppSection.SETTINGS)?.let(context::startActivity) ?: nav.settings()

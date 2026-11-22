@@ -35,5 +35,6 @@ class WidgetTextTest {
         assertEquals("Запуски: за сутки ✓ 0 · ✗ 0", WidgetText.runs(com.dpsmpx.dpai.ui.ManualCounts(null, 0, 0)))
         assertEquals("Запуски: идёт сборка · за сутки ✓ 2 · ✗ 1", WidgetText.runs(com.dpsmpx.dpai.ui.ManualCounts(com.dpsmpx.dpai.ui.ManualProfileKind.BUILD, 2, 1)))
         assertEquals("Запуски: идёт проверка · за сутки неизвестно", WidgetText.runs(com.dpsmpx.dpai.ui.ManualCounts(com.dpsmpx.dpai.ui.ManualProfileKind.CHECK, null, null)))
+        assertEquals("Запуски: за сутки ✓ 0 · ✗ 0", WidgetText.runs(com.dpsmpx.dpai.ui.ManualCounts(com.dpsmpx.dpai.ui.ManualProfileKind.DEPENDENCIES, 0, 0)))
     }
 }

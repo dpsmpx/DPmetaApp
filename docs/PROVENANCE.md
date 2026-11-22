@@ -20,9 +20,9 @@ DP-Verify и других репозиториев автора — источн
 
 ## Зависимости
 
-Модули `:core:*` (кроме `:core:git` — JGit и `:core:model` — RE2/J, ниже), `:cli` и `:tests:corpus` сторонних зависимостей не имеют —
+Модули `:core:*` (кроме `:core:git` — JGit и `:core:model` — RE2/J, ниже) и `:tests:corpus` сторонних зависимостей не имеют —
 только ядро `dpai/` (`core`, `storage`) и JDK (`java.net.http` — транспорт
-`dpmeta-cli`; TLS — системными корнями).
+тестов на JVM; TLS — системными корнями).
 Каждая новая зависимость — строка ниже и запись в каталоге версий;
 кандидаты и их лицензии — ТЗ, §6.1.
 Зависимости подсистемы «AI» и ядра (Kotlin, JUnit, Android Gradle Plugin,
@@ -111,23 +111,26 @@ https://repo.maven.apache.org/maven2/ , с POM и транзитивными з�
   sha512 совпал с `dist.integrity` реестра. Работает на Node.js Alpine.
 - kotlin-lsp (JetBrains, Apache-2.0 с закрытыми частями JetBrains Air и
   Fleet; https://github.com/Kotlin/kotlin-lsp ): сборки EAP, срок около
-  30 дней. По D-136 закреплена 263.7084.0; новые версии — с обновлением
+  30 дней. По D-136 и DP_AI_Orcestrator:D-206 закреплена 271.2085.0; новые версии — с обновлением
   приложения. SHA-256 целых архивов проверены потоковым скачиванием
-  14 ноября 2026: aarch64 —
-  `450ab7c1d80e48106aa429b48cb4226d82ca12a8a2400447ae02386794780cac`,
-  x86_64 — `ae0c4b01e17ab73a4a5227a78ea99e6dcbe3e499600315b22759a4e4cddd11df`.
+  21 ноября 2026: aarch64 —
+  `877aee612a17dab48144466282a6414ec58ab428a10b97c7e13edd9b6b3dc96e`,
+  x86_64 — `e398e799027f41749ea33faa57470307d13d40f910961858c7e30adbd778ae08`.
   Суммы зашиты в APK; файл `.sha256` сервера при установке не читается.
   Запуск без встроенной
   glibc-JVM: JDK 25 Alpine, gcompat для наблюдения за файлами,
-  `--data-sharing=none`. Проверена сборка 263.7084.0: на Alpine x86_64
+  `--data-sharing=none`. Ранее проверена сборка 263.7084.0: на Alpine x86_64
   (musl) в chroot и на хосте — импорт Gradle, диагностика, переходы,
-  переименование.
+  переименование. Сборка 271.2085.0 проверена 21 ноября на хосте с
+  JRE25/JDK21: живой Gradle JVM, диагностика, дополнение, переходы и
+  переименование. Android и телефон проверяются отдельно.
 - rocksdbjni 10.10.1 (Apache-2.0 / GPL-2.0): общий архив Maven Central
   https://repo1.maven.org/maven2/org/rocksdb/rocksdbjni/10.10.1/rocksdbjni-10.10.1.jar ,
   SHA-256 `3e3c9e439b89c2ac4aaa7512bc73052d44b3a6397daed6cb88168cefa6e431a9`
   (совпал с `.sha256` Maven Central). Из него берётся только musl-библиотека
   нужной архитектуры: набор JNI-символов (1525) совпал с библиотекой
-  сборки kotlin-lsp полностью, для x86_64 и aarch64.
+  сборок kotlin-lsp полностью, для x86_64 и aarch64; для 271.2085.0
+  повторно сверены все 1525 символов 21 ноября 2026.
 - Платформа Android SDK: архив из манифеста
   https://dl.google.com/android/repository/repository2-3.xml , сверка SHA-1
   манифеста, как у sdkmanager; ставится после принятия лицензии Google

@@ -13,10 +13,10 @@ import com.dpsmpx.dpmeta.formats.Brief
 import com.dpsmpx.dpmeta.formats.SessionLink
 import com.dpsmpx.dpmeta.metrics.FeedEvent
 import com.dpsmpx.dpmeta.model.Event
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 
 /**
- * Поручение Claude из пульта (F-22, F-23, F-25; D-07): маршрут, шаблон, поля → текст →
+ * Поручение Claude из пульта (F-22, F-23; D-07): маршрут, шаблон, поля → текст →
  * окно «что уйдёт» → запуск маршрута (уровень 1). Маршруты и их токены ведёт подсистема
  * «AI» (`DP_AI_Orcestrator:D-116`); пульт видит только [Route] и зовёт запуск через
  * оболочку. Текст поручения в журнал не идёт: в команде — его SHA-256 и длина,
@@ -88,11 +88,8 @@ object RouteActions {
     fun pickBrief(briefs: List<Brief>, route: Route?, wanted: String?): Brief? =
         briefs.firstOrNull { it.key == wanted } ?: briefs.firstOrNull { it.key == route?.brief } ?: briefs.firstOrNull()
 
-    /**
-     * [question] — вопрос автору, на который поручен ответ (F-25): его заголовок из `TODO.md`
-     * — в параметрах, чтобы у вопроса показать поручение и PR после него.
-     */
-    fun command(route: Route, project: String, repo: RepoRef, brief: Brief, text: String, question: String? = null): ActionCommand = ActionCommand(
+    /** Запуск ровно того текста, который показан пользователю (D-07). */
+    fun command(route: Route, project: String, repo: RepoRef, brief: Brief, text: String): ActionCommand = ActionCommand(
         ActionKind.ROUTE_RUN,
         ActionTarget(repo),
         mapOf(
@@ -102,28 +99,8 @@ object RouteActions {
             "brief" to brief.key,
             "chars" to "${text.length}",
             "text_sha256" to EditActions.sha256(text),
-        ) + (question?.takeIf { it.isNotBlank() }?.let { mapOf("question" to it.take(MAX_QUESTION)) } ?: emptyMap()),
+        ),
     )
-
-    /** Предел заголовка вопроса в параметрах команды: журнал хранит параметры с пределом. */
-    const val MAX_QUESTION: Int = 300
-
-    /** Ответ на вопрос поручен (F-25): когда, какой сессией и какие PR проекта открыты после. */
-    data class Answered(val at: Timestamp, val session: String?, val pulls: List<Screens.PullRow>)
-
-    /**
-     * F-25: последнее поручение «записать ответ» на этот вопрос (по журналу: проект и
-     * заголовок; итог «выполнено» или «неизвестен») и PR проекта, открытые после него, —
-     * среди них сессия и записала ответ. Вопрос снимается сам, когда исчез из `TODO.md`.
-     */
-    fun answered(entries: List<ActionEntry>, pulls: List<Screens.PullRow>, q: Screens.Question): Answered? {
-        val e = entries.lastOrNull {
-            it.kind == ActionKind.ROUTE_RUN.code && it.params["project"] == q.project && it.params["question"] == q.title.take(MAX_QUESTION) &&
-                (it.status == ActionStatus.DONE || it.status == ActionStatus.UNKNOWN)
-        } ?: return null
-        val after = pulls.filter { it.project == q.project && (it.createdAt ?: -1) >= e.at.epochMillis }.sortedBy { it.createdAt }
-        return Answered(e.at, e.link, after)
-    }
 
     /**
      * F-58 (D-161): сессии запусков маршрутов из пульта — id `session_…` → имя маршрута, по

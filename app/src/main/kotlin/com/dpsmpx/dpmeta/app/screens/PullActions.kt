@@ -8,7 +8,7 @@ import com.dpsmpx.dpmeta.github.PullCommit
 import com.dpsmpx.dpmeta.github.PullDetail
 import com.dpsmpx.dpmeta.github.PullFile
 import com.dpsmpx.dpmeta.github.PullNote
-import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpai.core.git.RepoRef
 
 /**
  * Действия с PR в пульте (F-12, F-13; D-07, D-36): какие команды, что о них

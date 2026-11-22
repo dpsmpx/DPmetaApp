@@ -1,7 +1,7 @@
 // Оболочка Android (D-02, D-34) — библиотека (D-103, DPmetaApp:D-53): Compose рисует
-// состояния экранов из ui; логики здесь нет. APK собирают тонкие приложения: отдельная
-// сборка «AI» `android-app` и приложение DPmetaApp из корня; личность пакета, версия,
-// подпись и упаковка — у них. Подключается только при Android SDK (settings.gradle.kts).
+// состояния экранов из ui; логики здесь нет. APK собирает приложение DPmetaApp из корня;
+// отдельная упаковка подсистемы снята D-201. Личность пакета, версия,
+// подпись и упаковка — у приложения. Подключается только при Android SDK (settings.gradle.kts).
 // Плагины Android и Compose — convention-плагин build-logic (D-102).
 import java.net.URI
 import java.nio.ByteBuffer
@@ -60,9 +60,8 @@ android {
 val packAgent = tasks.register<Zip>("packAgent") {
     dependsOn(":cli:installDist")
     from(rootProject.file("cli/build/install/dpai")) { into("dpai") }
-    from(rootProject.file("tools/termux/claude-proot.sh")) { into("dpai") }
     // Скрипты — исполняемыми: без этого `dpai/bin/dpai` после unzip не запускался (ревью сборки 0.1.0-dev.2).
-    eachFile { if (path == "dpai/bin/dpai" || path == "dpai/claude-proot.sh") permissions { unix("rwxr-xr-x") } }
+    eachFile { if (path == "dpai/bin/dpai") permissions { unix("rwxr-xr-x") } }
     archiveFileName.set("dpai-agent.zip")
     destinationDirectory.set(layout.buildDirectory.dir("generated/dpai-setup-assets"))
     isPreserveFileTimestamps = false

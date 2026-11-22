@@ -23,6 +23,7 @@ data class ServerLaunch(
     val settings: JsonObject = JsonObject(emptyMap()),
     val environment: Map<String, String> = emptyMap(),
     val pull: Boolean = false,
+    val initializationOptions: JsonObject = JsonObject(emptyMap()),
 )
 
 /** Какой язык и какой `languageId` LSP у файла — по имени. */
@@ -127,18 +128,18 @@ object KotlinLsp {
 
     const val RELEASES_LATEST: String = "https://github.com/Kotlin/kotlin-lsp/releases/latest"
     /** Проверенный дистрибутив: новые версии приходят только с обновлением APK (DPmetaApp:D-136). */
-    const val PINNED_BUILD: String = "263.7084.0"
+    const val PINNED_BUILD: String = "271.2085.0"
 
     fun archiveSha256(arch: String): String = when (arch) {
-        "aarch64" -> "450ab7c1d80e48106aa429b48cb4226d82ca12a8a2400447ae02386794780cac"
-        "x86_64" -> "ae0c4b01e17ab73a4a5227a78ea99e6dcbe3e499600315b22759a4e4cddd11df"
+        "aarch64" -> "877aee612a17dab48144466282a6414ec58ab428a10b97c7e13edd9b6b3dc96e"
+        "x86_64" -> "e398e799027f41749ea33faa57470307d13d40f910961858c7e30adbd778ae08"
         else -> throw IllegalArgumentException("архитектура $arch не поддержана")
     }
     private val BUILD = Regex("[0-9]{3}\\.[0-9]{1,6}\\.[0-9]{1,6}")
 
     /** Номер сборки из адреса страницы выпуска (`…/releases/tag/v263.7084.0`); иное — `null`. */
     fun build(location: String): String? {
-        val tag = location.trim().substringAfterLast("/releases/tag/", "").removePrefix("v")
+        val tag = location.trim().substringAfterLast("/releases/tag/", "").removePrefix("kotlin-lsp/").removePrefix("kotlin-lsp%2F").removePrefix("kotlin-lsp%2f").removePrefix("v")
         return tag.takeIf { BUILD.matches(it) }
     }
 
@@ -252,7 +253,20 @@ object KotlinLsp {
     }
 
     /** Запуск службы командой [command] ([KotlinLsp.command]); диагностику она отдаёт по запросу. */
-    fun launch(command: List<String>, androidHome: String?): ServerLaunch = ServerLaunch("kotlin-lsp", command, environment = environment(androidHome), pull = true)
+    fun launch(command: List<String>, androidHome: String?): ServerLaunch {
+        val system = command.lastOrNull { it.startsWith("--system-path=") }?.substringAfter('=')
+        require(system != null && system.startsWith('/') && system.none { it.isISOControl() }) { "нет управляемого каталога kotlin-lsp" }
+        return ServerLaunch("kotlin-lsp", command, environment = environment(androidHome), pull = true,
+            initializationOptions = JsonObject.of("indexDir" to json("${system.trimEnd('/')}/indexes")))
+    }
+
+    /** Сервер должен подтвердить управляемый каталог, а не молча выбрать общий кеш пользователя. */
+    fun acceptsIndexDirectory(options: JsonObject, actual: String?): Boolean {
+        val configured = options["indexDir"] ?: return true
+        val expected = LspParse.str(configured)?.takeIf { it.startsWith('/') && it.none(Char::isISOControl) } ?: return false
+        if (actual == null || actual.length > 4096 || actual.any { it.isISOControl() } || actual.split('/').any { it == "." || it == ".." }) return false
+        return actual.trimEnd('/') == expected || actual.startsWith("$expected/")
+    }
 
     /** Та же JVM и classpath, но вместо службы — `license status`: срок сборки EAP без запуска протокола. */
     fun statusCommand(command: List<String>): List<String> {

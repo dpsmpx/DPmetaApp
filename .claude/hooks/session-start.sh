@@ -106,8 +106,7 @@ fi
     echo "Правила — CLAUDE.md; этап и шаги — ROADMAP/ROADMAP.md; хвосты — TODO.md."
     echo "Подсистема «AI» и ядро — dpai/ (D-28): правила dpai/CLAUDE.md, хвосты dpai/TODO.md,"
     echo "  проверки — cd dpai && tools/verify/run.sh static|affected|full."
-    echo "Подсистема DPmeta — dpmeta/ (D-43): правила dpmeta/CLAUDE.md; проверки — cd dpmeta && tools/check.sh"
-    echo "  (клоны экосистемы — CLONES=<каталог клонов>); аудит документации — /doc-consistency-audit."
+    echo "DPmeta — самостоятельный dpsmpx/DPmeta с сохранённой историей (D-178); здесь его копии нет."
     for tool in python3 git java; do
         if command -v "$tool" >/dev/null 2>&1; then
             echo "  $tool: есть"

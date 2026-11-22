@@ -11,7 +11,6 @@ import com.dpsmpx.dpai.execution.process.Detacher
 import com.dpsmpx.dpai.execution.process.ProcessTree
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -82,7 +81,7 @@ class ProcessSupervision(
     }
 
     /** Жив ли процесс службы — тот самый, а не чужой с тем же номером. */
-    fun serviceAlive(state: ServiceState): Boolean = ProcessTree.find(state.pid, state.startedAt) != null
+    fun serviceAlive(state: ServiceState): Boolean = ProcessTree.find(state.pid, state.startedAt)?.let(ProcessTree::alive) == true
 
     /** Супервизор хода [id] отдельным процессом — отсюда или по просьбе службы. */
     fun spawn(id: SessionId): Outcome<Unit> {
@@ -103,11 +102,11 @@ class ProcessSupervision(
 
     private fun find(mark: ProcessMark): ProcessHandle? = ProcessTree.find(mark.pid, mark.startedAt, mark.bootAt)
 
-    override fun alive(id: SessionId, supervisor: ProcessMark): Boolean = find(supervisor) != null
+    override fun alive(id: SessionId, supervisor: ProcessMark): Boolean = find(supervisor)?.let(ProcessTree::alive) == true
 
     override fun awaitEnd(id: SessionId, supervisor: ProcessMark, timeout: Duration): Boolean {
         val h = find(supervisor) ?: return true
-        return runCatching { h.onExit().get(timeout.inWholeMilliseconds, TimeUnit.MILLISECONDS) }.isSuccess
+        return runCatching { ProcessTree.awaitExit(h, timeout, clock) }.getOrDefault(false)
     }
 
     override fun stopSupervisor(id: SessionId, supervisor: ProcessMark, child: ProcessMark?, grace: Duration): StopResult {
