@@ -55,8 +55,14 @@ open class PultActivity : ComponentActivity() {
 
     /** «Ответ готов» из уведомления (F-58; D-161): открыть чат. */
     private val openAsk = mutableStateOf(false)
+    private val openCommands = mutableStateOf(false)
 
     private fun takeSection(intent: Intent?) {
+        // Только открыть прежний экран: из Intent никогда не исполняется команда.
+        if (intent?.getBooleanExtra(EXTRA_COMMANDS, false) == true) {
+            intent.removeExtra(EXTRA_COMMANDS)
+            openCommands.value = true
+        }
         // «Открыть PR» из уведомления (D-152): проект и номер — только из своего PendingIntent.
         val pullProject = intent?.getStringExtra(EXTRA_PULL_PROJECT)
         val pullNumber = intent?.getIntExtra(EXTRA_PULL_NUMBER, -1) ?: -1
@@ -598,6 +604,7 @@ open class PultActivity : ComponentActivity() {
                     goTo = goTo.value, onGoTo = { goTo.value = null }, settingsDocument = settingsDocument,
                     openPull = openPull.value, onPullOpened = { openPull.value = null },
                     openAsk = openAsk.value, onAskOpened = { openAsk.value = false },
+                    openCommands = openCommands.value, onCommandsOpened = { openCommands.value = false },
                     onClones = { withToken { token -> if (token != null) askClones(token, first = false) } }, onClonesChosen = ::clonesChosen,
                     onProjects = { withToken { token -> if (token != null) askProjects(token, first = false) } }, onProjectsChosen = ::projectsChosen,
                     onCancelSync = {
@@ -1208,6 +1215,7 @@ open class PultActivity : ComponentActivity() {
 
         /** Реестр команд в APK (F-40): `config/commands.toml` корня. */
         const val COMMANDS_ASSET = "commands.toml"
+        const val EXTRA_COMMANDS = "com.dpsmpx.dpmeta.OPEN_COMMANDS"
 
         /** Выбор клонов автора (D-70): спрошен ли, какие отмечены (`владелец/имя`). */
         private const val CLONES_PREFS = "dpmeta.clones"

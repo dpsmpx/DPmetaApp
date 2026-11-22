@@ -16,6 +16,21 @@ class DpmetaApplication : DpaiApplication() {
         registerBackup()
         super.onCreate()
         AppLock.install(this)
+        // Общий каталог читает прежний commands.toml только по запросу, не на UI-потоке (D-215).
+        val app = applicationContext
+        com.dpsmpx.dpai.android.AutomationBridge.pult = { root, inApp ->
+            val text = runCatching { app.assets.open(com.dpsmpx.dpmeta.app.PultActivity.COMMANDS_ASSET).bufferedReader().use { it.readText() } }.getOrNull()
+            if (text == null) com.dpsmpx.dpai.core.result.Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.ENTITY_NOT_FOUND, "реестра команд нет в APK")
+            else when (val parsed = com.dpsmpx.dpmeta.formats.CommandFormat.parse(text)) {
+                is com.dpsmpx.dpai.core.result.Outcome.Failure -> parsed
+                is com.dpsmpx.dpai.core.result.Outcome.Success -> com.dpsmpx.dpai.core.result.Outcome.success(com.dpsmpx.dpmeta.app.screens.CommandAutomations.describe(parsed.value, root, inApp))
+            }
+        }
+        com.dpsmpx.dpai.android.AutomationBridge.openPult = { context ->
+            context.startActivity(android.content.Intent(context, DpmetaActivity::class.java)
+                .putExtra(com.dpsmpx.dpmeta.app.PultActivity.EXTRA_COMMANDS, true)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
         // Пояс показа — всему приложению с запуска процесса: «AI» строит экраны и без открытого пульта (UX-22).
         com.dpsmpx.dpmeta.app.PultActivity.applyZone(this)
         // Одно хранилище (D-111, D-113): клоны пульта живут в ~/projects гостя — их видят терминал, IDE и «AI»;

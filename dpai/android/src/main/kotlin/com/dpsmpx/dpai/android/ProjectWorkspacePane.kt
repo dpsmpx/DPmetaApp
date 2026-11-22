@@ -47,7 +47,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 
-private enum class WorkspacePage(val title: String, val label: Int? = null) { FILES("Файлы"), AI("ИИ"), CHANGES("Изменения"), CHECKS("Проверки"), BUILD("Сборка"), RUN("Запуск"), DEPENDENCIES("", R.string.dependencies_title) }
+private enum class WorkspacePage(val title: String, val label: Int? = null) { FILES("Файлы"), AI("ИИ"), CHANGES("Изменения"), CHECKS("Проверки"), BUILD("Сборка"), RUN("Запуск"), DEPENDENCIES("", R.string.dependencies_title), AUTOMATIONS("", R.string.automation_title) }
 
 /** Первый общий рабочий экран: представление одного настроенного проекта (D-132). */
 @Composable
@@ -99,6 +99,13 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
     // «В ИИ» из редактора (D-165): выбранная задача — направление «в сессию».
     aiRequest?.let { req -> EditorAiSheet(model, current.project, selected, req) { aiRequest = null } }
     val zen = ideZen()
+    val context = LocalContext.current
+    var environment by rememberSaveable(project.project.value) { mutableStateOf(false) }
+    if (environment) {
+        androidx.activity.compose.BackHandler { environment = false }
+        EnvironmentScreen(onBack = { environment = false }, controller = Controller.get(context.filesDir), model = model)
+        return
+    }
     Column(Modifier.fillMaxSize()) {
         if (!zen) {
         Row(Modifier.fillMaxWidth()) {
@@ -161,6 +168,22 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
                     if (selected == null) Text("Выберите задачу: её изменения сравниваются с веткой интеграции") else ChangesSection(model, selected.id)
                 }
                 WorkspacePage.RUN.name -> WorkspaceRunPanel(model, current, location)
+                WorkspacePage.AUTOMATIONS.name -> if (taskKey != null) Column(Modifier.padding(12.dp)) {
+                    Text(androidx.compose.ui.res.stringResource(R.string.automation_main_tree))
+                    TextButton(onClick = { taskKey = null }) { Text(androidx.compose.ui.res.stringResource(R.string.automation_select_main)) }
+                } else AutomationCenter(project) { definition ->
+                    when (definition.source) {
+                        com.dpsmpx.dpai.automation.AutomationSource.PULT -> AutomationBridge.openPult?.invoke(context)
+                        com.dpsmpx.dpai.automation.AutomationSource.ENVIRONMENT -> environment = true
+                        com.dpsmpx.dpai.automation.AutomationSource.VERIFICATION -> { page = WorkspacePage.AI.name; if (selected != null) taskSheet = true }
+                        com.dpsmpx.dpai.automation.AutomationSource.MANUAL -> page = when (definition.id) {
+                            "manual.check" -> WorkspacePage.CHECKS.name
+                            "manual.build" -> WorkspacePage.BUILD.name
+                            "manual.dependencies" -> WorkspacePage.DEPENDENCIES.name
+                            else -> WorkspacePage.RUN.name
+                        }
+                    }
+                }
                 WorkspacePage.DEPENDENCIES.name -> WorkspaceDependenciesPanel(model, current, location)
                 WorkspacePage.CHECKS.name, WorkspacePage.BUILD.name -> {
                     val kind = if (page == WorkspacePage.CHECKS.name) com.dpsmpx.dpai.ui.ManualProfileKind.CHECK else com.dpsmpx.dpai.ui.ManualProfileKind.BUILD

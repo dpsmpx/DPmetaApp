@@ -540,6 +540,8 @@ fun PultApp(
     /** «Ответ готов» из уведомления (F-58; D-161): открыть чат «Спросить Claude»; [onAskOpened] — сбросить. */
     openAsk: Boolean = false,
     onAskOpened: () -> Unit = {},
+    openCommands: Boolean = false,
+    onCommandsOpened: () -> Unit = {},
     onGoTo: () -> Unit = {},
     onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null,
     /** «Клоны…» в настройках (D-70). */
@@ -603,6 +605,12 @@ fun PultApp(
         tab = Section.MORE
         stacks[Section.MORE] = listOf(Nav.Ask(null, null))
         onAskOpened()
+    }
+    LaunchedEffect(openCommands) {
+        if (!openCommands) return@LaunchedEffect
+        tab = Section.MORE
+        stacks[Section.MORE] = listOf(Nav.Commands)
+        onCommandsOpened()
     }
     val stack = stacks[tab].orEmpty()
     val open: (Nav) -> Unit = { stacks[tab] = stacks[tab].orEmpty() + it }

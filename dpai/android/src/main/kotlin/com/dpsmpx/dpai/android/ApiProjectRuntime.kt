@@ -17,6 +17,26 @@ import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.files.FileTree
 import com.dpsmpx.dpai.files.LocalTree
 import com.dpsmpx.dpai.files.SubTree
+import com.dpsmpx.dpai.automation.AutomationApi
+import com.dpsmpx.dpai.automation.AutomationCatalog
+import com.dpsmpx.dpai.automation.AutomationDefinition
+import com.dpsmpx.dpai.automation.AutomationJson
+import com.dpsmpx.dpai.automation.VerificationAutomations
+import com.dpsmpx.dpai.core.diagnostics.Diagnostic
+import com.dpsmpx.dpai.core.diagnostics.Redactor
+import com.dpsmpx.dpai.core.hashing.Hashing
+import com.dpsmpx.dpai.core.operation.Actor
+import com.dpsmpx.dpai.core.operation.ActorKind
+import com.dpsmpx.dpai.core.operation.Provenance
+import com.dpsmpx.dpai.core.serialization.JsonNull
+import com.dpsmpx.dpai.core.serialization.JsonNumber
+import com.dpsmpx.dpai.orchestrator.linux.AlpinePackages
+import com.dpsmpx.dpai.orchestrator.linux.ApkIndex
+import com.dpsmpx.dpai.storage.vfs.NioVfs
+import com.dpsmpx.dpai.ui.ManualAutomations
+import com.dpsmpx.dpai.ui.EnvironmentAutomations
+import com.dpsmpx.dpai.ui.ProjectProfileDefaults
+import com.dpsmpx.dpai.ui.ProjectNeeds
 import com.dpsmpx.dpai.providers.Cancel
 import com.dpsmpx.dpai.providers.ToolCall
 import com.dpsmpx.dpai.providers.ToolResult
@@ -26,7 +46,6 @@ import com.dpsmpx.dpai.ui.ApiQuickStart
 import com.dpsmpx.dpai.ui.ManualProfile
 import com.dpsmpx.dpai.ui.ManualProfileKind
 import com.dpsmpx.dpai.ui.ManualRunView
-import com.dpsmpx.dpai.ui.ManualStep
 import com.dpsmpx.dpai.ui.ProjectEntry
 import com.dpsmpx.dpai.ui.WorkspacePaths
 import java.util.concurrent.CompletableFuture
@@ -91,23 +110,104 @@ internal object ApiProjectRuntime {
             val relative = WorkspacePaths.homeRelative(target, project.root) ?: return Outcome.failure(DiagCode.VALUE_INVALID, "каталог проекта вне домашней папки")
             SubTree(GuestPaths.homeTree(context), relative)
         } else when (val r = model.pcFiles(target, project.root, writable = true)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
-        return Outcome.success(Session(context.applicationContext, model, project, view.main, tree, target.inApp))
+        return Outcome.success(Session(context.applicationContext, model, project, view.main, tree, target))
     }
 
     class Session(private val context: Context, private val model: DemoModel, val project: ProjectEntry,
-        private val location: com.dpsmpx.dpai.ui.WorkspaceLocation, private val tree: FileTree, private val inApp: Boolean) : AutoCloseable {
+        private val location: com.dpsmpx.dpai.ui.WorkspaceLocation, private val tree: FileTree, private val targetSnapshot: com.dpsmpx.dpai.ui.TargetEntry) : AutoCloseable {
+        private val inApp: Boolean get() = targetSnapshot.inApp
+        private fun sameTarget() = Controller.get(context.filesDir).targets().firstOrNull { it.id == project.target } == targetSnapshot
+        private fun <T> targetChanged(): Outcome<T> = Outcome.failure(DiagCode.STATE_CONFLICT, "подключение target изменилось; откройте проект заново")
         override fun close() { (tree as? AutoCloseable)?.close() }
         private val files = ApiProjectFiles(tree,
-            { path, sha, text -> model.workspaceChange(project, location) { it.write(project.project.value, location.key, tree, path, sha, text) } },
-            { path, sha -> model.workspaceChange(project, location) { it.delete(project.project.value, location.key, tree, path, sha) } })
+            { path, sha, text -> model.workspaceChange(project, location) { if (!sameTarget()) targetChanged() else it.write(project.project.value, location.key, tree, path, sha, text) } },
+            { path, sha -> model.workspaceChange(project, location) { if (!sameTarget()) targetChanged() else it.delete(project.project.value, location.key, tree, path, sha) } })
         val tools: List<ToolSpec> = ApiProjectFiles.tools().map { ToolSpec(it.first, it.second, it.third) } + ToolSpec("run_profile",
             "Запустить CHECK или BUILD выбранного проекта через штатные профили; получить настоящий итог и вывод. Не публикует и не выполняет произвольный shell.",
-            JsonObject.of("type" to JsonString("object"), "properties" to JsonObject.of("kind" to JsonObject.of("type" to JsonString("string"), "enum" to JsonArray(listOf(JsonString("CHECK"), JsonString("BUILD"))))), "required" to JsonArray(listOf(JsonString("kind")))))
+            JsonObject.of("type" to JsonString("object"), "properties" to JsonObject.of("kind" to JsonObject.of("type" to JsonString("string"), "enum" to JsonArray(listOf(JsonString("CHECK"), JsonString("BUILD"))))), "required" to JsonArray(listOf(JsonString("kind"))))) +
+            AutomationApi.tools().map { ToolSpec(it.first, it.second, it.third) }
+
+        data class Snapshot(val catalog: AutomationCatalog, val profiles: Map<ManualProfileKind, ManualProfile?>,
+            val choices: Map<ManualProfileKind, Map<String, String>>, val sourceIssues: List<Diagnostic>)
+
+        /** Снимок, а не новая база: профили читаются заново перед каждым действием. */
+        fun catalog(): Outcome<Snapshot> = model.workspaceAccess(project, location, write = false) {
+            if (!sameTarget()) return@workspaceAccess targetChanged()
+            val profiles = linkedMapOf<ManualProfileKind, ManualProfile?>()
+            for (kind in ManualProfileKind.entries) {
+                val stored = when (val r = model.manualProfile(project, kind)) { is Outcome.Failure -> return@workspaceAccess r; is Outcome.Success -> r.value }
+                profiles[kind] = stored ?: ProjectProfileDefaults.default(tree, kind)
+            }
+            val run = when (val r = model.runProfile(project)) { is Outcome.Failure -> return@workspaceAccess r; is Outcome.Success -> r.value }
+            val target = Controller.get(context.filesDir).targets().firstOrNull { it.id == project.target }
+                ?: return@workspaceAccess Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "место проекта удалено")
+            val choices = ManualProfileKind.entries.associateWith { model.manualChoices(project, it).toMap() }
+            val entries = (ManualAutomations.describe(profiles, run, project.root, target.platform, choices) +
+                VerificationAutomations.describe(project.profile(), project.root) +
+                EnvironmentAutomations.describe(inApp, inApp && LinuxSetup.environment(context).installed() != null, project.root)).toMutableList()
+            val issues = arrayListOf<Diagnostic>()
+            when (val pult = AutomationBridge.catalog(project.root, inApp)) {
+                is Outcome.Success -> entries += pult.value
+                is Outcome.Failure -> issues += pult.diagnostics
+            }
+            when (val r = com.dpsmpx.dpai.ui.AutomationContext.bind(entries, project, target)) {
+                is Outcome.Failure -> r
+                is Outcome.Success -> Outcome.success(Snapshot(r.value, profiles, choices, issues))
+            }
+        }
+
+        fun invokeAutomation(id: String, revision: String, parameters: JsonObject, cancel: Cancel, actor: ActorKind = ActorKind.AGENT): Outcome<JsonObject> {
+            val snapshot = when (val r = catalog()) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
+            var evidence: JsonObject? = null
+            val result = snapshot.catalog.invoke(id, revision, parameters, Provenance(Actor(actor, "Automation"), projectId = project.project,
+                repositoryId = project.repository, executionTargetId = project.target), IdGenerator(Clock.SYSTEM, RandomSource.secure()), Clock.SYSTEM,
+                { cancel.cancelled },
+                { entry ->
+                    // Полномочия не выводятся из id или числового уровня: только явно подключённые обработчики.
+                    if (entry.id !in setOf("manual.check", "manual.build", "environment.inspect")) Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "нужен прежний экран инструмента")
+                    else model.workspaceAccess(project, location, write = false) { Outcome.success(Unit) }
+                },
+                { entry, values -> when (entry.id) {
+                    "environment.inspect" -> inspect()
+                    "manual.check", "manual.build" -> {
+                        val kind = if (entry.id == "manual.check") ManualProfileKind.CHECK else ManualProfileKind.BUILD
+                        val chosen = snapshot.profiles[kind] ?: return@invoke Outcome.failure(DiagCode.STATE_CONFLICT, "профиль удалён")
+                        profile(chosen, snapshot.choices[kind].orEmpty() + values, cancel) { evidence = it }
+                    }
+                    else -> Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "нужен прежний экран инструмента")
+                } })
+            return Outcome.success(AutomationJson.result(result, if (result.outcome is Outcome.Failure) evidence else null))
+        }
+
+        private fun inspect(): Outcome<JsonObject> {
+            if (!inApp) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "диагностика Alpine относится к телефону")
+            val env = LinuxSetup.environment(context)
+            val vfs = NioVfs(context.filesDir.toPath())
+            val inventory = when (val r = AlpinePackages.read(vfs, env.rootfs)) {
+                is Outcome.Failure -> return r
+                is Outcome.Success -> r.value ?: return Outcome.failure(DiagCode.STATE_CONFLICT, "база apk не установлена")
+            }
+            val files = when (val r = tree.list("")) { is Outcome.Failure -> return r; is Outcome.Success -> r.value.map { it.name }.toSet() }
+            val snapshot = when (val r = catalog()) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
+            val wanted = ProjectNeeds.fromFiles(files) + snapshot.profiles.flatMap { (kind, p) -> p?.let { ProjectNeeds.fromProfile(kind, it) }.orEmpty() }
+            val index = ApkIndex.arch(vfs, env.rootfs)?.let { ApkIndex.read(vfs, env.rootfs, inventory.repositories, it).first }
+            val sdkNeeds = snapshot.profiles.values.filterNotNull().flatMap { it.needs }.toSet()
+            val rootfs = EnvironmentComponents.rootfs(context)
+            val guest = { path: String -> rootfs.resolve(path.removePrefix("/")) }
+            val sdk = com.dpsmpx.dpai.ui.AndroidSdk.missing(sdkNeeds, { guest(it).exists() }, guest(com.dpsmpx.dpai.ui.AndroidSdk.HOME + "/ndk").list()?.isNotEmpty() == true)
+            val check = ProjectNeeds.check(project.root.substringAfterLast('/'), wanted, inventory, index, sdk)
+            val problems = AlpinePackages.problems(inventory)
+            return Outcome.success(JsonObject.of("packages" to JsonNumber.of(inventory.byName.size),
+                "problems" to JsonArray(problems.take(40).map { p -> JsonObject.of("package" to JsonString(p.pkg), "kind" to JsonString(p.kind.name), "detail" to JsonString(Redactor.STANDARD.redact(p.detail).take(300))) }),
+                "moreProblems" to JsonBool(problems.size > 40), "declaredNeedsSatisfied" to JsonBool(check.ok), "commandsProbed" to JsonBool(false),
+                "projectNeeds" to JsonString(Redactor.STANDARD.redact(ProjectNeeds.text(check)).take(6000))))
+        }
 
         fun system(): String = buildString {
             append("Ты работаешь над выбранным проектом ${project.root}, ветка ${project.integrationBranch}. Используй инструменты для чтения и изменения его файлов. ")
             append("Перед записью прочитай актуальный файл и его sha256. Не выдавай текст ответа за изменение файла, запуск тестов или успешную сборку: опирайся на результаты инструментов. ")
             append("Служебные каталоги и секреты недоступны. Создание, замена и удаление сохраняют копию для отмены. После правок запусти подходящий профиль и сообщи результат.\n")
+            append("Сначала узнай доступные автоматизации list_automations, затем describe_automation. Предпочитай готовый инструмент повторному анализу. run_automation требует актуальную ревизию; OPEN_UI означает действие человека, не обходи его. Успешный вызов не означает, что все проверки прошли: смотри status, data/evidence и реальные коды.\n")
             for (path in listOf("AGENTS.md", "CLAUDE.md")) {
                 val text = tree.read(path, 64 * 1024).valueOrNull()?.let { com.dpsmpx.dpai.files.TextFile.decode(it).valueOrNull() } ?: continue
                 append("\nИнструкции проекта из $path:\n"); append(text.take(12_000))
@@ -117,7 +217,34 @@ internal object ApiProjectRuntime {
 
         fun run(call: ToolCall, cancel: Cancel): ToolResult {
             if (cancel.cancelled) return ToolResult("ход прерван", true)
-            val result = if (call.name == "run_profile") profile(call.input, cancel) else model.workspaceAccess(project, location, write = false) { files.run(call.name, call.input) }
+            if (!sameTarget()) return ToolResult("подключение target изменилось; откройте проект заново", true)
+            val result = when (call.name) {
+                "list_automations", "describe_automation" -> {
+                    when (val snapshot = catalog()) {
+                        is Outcome.Failure -> snapshot
+                        is Outcome.Success -> when (val view = if (call.name == "list_automations") AutomationApi.list(snapshot.value.catalog, call.input) else AutomationApi.describe(snapshot.value.catalog, call.input)) {
+                            is Outcome.Failure -> view
+                            is Outcome.Success -> Outcome.success(CanonicalJson.write(JsonObject(view.value.fields + ("sourceIssues" to JsonArray(snapshot.value.sourceIssues.map { JsonString(it.message) })))))
+                        }
+                    }
+                }
+                "run_automation" -> when (val request = AutomationApi.call(call.input)) {
+                    is Outcome.Failure -> request
+                    is Outcome.Success -> invokeAutomation(request.value.id, request.value.revision, request.value.parameters, cancel).mapJson()
+                }
+                "run_profile" -> {
+                    val kind = (call.input["kind"] as? JsonString)?.value
+                    if (call.input.fields.keys != setOf("kind") || kind !in setOf("CHECK", "BUILD")) Outcome.failure(DiagCode.VALUE_INVALID, "профиль — CHECK или BUILD")
+                    else when (val snapshot = catalog()) {
+                        is Outcome.Failure -> snapshot
+                        is Outcome.Success -> {
+                            val id = "manual.${kind!!.lowercase()}"
+                            invokeAutomation(id, snapshot.value.catalog.byId(id)!!.revision, JsonObject.of(), cancel).mapJson()
+                        }
+                    }
+                }
+                else -> model.workspaceAccess(project, location, write = false) { files.run(call.name, call.input) }
+            }
             return when (result) {
                 is Outcome.Failure -> ToolResult(result.diagnostics.joinToString("; ") { it.message }.take(20_000), true)
                 is Outcome.Success -> {
@@ -131,52 +258,39 @@ internal object ApiProjectRuntime {
                         Drafts.reloadWorkspace(location, tree, inApp)
                         changed.value = changed.value + 1
                     }
-                    ToolResult(result.value)
+                    val failed = call.name in setOf("run_automation", "run_profile") &&
+                        (com.dpsmpx.dpai.core.serialization.JsonParser().parse(result.value).valueOrNull() as? JsonObject)?.get("status") == JsonString("FAILED")
+                    ToolResult(result.value, failed)
                 }
             }
         }
 
-        private fun profile(input: JsonObject, cancel: Cancel): Outcome<String> {
-            val kind = when ((input["kind"] as? JsonString)?.value) { "CHECK" -> ManualProfileKind.CHECK; "BUILD" -> ManualProfileKind.BUILD; else -> return Outcome.failure(DiagCode.VALUE_INVALID, "профиль — CHECK или BUILD") }
-            val existing = when (val r = model.manualProfile(project, kind)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
-            val chosen = existing ?: defaultProfile(kind) ?: return Outcome.failure(DiagCode.STATE_CONFLICT, "для этого стека нет готового профиля; выберите шаблон проверки/сборки на рабочем экране")
+        private fun profile(chosen: ManualProfile, values: Map<String, String>, cancel: Cancel, evidence: (JsonObject) -> Unit): Outcome<JsonObject> {
             val previous = model.manualProfileView().finished
             val done = CompletableFuture<ManualRunView>()
-            if (!model.startManualProfile(project, location, chosen, onFinished = { _, r -> done.complete(r) })) return Outcome.failure(DiagCode.WORKTREE_OWNED, "контур занят; дождитесь завершения команды")
+            if (!model.startManualProfile(project, location, chosen, choices = values, cancelled = { cancel.cancelled }, expectedTarget = targetSnapshot, onFinished = { _, r -> done.complete(r) })) return Outcome.failure(DiagCode.WORKTREE_OWNED, "контур занят; дождитесь завершения команды")
             ControllerService.resume(context)
             val deadline = Clock.SYSTEM.now().epochMillis + chosen.steps.sumOf { it.timeoutSeconds } * 1000 + 60_000
             while (Clock.SYSTEM.now().epochMillis < deadline) {
                 if (cancel.cancelled) { model.stopManualProfile(); return Outcome.failure(DiagCode.CANCELLED_BY_USER, "запрошена остановка команды; пауза сохраняется до подтверждения её конца") }
                 val view = try { done.get(1, TimeUnit.SECONDS) } catch (_: TimeoutException) { continue }
+                if (cancel.cancelled) { model.stopManualProfile(); return Outcome.failure(DiagCode.CANCELLED_BY_USER, "вызов отменён; состояние команды смотрите в истории профиля") }
                 if (view.finished == null || view.finished == previous) return Outcome.failure(DiagCode.STATE_CONFLICT, view.note)
-                val output = CanonicalJson.write(JsonObject.of("complete" to JsonBool(view.complete), "note" to JsonString(view.note), "output" to JsonString(view.output.takeLast(16_000))))
-                return if (view.complete) Outcome.success(output) else Outcome.failure(DiagCode.STATE_CONFLICT, output)
+                val run = checkNotNull(view.finished)
+                val output = JsonObject.of("complete" to JsonBool(view.complete), "run" to JsonString(run.value), "note" to JsonString(view.note.take(1000)),
+                    "output" to JsonString(view.output.takeLast(3000)), "outputTruncated" to JsonBool(view.output.length > 3000),
+                    "outputHash" to JsonString("sha256:" + Hashing.sha256(view.output).hex))
+                evidence(output)
+                return if (view.complete) Outcome.success(output) else Outcome.failure(DiagCode.PROCESS_EXIT_NONZERO, view.note, run.value)
             }
             model.stopManualProfile()
             return Outcome.failure(DiagCode.PROCESS_TIMEOUT, "ожидание профиля истекло; остановка запрошена, результат ещё не подтверждён")
         }
 
-        private fun defaultProfile(kind: ManualProfileKind): ManualProfile? {
-            val root = tree.list("").valueOrNull()?.map { it.name }?.toSet() ?: return null
-            if ("CMakeLists.txt" in root) {
-                val steps = listOf(ManualStep("Конфигурация CMake", listOf("cmake", "-S", ".", "-B", "build", "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"), 600),
-                    ManualStep("Сборка CMake", listOf("cmake", "--build", "build"), 1800)) +
-                    if (kind == ManualProfileKind.CHECK) listOf(ManualStep("Тесты CTest", listOf("ctest", "--test-dir", "build", "--output-on-failure"), 1800)) else emptyList()
-                return ManualProfile(kind, steps)
-            }
-            if ("Makefile" in root) {
-                val make = tree.read("Makefile", 256 * 1024).valueOrNull()?.toString(Charsets.UTF_8).orEmpty()
-                val test = Regex("(?m)^(check|test)\\s*:").find(make)?.groupValues?.get(1)
-                if (kind == ManualProfileKind.CHECK && test == null) return null
-                return ManualProfile(kind, listOf(ManualStep("Make", listOfNotNull("make", if (kind == ManualProfileKind.CHECK) test else null), 1800)))
-            }
-            val argv = when {
-                "gradlew" in root -> listOf("sh", "gradlew", if (kind == ManualProfileKind.CHECK) "check" else "assemble")
-                "gradlew.bat" in root -> listOf("cmd.exe", "/c", "gradlew.bat", if (kind == ManualProfileKind.CHECK) "check" else "assemble")
-                "pyproject.toml" in root || "requirements.txt" in root || root.any { it.endsWith(".py") } -> if (kind == ManualProfileKind.CHECK) listOf("python3", "-m", "unittest", "discover") else listOf("python3", "-m", "compileall", "-q", ".")
-                else -> return null
-            }
-            return ManualProfile(kind, listOf(ManualStep(if (kind == ManualProfileKind.CHECK) "Проверка проекта" else "Сборка проекта", argv, 1800)))
+        private fun Outcome<JsonObject>.mapJson(): Outcome<String> = when (this) {
+            is Outcome.Failure -> this
+            is Outcome.Success -> Outcome.success(CanonicalJson.write(AutomationJson.forApi(value)))
         }
+
     }
 }

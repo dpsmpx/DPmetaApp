@@ -633,6 +633,8 @@ class DemoModel(
      */
     fun startManualProfile(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, profile: com.dpsmpx.dpai.ui.ManualProfile,
         choices: Map<String, String>? = null,
+        cancelled: () -> Boolean = { false },
+        expectedTarget: TargetEntry? = null,
         onFinished: ((LongJobs.Done, com.dpsmpx.dpai.ui.ManualRunView) -> Unit)? = null): Boolean {
         val app = context ?: return false
         return LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST,
@@ -640,8 +642,10 @@ class DemoModel(
                 (app.applicationContext as? DpaiApplication)?.studioChanged()
                 onFinished?.invoke(done, controller.manualProfiles.snapshot())
             }) {
+            if (cancelled()) return@start LongJobs.Done("Запуск отменён до подготовки", failed = true)
             val target = controller.targets().firstOrNull { it.id == location.target }
                 ?: return@start LongJobs.Done("target удалён", failed = true)
+            if (expectedTarget != null && target != expectedTarget) return@start LongJobs.Done("подключение target изменилось; откройте проект заново", failed = true)
             // Параметры (D-183): встроенные и выбранные — в шаги и окружение; в якорь — уже раскрытый профиль.
             val chosen = choices ?: controller.manualProfiles.choices(p, profile.kind)
             val resolved = when (val r = profile.resolve(com.dpsmpx.dpai.ui.ManualVars.builtIns(p, target, location) + chosen)) {
@@ -669,6 +673,7 @@ class DemoModel(
             val capability = client.profiles()
             if (capability is Outcome.Failure) return@start LongJobs.Done("обновите агент target для ручных профилей: ${capability.errors.first().message}", failed = true)
             val prepared = lock.withLock {
+                if (cancelled()) return@withLock Outcome.failure(DiagCode.CANCELLED_BY_USER, "запуск отменён до подготовки")
                 val fresh = controller.project()
                 val allowed = fresh?.let { workspaceLocked(it).allow(p, location, true) }
                     ?: return@withLock Outcome.failure(DiagCode.STATE_CONFLICT, "проект отключён")
@@ -682,6 +687,10 @@ class DemoModel(
             }
             if (prepared is Outcome.Failure) return@start LongJobs.Done(prepared.errors.first().message, failed = true)
             manualStop = false
+            if (cancelled()) {
+                controller.manualProfiles.stop(client)
+                return@start LongJobs.Done("Запуск отменён до команды", failed = true)
+            }
             // Проверка Git уже под долговечной паузой: такт не сменит дерево между status и start.
             val git = workspaceGit(p, location)
             val status = git.valueOrNull()
@@ -690,14 +699,18 @@ class DemoModel(
                 return@start LongJobs.Done("проверьте ветку, HEAD и конфликты дерева: ${git.diagnostics.firstOrNull()?.message.orEmpty()}", failed = true)
             }
             // HEAD дерева — в историю запуска (D-156): какая версия кода собиралась.
+            if (cancelled()) {
+                controller.manualProfiles.stop(client)
+                return@start LongJobs.Done("Запуск отменён до команды", failed = true)
+            }
             controller.manualProfiles.launch((prepared as Outcome.Success).value, client, status.head)
-            watchManual(client)
+            watchManual(client, cancelled)
         }
     }
 
-    private suspend fun watchManual(client: com.dpsmpx.dpai.execution.agent.AgentClient): LongJobs.Done {
+    private suspend fun watchManual(client: com.dpsmpx.dpai.execution.agent.AgentClient, cancelled: () -> Boolean = { false }): LongJobs.Done {
         while (controller.manualProfiles.blocked) {
-            val keep = if (manualStop) controller.manualProfiles.stop(client) else controller.manualProfiles.poll(client)
+            val keep = if (manualStop || cancelled()) controller.manualProfiles.stop(client) else controller.manualProfiles.poll(client)
             if (!keep) break
             kotlinx.coroutines.delay(1500)
         }

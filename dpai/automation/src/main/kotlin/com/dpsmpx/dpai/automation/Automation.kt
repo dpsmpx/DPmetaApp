@@ -25,7 +25,7 @@ enum class AutomationCategory { REPOSITORY, BUILD, CHECK, RUN, ENVIRONMENT }
 enum class AutomationInvocation { DIRECT, OPEN_UI }
 
 /** В первом пакете параметры — только варианты, уже заданные пользователем в профиле. */
-data class AutomationParameter(val name: String, val title: String, val choices: List<String>)
+data class AutomationParameter(val name: String, val title: String, val choices: List<String>, val defaultValue: String? = null)
 
 /**
  * Машиночитаемый вид инструмента (D-215). [sourceHash] связывает описание
@@ -61,7 +61,8 @@ data class AutomationDefinition(
     fun inputSchema(): JsonObject = JsonObject.of(
         "type" to JsonString("object"),
         "properties" to JsonObject(parameters.associate { p -> p.name to JsonObject.of(
-            "type" to JsonString("string"), "description" to JsonString(p.title), "enum" to JsonArray(p.choices.map(::JsonString))) }),
+            "type" to JsonString("string"), "description" to JsonString(p.title), "enum" to JsonArray(p.choices.map(::JsonString)),
+            "default" to (p.defaultValue?.let(::JsonString) ?: JsonNull)) }),
         "additionalProperties" to JsonBool(false),
     )
 
@@ -135,7 +136,7 @@ class AutomationCatalog private constructor(val entries: List<AutomationDefiniti
                     e.scopes.isEmpty() || e.scopes.size > 16 || e.scopes.any { it.isBlank() || it.length > 4096 || '\u0000' in it } ||
                     e.platforms.isEmpty() || e.dependencies.size > 100 || e.parameters.size > 32 ||
                     e.parameters.map { it.name }.toSet().size != e.parameters.size ||
-                    e.parameters.any { !PARAM.matches(it.name) || it.choices.isEmpty() || it.choices.size > 100 || it.choices.any { v -> v.length > 4096 || '\u0000' in v } } ||
+                    e.parameters.any { !PARAM.matches(it.name) || it.choices.isEmpty() || it.choices.size > 100 || it.defaultValue?.let { v -> v !in it.choices } == true || it.choices.any { v -> v.length > 4096 || '\u0000' in v } } ||
                     e.timeoutSeconds?.let { it < 1 } == true || e.verification.isBlank() || e.triggers.isEmpty()) {
                     return Outcome.failure(DiagCode.VALUE_INVALID, "неверное описание автоматизации", e.id)
                 }
