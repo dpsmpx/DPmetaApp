@@ -72,10 +72,10 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
         HorizontalDivider()
         Text("Артефакты", Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.titleSmall)
         val target = view.target
-        // Дерево на ПК: список и файлы — по SFTP (D-162), скачанное — в хранилище приложения.
+        // Удалённый SSH-target (ПК или Termux): список и файлы — по SFTP (D-162).
         val pc = location != null && target != null && !target.inApp
         if (location == null || target == null || prefix == null && !pc) {
-            Text("Артефакты видны у деревьев Linux в приложении и на ПК-target.", style = MaterialTheme.typography.bodySmall)
+            Text("Артефакты видны у деревьев Linux в приложении и на SSH-target (ПК или Termux).", style = MaterialTheme.typography.bodySmall)
             return
         }
         val tree: FileTree? = remember(view.project, location) {
@@ -246,7 +246,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                 Text("${a.path.substringBeforeLast('/', "")} · ${size(a.size)} · ${time(a.modified)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(Modifier.horizontalScroll(rememberScrollState())) {
                     if (pc) TextButton(enabled = busy == null, onClick = {
-                        work("Скачиваю с ПК") {
+                        work("Скачиваю с SSH-target") {
                             val r = withContext(Dispatchers.IO) { model.pcFiles(target, location.path).then { t -> t.use { PcArtifacts.download(app, it, a.path, target.id.value) } } }
                             when (r) {
                                 is Outcome.Failure -> r.diagnostics.first().message

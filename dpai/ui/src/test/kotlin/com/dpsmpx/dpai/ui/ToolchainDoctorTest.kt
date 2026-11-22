@@ -70,6 +70,26 @@ class ToolchainDoctorTest {
         assertIs<Outcome.Success<Unit>>(ToolchainDoctor.buildJvmPreflight(host) { false })
     }
 
+    @Test fun sshBuildDoctorUsesOnlyFixedReadOnlyCommandsWithoutRemoteWorkDir() {
+        val seen = arrayListOf<List<String>>()
+        val host = object : ProcessHost {
+            override fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit): Outcome<RunningProcess> {
+                assertEquals(null, spec.workDir)
+                seen += spec.command
+                return Outcome.success(object : RunningProcess {
+                    override val pid: Long? = null
+                    override val isAlive = false
+                    override fun awaitExit(timeout: Duration) = 0
+                    override fun stop(grace: Duration) = StopReport(0, false, emptyList())
+                })
+            }
+        }
+        val report = ToolchainDoctor.run(host, ToolchainDoctor.sshBuildProbes(), null) { false }.valueOrNull()!!
+        assertEquals(JsonBool(true), report["allSelectedToolsWork"])
+        assertEquals(setOf("java", "javac", "git", "aapt2", "sh"), seen.map { it.first() }.toSet())
+        assertEquals(5, seen.size)
+    }
+
     @Test fun installedJavaThatCannotStartIsNotReady() {
         val host = object : ProcessHost {
             override fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit): Outcome<RunningProcess> {

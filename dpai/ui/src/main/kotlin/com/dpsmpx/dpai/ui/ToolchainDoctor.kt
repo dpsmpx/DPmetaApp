@@ -112,6 +112,14 @@ object ToolchainDoctor {
         """.trimIndent())),
         Probe("jdk", listOf("/bin/sh", "-c", jdk), 60),
         Probe("javac", listOf("javac", "-version")),
+        Probe("aapt2", listOf("aapt2", "version")),
+        Probe("android_project", listOf("sh", "-c", """
+            sdk=${'$'}{ANDROID_HOME:-${'$'}{ANDROID_SDK_ROOT:-}}
+            if test -z "${'$'}sdk"; then echo 'ANDROID_HOME и ANDROID_SDK_ROOT не заданы для SSH-сессии' >&2; exit 1; fi
+            if ! test -d "${'$'}sdk/platforms"; then echo 'Android SDK: нет каталога platforms' >&2; exit 1; fi
+            if ! test -d "${'$'}sdk/build-tools"; then echo 'Android SDK: нет каталога build-tools' >&2; exit 1; fi
+            printf 'ANDROID_HOME=%s\n' "${'$'}sdk"
+        """.trimIndent())),
         Probe("python3", listOf("python3", "-I", "-B", "-c", "import sys,ssl,sqlite3; print(sys.version); print(ssl.OPENSSL_VERSION); print('sqlite', sqlite3.sqlite_version)")),
         Probe("git", listOf("git", "--version")),
         Probe("c++", listOf("/bin/sh", "-c", cpp), 60),
@@ -130,6 +138,8 @@ object ToolchainDoctor {
     ) + listOf("cc", "gcc", "g++", "clang", "clang++", "cmake", "make", "ninja", "node", "npm", "rustc", "cargo", "go", "mvn")
         .map { Probe(it, listOf(it, if (it == "go") "version" else "--version")) }
     val choices: List<String> = listOf("project", "all") + definitions.map { it.name }
+    /** Безопасные фиксированные пробы POSIX SSH-target: входят только через известный ключ хоста. */
+    fun sshBuildProbes(): List<Probe> = definitions.filter { it.name in setOf("java", "javac", "git", "aapt2", "android_project") }
     val sourceHash: String get() = Hashing.sha256(JsonArray(definitions.map { p -> JsonObject.of("name" to JsonString(p.name),
         "argv" to JsonArray(p.command.map(::JsonString)), "seconds" to JsonNumber.of(p.seconds)) })).hex
 
@@ -159,7 +169,7 @@ object ToolchainDoctor {
     }
 
     /** Команды фиксированы приложением; произвольный shell через эту пробу не принимается. */
-    fun run(host: ProcessHost, probes: List<Probe>, root: String, cancelled: () -> Boolean): Outcome<JsonObject> {
+    fun run(host: ProcessHost, probes: List<Probe>, root: String?, cancelled: () -> Boolean): Outcome<JsonObject> {
         val known = definitions.associateBy { it.name }
         if (probes.any { known[it.name] != it } || probes.size > definitions.size) return Outcome.failure(DiagCode.VALUE_INVALID, "проба не из каталога приложения")
         val results = arrayListOf<JsonObject>()

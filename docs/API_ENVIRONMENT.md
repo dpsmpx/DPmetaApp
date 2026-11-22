@@ -103,3 +103,12 @@ PaX. Сначала нужны `java_debug` и `memory`: errno, размер с�
 решением. Источник — [датированная проверка](../dpai/docs/research/2026-11-22-jvm-executable-memory.md).
 
 Хостовые тесты не заменяют Android/proot. Приёмка телефона — в TODO.md.
+
+## Termux как SSH-target для APK
+
+Практическая настройка Termux на том же телефоне, проверка SSH-host-key, хеша
+архива агента, нативного AAPT2, SDK/NDK и ограничений Android описана в
+[ANDROID_BUILD_TARGETS.md](ANDROID_BUILD_TARGETS.md). Это обычный POSIX SSH-target,
+не возобновление удалённого D-202 Termux bridge. Кнопка «APK-среда» проверяет
+запуск программ и наличие SDK именно через SSH; полноценная сборка и подпись
+подтверждаются отдельно.

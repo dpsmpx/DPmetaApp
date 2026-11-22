@@ -10,7 +10,7 @@ class SetupGuideTest {
 
     @Test
     fun commandsAreSingleLineAndKeyIsSubstituted() {
-        val all = SetupGuide.sections(SetupState(appKey = key))
+        val all = SetupGuide.sections(SetupState(appKey = key, agentSha256 = "a".repeat(64)))
         val commands = all.flatMap { it.steps }.mapNotNull { it.command }
         assertTrue(commands.isNotEmpty())
         assertTrue(commands.none { '\n' in it }, "команда в несколько строк рвётся при вставке")
@@ -19,6 +19,10 @@ class SetupGuideTest {
         assertTrue(pc.any { "from=\"${PcSetup.PRIVATE_NETS}\" $key" in it }, "команда ПК — с ключом приложения")
         val noKey = SetupGuide.sections(SetupState()).single { it.id == "pc" }.steps
         assertTrue(noKey.none { it.command?.contains("authorized_keys") == true }, "без ключа — без команды ПК")
+        val termux = all.single { it.id == "termux-ssh" }
+        assertTrue(termux.steps.any { it.action == GuideAction.SAVE_AGENT })
+        assertTrue(termux.steps.any { "127.0.0.1" in it.command.orEmpty() && "authorized_keys" in it.command.orEmpty() })
+        assertTrue(SetupGuide.sections(SetupState()).single { it.id == "termux-ssh" }.steps.none { it.command?.contains("authorized_keys") == true })
     }
 
     @Test
