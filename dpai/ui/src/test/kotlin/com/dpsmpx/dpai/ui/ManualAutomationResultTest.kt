@@ -7,6 +7,7 @@ import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.JsonBool
+import com.dpsmpx.dpai.core.serialization.JsonNull
 import com.dpsmpx.dpai.core.serialization.JsonString
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -14,6 +15,16 @@ import kotlin.test.assertIs
 
 class ManualAutomationResultTest {
     private val ids = IdGenerator(ManualClock(), RandomSource.seeded(217))
+
+    @Test fun preflightBeforePrepareHasOwnEvidenceAndNeverReusesPreviousOutput() {
+        val evidence = ManualAutomationResult.preflight("PRECHECK_FAILED: java не работает")
+        assertEquals(JsonBool(false), evidence["complete"])
+        assertEquals(JsonNull, evidence["run"])
+        assertEquals(JsonString("PREFLIGHT"), evidence["phase"])
+        assertEquals(JsonBool(false), evidence["commandStarted"])
+        assertEquals(JsonString(""), evidence["output"])
+        assertEquals(JsonString("PRECHECK_FAILED: java не работает"), evidence["note"])
+    }
 
     @Test fun previousOrConcurrentlyFinishedSuccessDoesNotBelongToAFailedPreparation() {
         val other = ids.next(IdKinds.SESSION)

@@ -203,6 +203,7 @@ private fun TargetCard(
     val context = androidx.compose.ui.platform.LocalContext.current
     var settings by rememberSaveable(t.id.value) { mutableStateOf(false) }
     var sharedVerify by remember { mutableStateOf(false) }
+    var buildChecking by remember { mutableStateOf(false) }
     var terminalMenu by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
     val posixSlot = t.configDir != null && t.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX
@@ -243,6 +244,31 @@ private fun TargetCard(
             )
         }
     }
+    fun checkBuild() {
+        if (buildChecking) return
+        buildChecking = true
+        onChecks(listOf(CheckLine("APK-среда", "проверяю Java, компилятор, Git, AAPT2 и Android SDK через SSH…", Tone.NEUTRAL)))
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) { controller.sshBuildDoctor(t) }
+                onChecks(when (result) {
+                    is Outcome.Failure -> listOf(CheckLine("APK-среда", result.diagnostics.first().message, Tone.ERROR))
+                    is Outcome.Success -> {
+                        val probes = (result.value["probes"] as? com.dpsmpx.dpai.core.serialization.JsonArray)?.items.orEmpty()
+                        probes.mapNotNull { p ->
+                            val data = p as? com.dpsmpx.dpai.core.serialization.JsonObject ?: return@mapNotNull null
+                            val name = (data["tool"] as? com.dpsmpx.dpai.core.serialization.JsonString)?.value ?: return@mapNotNull null
+                            val works = data["working"] == com.dpsmpx.dpai.core.serialization.JsonBool(true)
+                            val error = (data["stderr"] as? com.dpsmpx.dpai.core.serialization.JsonString)?.value.orEmpty()
+                            val output = (data["stdout"] as? com.dpsmpx.dpai.core.serialization.JsonString)?.value.orEmpty()
+                            val hint = (data["explanation"] as? com.dpsmpx.dpai.core.serialization.JsonString)?.value.orEmpty()
+                            CheckLine(name, (if (works) output.ifBlank { error }.ifBlank { "запускается" } else hint.ifBlank { error.ifBlank { "не запускается; проверьте установку и PATH SSH" } }).take(320), if (works) Tone.DONE else Tone.WARNING)
+                        }
+                    }
+                })
+            } finally { buildChecking = false }
+        }
+    }
     LaunchedEffect(checkNow) {
         if (checkNow) {
             onChecked()
@@ -259,6 +285,8 @@ private fun TargetCard(
             if (t.configDir != null) Text(if (busy.isEmpty()) "Сейчас: свободен" else "Сейчас: " + busy.joinToString("; "), style = MaterialTheme.typography.bodySmall)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = ::check) { Text("Проверить") }
+                if (!t.inApp && t.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX)
+                    TextButton(enabled = !buildChecking, onClick = ::checkBuild) { Text(if (buildChecking) "APK-среда…" else "APK-среда") }
                 // Свой терминал (D-71): оболочка target или интерактивный исполнитель слота (вход, /usage).
                 Box {
                     TextButton(onClick = { if (posixSlot) terminalMenu = true else TerminalActivity.start(context, t.id.value) }) { Text(if (posixSlot) "Терминал ▾" else "Терминал") }
@@ -468,6 +496,14 @@ private fun AddTargetDialog(controller: Controller, onDone: (TargetEntry?) -> Un
                             configDir = ""
                             windows = false
                         }, label = { Text("ПК с Linux") })
+                        androidx.compose.material3.AssistChip(onClick = {
+                            label = "Termux на телефоне"
+                            host = com.dpsmpx.dpai.ui.TermuxSetup.HOST
+                            port = com.dpsmpx.dpai.ui.TermuxSetup.PORT
+                            agent = com.dpsmpx.dpai.ui.TermuxSetup.AGENT
+                            configDir = com.dpsmpx.dpai.ui.TermuxSetup.CLAUDE_DIR
+                            windows = false
+                        }, label = { Text("Termux · телефон") })
                     }
                     val mono = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace)
                     OutlinedTextField(label, { label = it }, label = { Text("Имя") }, singleLine = true)
@@ -478,6 +514,8 @@ private fun AddTargetDialog(controller: Controller, onDone: (TargetEntry?) -> Un
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                     )
                     OutlinedTextField(user, { user = it }, label = { Text("Пользователь") }, singleLine = true, textStyle = mono)
+                    if (host == com.dpsmpx.dpai.ui.TermuxSetup.HOST && port == com.dpsmpx.dpai.ui.TermuxSetup.PORT)
+                        Text("Впишите имя из id -un в Termux. Каталог Claude предзаполнен для проекта; вход в Claude не нужен для ручного BUILD. SSH-сервер и ключ: «Инструкция» → «Termux: сборка APK». Ключ хоста сверяется вручную.", style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(agent, { agent = it }, label = { Text("Команда агента dpai") }, singleLine = true, textStyle = mono)
                     OutlinedTextField(configDir, { configDir = it }, label = { Text("Каталог Claude слота (для сессий)") }, singleLine = true, textStyle = mono)
                     Row(verticalAlignment = Alignment.CenterVertically) {

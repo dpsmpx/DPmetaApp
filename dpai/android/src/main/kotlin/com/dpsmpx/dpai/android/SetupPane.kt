@@ -120,7 +120,27 @@ private fun setupState(context: Context, controller: Controller, model: DemoMode
         hasProject = controller.project() != null,
         paired = ControlServer.pairing(context).paired(),
         appKey = runCatching { controller.publicKeyLine() }.getOrNull(),
+        agentSha256 = agentHash(context),
     )
+}
+
+@Volatile private var cachedAgentHash: String? = null
+
+/** Считается один раз из подписанного APK, без копирования агентского ZIP в общий каталог. */
+private fun agentHash(context: Context): String? {
+    cachedAgentHash?.let { return it }
+    return runCatching {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        context.assets.open(AGENT_FILE).use { input ->
+            val block = ByteArray(16 * 1024)
+            while (true) {
+                val n = input.read(block)
+                if (n < 0) break
+                digest.update(block, 0, n)
+            }
+        }
+        digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }.getOrNull()?.also { cachedAgentHash = it }
 }
 
 /**

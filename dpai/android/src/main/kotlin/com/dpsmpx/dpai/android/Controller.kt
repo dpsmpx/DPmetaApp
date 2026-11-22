@@ -540,6 +540,16 @@ class Controller(private val root: File, val version: String?, workspaceCopyRoot
         return manager.doctor(entry.id)
     }
 
+    /** Проверка Java, arm64 AAPT2 и SDK на обычном SSH-target, без команд пользователя и без записи (D-216). */
+    fun sshBuildDoctor(entry: TargetEntry, cancelled: () -> Boolean = { false }): Outcome<com.dpsmpx.dpai.core.serialization.JsonObject> {
+        if (entry.inApp || entry.platform != com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX)
+            return Outcome.failure(DiagCode.UNSUPPORTED, "проба сборки по SSH доступна для POSIX-target")
+        val ssh = checkNotNull(entry.toTarget(knownHostsFile).ssh)
+        val host = JschProcessHost(ssh, entry.platform, identities = listOf(KeystoreKey.identity()))
+        // JschProcessHost намеренно не принимает workDir: короткие пробы работают в домашнем каталоге SSH.
+        return com.dpsmpx.dpai.ui.ToolchainDoctor.run(host, com.dpsmpx.dpai.ui.ToolchainDoctor.sshBuildProbes(), null, cancelled)
+    }
+
     companion object {
         private const val MAX_NOTICES = 20
 

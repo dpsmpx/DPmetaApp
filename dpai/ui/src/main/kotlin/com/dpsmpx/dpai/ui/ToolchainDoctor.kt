@@ -19,6 +19,50 @@ import kotlin.time.Duration.Companion.seconds
 object ToolchainDoctor {
     data class Probe(val name: String, val command: List<String>, val seconds: Int = 30)
 
+    /** Только распознаваемые JVM-launcher'ы. Произвольные shell-скрипты по имени не угадываем. */
+    fun needsJvm(profile: ManualProfile): Boolean = profile.kind != ManualProfileKind.DEPENDENCIES && profile.steps.any { step ->
+        val words = step.command
+        val first = words.firstOrNull()?.substringAfterLast('/')
+        val command = if (first == "env") words.drop(1).dropWhile { '=' in it } else words
+        val tool = command.firstOrNull()?.substringAfterLast('/')
+        val launchers = setOf("java", "javac", "gradle", "gradlew", "mvn", "mvnw", "kotlinc")
+        when {
+            tool in launchers -> true
+            tool in setOf("sh", "bash", "dash") -> {
+                val script = command.drop(1).firstOrNull { !it.startsWith('-') }?.substringAfterLast('/')
+                script in setOf("gradlew", "mvnw")
+            }
+            else -> false
+        }
+    }
+
+    /** Встроенная проверка перед Gradle в Linux приложения: JVM обязана реально стартовать. */
+    fun buildJvmPreflight(host: ProcessHost, cancelled: () -> Boolean): Outcome<Unit> {
+        val result = when (val probe = run(host, definitions.filter { it.name == "java" }, "/", cancelled)) {
+            is Outcome.Failure -> return probe
+            is Outcome.Success -> probe.value
+        }
+        val java = (result["probes"] as? JsonArray)?.items?.firstOrNull() as? JsonObject
+            ?: return Outcome.failure(DiagCode.TARGET_CHECK_FAILED, "Проверка JVM не вернула результат; BUILD не запускался")
+        if (java["working"] == JsonBool(true)) return Outcome.success(Unit)
+        val message = (java["stderr"] as? JsonString)?.value.orEmpty().ifBlank { (java["stdout"] as? JsonString)?.value.orEmpty() }.take(400)
+        val finding = (java["finding"] as? JsonString)?.value
+        val selinux = if (finding == "JVM_EXECUTABLE_MEMORY") {
+            when (val memory = run(host, definitions.filter { it.name == "memory" }, "/", cancelled)) {
+                is Outcome.Failure -> return memory
+                is Outcome.Success -> ((((memory.value["probes"] as? JsonArray)?.items?.firstOrNull() as? JsonObject)?.get("finding")) as? JsonString)?.value == "ANDROID_SELINUX_EXECMEM"
+            }
+        } else false
+        if (cancelled()) return Outcome.failure(DiagCode.CANCELLED_BY_USER, "проверка JVM отменена")
+        val reason = when {
+            selinux -> "JVM не стартует: Android SELinux untrusted_app запрещает исполняемую память (execmem)."
+            finding == "JVM_EXECUTABLE_MEMORY" -> "JVM не стартует: отказ при выделении исполняемой памяти; причину уточните пробой memory."
+            else -> "JVM не стартует: java -version завершился с ошибкой."
+        }
+        return Outcome.failure(DiagCode.EXECUTION_HOST_UNAVAILABLE,
+            "PRECHECK_FAILED: $reason Gradle не запускался; это не конфликт Git. Для APK выберите обычный SSH-target с работающими JDK и Android SDK. Вывод java: $message")
+    }
+
     private val cpp = """
         set -eu
         d=${'$'}(mktemp -d /tmp/dpai-cpp-probe.XXXXXX)
@@ -68,6 +112,14 @@ object ToolchainDoctor {
         """.trimIndent())),
         Probe("jdk", listOf("/bin/sh", "-c", jdk), 60),
         Probe("javac", listOf("javac", "-version")),
+        Probe("aapt2", listOf("aapt2", "version")),
+        Probe("android_project", listOf("sh", "-c", """
+            sdk=${'$'}{ANDROID_HOME:-${'$'}{ANDROID_SDK_ROOT:-}}
+            if test -z "${'$'}sdk"; then echo 'ANDROID_HOME и ANDROID_SDK_ROOT не заданы для SSH-сессии' >&2; exit 1; fi
+            if ! test -d "${'$'}sdk/platforms"; then echo 'Android SDK: нет каталога platforms' >&2; exit 1; fi
+            if ! test -d "${'$'}sdk/build-tools"; then echo 'Android SDK: нет каталога build-tools' >&2; exit 1; fi
+            printf 'ANDROID_HOME=%s\n' "${'$'}sdk"
+        """.trimIndent())),
         Probe("python3", listOf("python3", "-I", "-B", "-c", "import sys,ssl,sqlite3; print(sys.version); print(ssl.OPENSSL_VERSION); print('sqlite', sqlite3.sqlite_version)")),
         Probe("git", listOf("git", "--version")),
         Probe("c++", listOf("/bin/sh", "-c", cpp), 60),
@@ -86,6 +138,8 @@ object ToolchainDoctor {
     ) + listOf("cc", "gcc", "g++", "clang", "clang++", "cmake", "make", "ninja", "node", "npm", "rustc", "cargo", "go", "mvn")
         .map { Probe(it, listOf(it, if (it == "go") "version" else "--version")) }
     val choices: List<String> = listOf("project", "all") + definitions.map { it.name }
+    /** Безопасные фиксированные пробы POSIX SSH-target: входят только через известный ключ хоста. */
+    fun sshBuildProbes(): List<Probe> = definitions.filter { it.name in setOf("java", "javac", "git", "aapt2", "android_project") }
     val sourceHash: String get() = Hashing.sha256(JsonArray(definitions.map { p -> JsonObject.of("name" to JsonString(p.name),
         "argv" to JsonArray(p.command.map(::JsonString)), "seconds" to JsonNumber.of(p.seconds)) })).hex
 
@@ -115,7 +169,7 @@ object ToolchainDoctor {
     }
 
     /** Команды фиксированы приложением; произвольный shell через эту пробу не принимается. */
-    fun run(host: ProcessHost, probes: List<Probe>, root: String, cancelled: () -> Boolean): Outcome<JsonObject> {
+    fun run(host: ProcessHost, probes: List<Probe>, root: String?, cancelled: () -> Boolean): Outcome<JsonObject> {
         val known = definitions.associateBy { it.name }
         if (probes.any { known[it.name] != it } || probes.size > definitions.size) return Outcome.failure(DiagCode.VALUE_INVALID, "проба не из каталога приложения")
         val results = arrayListOf<JsonObject>()

@@ -363,6 +363,10 @@ internal object ApiProjectRuntime {
                 val completed = try { done.get(1, TimeUnit.SECONDS) } catch (_: TimeoutException) { continue }
                 val view = completed.second
                 if (cancel.cancelled) return Outcome.failure(DiagCode.CANCELLED_BY_USER, "вызов отменён; состояние команды смотрите в истории профиля")
+                if (prepared.get() == null) {
+                    evidence(com.dpsmpx.dpai.ui.ManualAutomationResult.preflight(completed.first.note))
+                    return Outcome.failure(DiagCode.TARGET_CHECK_FAILED, completed.first.note)
+                }
                 val output = when (val r = com.dpsmpx.dpai.ui.ManualAutomationResult.evidence(prepared.get(), view)) {
                     is Outcome.Failure -> return Outcome.failure(DiagCode.STATE_CONFLICT, completed.first.note)
                     is Outcome.Success -> r.value
@@ -372,7 +376,7 @@ internal object ApiProjectRuntime {
                 evidence(details)
                 if (refreshDependencies && inApp && view.results.isNotEmpty()) CodeService.dependenciesChanged(project.root, context.getString(R.string.env_changed_refresh))
                 return if (view.complete) Outcome.success(details) else Outcome.failure(
-                    if (view.step == null) DiagCode.STATE_CONFLICT else DiagCode.PROCESS_EXIT_NONZERO,
+                    if (view.results.isEmpty()) DiagCode.STATE_CONFLICT else DiagCode.PROCESS_EXIT_NONZERO,
                     view.note.ifBlank { completed.first.note }, prepared.get()?.value)
             }
             profileCancel.cancel()

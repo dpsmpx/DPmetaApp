@@ -17,11 +17,78 @@ import java.nio.file.Path
 import org.junit.jupiter.api.io.TempDir
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.time.Duration
 
 class ToolchainDoctorTest {
     @TempDir lateinit var dir: Path
+
+    @Test fun onlyExplicitGradleOrJvmCommandsRequireJavaBeforeLaunch() {
+        fun profile(kind: ManualProfileKind, vararg argv: String) = ManualProfile(kind, listOf(ManualStep("шаг", argv.toList(), 60)))
+        assertTrue(ToolchainDoctor.needsJvm(profile(ManualProfileKind.BUILD, "./gradlew", "assembleRelease")))
+        assertTrue(ToolchainDoctor.needsJvm(profile(ManualProfileKind.BUILD, "sh", "gradlew", "assemble")))
+        assertTrue(ToolchainDoctor.needsJvm(profile(ManualProfileKind.CHECK, "/usr/bin/java", "-version")))
+        assertTrue(ToolchainDoctor.needsJvm(profile(ManualProfileKind.BUILD, "env", "JAVA_HOME=/opt/jdk", "gradle", "build")))
+        assertEquals(false, ToolchainDoctor.needsJvm(profile(ManualProfileKind.BUILD, "cmake", "--build", "build")))
+        assertEquals(false, ToolchainDoctor.needsJvm(profile(ManualProfileKind.DEPENDENCIES, "./gradlew", "assemble")))
+    }
+
+    @Test fun buildPreflightRejectsSelinuxDenialWithoutStartingGradle() {
+        val calls = arrayListOf<String>()
+        val host = object : ProcessHost {
+            override fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit): Outcome<RunningProcess> {
+                calls += spec.command.first()
+                val java = spec.command.first() == "java"
+                onOutput(OutputLine(if (java) OutputStream.STDERR else OutputStream.STDOUT,
+                    if (java) "Failed to mark memory page as executable" else
+                        """{"rwxErrno":13,"selinuxContext":"u:r:untrusted_app:s0:c84"}"""))
+                return Outcome.success(object : RunningProcess {
+                    override val pid: Long? = null
+                    override val isAlive = false
+                    override fun awaitExit(timeout: Duration) = 1
+                    override fun stop(grace: Duration) = StopReport(1, false, emptyList())
+                })
+            }
+        }
+        val blocked = assertIs<Outcome.Failure>(ToolchainDoctor.buildJvmPreflight(host) { false })
+        assertEquals(com.dpsmpx.dpai.core.diagnostics.DiagCode.EXECUTION_HOST_UNAVAILABLE, blocked.diagnostics.first().code)
+        assertTrue(blocked.diagnostics.first().message.contains("SELinux untrusted_app"))
+        assertTrue(blocked.diagnostics.first().message.contains("SSH-target"))
+        assertEquals(listOf("java", "python3"), calls)
+    }
+
+    @Test fun successfulJavaProbeAllowsBuild() {
+        val host = object : ProcessHost {
+            override fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit): Outcome<RunningProcess> = Outcome.success(object : RunningProcess {
+                override val pid: Long? = null
+                override val isAlive = false
+                override fun awaitExit(timeout: Duration) = 0
+                override fun stop(grace: Duration) = StopReport(0, false, emptyList())
+            })
+        }
+        assertIs<Outcome.Success<Unit>>(ToolchainDoctor.buildJvmPreflight(host) { false })
+    }
+
+    @Test fun sshBuildDoctorUsesOnlyFixedReadOnlyCommandsWithoutRemoteWorkDir() {
+        val seen = arrayListOf<List<String>>()
+        val host = object : ProcessHost {
+            override fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit): Outcome<RunningProcess> {
+                assertEquals(null, spec.workDir)
+                seen += spec.command
+                return Outcome.success(object : RunningProcess {
+                    override val pid: Long? = null
+                    override val isAlive = false
+                    override fun awaitExit(timeout: Duration) = 0
+                    override fun stop(grace: Duration) = StopReport(0, false, emptyList())
+                })
+            }
+        }
+        val report = ToolchainDoctor.run(host, ToolchainDoctor.sshBuildProbes(), null) { false }.valueOrNull()!!
+        assertEquals(JsonBool(true), report["allSelectedToolsWork"])
+        assertEquals(setOf("java", "javac", "git", "aapt2", "sh"), seen.map { it.first() }.toSet())
+        assertEquals(5, seen.size)
+    }
 
     @Test fun installedJavaThatCannotStartIsNotReady() {
         val host = object : ProcessHost {
