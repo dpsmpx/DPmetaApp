@@ -629,6 +629,13 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
         return finish(client, run, progress(run.id).results, "остановлено пользователем", ManualOutcome.STOPPED)
     }
 
+    /** Ошибка предварительной проверки — не «остановлено пользователем» и не ошибка запущенной команды. */
+    fun failBeforeLaunch(client: AgentClient, reason: String): Boolean {
+        val run = view.active ?: return blocked
+        if (view.step != null || progress(run.id).intent != null) return true
+        return finish(client, run, emptyList(), "до запуска команды: ${Redactor.STANDARD.redact(reason)}", ManualOutcome.FAILED)
+    }
+
     private fun finish(client: AgentClient, run: ManualRun, results: List<ManualStepResult>, result: String, outcome: ManualOutcome): Boolean {
         when (val r = client.fenceStop(run.id)) {
             is Outcome.Failure -> { note("пауза сохраняется: ${r.errors.first().message}"); return true }
