@@ -60,6 +60,13 @@ class ProjectNeedsTest {
     }
 
     @Test
+    fun installedPackagesNeverClaimThatTheToolsActuallyRun() {
+        val c = ProjectNeeds.check("o/p", listOf("cmake" to "CMakeLists.txt"), inv, index, emptyList())
+        assertTrue(c.ok)
+        assertTrue("запуск инструментов не проверен" in ProjectNeeds.text(c))
+    }
+
+    @Test
     fun suggestionsPreferOwnChoiceThenIndex() {
         assertEquals("openjdk21-jdk", ProjectNeeds.suggest("java", index), "не java-common из индекса")
         assertEquals("go", ProjectNeeds.suggest("go", index), "не gcc-go")
