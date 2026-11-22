@@ -22,6 +22,15 @@ class ManualAutomationResultTest {
         assertIs<Outcome.Failure>(ManualAutomationResult.evidence(ids.next(IdKinds.SESSION), view))
     }
 
+    @Test fun failedPreparationIsExplicitAndDoesNotClaimACommandWasStarted() {
+        val own = ids.next(IdKinds.SESSION)
+        val view = ManualRunView(null, false, "ветка не совпала", "", finished = own, complete = false)
+        val evidence = ManualAutomationResult.evidence(own, view).valueOrNull()!!
+        assertEquals(JsonString("PREFLIGHT"), evidence["phase"])
+        assertEquals(JsonBool(false), evidence["commandStarted"])
+        assertEquals(JsonString("ветка не совпала"), evidence["note"])
+    }
+
     @Test fun matchingFailedRunKeepsItsRealEvidenceAndFullOutputHash() {
         val own = ids.next(IdKinds.SESSION)
         val output = "x".repeat(4000)
