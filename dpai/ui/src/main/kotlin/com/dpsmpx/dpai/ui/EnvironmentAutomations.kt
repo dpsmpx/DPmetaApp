@@ -32,7 +32,7 @@ object EnvironmentAutomations {
                     AutomationSource.ENVIRONMENT, AutomationCategory.ENVIRONMENT, ToolchainDoctor.sourceHash, ActionLevel.READ, listOf(root),
                     AutomationInvocation.DIRECT, available, reason, parameters = listOf(AutomationParameter("tool", "Какие инструменты проверить", ToolchainDoctor.choices, "project")),
                     platforms = setOf(TargetPlatform.POSIX), remote = false, cancellable = true, verification = "Реальный код и вывод каждой пробы"),
-                AutomationDefinition("environment.command", "Команда в Linux приложения", "Произвольная команда с расширенным доступом, только после красного подтверждения и ввода имени проекта. Proot не песочница.",
+                AutomationDefinition("environment.command", "Команда в Linux приложения", "Произвольная команда с расширенным доступом. В обычном режиме требует красного подтверждения и имени проекта; полный доступ включает человек для конкретного чата. Proot не песочница.",
                     AutomationSource.ENVIRONMENT, AutomationCategory.ENVIRONMENT, Hashing.sha256("EnvironmentPlan.command:1").hex, ActionLevel.DANGEROUS, listOf(root),
                     AutomationInvocation.DIRECT, available, reason, parameters = listOf(
                         AutomationParameter("argv", "JSON-массив аргументов, например [\"java\",\"-version\"]; для shell явно [\"/bin/sh\",\"-c\",\"...\"]", emptyList(), text = true, required = true),
