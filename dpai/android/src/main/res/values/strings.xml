@@ -126,4 +126,13 @@
     <string name="env_approve_type_name">Введите имя проекта: %1$s</string>
     <string name="env_approve_execute">Выполнить план</string>
     <string name="env_approve_decline">Отклонить</string>
+    <string name="chat_full_access_on">Полный доступ включён · отключить</string>
+    <string name="chat_full_access_off">Включить полный доступ</string>
+    <string name="chat_full_access_title">Полный доступ к проектному чату</string>
+    <string name="chat_full_access_warning">После подтверждения агент сможет выполнять любые доступные чату действия, включая произвольные Linux-команды и необратимые изменения, без дополнительных окон. Режим сохранится после перезапуска до вашего ручного отключения. Вы сможете отозвать доступ здесь; уже выполненные команды нельзя автоматически отменить. Ограничения Android и отдельное принятие лицензий сохраняются.</string>
+    <string name="chat_full_access_project">Проект: %1$s</string>
+    <string name="chat_full_access_type">Введите имя проекта: %1$s</string>
+    <string name="chat_full_access_confirm">Подтвердить PIN/биометрией</string>
+    <string name="chat_full_access_cancel">Отмена</string>
+    <string name="chat_full_access_failed">Не удалось включить режим: проект или target изменился либо запись недоступна.</string>
 </resources>
