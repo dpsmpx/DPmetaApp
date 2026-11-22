@@ -273,6 +273,10 @@ object ModelsStore {
     }
 
     @Synchronized
+    fun chatFullAccessScope(chat: CorrelationId): String? =
+        accessContext(chat)?.let { (project, target) -> accessScope(project, target) }
+
+    @Synchronized
     fun chatFullAccess(chat: CorrelationId): Boolean {
         val (project, target) = accessContext(chat) ?: return false
         return fullAccessPreferences().getString(chat.value, null) == accessScope(project, target)
@@ -281,10 +285,10 @@ object ModelsStore {
     /** Только оболочка UI вызывает после PIN/биометрии и точного имени; API-инструмента нет. */
     @SuppressLint("ApplySharedPref")
     @Synchronized
-    fun enableChatFullAccess(chat: CorrelationId, typedName: String): Boolean {
+    fun enableChatFullAccess(chat: CorrelationId, typedName: String, expectedScope: String): Boolean {
         val (project, target) = accessContext(chat) ?: return false
-        if (typedName != project.root.trimEnd('/').substringAfterLast('/')) return false
-        val stored = fullAccessPreferences().edit().putString(chat.value, accessScope(project, target)).commit()
+        if (typedName != project.root.trimEnd('/').substringAfterLast('/') || expectedScope != accessScope(project, target)) return false
+        val stored = fullAccessPreferences().edit().putString(chat.value, expectedScope).commit()
         if (!stored) return false
         if (!writeChats(chatFlow.value)) {
             fullAccessPreferences().edit().remove(chat.value).commit()
@@ -300,7 +304,12 @@ object ModelsStore {
         if (!owner.startsWith("chat:")) return false
         val chat = IdKinds.CORRELATION.parse(owner.removePrefix("chat:")).valueOrNull() ?: return false
         if (chatFlow.value.none { it.id == chat && it.project == project.project }) return false
-        return fullAccessPreferences().getString(chat.value, null) == accessScope(project, target)
+        // Сравниваем также с текущей конфигурацией контроллера: runtime мог
+        // удерживать старый снимок проекта/target после их изменения в UI.
+        val (currentProject, currentTarget) = accessContext(chat) ?: return false
+        val requestedScope = accessScope(project, target)
+        if (requestedScope != accessScope(currentProject, currentTarget)) return false
+        return fullAccessPreferences().getString(chat.value, null) == requestedScope
     }
 
     @SuppressLint("ApplySharedPref")
