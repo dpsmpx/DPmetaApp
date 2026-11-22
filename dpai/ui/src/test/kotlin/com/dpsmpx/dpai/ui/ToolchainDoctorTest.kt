@@ -43,6 +43,15 @@ class ToolchainDoctorTest {
         assertEquals(JsonBool(false), report["projectBuildVerified"])
     }
 
+    @Test fun selinuxExecmemDenialNamesAndroidRestrictionAndRemoteBuildTarget() {
+        val diagnostic = """{"pageSize":4096,"rwxErrno":13,"rxErrno":0,"selinuxContext":"u:r:untrusted_app:s0:c84"}"""
+        val finding = ToolchainDoctor.explain(diagnostic)!!
+        assertEquals("ANDROID_SELINUX_EXECMEM", finding.first)
+        assertTrue(finding.second.contains("proot"))
+        assertTrue(finding.second.contains("SSH"))
+        assertEquals(null, ToolchainDoctor.explain("""{"rwxErrno":13,"selinuxContext":null}"""))
+    }
+
     @Test fun actualPythonAndCompilerRunWithoutChangingTheProject() {
         for (tool in listOf("python3", "c++")) {
             val report = ToolchainDoctor.run(LocalProcessHost(), ToolchainDoctor.select(tool, emptyList()).valueOrNull()!!, dir.toString()) { false }.valueOrNull()!!
