@@ -27,7 +27,11 @@ enum class AutomationCategory { REPOSITORY, BUILD, CHECK, RUN, ENVIRONMENT }
 enum class AutomationInvocation { DIRECT, OPEN_UI }
 
 /** В первом пакете параметры — только варианты, уже заданные пользователем в профиле. */
-data class AutomationParameter(val name: String, val title: String, val choices: List<String>, val defaultValue: String? = null)
+data class AutomationParameter(val name: String, val title: String, val choices: List<String>, val defaultValue: String? = null,
+    val text: Boolean = false, val required: Boolean = false, val maxLength: Int = 4096) {
+    fun accepts(value: String): Boolean = value.length <= maxLength && '\u0000' !in value &&
+        (if (text) !required || value.isNotBlank() else value in choices)
+}
 
 /**
  * Машиночитаемый вид инструмента (D-215). [sourceHash] связывает описание
@@ -63,9 +67,11 @@ data class AutomationDefinition(
 
     fun inputSchema(): JsonObject = JsonObject.of(
         "type" to JsonString("object"),
-        "properties" to JsonObject(parameters.associate { p -> p.name to JsonObject.of(
-            "type" to JsonString("string"), "description" to JsonString(p.title), "enum" to JsonArray(p.choices.map(::JsonString)),
-            "default" to (p.defaultValue?.let(::JsonString) ?: JsonNull)) }),
+        "properties" to JsonObject(parameters.associate { p -> p.name to JsonObject(mapOf(
+            "type" to JsonString("string"), "description" to JsonString(p.title), "maxLength" to JsonNumber.of(p.maxLength),
+            "default" to (p.defaultValue?.let(::JsonString) ?: JsonNull)) +
+            if (p.text) emptyMap() else mapOf("enum" to JsonArray(p.choices.map(::JsonString)))) }),
+        "required" to JsonArray(parameters.filter { it.required }.map { JsonString(it.name) }),
         "additionalProperties" to JsonBool(false),
     )
 
@@ -111,10 +117,11 @@ class AutomationCatalog private constructor(val entries: List<AutomationDefiniti
             if (!entry.available) return Outcome.failure(DiagCode.STATE_CONFLICT, entry.reason ?: "инструмент недоступен", id)
             if (entry.invocation != AutomationInvocation.DIRECT) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "откройте прежний экран инструмента для подтверждения или терминала", id)
             if (input.fields.keys.any { key -> entry.parameters.none { it.name == key } }) return Outcome.failure(DiagCode.FIELD_UNKNOWN, "неизвестный параметр автоматизации", id)
+            if (entry.parameters.any { it.required && it.name !in input.fields }) return Outcome.failure(DiagCode.VALUE_INVALID, "не задан обязательный параметр автоматизации", id)
             val values = linkedMapOf<String, String>()
             for ((key, value) in input.fields) {
                 val text = (value as? JsonString)?.value ?: return Outcome.failure(DiagCode.FIELD_TYPE, "параметр должен быть строкой", key)
-                if (text !in entry.parameters.first { it.name == key }.choices) return Outcome.failure(DiagCode.VALUE_INVALID, "значения нет среди вариантов профиля", key)
+                if (!entry.parameters.first { it.name == key }.accepts(text)) return Outcome.failure(DiagCode.VALUE_INVALID, "неверное значение параметра автоматизации", key)
                 values[key] = text
             }
             when (val allowed = authorize(entry)) { is Outcome.Failure -> return allowed; is Outcome.Success -> Unit }
@@ -141,7 +148,8 @@ class AutomationCatalog private constructor(val entries: List<AutomationDefiniti
                     e.scopes.isEmpty() || e.scopes.size > 16 || e.scopes.any { it.isBlank() || it.length > 4096 || '\u0000' in it } ||
                     e.platforms.isEmpty() || e.dependencies.size > 100 || e.parameters.size > 32 ||
                     e.parameters.map { it.name }.toSet().size != e.parameters.size ||
-                    e.parameters.any { !PARAM.matches(it.name) || it.choices.isEmpty() || it.choices.size > 100 || it.defaultValue?.let { v -> v !in it.choices } == true || it.choices.any { v -> v.length > 4096 || '\u0000' in v } } ||
+                    e.parameters.any { !PARAM.matches(it.name) || (it.choices.isEmpty() && !it.text) || (it.text && it.choices.isNotEmpty()) ||
+                        it.maxLength !in 1..4096 || it.choices.size > 100 || it.defaultValue?.let { v -> !it.accepts(v) } == true || it.choices.any { v -> !it.accepts(v) } } ||
                     e.timeoutSeconds?.let { it < 1 } == true || e.verification.isBlank() || e.triggers.isEmpty()) {
                     return Outcome.failure(DiagCode.VALUE_INVALID, "неверное описание автоматизации", e.id)
                 }

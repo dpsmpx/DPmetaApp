@@ -1,10 +1,13 @@
 package com.dpsmpx.dpai.execution.process
 
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.result.Outcome
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.nanoseconds
 
 /**
  * Что запустить (`docs/EXECUTION_MODEL.md`, §5). Аргументы не содержат
@@ -92,8 +95,12 @@ fun ProcessHost.run(
     /** Предел stdout в знаках: память на телефоне не зависит от размера вывода (ревью 17 октября 2026). */
     maxStdoutChars: Int = 1024 * 1024,
     maxStderrChars: Int = 1024 * 1024,
+    /** Сигнал только этого вызова (D-216); null сохраняет прежнее ожидание одним вызовом. */
+    cancelled: (() -> Boolean)? = null,
+    clock: Clock = Clock.SYSTEM,
 ): Outcome<Completed> {
     require(maxStdoutChars >= 0 && maxStderrChars >= 0) { "пределы вывода неотрицательны" }
+    if (cancelled?.invoke() == true) return Outcome.failure(DiagCode.CANCELLED_BY_USER, "запуск процесса отменён")
     val out = mutableListOf<String>()
     val err = mutableListOf<String>()
     val lock = Any()
@@ -128,12 +135,24 @@ fun ProcessHost.run(
         is Outcome.Failure -> return started
         is Outcome.Success -> started.value
     }
-    val code = process.awaitExit(timeout)
+    var wasCancelled = false
+    val code = if (cancelled == null) process.awaitExit(timeout) else {
+        val begun = clock.monotonicNanos()
+        var result: Int? = null
+        while (result == null) {
+            if (cancelled()) { wasCancelled = true; break }
+            val remaining = timeout - (clock.monotonicNanos() - begun).nanoseconds
+            if (remaining <= Duration.ZERO) break
+            result = process.awaitExit(minOf(100.milliseconds, remaining))
+        }
+        result
+    }
     if (code == null) {
         val report = process.stop(grace)
         val causes = if (report.clean) emptyList() else listOf(orphans(report, spec))
         return Outcome.Failure(
-            listOf(Diagnostic.of(DiagCode.PROCESS_TIMEOUT, "${spec.program}: не завершился за $timeout, остановлен", causes = causes)),
+            listOf(Diagnostic.of(if (wasCancelled) DiagCode.CANCELLED_BY_USER else DiagCode.PROCESS_TIMEOUT,
+                if (wasCancelled) "${spec.program}: вызов отменён, запрошена остановка своего процесса" else "${spec.program}: не завершился за $timeout, остановлен", causes = causes)),
         )
     }
     // Выход корня ещё не значит, что потоки чтения дочитали вывод: их дожидается awaitExit.

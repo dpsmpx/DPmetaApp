@@ -35,6 +35,24 @@ class AutomationCatalogTest {
         AutomationInvocation.DIRECT, true, verification = "итог прежнего worker")
     private fun catalog(d: AutomationDefinition = definition()) = AutomationCatalog.of(listOf(d)).valueOrNull()!!
 
+    @Test fun freeTextIsBoundedAndRequiredBeforeAnyAuthorization() {
+        val d = definition().copy(parameters = listOf(AutomationParameter("command", "Команда", emptyList(), text = true, required = true, maxLength = 32)))
+        for (input in listOf(JsonObject.of(), JsonObject.of("command" to JsonString(" ")), JsonObject.of("command" to JsonString("x".repeat(33))),
+            JsonObject.of("command" to JsonString("a\u0000b")))) {
+            var touched = false
+            val result = catalog(d).invoke(d.id, d.revision, input, origin, ids, clock, { false },
+                { touched = true; Outcome.success(Unit) }, { _, _ -> touched = true; Outcome.success(JsonObject.of()) })
+            assertEquals(OperationStatus.FAILED, result.status)
+            assertFalse(touched)
+        }
+        var received: String? = null
+        val result = catalog(d).invoke(d.id, d.revision, JsonObject.of("command" to JsonString("printf test")), origin, ids, clock, { false },
+            { Outcome.success(Unit) }, { _, p -> received = p["command"]; Outcome.success(JsonObject.of()) })
+        assertEquals(OperationStatus.SUCCEEDED, result.status)
+        assertEquals("printf test", received)
+        assertTrue(CanonicalJson.write(d.inputSchema()).contains("maxLength"))
+    }
+
     @Test fun changedSourceOrScopeInvalidatesTheRevision() {
         val d = definition()
         assertNotEquals(d.revision, d.copy(sourceHash = Hashing.sha256("другая команда").hex).revision)
