@@ -705,7 +705,7 @@ class DemoModel(
             if (environment) {
                 // Bootstrap не требует работающего git. Снимок — уже под штатной долговечной паузой.
                 if (environmentSnapshot) when (val snap = EnvSnapshotStore.take(app, "План окружения API")) {
-                    is Outcome.Failure -> { controller.manualProfiles.stop(client); return@start LongJobs.Done(snap.diagnostics.first().message, failed = true) }
+                    is Outcome.Failure -> { controller.manualProfiles.failBeforeLaunch(client, snap.diagnostics.first().message); return@start LongJobs.Done(snap.diagnostics.first().message, failed = true) }
                     is Outcome.Success -> Unit
                 }
                 if (cancelled()) { controller.manualProfiles.stop(client); return@start LongJobs.Done("План окружения отменён до команды", failed = true) }
@@ -715,16 +715,24 @@ class DemoModel(
             // Проверка Git уже под долговечной паузой: такт не сменит дерево между status и start.
             val git = workspaceGit(p, location)
             val status = git.valueOrNull()
-            if (status == null || status.branch != location.branch || status.head == null || status.conflicted.isNotEmpty()) {
-                controller.manualProfiles.stop(client)
-                return@start LongJobs.Done("проверьте ветку, HEAD и конфликты дерева: ${git.diagnostics.firstOrNull()?.message.orEmpty()}", failed = true)
+            val gitProblem = when {
+                git is Outcome.Failure -> "Git перед CHECK/BUILD: ${git.diagnostics.first().message}; команды не запускались"
+                status == null -> "не удалось получить состояние Git; команды CHECK/BUILD не запускались"
+                status.branch != location.branch -> "ветка Git «${status.branch}» отличается от выбранной в IDE «${location.branch}»; обновите привязку проекта или переключите ветку — команды не запускались"
+                status.head == null -> "Git не вернул HEAD выбранного дерева; команды не запускались"
+                status.conflicted.isNotEmpty() -> "в Git есть неразрешённые конфликты: ${status.conflicted.take(5).joinToString()}; команды не запускались"
+                else -> null
+            }
+            if (gitProblem != null) {
+                controller.manualProfiles.failBeforeLaunch(client, gitProblem)
+                return@start LongJobs.Done(gitProblem, failed = true)
             }
             // HEAD дерева — в историю запуска (D-156): какая версия кода собиралась.
             if (cancelled()) {
                 controller.manualProfiles.stop(client)
                 return@start LongJobs.Done("Запуск отменён до команды", failed = true)
             }
-            controller.manualProfiles.launch(ownRun, client, status.head)
+            controller.manualProfiles.launch(ownRun, client, status?.head)
             watchManual(client, cancelled)
         }
     }
@@ -737,7 +745,7 @@ class DemoModel(
         }
         manualStop = false
         val final = controller.manualProfiles.snapshot()
-        return LongJobs.Done(final.note, final.output.lines().takeLast(100))
+        return LongJobs.Done(final.note, final.output.lines().takeLast(100), failed = !final.complete)
     }
 
     /** Только захват ссылки — под замком; сам Git работает вне него (D-133). */
