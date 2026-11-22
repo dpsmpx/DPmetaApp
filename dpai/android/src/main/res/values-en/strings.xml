@@ -139,4 +139,13 @@
     <string name="env_approve_type_name">Enter the project name: %1$s</string>
     <string name="env_approve_execute">Run plan</string>
     <string name="env_approve_decline">Decline</string>
+    <string name="chat_full_access_on">Full access enabled · revoke</string>
+    <string name="chat_full_access_off">Enable full access</string>
+    <string name="chat_full_access_title">Full access for this project chat</string>
+    <string name="chat_full_access_warning">After confirmation, the agent can perform any action available to this chat, including arbitrary Linux commands and irreversible changes, without further approval dialogs. This mode persists after restarting the app until you revoke it. You can revoke access here; actions already completed cannot be undone automatically. Android restrictions and separate license acceptance still apply.</string>
+    <string name="chat_full_access_project">Project: %1$s</string>
+    <string name="chat_full_access_type">Enter the project name: %1$s</string>
+    <string name="chat_full_access_confirm">Verify PIN/biometrics</string>
+    <string name="chat_full_access_cancel">Cancel</string>
+    <string name="chat_full_access_failed">Full access could not be enabled: the project or target changed, or storage failed.</string>
 </resources>
