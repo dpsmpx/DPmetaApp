@@ -31,12 +31,23 @@ class ManualAutomationResultTest {
         assertEquals(JsonString("ветка не совпала"), evidence["note"])
     }
 
+    @Test fun completedStepIsRecordedAsExecutionEvenWhenNoStepIsCurrentlyActive() {
+        val own = ids.next(IdKinds.SESSION)
+        val view = ManualRunView(null, false, "проверка завершена", "", results = listOf(ManualStepResult(1, 0, "ok")),
+            finished = own, complete = true)
+        val evidence = ManualAutomationResult.evidence(own, view).valueOrNull()!!
+        assertEquals(JsonString("EXECUTION"), evidence["phase"])
+        assertEquals(JsonBool(true), evidence["commandStarted"])
+    }
+
     @Test fun matchingFailedRunKeepsItsRealEvidenceAndFullOutputHash() {
         val own = ids.next(IdKinds.SESSION)
         val output = "x".repeat(4000)
         val view = ManualRunView(null, false, "ошибка", output, results = listOf(ManualStepResult(1, 7, "код 7")), finished = own, complete = false)
         val evidence = ManualAutomationResult.evidence(own, view).valueOrNull()!!
         assertEquals(JsonBool(false), evidence["complete"])
+        assertEquals(JsonString("EXECUTION"), evidence["phase"])
+        assertEquals(JsonBool(true), evidence["commandStarted"])
         assertEquals(JsonString(own.value), evidence["run"])
         assertEquals(JsonBool(true), evidence["outputTruncated"])
         assertEquals(JsonString("sha256:" + Hashing.sha256(output).hex), evidence["outputHash"])
