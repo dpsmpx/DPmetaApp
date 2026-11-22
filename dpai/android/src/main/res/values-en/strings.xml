@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="automation_plan_project">Run project plan?</string>
+    <string name="automation_project_scope">Commands run on the shown target in the selected worktree. The manager may execute project code, download packages, and access available files and network.</string>
+    <string name="automation_project_files">This is not a full project backup. Review file changes in Git after the operation.</string>
+    <string name="automation_dependency_report">Read dependency report</string>
     <string name="env_tools_probe">Run tool probes</string>
     <string name="env_linux_command">Run a Linux command</string>
     <string name="env_sdk_install">Install Android SDK</string>

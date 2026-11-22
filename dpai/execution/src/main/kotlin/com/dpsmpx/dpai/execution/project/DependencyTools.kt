@@ -1,5 +1,7 @@
 package com.dpsmpx.dpai.execution.project
 
+import com.dpsmpx.dpai.core.hashing.Hashing
+
 /** Рецепт явного запуска: версии разрешает штатный менеджер, не IDE. */
 object DependencyTools {
     private val script: String by lazy {
@@ -7,6 +9,8 @@ object DependencyTools {
     }
     enum class Manager(val code: String) { GRADLE("gradle"), PYTHON("python"), CONAN("conan") }
     enum class Mode(val code: String) { REPORT("report"), PIN("pin"), RESTORE("restore") }
+    /** Смена встроенного рецепта отзывает старое описание автоматизации (D-217). */
+    val sourceHash: String get() = Hashing.sha256(script).hex
     fun command(manager: Manager, mode: Mode, python: String = "python3"): List<String> {
         require(python.isNotBlank() && python.none { it.isISOControl() })
         require(mode != Mode.RESTORE || manager == Manager.PYTHON)

@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="automation_plan_project">Выполнить план проекта?</string>
+    <string name="automation_project_scope">Команды выполняются на указанном target в выбранном дереве. Менеджер может выполнять код проекта, загружать пакеты и обращаться к доступным файлам и сети.</string>
+    <string name="automation_project_files">Это не полная резервная копия проекта. После операции просмотрите изменения файлов в Git.</string>
+    <string name="automation_dependency_report">Прочитать отчёт зависимостей</string>
     <string name="env_tools_probe">Проверить инструменты запуском</string>
     <string name="env_linux_command">Команда в Linux приложения</string>
     <string name="env_sdk_install">Установить Android SDK</string>

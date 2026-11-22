@@ -44,22 +44,8 @@ class ApiProjectFiles(source: FileTree,
             }
             "read_file" -> {
                 if (path.isEmpty()) return invalid()
-                val raw = when (val r = tree.read(path, TextFile.MAX_EDIT_BYTES)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
-                val content = when (val r = TextFile.decode(raw)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
                 val offset = (input["offset"] as? JsonNumber)?.toLongExact() ?: 0
-                if (offset !in 0..content.length.toLong()) return invalid()
-                var from = offset.toInt()
-                if (from > 0 && from < content.length && content[from].isLowSurrogate() && content[from - 1].isHighSurrogate()) from--
-                var end = minOf(from + 18_000, content.length)
-                if (end < content.length && end > from && content[end - 1].isHighSurrogate()) end--
-                var encoded: String
-                do {
-                    if (end < content.length && end > from && content[end - 1].isHighSurrogate()) end--
-                    encoded = CanonicalJson.write(JsonObject.of("sha256" to JsonString(Hashing.sha256(raw).hex), "offset" to JsonNumber.of(from), "nextOffset" to JsonNumber.of(end),
-                        "complete" to JsonBool(end == content.length), "content" to JsonString(content.substring(from, end))))
-                    if (encoded.length > 30_000) end = from + (end - from) / 2
-                } while (encoded.length > 30_000)
-                Outcome.success(encoded)
+                when (val r = ApiTextPage.read(tree, path, offset)) { is Outcome.Failure -> r; is Outcome.Success -> encoded(r.value) }
             }
             "write_file" -> {
                 if (path.isEmpty()) return invalid()

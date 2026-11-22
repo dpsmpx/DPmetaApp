@@ -160,6 +160,8 @@ private fun automationTitle(d: AutomationDefinition): String = when (d.id) {
     "manual.build" -> stringResource(R.string.automation_build)
     "manual.run" -> stringResource(R.string.automation_launch)
     "manual.dependencies" -> stringResource(R.string.dependencies_title)
+    "dependencies.project" -> stringResource(R.string.dependencies_title)
+    "dependencies.report" -> stringResource(R.string.automation_dependency_report)
     "environment.inspect" -> stringResource(R.string.automation_inspect)
     "environment.probe" -> stringResource(R.string.env_tools_probe)
     "environment.command" -> stringResource(R.string.env_linux_command)

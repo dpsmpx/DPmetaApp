@@ -38,6 +38,8 @@ import com.dpsmpx.dpai.ui.EnvironmentAutomations
 import com.dpsmpx.dpai.ui.ProjectProfileDefaults
 import com.dpsmpx.dpai.ui.ProjectNeeds
 import com.dpsmpx.dpai.ui.EnvironmentPlan
+import com.dpsmpx.dpai.ui.AutomationPlan
+import com.dpsmpx.dpai.ui.DependencyAutomations
 import com.dpsmpx.dpai.ui.ToolchainDoctor
 import com.dpsmpx.dpai.providers.Cancel
 import com.dpsmpx.dpai.providers.ToolCall
@@ -150,6 +152,7 @@ internal object ApiProjectRuntime {
             val choices = ManualProfileKind.entries.associateWith { model.manualChoices(project, it).toMap() }
             val entries = (ManualAutomations.describe(profiles, run, project.root, target.platform, choices) +
                 VerificationAutomations.describe(project.profile(), project.root) +
+                DependencyAutomations.describe(project.root, target.platform, inApp) +
                 EnvironmentAutomations.describe(inApp, inApp && LinuxSetup.environment(context).installed() != null, project.root)).toMutableList()
             val issues = arrayListOf<Diagnostic>()
             when (val pult = AutomationBridge.catalog(project.root, inApp)) {
@@ -170,11 +173,18 @@ internal object ApiProjectRuntime {
                 { cancel.cancelled },
                 { entry ->
                     // Полномочия не выводятся из id или числового уровня: только явно подключённые обработчики.
-                    if (entry.id !in setOf("manual.check", "manual.build", "environment.inspect", "environment.probe", "environment.command", "environment.android_sdk") &&
+                    if (entry.id !in setOf("manual.check", "manual.build", DependencyAutomations.RUN, DependencyAutomations.REPORT, "environment.inspect", "environment.probe", "environment.command", "environment.android_sdk") &&
                         com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment.Apk.entries.none { it in EnvironmentPlan.packageActions && entry.id == "environment.apk.${it.name.lowercase()}" }) Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "нужен прежний экран инструмента")
                     else model.workspaceAccess(project, location, write = false) { Outcome.success(Unit) }
                 },
                 { entry, values -> when (entry.id) {
+                    DependencyAutomations.REPORT -> model.workspaceAccess(project, location, write = false) {
+                        if (!sameTarget()) targetChanged() else DependencyAutomations.read(tree, values)
+                    }
+                    DependencyAutomations.RUN -> when (val plan = DependencyAutomations.plan(values, targetSnapshot.platform, inApp)) {
+                        is Outcome.Failure -> plan
+                        is Outcome.Success -> confirmed(plan.value, entry.revision, cancel) { output -> evidence = output }
+                    }
                     "environment.inspect" -> inspect()
                     "environment.probe" -> probe(values["tool"] ?: "project", snapshot, cancel)
                     "manual.check", "manual.build" -> {
@@ -191,14 +201,19 @@ internal object ApiProjectRuntime {
             if (!inApp) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "план окружения относится к Linux приложения")
             val broken = if (entry.id.startsWith("environment.apk.")) when (val result = LinuxSetup.environment(context).brokenPackages()) { is Outcome.Failure -> return result; is Outcome.Success -> result.value.map { it.name } } else emptyList()
             val plan = when (val result = EnvironmentPlan.create(entry.id, values, broken)) { is Outcome.Failure -> return result; is Outcome.Success -> result.value }
-            val hash = plan.proposal(project, entry.revision).hash.hex
+            return confirmed(plan, entry.revision, cancel, evidence)
+        }
+
+        private fun confirmed(plan: AutomationPlan, revision: String, cancel: Cancel, evidence: (JsonObject) -> Unit): Outcome<JsonObject> {
+            val hash = plan.proposal(project, revision).hash.hex
             if (hash in deniedEnvironment) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "человек уже отклонил этот план; дождитесь нового поручения")
-            val grant = when (val result = EnvironmentApprovalBroker.shared.await(approvalOwner, project, plan, entry.revision) { cancel.cancelled }) {
+            val grant = when (val result = EnvironmentApprovalBroker.shared.await(approvalOwner, project, plan, revision, targetSnapshot.label) { cancel.cancelled }) {
                 is Outcome.Failure -> { if (result.errors.any { it.code == DiagCode.OPERATION_NOT_ALLOWED }) deniedEnvironment += hash; return result }
                 is Outcome.Success -> result.value
             }
-            return profile(plan.profile, emptyMap(), cancel, evidence, environment = true, environmentSnapshot = plan.snapshot, authorize = {
-                when (val allowed = grant?.consume(plan.proposal(project, entry.revision)) ?: Outcome.success(Unit)) { is Outcome.Failure -> allowed; is Outcome.Success -> {
+            return profile(plan.profile, emptyMap(), cancel, evidence, environment = plan.scope == AutomationPlan.Scope.GUEST,
+                environmentSnapshot = plan.snapshot, refreshDependencies = plan.effect != AutomationPlan.Effect.DEPENDENCY_REPORT, saveChoices = false, authorize = {
+                when (val allowed = grant?.consume(plan.proposal(project, revision)) ?: Outcome.success(Unit)) { is Outcome.Failure -> allowed; is Outcome.Success -> {
                     if (!sameTarget()) targetChanged()
                     else plan.estimatedBytes?.let { bytes ->
                         when (val space = StorageSpace.check(context, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.SERVICE, bytes, plan.title)) {
@@ -267,6 +282,7 @@ internal object ApiProjectRuntime {
             append("Окружение: environment.inspect читает только базу пакетов. environment.probe запускает настоящие пробы — наличие java не доказывает запуск JVM. Настрой окружение через environment.apk.add/fix/repair, environment.android_sdk или environment.command. Изменения ждут подтверждения человека прямо в приложении; не отправляй его вручную вводить команды. Не повторяй отклонённый план.\n")
             append("environment.command принимает argv как JSON-массив строк: [\"java\",\"-version\"], для shell явно [\"/bin/sh\",\"-c\",\"...\"]. apk запускай отдельным argv или штатным инструментом пакетов: ему нужен proot без /proc. Ключ API гостю не выдан. Proot не песочница; общие команды имеют расширенный доступ и отдельное опасное подтверждение.\n")
             append("После исправления повтори живые пробы и нужную сборку. Сообщение JVM check_pax о mprotect не доказывает PaX/grsecurity: не объявляй смену ядра или paxctl решением без проверки errno/Android/proot. Лицензии и неподдержанные нативные SDK-инструменты требуют явного решения человека, не объявляй проект готовым по одной базе пакетов.\n")
+            append("Зависимости проекта: dependencies.project запускает прежние Gradle/pip/Conan после подтверждения плана, dependencies.report читает только штатные отчёты. Для pip выбирай Python venv проекта. Продолжай отчёт с nextOffset и прежним sha256; изменение файла требует нового чтения. Сохранённый отчёт не доказывает свежую проверку. После pin/restore просмотри diff, затем запусти проверки.\n")
             for (path in listOf("AGENTS.md", "CLAUDE.md")) {
                 val text = tree.read(path, 64 * 1024).valueOrNull()?.let { com.dpsmpx.dpai.files.TextFile.decode(it).valueOrNull() } ?: continue
                 append("\nИнструкции проекта из $path:\n"); append(text.take(12_000))
@@ -325,11 +341,12 @@ internal object ApiProjectRuntime {
         }
 
         private fun profile(chosen: ManualProfile, values: Map<String, String>, cancel: Cancel, evidence: (JsonObject) -> Unit,
-            environment: Boolean = false, environmentSnapshot: Boolean = true, authorize: (() -> Outcome<Unit>)? = null): Outcome<JsonObject> {
+            environment: Boolean = false, environmentSnapshot: Boolean = true, refreshDependencies: Boolean = false, saveChoices: Boolean = true,
+            authorize: (() -> Outcome<Unit>)? = null): Outcome<JsonObject> {
             val prepared = java.util.concurrent.atomic.AtomicReference<com.dpsmpx.dpai.core.ids.SessionId?>(null)
             val profileCancel = Cancel()
             val done = CompletableFuture<Pair<LongJobs.Done, ManualRunView>>()
-            if (!model.startManualProfile(project, location, chosen, choices = values, cancelled = { cancel.cancelled || profileCancel.cancelled }, expectedTarget = targetSnapshot,
+            if (!model.startManualProfile(project, location, chosen, choices = if (saveChoices) values else null, cancelled = { cancel.cancelled || profileCancel.cancelled }, expectedTarget = targetSnapshot,
                     onPrepared = { prepared.set(it.id) }, environment = environment, beforePrepare = authorize, environmentSnapshot = environmentSnapshot,
                     onFinished = { job, r -> done.complete(job to r) })) return Outcome.failure(DiagCode.WORKTREE_OWNED, "контур занят; дождитесь завершения команды")
             ControllerService.resume(context)
@@ -348,7 +365,7 @@ internal object ApiProjectRuntime {
                 val finding = if (environment) com.dpsmpx.dpai.ui.ToolchainDoctor.explain(view.output) else null
                 val details = if (finding == null) output else JsonObject(output.fields + mapOf("finding" to JsonString(finding.first), "explanation" to JsonString(finding.second)))
                 evidence(details)
-                if (environment && view.results.isNotEmpty()) CodeService.dependenciesChanged(project.root, context.getString(R.string.env_changed_refresh))
+                if (refreshDependencies && inApp && view.results.isNotEmpty()) CodeService.dependenciesChanged(project.root, context.getString(R.string.env_changed_refresh))
                 return if (view.complete) Outcome.success(details) else Outcome.failure(DiagCode.PROCESS_EXIT_NONZERO, completed.first.note, prepared.get()?.value)
             }
             profileCancel.cancel()

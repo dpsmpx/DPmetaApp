@@ -27,9 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.execution.project.DependencyTools
 import com.dpsmpx.dpai.execution.target.TargetPlatform
-import com.dpsmpx.dpai.ui.ManualProfile
 import com.dpsmpx.dpai.ui.ManualProfileKind
-import com.dpsmpx.dpai.ui.ManualStep
 import com.dpsmpx.dpai.ui.ProjectWorkspaceView
 import com.dpsmpx.dpai.ui.WorkspaceLocation
 
@@ -56,11 +54,9 @@ internal fun WorkspaceDependenciesPanel(model: DemoModel, view: ProjectWorkspace
             DependencyTools.Mode.PIN -> R.string.dependencies_pin
             DependencyTools.Mode.RESTORE -> R.string.dependencies_restore
         })
-        val profile = ManualProfile(ManualProfileKind.DEPENDENCIES,
-            listOf(ManualStep(name, DependencyTools.command(manager, mode, python.trim()), 3600)),
-            needs = if (androidSdk && manager == DependencyTools.Manager.GRADLE) setOf(com.dpsmpx.dpai.ui.ManualNeed.ANDROID_SDK) else emptySet())
+        val profile = com.dpsmpx.dpai.ui.DependencyProfiles.create(manager, mode, python.trim(), androidSdk && manager == DependencyTools.Manager.GRADLE, name).valueOrNull()
         val previousRun = model.manualProfileView().finished
-        val started = profile.valid && model.startManualProfile(view.project, where, profile, onFinished = { _, result ->
+        val started = profile != null && model.startManualProfile(view.project, where, profile, onFinished = { _, result ->
             if (mode != DependencyTools.Mode.REPORT && result.finished != null && result.finished != previousRun && view.target?.inApp == true) {
                 CodeService.dependenciesChanged(where.path, resources.getString(R.string.dependencies_restart_lsp))
             }

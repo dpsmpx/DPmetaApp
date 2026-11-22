@@ -7,6 +7,7 @@ import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.ui.EnvironmentPlan
+import com.dpsmpx.dpai.ui.AutomationPlan
 import com.dpsmpx.dpai.ui.ProjectEntry
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
@@ -89,7 +90,7 @@ class EnvironmentApprovalsTest {
     }
 
     private fun command() = EnvironmentPlan.create("environment.command", mapOf("argv" to "[\"java\",\"-version\"]")).valueOrNull()!!
-    private fun waiting(plan: EnvironmentPlan, block: (EnvironmentApprovalBroker, EnvironmentApprovalBroker.Request,
+    private fun waiting(plan: AutomationPlan, block: (EnvironmentApprovalBroker, EnvironmentApprovalBroker.Request,
         CompletableFuture<Outcome<EnvironmentApprovalBroker.Grant?>>, AtomicBoolean) -> Unit) {
         val broker = EnvironmentApprovalBroker(clock, ids)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

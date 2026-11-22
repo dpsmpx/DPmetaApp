@@ -27,6 +27,7 @@ import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonArray
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.ui.AndroidSdk
+import com.dpsmpx.dpai.ui.AutomationPlan
 
 /** Один экран одобрения для человека; в API-инструментах нет команды, вызывающей answer. */
 @Composable
@@ -39,16 +40,26 @@ internal fun EnvironmentApprovalUi(owner: String) {
     var details by remember(request.id) { mutableStateOf(false) }
     val uri = LocalUriHandler.current
     val dangerous = request.plan.level == ActionLevel.DANGEROUS
+    val project = request.plan.scope == AutomationPlan.Scope.PROJECT
     AlertDialog(
         onDismissRequest = { broker.answer(owner, request.id, false) },
         containerColor = if (dangerous) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surface,
-        title = { Text(stringResource(if (dangerous) R.string.env_approve_danger_title else R.string.env_approve_title)) },
+        title = { Text(stringResource(if (dangerous) R.string.env_approve_danger_title else if (project) R.string.automation_plan_project else R.string.env_approve_title)) },
         text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
             Text(request.plan.title, style = MaterialTheme.typography.titleSmall)
+            Text(request.targetLabel)
             Text(request.root, fontFamily = FontFamily.Monospace)
-            Text(stringResource(R.string.env_approve_scope))
+            Text(stringResource(if (project) R.string.automation_project_scope else R.string.env_approve_scope))
             if (dangerous) Text(stringResource(R.string.env_approve_danger), color = MaterialTheme.colorScheme.error)
-            Text(stringResource(if (request.plan.snapshot) R.string.env_approve_snapshot else R.string.env_approve_no_snapshot))
+            if (project) Text(stringResource(R.string.automation_project_files))
+            else Text(stringResource(if (request.plan.snapshot) R.string.env_approve_snapshot else R.string.env_approve_no_snapshot))
+            request.plan.effect?.let { effect -> Text(stringResource(when (effect) {
+                AutomationPlan.Effect.DEPENDENCY_REPORT -> R.string.dependencies_explanation
+                AutomationPlan.Effect.GRADLE_PIN -> R.string.dependencies_gradle_notice
+                AutomationPlan.Effect.PYTHON_PIN -> R.string.dependencies_pip_notice
+                AutomationPlan.Effect.CONAN_PIN -> R.string.dependencies_conan_notice
+                AutomationPlan.Effect.PYTHON_RESTORE -> R.string.dependencies_restore_notice
+            })) }
             if (dangerous || details) for (step in request.plan.profile.steps) {
                 Text(step.name, style = MaterialTheme.typography.labelMedium)
                 Text(CanonicalJson.write(JsonArray(step.command.map(::JsonString))), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
