@@ -122,6 +122,21 @@ class ManualProfilesTest {
         assertEquals(1, host.starts)
     }
 
+    @Test fun failedPreflightKeepsCauseWithoutPretendingCommandRanOrUserStoppedIt() {
+        val s = store()
+        val run = s.prepare(project, target, location, profile).valueOrNull()!!
+        val host = Host()
+        assertFalse(s.failBeforeLaunch(host.client(), "фактическая ветка work отличается от main"))
+        val view = s.snapshot()
+        assertEquals(run.id, view.finished)
+        assertFalse(view.complete)
+        assertTrue(view.results.isEmpty())
+        assertTrue(view.note.contains("до запуска команды"))
+        assertTrue(view.note.contains("фактическая ветка work"))
+        assertEquals(0, host.starts)
+        assertEquals(ManualOutcome.FAILED, s.history(project).valueOrNull()!!.single().outcome)
+    }
+
     @Test fun lostSupervisorPendingStopAndSurvivorsDoNotReleaseProject() {
         val s = store(); val host = Host().apply { state = RunState.LOST }
         s.prepare(project, target, location, profile)
