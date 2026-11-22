@@ -285,8 +285,13 @@ object ModelsStore {
         val (project, target) = accessContext(chat) ?: return false
         if (typedName != project.root.trimEnd('/').substringAfterLast('/')) return false
         val stored = fullAccessPreferences().edit().putString(chat.value, accessScope(project, target)).commit()
-        if (stored) AppLogs.get(app).info("ai", "Полный доступ к проектному API-чату включён человеком")
-        return stored
+        if (!stored) return false
+        if (!writeChats(chatFlow.value)) {
+            fullAccessPreferences().edit().remove(chat.value).commit()
+            return false
+        }
+        AppLogs.get(app).info("ai", "Полный доступ к проектному API-чату включён человеком")
+        return true
     }
 
     /** Проверяется брокером и повторно при consume; сам агент изменить грант не может. */
@@ -301,8 +306,12 @@ object ModelsStore {
     @SuppressLint("ApplySharedPref")
     @Synchronized
     fun revokeChatFullAccess(chat: CorrelationId) {
-        fullAccessPreferences().edit().remove(chat.value).commit()
+        if (!fullAccessPreferences().edit().remove(chat.value).commit()) {
+            problemFlow.value = "не удалось отозвать полный доступ: запись настроек отказала"
+            return
+        }
         runningFlow.value[chat]?.cancel?.cancel()
+        writeChats(chatFlow.value)
         AppLogs.get(app).info("ai", "Полный доступ к проектному API-чату отозван человеком")
     }
 
@@ -318,12 +327,16 @@ object ModelsStore {
     }
 
     @Synchronized
-    private fun writeChats(next: List<Conversation>) {
+    private fun writeChats(next: List<Conversation>): Boolean {
         chatFlow.value = next
-        // Пустые разговоры не пишутся: «новый чат» без реплики не переживает перезапуск.
-        docs?.write(CHATS, ChatBook.toJson(next.filter { it.entries.isNotEmpty() }))?.let { w ->
-            if (w is Outcome.Failure) problemFlow.value = "переписка не сохранена: ${w.errors.first().message}"
+        // Только чат с явным постоянным грантом переживает рестарт даже до первой реплики.
+        val persistent = next.filter { it.entries.isNotEmpty() || (it.project != null && fullAccessPreferences().contains(it.id.value)) }
+        val written = docs?.write(CHATS, ChatBook.toJson(persistent)) ?: return false
+        if (written is Outcome.Failure) {
+            problemFlow.value = "переписка не сохранена: ${written.errors.first().message}"
+            return false
         }
+        return true
     }
 
     /**
