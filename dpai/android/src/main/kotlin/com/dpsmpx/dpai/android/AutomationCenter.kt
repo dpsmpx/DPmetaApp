@@ -125,6 +125,7 @@ private fun AutomationDetails(d: AutomationDefinition, running: Boolean, onRun: 
     var values by remember(d.revision) { mutableStateOf(d.parameters.associate { it.name to (it.defaultValue ?: it.choices.first()) }) }
     Text(stringResource(R.string.automation_level, d.level.code), style = MaterialTheme.typography.bodySmall)
     Text(stringResource(if (d.invocation == AutomationInvocation.DIRECT) R.string.automation_direct else R.string.automation_existing_ui), style = MaterialTheme.typography.bodySmall)
+    d.reason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     if (d.source == AutomationSource.PULT) Text(d.purpose, style = MaterialTheme.typography.bodySmall)
     if (d.dependencies.isNotEmpty()) Text(stringResource(R.string.automation_dependencies, d.dependencies.joinToString()), style = MaterialTheme.typography.bodySmall)
     d.timeoutSeconds?.let { Text(stringResource(R.string.automation_timeout, it), style = MaterialTheme.typography.bodySmall) }

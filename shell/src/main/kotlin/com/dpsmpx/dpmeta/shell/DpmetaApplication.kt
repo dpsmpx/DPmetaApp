@@ -21,10 +21,7 @@ class DpmetaApplication : DpaiApplication() {
         com.dpsmpx.dpai.android.AutomationBridge.pult = { root, inApp ->
             val text = runCatching { app.assets.open(com.dpsmpx.dpmeta.app.PultActivity.COMMANDS_ASSET).bufferedReader().use { it.readText() } }.getOrNull()
             if (text == null) com.dpsmpx.dpai.core.result.Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.ENTITY_NOT_FOUND, "реестра команд нет в APK")
-            else when (val parsed = com.dpsmpx.dpmeta.formats.CommandFormat.parse(text)) {
-                is com.dpsmpx.dpai.core.result.Outcome.Failure -> parsed
-                is com.dpsmpx.dpai.core.result.Outcome.Success -> com.dpsmpx.dpai.core.result.Outcome.success(com.dpsmpx.dpmeta.app.screens.CommandAutomations.describe(parsed.value, root, inApp))
-            }
+            else com.dpsmpx.dpmeta.app.screens.CommandAutomations.fromText(text, root, inApp)
         }
         com.dpsmpx.dpai.android.AutomationBridge.openPult = { context ->
             context.startActivity(android.content.Intent(context, DpmetaActivity::class.java)

@@ -1,6 +1,8 @@
 package com.dpsmpx.dpmeta.app.screens
 
 import com.dpsmpx.dpmeta.formats.CommandRegistry
+import com.dpsmpx.dpmeta.formats.CommandFormat
+import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.automation.AutomationCategory
 import com.dpsmpx.dpai.automation.AutomationDefinition
 import com.dpsmpx.dpai.automation.AutomationInvocation
@@ -17,6 +19,12 @@ import kotlin.time.Duration.Companion.minutes
 
 /** Только адаптер разобранного реестра; исполнение/подтверждение остаётся у CommandActions. */
 object CommandAutomations {
+    /** Оболочке не нужен внутренний CommandRegistry или зависимость на core/formats. */
+    fun fromText(text: String, root: String, inApp: Boolean): Outcome<List<AutomationDefinition>> = when (val parsed = CommandFormat.parse(text)) {
+        is Outcome.Failure -> parsed
+        is Outcome.Success -> Outcome.success(describe(parsed.value, root, inApp))
+    }
+
     fun describe(registry: CommandRegistry, root: String, inApp: Boolean): List<AutomationDefinition> = registry.commands.map { c ->
         val source = JsonObject.of("id" to JsonString(c.id), "project" to JsonString(c.project), "workdir" to JsonString(c.workdir.orEmpty()),
             "path" to JsonString(c.path), "args" to JsonArray(c.args.map(::JsonString)), "plan" to JsonString(c.plan.code),

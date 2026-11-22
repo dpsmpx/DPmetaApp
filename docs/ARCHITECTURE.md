@@ -22,7 +22,7 @@ DPmetaApp/                        сборка Gradle из корня: ./gradlew
 ├── dpai/                         подсистема «AI» (DP_AI_Orcestrator) и ядро приложения
 │   ├── core storage security notifications      ← ядро: общее для всех подсистем
 │   ├── accounts execution sessions tasks contexts git verification
-│   │   monitoring connectors analytics orchestrator   ← контур «AI»
+│   │   automation monitoring connectors analytics orchestrator   ← контур «AI»
 │   ├── ui cli jsch               представление без платформы, команда dpai, SSH на JVM
 │   └── android                   оболочка Android — библиотека (DP_AI_Orcestrator:D-103)
 ├── core/ app/               модули DPmetaApp на ядре dpai/ (ТЗ, §6.2); app — пульт
@@ -33,6 +33,11 @@ DPmetaApp/                        сборка Gradle из корня: ./gradlew
 ```
 
 Сборка корня включает `dpai/`, модули пульта и APK `shell`.
+Каталог инструментов находится в `dpai/automation` (D-172,
+`DP_AI_Orcestrator:D-215`). Адаптер команд пульта — в `app`, оболочка
+`shell` подключает его через `AutomationBridge`; чистый `core/formats`
+не зависит от каталога или Android. Каталог не заменяет исполнители,
+хранилища профилей, одобрения и журнал; подробнее — `docs/AUTOMATIONS.md`.
 DPmeta — документы и инструменты на Python в самостоятельном репозитории
 (D-178); его код, реестр и проверки в сборке DP_IDE не участвуют.
 SocialMediaImage и DPprofile — только в `dpsmpx/SocialMediaImage` (D-154);

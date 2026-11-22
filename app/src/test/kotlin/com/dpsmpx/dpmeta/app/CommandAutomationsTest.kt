@@ -34,6 +34,7 @@ class CommandAutomationsTest {
         assertEquals(AutomationInvocation.OPEN_UI, described.invocation)
         assertEquals(120L, described.timeoutSeconds)
         assertEquals(before, registry.commands.single())
+        assertEquals(described, CommandAutomations.fromText(text, "/root/projects/owner/repo", true).valueOrNull()!!.single())
         assertFalse(CanonicalJson.write(described.toJson()).contains("--short"))
         assertFalse(CommandAutomations.describe(registry, "/root/project", false).single().available)
     }
