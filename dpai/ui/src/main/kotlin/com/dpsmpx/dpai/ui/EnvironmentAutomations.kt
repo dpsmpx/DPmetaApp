@@ -21,7 +21,7 @@ object EnvironmentAutomations {
             remote = false, deterministic = true, idempotent = true, verification = "Факты из базы apk; отсутствие данных не является успехом", triggers = setOf("MANUAL", "AI"))) +
             LinuxEnvironment.Apk.entries.map { op -> AutomationDefinition("environment.apk.${op.name.lowercase()}", op.name,
                 "Прежняя операция менеджера пакетов; выбор пакетов, снимок и подтверждение — на экране окружения.",
-                AutomationSource.ENVIRONMENT, AutomationCategory.ENVIRONMENT, op.descriptionHash,
+                AutomationSource.ENVIRONMENT, AutomationCategory.ENVIRONMENT, Hashing.sha256(op.descriptionHash + ToolchainDoctor.sourceHash + "EnvironmentPlan:2").hex,
                 if (op in setOf(LinuxEnvironment.Apk.UPDATE, LinuxEnvironment.Apk.LIST_UPGRADES)) ActionLevel.READ else ActionLevel.REVERSIBLE, listOf(root),
                 if (op in EnvironmentPlan.packageActions) AutomationInvocation.DIRECT else AutomationInvocation.OPEN_UI, available, reason,
                 parameters = if (op in setOf(LinuxEnvironment.Apk.ADD, LinuxEnvironment.Apk.FIX, LinuxEnvironment.Apk.REPAIR, LinuxEnvironment.Apk.UPGRADE_SOME))
@@ -29,7 +29,7 @@ object EnvironmentAutomations {
                 platforms = setOf(TargetPlatform.POSIX), dependencies = listOf("apk"),
                 remote = false, cancellable = op in EnvironmentPlan.packageActions, verification = "Код apk и сверка новой базы со снимком") } + listOf(
                 AutomationDefinition("environment.probe", "Проверить инструменты запуском", "Живые Java/JDK/Python/C++ и другие пробы. Не выдаёт наличие пакета за работающий инструмент.",
-                    AutomationSource.ENVIRONMENT, AutomationCategory.ENVIRONMENT, Hashing.sha256("ToolchainDoctor:1").hex, ActionLevel.READ, listOf(root),
+                    AutomationSource.ENVIRONMENT, AutomationCategory.ENVIRONMENT, ToolchainDoctor.sourceHash, ActionLevel.READ, listOf(root),
                     AutomationInvocation.DIRECT, available, reason, parameters = listOf(AutomationParameter("tool", "Какие инструменты проверить", ToolchainDoctor.choices, "project")),
                     platforms = setOf(TargetPlatform.POSIX), remote = false, cancellable = true, verification = "Реальный код и вывод каждой пробы"),
                 AutomationDefinition("environment.command", "Команда в Linux приложения", "Произвольная команда с расширенным доступом, только после красного подтверждения и ввода имени проекта. Proot не песочница.",

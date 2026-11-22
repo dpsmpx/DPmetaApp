@@ -12,8 +12,9 @@ import kotlin.test.assertTrue
 class EnvironmentPlanTest {
     @Test fun packagePlanUsesNativeApkWithoutShellAndRepairsKnownDamage() {
         val plan = EnvironmentPlan.create("environment.apk.add", mapOf("packages" to "openjdk21-jdk python3 git"), listOf("binutils")).valueOrNull()!!
-        assertEquals(2, plan.profile.steps.size)
-        assertTrue(plan.profile.steps.all { ProotHost.needsNoProc(it.command) })
+        assertTrue(plan.profile.steps.size > 2)
+        assertTrue(plan.profile.steps.take(2).all { ProotHost.needsNoProc(it.command) })
+        assertTrue(plan.profile.steps.any { it.command.first() == "java" })
         assertTrue(plan.profile.valid)
         assertTrue(plan.snapshot)
         assertEquals(ActionLevel.REVERSIBLE, plan.level)
@@ -36,7 +37,7 @@ class EnvironmentPlanTest {
         val plan = EnvironmentPlan.create("environment.android_sdk", mapOf("api" to "37", "buildTools" to "37.0.0")).valueOrNull()!!
         assertTrue(plan.profile.valid)
         assertTrue(plan.sdkLicense)
-        val script = plan.profile.steps.last().command.last()
+        val script = plan.profile.steps.single { AndroidSdk.CMDLINE_URL in it.command.last() }.command.last()
         assertTrue(script.contains("'platforms;android-37' 'build-tools;37.0.0'"))
         assertTrue(script.contains(AndroidSdk.CMDLINE_SHA256))
         assertIs<Outcome.Failure>(EnvironmentPlan.create("environment.android_sdk", mapOf("api" to "37;echo")))

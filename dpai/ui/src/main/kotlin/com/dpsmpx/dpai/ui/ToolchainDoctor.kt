@@ -80,6 +80,20 @@ object ToolchainDoctor {
     ) + listOf("cc", "gcc", "g++", "clang", "clang++", "cmake", "make", "ninja", "node", "npm", "rustc", "cargo", "go", "mvn")
         .map { Probe(it, listOf(it, if (it == "go") "version" else "--version")) }
     val choices: List<String> = listOf("project", "all") + definitions.map { it.name }
+    val sourceHash: String get() = Hashing.sha256(JsonArray(definitions.map { p -> JsonObject.of("name" to JsonString(p.name),
+        "argv" to JsonArray(p.command.map(::JsonString)), "seconds" to JsonNumber.of(p.seconds)) })).hex
+
+    /** Установка инструмента проверяет запуск сразу тем же штатным профилем. */
+    fun forPackages(packages: List<String>): List<Probe> {
+        val names = packages.map { it.substringBefore('=').substringBefore('>').substringBefore('<') }
+        val wanted = linkedSetOf<String>()
+        if (names.any { it.startsWith("openjdk") }) wanted += "java"
+        if (names.any { it.startsWith("openjdk") && it.endsWith("-jdk") }) wanted += "jdk"
+        if (names.any { it == "python3" || it.startsWith("py3-") }) wanted += "python3"
+        if ("git" in names) wanted += "git"
+        if ("g++" in names || "build-base" in names) wanted += "c++"
+        return definitions.filter { it.name in wanted }
+    }
 
     fun select(name: String, wanted: Collection<String>): Outcome<List<Probe>> {
         if (name !in choices) return Outcome.failure(DiagCode.VALUE_INVALID, "неизвестная проба инструмента", name)
