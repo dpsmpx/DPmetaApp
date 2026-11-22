@@ -198,7 +198,7 @@ internal object ApiProjectRuntime {
                 is Outcome.Success -> result.value
             }
             return profile(plan.profile, emptyMap(), cancel, evidence, environment = true, environmentSnapshot = plan.snapshot, authorize = {
-                when (val allowed = grant?.consume() ?: Outcome.success(Unit)) { is Outcome.Failure -> allowed; is Outcome.Success -> {
+                when (val allowed = grant?.consume(plan.proposal(project, entry.revision)) ?: Outcome.success(Unit)) { is Outcome.Failure -> allowed; is Outcome.Success -> {
                     if (!sameTarget()) targetChanged()
                     else plan.estimatedBytes?.let { bytes ->
                         when (val space = StorageSpace.check(context, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.SERVICE, bytes, plan.title)) {

@@ -23,9 +23,9 @@ import kotlin.time.Duration.Companion.minutes
 /** Ожидание человеческого одобрения, не очередь исполнения. Модель не получает метода approve (D-216). */
 internal class EnvironmentApprovalBroker(private val clock: Clock, private val ids: IdGenerator) {
     data class Request(val id: ApprovalId, val owner: String, val projectName: String, val root: String, val plan: EnvironmentPlan, val proposal: Proposal)
-    class Grant internal constructor(private val proposal: Proposal, private val approval: Approval, private val clock: Clock) {
+    class Grant internal constructor(private val approval: Approval, private val clock: Clock) {
         private val ledger = ApprovalLedger()
-        fun consume(): Outcome<Unit> = when (val result = ledger.consume(proposal, approval, clock.now())) {
+        fun consume(expected: Proposal): Outcome<Unit> = when (val result = ledger.consume(expected, approval, clock.now())) {
             is Outcome.Failure -> result
             is Outcome.Success -> Outcome.success(Unit)
         }
@@ -68,7 +68,7 @@ internal class EnvironmentApprovalBroker(private val clock: Clock, private val i
         if (r.plan.sdkLicense && !license) return false
         val now = clock.now()
         val approval = Approval(r.id, r.proposal.hash, "user", now, now + 5.minutes)
-        return held.answer.complete(Outcome.success(Grant(r.proposal, approval, clock)))
+        return held.answer.complete(Outcome.success(Grant(approval, clock)))
     }
 
     companion object {
