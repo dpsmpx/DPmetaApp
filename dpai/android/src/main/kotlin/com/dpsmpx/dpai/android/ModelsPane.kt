@@ -512,6 +512,15 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
     val scope = rememberCoroutineScope()
     var input by rememberSaveable(c.id.value) { mutableStateOf("") }
     var note by remember { mutableStateOf<String?>(null) }
+    var fullAccess by remember(c.id.value) { mutableStateOf(ModelsStore.chatFullAccess(c.id)) }
+    var showFullAccess by remember(c.id.value) { mutableStateOf(false) }
+    var typedFullAccess by remember(c.id.value) { mutableStateOf("") }
+    var authenticating by remember(c.id.value) { mutableStateOf(false) }
+    val projectForAccess = c.project?.let { id -> Controller.get(context.filesDir).projects().projects.firstOrNull { it.project == id } }
+    val fullAccessName = projectForAccess?.root?.trimEnd('/')?.substringAfterLast('/')
+    val fullAccessTarget = projectForAccess?.let { project -> Controller.get(context.filesDir).targets().firstOrNull { it.id == project.target }?.label }
+    val fullAccessTitle = androidx.compose.ui.res.stringResource(R.string.chat_full_access_title)
+    LaunchedEffect(c.project) { fullAccess = ModelsStore.chatFullAccess(c.id) }
     // Файлы к вопросу (D-99): только выбором человека; текст уходит провайдеру вместе с вопросом.
     var files by remember(c.id.value) { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     val attach = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
@@ -530,6 +539,39 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
     val list = rememberLazyListState()
     val count = c.entries.size + if (live != null) 1 else 0
     LaunchedEffect(count, live?.text?.length) { if (count > 0) list.scrollToItem(count - 1) }
+    if (showFullAccess && fullAccessName != null) AlertDialog(
+        onDismissRequest = { if (!authenticating) showFullAccess = false },
+        containerColor = MaterialTheme.colorScheme.errorContainer,
+        title = { Text(fullAccessTitle) },
+        text = {
+            Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState())) {
+                Text(androidx.compose.ui.res.stringResource(R.string.chat_full_access_warning))
+                Text(androidx.compose.ui.res.stringResource(R.string.chat_full_access_project, fullAccessName),
+                    style = MaterialTheme.typography.titleSmall)
+                fullAccessTarget?.let { Text(it) }
+                OutlinedTextField(typedFullAccess, { typedFullAccess = it }, singleLine = true,
+                    label = { Text(androidx.compose.ui.res.stringResource(R.string.chat_full_access_type, fullAccessName)) })
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !authenticating && typedFullAccess == fullAccessName, onClick = {
+                authenticating = true
+                DeviceConfirm.ask(context, fullAccessTitle, onOk = {
+                    val ok = ModelsStore.enableChatFullAccess(c.id, typedFullAccess)
+                    fullAccess = ModelsStore.chatFullAccess(c.id)
+                    authenticating = false
+                    if (ok && fullAccess) showFullAccess = false
+                    else note = context.getString(R.string.chat_full_access_failed)
+                }, onDenied = { error -> authenticating = false; note = error })
+            }) { Text(androidx.compose.ui.res.stringResource(R.string.chat_full_access_confirm)) }
+        },
+        dismissButton = {
+            TextButton(enabled = !authenticating, onClick = { showFullAccess = false }) {
+                Text(androidx.compose.ui.res.stringResource(R.string.chat_full_access_cancel))
+            }
+        },
+        properties = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn),
+    )
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
@@ -540,6 +582,16 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
         }
         if (c.project == null) TextButton(onClick = { ApiQuickStartRequests.request(profile = c.profile.value) }) { Text(androidx.compose.ui.res.stringResource(R.string.api_work_connect_project)) }
         if (c.project != null) Row(Modifier.fillMaxWidth()) {
+            FilterChip(selected = fullAccess, enabled = fullAccess || fullAccessName != null, onClick = {
+                if (fullAccess) {
+                    ModelsStore.revokeChatFullAccess(c.id)
+                    fullAccess = false
+                } else {
+                    typedFullAccess = ""
+                    showFullAccess = true
+                }
+            }, label = { Text(androidx.compose.ui.res.stringResource(
+                if (fullAccess) R.string.chat_full_access_on else R.string.chat_full_access_off)) })
             TextButton(enabled = live == null, onClick = { scope.launch {
                 val result = withContext(Dispatchers.IO) {
                     val choice = ApiProjectRuntime.choices(context).valueOrNull()?.firstOrNull { it.project == c.project }
