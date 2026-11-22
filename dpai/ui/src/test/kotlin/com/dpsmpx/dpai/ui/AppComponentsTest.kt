@@ -23,7 +23,7 @@ class AppComponentsTest {
     private fun file(rel: String, text: String = "x") = dir.resolve(rel).also { Files.createDirectories(it.parent); Files.writeString(it, text) }
 
     private fun rootfs(): Path {
-        file("root/android-sdk/cmdline-tools/latest/source.properties", "Pkg.Desc=Android SDK Command-line Tools\nPkg.Revision=23.0\n")
+        file("root/android-sdk/cmdline-tools/latest/source.properties", "Pkg.Desc=Android SDK Command-line Tools\nPkg.Revision=${AndroidSdk.CMDLINE_VERSION}\n")
         file("root/android-sdk/platforms/android-36/source.properties", "Pkg.Revision=2\n")
         file("root/android-sdk/build-tools/36.1.0/source.properties", "Pkg.Revision=36.1.0\n")
         file("root/android-sdk/build-tools/36.1.0/aapt2", "a".repeat(1000))
@@ -44,7 +44,7 @@ class AppComponentsTest {
     fun scanFindsVersionsSumsAndSizes() {
         val list = AppComponents.scan(rootfs(), "aarch64").associateBy { it.id }
         val sdk = list["android-sdk"]!!
-        assertEquals("23.0", sdk.version)
+        assertEquals(AndroidSdk.CMDLINE_VERSION, sdk.version)
         assertEquals(AndroidSdk.CMDLINE_SHA256, sdk.checksum)
         assertTrue("platforms;android-36 (2)" in sdk.parts && "build-tools;36.1.0 (36.1.0)" in sdk.parts, sdk.parts.toString())
         assertTrue(sdk.size!! >= 1000)

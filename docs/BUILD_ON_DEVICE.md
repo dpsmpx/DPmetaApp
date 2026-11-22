@@ -1,37 +1,54 @@
 # Сборка APK внутри DPmetaApp
 
-Личная мобильная студия: APK собирается на том же телефоне, в собственном
-Alpine Linux под proot. Termux и SSH-target не требуются. Режим ещё требует
-физической проверки на целевом телефоне (`DPmetaApp:D-188`).
+Основной DPmetaApp — мобильная студия с `targetSdk 28`: Android-проекты
+собираются прямо в приложении, в собственном Alpine Linux под proot,
+без отдельного Termux и обязательного SSH-target. Реальный запуск JVM
+и Gradle всё ещё требует проверки на целевом телефоне (`DPmetaApp:D-189`).
 
-## 1. Установить совместимый APK студии
+## 1. Установить основной APK студии
 
 В GitHub Actions DPmetaApp (`.github/workflows/apk.yml`) после зелёного
 `full --strict` доступны два APK:
 
-- `standard/` — `targetSdk 36`, обычные ограничения Android;
-- `on-device/` — `targetSdk 28`, совместимость с запуском программ из
-  каталога данных приложения как у Termux. `minSdk` **30** у обоих.
+- `primary/DPmetaApp.apk` — **основная сборка**, `targetSdk 28`,
+  позволяющая Android запускать программы из каталога Linux приложения;
+- `modern/DPmetaApp-modern-target.apk` — дополнительная сравнительная
+  сборка, `targetSdk 36`, с ограничением запуска из каталога данных.
 
-Вариант `on-device` не предназначен для Google Play. У него более мягкие
+У обоих APK неизменные `applicationId=com.dpsmpx.dpai`, название
+`DP_IDE`, ключевая схема и `minSdk 30`. Смена `targetSdk` приложения-IDE
+**не задаёт** `targetSdk` собираемых ею Android-проектов: каждый проект
+выбирает свой целевой API в собственном Gradle-файле.
+
+Основной вариант `primary` не предназначен для Google Play. У него более мягкие
 ограничения Android на выполнение загруженного кода и иная модель
 разрешений. **Оба артефакта Actions подписаны отладочным ключом**:
 они не устанавливаются поверх APK с подписью владельца без пересборки
 с тем же ключом. Нельзя удалять установленное приложение с данными
 ради перехода на этот вариант без резервной копии!
 
-Самостоятельная сборка совместимого APK на машине с Android SDK:
+Сборка основного APK на машине с JDK 21 и Android SDK:
 
 ```sh
-DPAI_ON_DEVICE_BUILD=1 DPAI_RELEASE_DEBUG_KEY=1 sh tools/build-apk.sh release
+DPAI_RELEASE_DEBUG_KEY=1 sh tools/build-apk.sh release
 ```
+
+Для сравнительной сборки с `targetSdk 36`:
+
+```sh
+DPAI_TARGET_SDK=36 DPAI_RELEASE_DEBUG_KEY=1 sh tools/build-apk.sh release
+```
+
+Устаревшее `DPAI_ON_DEVICE_BUILD=1` остаётся совместимым, но больше
+не нужно: `28` используется и при обычном `./gradlew :shell:assembleRelease`.
 
 Для настоящего обновления приложения используйте существующий ключ
 выпуска владельца (без `DPAI_RELEASE_DEBUG_KEY=1`) и сверку сертификата.
 
 ## 2. Подготовить инструменты на телефоне
 
-1. В DPmetaApp установите **Linux в приложении**.
+1. В DPmetaApp установите **Linux в приложении**. Это собственная среда
+   приложения; пакет Termux не нужен.
 2. Через штатную операцию установки пакетов Alpine установите
    `openjdk21-jdk`, `bash`, `git`, `curl`, `unzip`, `ca-certificates`.
 3. Выполните `environment.probe` для `java` и `jdk`.

@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   apk:
-    name: Strict checks and two Android APK variants
+    name: Strict checks, primary studio APK and modern comparison APK
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -58,28 +58,33 @@ jobs:
             **/build/reports/tests/**
           if-no-files-found: warn
           retention-days: 7
-      - name: Build standard APK for modern Android policies
+      - name: Build primary DPmetaApp APK (targetSdk 28)
         shell: bash
         env:
           DPAI_RELEASE_DEBUG_KEY: '1'
         run: |
           set -euo pipefail
           sh tools/build-apk.sh release
-          mkdir -p build/apk/standard
-          cp shell/build/outputs/apk/release/*.apk build/apk/standard/
-      - name: Build self-hosted studio APK (Termux-compatible)
+          mkdir -p build/apk/primary
+          cp shell/build/outputs/apk/release/*.apk build/apk/primary/DPmetaApp.apk
+          badging="$("$ANDROID_HOME/build-tools/36.1.0/aapt" dump badging build/apk/primary/DPmetaApp.apk)"
+          grep -F "package: name='com.dpsmpx.dpai'" <<< "$badging"
+          grep -F "sdkVersion:'30'" <<< "$badging"
+          grep -F "targetSdkVersion:'28'" <<< "$badging"
+      - name: Build optional modern-policy APK (targetSdk 36)
         shell: bash
         env:
-          DPAI_ON_DEVICE_BUILD: '1'
+          DPAI_TARGET_SDK: '36'
           DPAI_RELEASE_DEBUG_KEY: '1'
         run: |
           set -euo pipefail
           sh tools/build-apk.sh release
-          mkdir -p build/apk/on-device
-          cp shell/build/outputs/apk/release/*.apk build/apk/on-device/
-          for apk in build/apk/on-device/*.apk; do
-            "$ANDROID_HOME/build-tools/36.1.0/aapt" dump badging "$apk" | grep -F "targetSdkVersion:'28'"
-          done
+          mkdir -p build/apk/modern
+          cp shell/build/outputs/apk/release/*.apk build/apk/modern/DPmetaApp-modern-target.apk
+          badging="$("$ANDROID_HOME/build-tools/36.1.0/aapt" dump badging build/apk/modern/DPmetaApp-modern-target.apk)"
+          grep -F "package: name='com.dpsmpx.dpai'" <<< "$badging"
+          grep -F "sdkVersion:'30'" <<< "$badging"
+          grep -F "targetSdkVersion:'36'" <<< "$badging"
       - name: Publish artifact checksums
         shell: bash
         run: |

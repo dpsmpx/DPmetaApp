@@ -20,13 +20,22 @@ val screenshots = providers.gradleProperty("dpmeta.screenshots").isPresent
 // Один проверенный образ на запуск; стандартные снимки сохраняют API 36.
 val testSdk = providers.gradleProperty("dpmeta.test.sdk").orElse("36").get()
 require(testSdk in setOf("30", "36")) { "dpmeta.test.sdk: поддерживаются закреплённые образы 30 и 36" }
-// Termux-compatible personal APK: Android blocks execve from writable app data
-// for targets >=29. Opt in explicitly: this changes Android permission and sandbox behavior.
-// A separate SELinux execmem failure is still subject to a real on-device JVM probe.
-// Never reduce minSdk (it controls which devices can install, not their SELinux domain).
-val onDeviceBuild = providers.gradleProperty("dpmeta.onDeviceBuild").orElse("false").get().let {
-    require(it == "true" || it == "false") { "dpmeta.onDeviceBuild: true или false" }
-    it == "true"
+// Локальная IDE — основной APK (D-189): targetSdk 28 разрешает запуск исполняемых
+// файлов из приватного Linux. Режим 36 остаётся явным выбором для диагностики.
+// Ни minSdk, ни applicationId не меняются. execmem/JVM проверяются на самом телефоне.
+// Старое свойство dpmeta.onDeviceBuild принимается для совместимости со скриптами.
+val legacyOnDevice = providers.gradleProperty("dpmeta.onDeviceBuild").orNull
+require(legacyOnDevice == null || legacyOnDevice in setOf("true", "false")) {
+    "dpmeta.onDeviceBuild: true или false"
+}
+val targetSdkValue = providers.gradleProperty("dpmeta.targetSdk").orNull
+val apkTargetSdk = (targetSdkValue ?: if (legacyOnDevice == "false") "36" else "28").let {
+    require(it in setOf("28", "36")) { "dpmeta.targetSdk: поддерживаются 28 и 36" }
+    it.toInt()
+}
+require(legacyOnDevice == null || targetSdkValue == null ||
+    (legacyOnDevice == "true") == (apkTargetSdk == 28)) {
+    "dpmeta.onDeviceBuild противоречит dpmeta.targetSdk"
 }
 val robolectricImage: Configuration = configurations.create("robolectricAndroid") {
     isCanBeConsumed = false
@@ -69,7 +78,7 @@ android {
     defaultConfig {
         applicationId = "com.dpsmpx.dpai"
         minSdk = 30
-        targetSdk = if (onDeviceBuild) 28 else 36
+        targetSdk = apkTargetSdk
         versionName = project.version.toString()
         versionCode = versionCodeOf(versionName!!)
         // Коммит сборки для «О программе» (F-50); без git (архив исходников) — «неизвестен».
@@ -95,8 +104,8 @@ android {
         checkDependencies = false
         // Подавления — с причиной в самом файле (JGit, D-65): байт-код библиотек в APK Lint смотрит и так.
         lintConfig = file("lint.xml")
-        // Обычная сборка — targetSdk 36. Для личной сборки, совместимой с Termux,
-        // -Pdpmeta.onDeviceBuild=true выбирает 28; minSdk остаётся 30.
+        // Основная сборка — targetSdk 28, чтобы Linux приложения мог запускать файлы.
+        // Режим 36 задаётся явно: -Pdpmeta.targetSdk=36; minSdk остаётся 30.
         disable += "OldTargetApi"
     }
 }

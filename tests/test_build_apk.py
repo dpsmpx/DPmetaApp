@@ -1,4 +1,4 @@
-"""Единая упаковка APK (D-173): выбор shell и ранний отказ снятого варианта ai."""
+"""Единая упаковка APK (D-173, D-189): основной targetSdk 28, сравнение 36."""
 import os
 import shutil
 import subprocess
@@ -31,6 +31,8 @@ class BuildApkDispatch(unittest.TestCase):
         sdk = self.root / "sdk"
         sdk.mkdir()
         self.env = dict(os.environ, ANDROID_HOME=str(sdk), APK_TEST_TRACE=str(self.trace))
+        self.env.pop("DPAI_TARGET_SDK", None)
+        self.env.pop("DPAI_ON_DEVICE_BUILD", None)
 
     def run_script(self, *args):
         return subprocess.run(["sh", str(self.script), *args], cwd=self.root, env=self.env, text=True, capture_output=True, timeout=10)
@@ -38,10 +40,25 @@ class BuildApkDispatch(unittest.TestCase):
     def test_default_app_builds_shell(self):
         result = self.run_script("debug")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.trace.read_text().splitlines(), ["--console=plain", ":shell:assembleDebug"])
+        self.assertEqual(self.trace.read_text().splitlines(), ["--console=plain", "-Pdpmeta.targetSdk=28", ":shell:assembleDebug"])
         sums = self.root / "shell/build/outputs/apk/debug/SHA256SUMS"
         self.assertTrue(sums.is_file())
         self.assertIn("sample.apk", sums.read_text())
+
+    def test_modern_target_is_explicit(self):
+        self.env["DPAI_TARGET_SDK"] = "36"
+        result = self.run_script("debug")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.trace.read_text().splitlines(), ["--console=plain", "-Pdpmeta.targetSdk=36", ":shell:assembleDebug"])
+
+    def test_invalid_target_and_conflicting_legacy_option_refused(self):
+        self.env["DPAI_TARGET_SDK"] = "27"
+        self.assertEqual(self.run_script("debug").returncode, 2)
+        self.assertFalse(self.trace.exists())
+        self.env["DPAI_TARGET_SDK"] = "36"
+        self.env["DPAI_ON_DEVICE_BUILD"] = "1"
+        self.assertEqual(self.run_script("debug").returncode, 2)
+        self.assertFalse(self.trace.exists())
 
     def test_retired_ai_is_rejected_before_gradle(self):
         result = self.run_script("debug", "ai")

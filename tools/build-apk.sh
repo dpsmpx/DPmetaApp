@@ -1,7 +1,7 @@
 #!/bin/sh
 # APK DPmetaApp — приложение корня :shell (D-35, D-53): пульт первым экраном, оболочка
 # «AI» вкладкой, — на любом Linux с JDK 21 и Android SDK (D-31): телефон автора
-# (proot, ярлык tools/termux/apk-build.sh), компьютер, облачная сессия. Единый APK —
+# (встроенная Linux-среда, без Termux), компьютер, облачная сессия. Единый APK —
 # :shell (D-173); отдельная упаковка подсистемы снята.
 #
 #   tools/build-apk.sh [release|debug] [app]    по умолчанию release, единый APK DP_IDE
@@ -15,6 +15,8 @@
 # свойство dpai.release.certSha256 (по желанию) — сверка с ним. Рядом с APK —
 # SHA256SUMS. Пароли не попадают ни в командную строку, ни в вывод.
 #
+# По умолчанию targetSdk 28 — основная локальная IDE. Для сравнительной сборки
+# targetSdk 36: DPAI_TARGET_SDK=36 sh tools/build-apk.sh release.
 # Android SDK — ANDROID_HOME или sdk.dir в local.properties корня или dpai/: без него
 # модули :app и :shell не подключаются (settings.gradle.kts). APK DPpass собирается
 # отдельно (D-30).
@@ -44,13 +46,18 @@ fi
 # Один SDK — и корню, и включённой сборке dpai/: каждая ищет его в своём local.properties.
 export ANDROID_HOME="$SDK"
 cd "$DIR"
-if [ "${DPAI_ON_DEVICE_BUILD:-0}" = 1 ]; then
-  # Личный APK с разрешённым запуском Linux/JVM из каталога данных, как у Termux.
-  # Снижает targetSdk, не minSdk. Не предназначен для публикации в магазине.
-  sh ./gradlew --console=plain -Pdpmeta.onDeviceBuild=true "$MODULE:$TASK"
-else
-  sh ./gradlew --console=plain "$MODULE:$TASK"
+TARGET_SDK="${DPAI_TARGET_SDK:-28}"
+case "$TARGET_SDK" in
+  28|36) ;;
+  *) echo "✗ DPAI_TARGET_SDK: поддерживаются 28 и 36"; exit 2 ;;
+esac
+if [ "${DPAI_ON_DEVICE_BUILD:-0}" = 1 ] && [ "$TARGET_SDK" != 28 ]; then
+  echo '✗ DPAI_ON_DEVICE_BUILD=1 не совместим с DPAI_TARGET_SDK=36'
+  exit 2
 fi
+# targetSdk 28 — стандартная сборка IDE, не вариант для Google Play.
+# Сохранены package name, versioning и ключ подписи; отдельный Termux не участвует.
+sh ./gradlew --console=plain "-Pdpmeta.targetSdk=$TARGET_SDK" "$MODULE:$TASK"
 OUT="$OUT_DIR/build/outputs/apk/$MODE"
 ls "$OUT/"*.apk
 
