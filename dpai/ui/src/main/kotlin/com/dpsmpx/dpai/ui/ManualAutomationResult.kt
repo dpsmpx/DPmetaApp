@@ -17,6 +17,8 @@ object ManualAutomationResult {
         if (prepared == null || view.finished != prepared) return Outcome.failure(DiagCode.STATE_CONFLICT, view.note)
         return Outcome.success(JsonObject.of("complete" to JsonBool(view.complete), "run" to JsonString(prepared.value), "note" to JsonString(view.note.take(1000)),
             "output" to JsonString(view.output.takeLast(3000)), "outputTruncated" to JsonBool(view.output.length > 3000),
+            "phase" to JsonString(if (view.step == null && !view.complete) "PREFLIGHT" else "EXECUTION"),
+            "commandStarted" to JsonBool(view.step != null),
             "outputHash" to JsonString("sha256:" + Hashing.sha256(view.output).hex),
             "steps" to JsonArray(view.results.map { r -> JsonObject.of("step" to JsonNumber.of(r.step),
                 "exitCode" to (r.exitCode?.let { JsonNumber.of(it) } ?: JsonNull), "reason" to JsonString(r.reason.take(300))) })))
