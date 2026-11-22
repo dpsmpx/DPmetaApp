@@ -581,11 +581,12 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
             }
         }
         if (c.project == null) TextButton(onClick = { ApiQuickStartRequests.request(profile = c.profile.value) }) { Text(androidx.compose.ui.res.stringResource(R.string.api_work_connect_project)) }
-        if (c.project != null) Row(Modifier.fillMaxWidth()) {
+        if (c.project != null) FlowRow(Modifier.fillMaxWidth()) {
             FilterChip(selected = fullAccess, enabled = fullAccess || fullAccessName != null, onClick = {
                 if (fullAccess) {
                     ModelsStore.revokeChatFullAccess(c.id)
-                    fullAccess = false
+                    fullAccess = ModelsStore.chatFullAccess(c.id)
+                    if (fullAccess) note = context.getString(R.string.chat_full_access_failed)
                 } else {
                     typedFullAccess = ""
                     showFullAccess = true
