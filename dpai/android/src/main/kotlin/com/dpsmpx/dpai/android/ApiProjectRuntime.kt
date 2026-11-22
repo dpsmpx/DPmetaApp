@@ -136,7 +136,8 @@ internal object ApiProjectRuntime {
             val profiles = linkedMapOf<ManualProfileKind, ManualProfile?>()
             for (kind in ManualProfileKind.entries) {
                 val stored = when (val r = model.manualProfile(project, kind)) { is Outcome.Failure -> return@workspaceAccess r; is Outcome.Success -> r.value }
-                profiles[kind] = stored ?: ProjectProfileDefaults.default(tree, kind)
+                if (stored != null && stored.kind != kind) return@workspaceAccess Outcome.failure(DiagCode.STORAGE_CORRUPTED, "вид сохранённого профиля не соответствует его ключу", kind.name)
+                profiles[kind] = stored ?: ProjectProfileDefaults.default(tree, kind, targetSnapshot.platform)
             }
             val run = when (val r = model.runProfile(project)) { is Outcome.Failure -> return@workspaceAccess r; is Outcome.Success -> r.value }
             val target = Controller.get(context.filesDir).targets().firstOrNull { it.id == project.target }
@@ -266,22 +267,22 @@ internal object ApiProjectRuntime {
         }
 
         private fun profile(chosen: ManualProfile, values: Map<String, String>, cancel: Cancel, evidence: (JsonObject) -> Unit): Outcome<JsonObject> {
-            val previous = model.manualProfileView().finished
+            val prepared = java.util.concurrent.atomic.AtomicReference<com.dpsmpx.dpai.core.ids.SessionId?>(null)
             val done = CompletableFuture<ManualRunView>()
-            if (!model.startManualProfile(project, location, chosen, choices = values, cancelled = { cancel.cancelled }, expectedTarget = targetSnapshot, onFinished = { _, r -> done.complete(r) })) return Outcome.failure(DiagCode.WORKTREE_OWNED, "контур занят; дождитесь завершения команды")
+            if (!model.startManualProfile(project, location, chosen, choices = values, cancelled = { cancel.cancelled }, expectedTarget = targetSnapshot,
+                    onPrepared = { prepared.set(it.id) }, onFinished = { _, r -> done.complete(r) })) return Outcome.failure(DiagCode.WORKTREE_OWNED, "контур занят; дождитесь завершения команды")
             ControllerService.resume(context)
             val deadline = Clock.SYSTEM.now().epochMillis + chosen.steps.sumOf { it.timeoutSeconds } * 1000 + 60_000
             while (Clock.SYSTEM.now().epochMillis < deadline) {
                 if (cancel.cancelled) { model.stopManualProfile(); return Outcome.failure(DiagCode.CANCELLED_BY_USER, "запрошена остановка команды; пауза сохраняется до подтверждения её конца") }
                 val view = try { done.get(1, TimeUnit.SECONDS) } catch (_: TimeoutException) { continue }
                 if (cancel.cancelled) { model.stopManualProfile(); return Outcome.failure(DiagCode.CANCELLED_BY_USER, "вызов отменён; состояние команды смотрите в истории профиля") }
-                if (view.finished == null || view.finished == previous) return Outcome.failure(DiagCode.STATE_CONFLICT, view.note)
-                val run = checkNotNull(view.finished)
-                val output = JsonObject.of("complete" to JsonBool(view.complete), "run" to JsonString(run.value), "note" to JsonString(view.note.take(1000)),
-                    "output" to JsonString(view.output.takeLast(3000)), "outputTruncated" to JsonBool(view.output.length > 3000),
-                    "outputHash" to JsonString("sha256:" + Hashing.sha256(view.output).hex))
+                val output = when (val r = com.dpsmpx.dpai.ui.ManualAutomationResult.evidence(prepared.get(), view)) {
+                    is Outcome.Failure -> return r
+                    is Outcome.Success -> r.value
+                }
                 evidence(output)
-                return if (view.complete) Outcome.success(output) else Outcome.failure(DiagCode.PROCESS_EXIT_NONZERO, view.note, run.value)
+                return if (view.complete) Outcome.success(output) else Outcome.failure(DiagCode.PROCESS_EXIT_NONZERO, view.note, prepared.get()?.value)
             }
             model.stopManualProfile()
             return Outcome.failure(DiagCode.PROCESS_TIMEOUT, "ожидание профиля истекло; остановка запрошена, результат ещё не подтверждён")

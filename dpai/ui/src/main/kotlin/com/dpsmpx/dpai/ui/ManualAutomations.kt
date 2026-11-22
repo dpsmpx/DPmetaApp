@@ -12,6 +12,8 @@ import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonNull
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.execution.target.TargetPlatform
+import com.dpsmpx.dpai.verification.VerifyStep
+import kotlin.time.Duration.Companion.seconds
 
 /** Адаптер прежних профилей; не меняет их документы и не исполняет argv (D-215). */
 object ManualAutomations {
@@ -29,7 +31,8 @@ object ManualAutomations {
             platforms = setOf(platform), dependencies = profile?.needs.orEmpty().map { it.code }.sorted(),
             timeoutSeconds = profile?.steps?.sumOf { it.timeoutSeconds }, cancellable = true,
             verification = "Итоги шагов, id запуска, хеш вывода и история ManualProfiles",
-            triggers = if (direct) setOf("MANUAL", "AI") else setOf("MANUAL"))
+            triggers = if (direct) setOf("MANUAL", "AI") else setOf("MANUAL"),
+            steps = profile?.steps.orEmpty().map { VerifyStep(it.name, it.command, timeout = it.timeoutSeconds.seconds) })
     } + AutomationDefinition("manual.run", "Запуск", "Прежний запуск в реальном терминале, с вводом и остановкой пользователем.",
         AutomationSource.MANUAL, AutomationCategory.RUN, Hashing.sha256(run?.toJson() ?: JsonNull).hex, ActionLevel.REVERSIBLE,
         listOf(root), AutomationInvocation.OPEN_UI, run != null, if (run == null) "профиль запуска не настроен" else null,

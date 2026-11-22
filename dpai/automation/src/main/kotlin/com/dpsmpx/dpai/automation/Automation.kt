@@ -16,6 +16,8 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpai.execution.target.TargetPlatform
+import com.dpsmpx.dpai.verification.VerifyStep
+import com.dpsmpx.dpai.core.diagnostics.Redactor
 
 /** Четыре существующих источника D-172; это не новые хранилища или исполнители. */
 enum class AutomationSource { PULT, MANUAL, VERIFICATION, ENVIRONMENT }
@@ -54,6 +56,7 @@ data class AutomationDefinition(
     val cancellable: Boolean = false,
     val verification: String,
     val triggers: Set<String> = setOf("MANUAL"),
+    val steps: List<VerifyStep> = emptyList(),
 ) {
     /** Ревизия не меняется лишь из-за занятости; меняется при смене профиля, места или полномочий. */
     val revision: String get() = Hashing.sha256(JsonObject(details().fields + ("sourceHash" to JsonString(sourceHash)))).hex
@@ -82,6 +85,8 @@ data class AutomationDefinition(
         "memoryBytes" to JsonNull, "diskBytes" to JsonNull, "cancellable" to JsonBool(cancellable),
         "verification" to JsonString(verification), "retry" to JsonString("EXPLICIT_ONLY"),
         "triggers" to JsonArray(triggers.sorted().map(::JsonString)),
+        "steps" to JsonArray(steps.map { step -> JsonObject.of("name" to JsonString(Redactor.STANDARD.redact(step.name)),
+            "required" to JsonBool(step.required), "timeoutSeconds" to JsonNumber.of(step.timeout.inWholeSeconds)) }),
     )
 
     private fun known(value: Boolean?): JsonValue = value?.let(::JsonBool) ?: JsonNull

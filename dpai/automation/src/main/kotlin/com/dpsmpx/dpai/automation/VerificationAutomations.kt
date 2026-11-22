@@ -21,6 +21,6 @@ object VerificationAutomations {
             AutomationSource.VERIFICATION, AutomationCategory.CHECK, Hashing.sha256(source).hex, ActionLevel.REVERSIBLE,
             listOf(root), AutomationInvocation.OPEN_UI, steps.isNotEmpty(), if (steps.isEmpty()) "уровень проверки не настроен" else null,
             timeoutSeconds = steps.sumOf { it.timeout.inWholeSeconds }.takeIf { it > 0 },
-            verification = "StepEvidence и VerificationReport прежнего контура", triggers = setOf("MANUAL", "TASK_VERIFICATION"))
+            verification = "StepEvidence и VerificationReport прежнего контура", triggers = setOf("MANUAL", "TASK_VERIFICATION"), steps = steps)
     }
 }

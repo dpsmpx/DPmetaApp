@@ -635,6 +635,7 @@ class DemoModel(
         choices: Map<String, String>? = null,
         cancelled: () -> Boolean = { false },
         expectedTarget: TargetEntry? = null,
+        onPrepared: ((com.dpsmpx.dpai.ui.ManualRun) -> Unit)? = null,
         onFinished: ((LongJobs.Done, com.dpsmpx.dpai.ui.ManualRunView) -> Unit)? = null): Boolean {
         val app = context ?: return false
         return LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST,
@@ -686,6 +687,8 @@ class DemoModel(
                 controller.manualProfiles.prepare(p, target, location, ready)
             }
             if (prepared is Outcome.Failure) return@start LongJobs.Done(prepared.errors.first().message, failed = true)
+            val ownRun = (prepared as Outcome.Success).value
+            onPrepared?.invoke(ownRun)
             manualStop = false
             if (cancelled()) {
                 controller.manualProfiles.stop(client)
@@ -703,7 +706,7 @@ class DemoModel(
                 controller.manualProfiles.stop(client)
                 return@start LongJobs.Done("Запуск отменён до команды", failed = true)
             }
-            controller.manualProfiles.launch((prepared as Outcome.Success).value, client, status.head)
+            controller.manualProfiles.launch(ownRun, client, status.head)
             watchManual(client, cancelled)
         }
     }

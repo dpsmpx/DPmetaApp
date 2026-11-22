@@ -81,4 +81,21 @@ class AutomationSourcesTest {
         root.resolve("Makefile").writeText("all:\n\ttrue\n")
         assertEquals(null, ProjectProfileDefaults.default(LocalTree(dir), ManualProfileKind.CHECK))
     }
+
+    @Test fun windowsDefaultsUseItsWrapperWhenBothWrappersExist() {
+        dir.resolve("gradlew").toFile().writeText("#!/bin/sh")
+        dir.resolve("gradlew.bat").toFile().writeText("@echo off")
+        val windows = ProjectProfileDefaults.default(LocalTree(dir), ManualProfileKind.CHECK, TargetPlatform.WINDOWS)!!
+        val posix = ProjectProfileDefaults.default(LocalTree(dir), ManualProfileKind.CHECK, TargetPlatform.POSIX)!!
+        assertEquals(listOf("cmd.exe", "/c", "gradlew.bat", "check"), windows.steps.single().command)
+        assertEquals(listOf("sh", "gradlew", "check"), posix.steps.single().command)
+    }
+
+    @Test fun changingASavedParameterChoiceChangesTheAdvertisedDefaultAndRevision() {
+        val a = ManualAutomations.describe(mapOf(ManualProfileKind.CHECK to profile), null, "/project", TargetPlatform.POSIX).first()
+        val b = ManualAutomations.describe(mapOf(ManualProfileKind.CHECK to profile), null, "/project", TargetPlatform.POSIX,
+            mapOf(ManualProfileKind.CHECK to mapOf("MODE" to "full"))).first()
+        assertEquals("full", b.parameters.single().defaultValue)
+        assertNotEquals(a.revision, b.revision)
+    }
 }

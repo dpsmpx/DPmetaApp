@@ -12,6 +12,8 @@ import com.dpsmpx.dpai.core.serialization.JsonNumber
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.execution.target.TargetPlatform
+import com.dpsmpx.dpai.verification.VerifyStep
+import kotlin.time.Duration.Companion.minutes
 
 /** Только адаптер разобранного реестра; исполнение/подтверждение остаётся у CommandActions. */
 object CommandAutomations {
@@ -25,6 +27,7 @@ object CommandAutomations {
             if (c.level == 0) ActionLevel.READ else ActionLevel.REVERSIBLE, listOf(root.trimEnd('/') + c.workdir?.let { "/$it" }.orEmpty()),
             AutomationInvocation.OPEN_UI, inApp, if (!inApp) "команда пульта исполняется в Linux приложения" else "пульт проверит выбранный клон и пакеты перед запуском",
             platforms = setOf(TargetPlatform.POSIX), dependencies = c.packages, timeoutSeconds = c.timeoutMinutes * 60L,
-            remote = false, cancellable = true, verification = "Фактический код выхода и журнал CommandActions")
+            remote = false, cancellable = true, verification = "Фактический код выхода и журнал CommandActions",
+            steps = listOf(VerifyStep(c.title, listOf(c.path) + c.args, timeout = c.timeoutMinutes.minutes)))
     }
 }
