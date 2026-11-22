@@ -8,6 +8,8 @@ import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.ui.EnvironmentPlan
 import com.dpsmpx.dpai.ui.AutomationPlan
+import com.dpsmpx.dpai.ui.DependencyAutomations
+import com.dpsmpx.dpai.execution.target.TargetPlatform
 import com.dpsmpx.dpai.ui.ProjectEntry
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
@@ -70,6 +72,20 @@ class EnvironmentApprovalsTest {
         val broker = EnvironmentApprovalBroker(clock, ids)
         assertEquals(DiagCode.APPROVAL_REQUIRED, broker.await(null, project, command(), "revision") { false }.diagnostics.single().code)
         assertTrue(broker.pending.value.isEmpty())
+    }
+
+    @Test fun projectDependencyApprovalBindsScopeModeAndTarget() {
+        val plan = DependencyAutomations.plan(mapOf("manager" to "python", "mode" to "pin"), TargetPlatform.POSIX, true).valueOrNull()!!
+        waiting(plan) { broker, request, answer, _ ->
+            assertEquals(project.target.value, request.targetLabel)
+            assertEquals(DiagCode.APPROVAL_REQUIRED, broker.await(null, project, plan, "revision") { false }.diagnostics.single().code)
+            assertTrue(broker.answer("test", request.id, true))
+            val grant = answer.get(5, TimeUnit.SECONDS).valueOrNull()!!
+            assertIs<Outcome.Failure>(grant.consume(plan.copy(scope = AutomationPlan.Scope.GUEST).proposal(project, "revision")))
+            assertIs<Outcome.Failure>(grant.consume(plan.copy(effect = AutomationPlan.Effect.DEPENDENCY_REPORT).proposal(project, "revision")))
+            assertIs<Outcome.Failure>(grant.consume(plan.proposal(project.copy(target = ids.next(IdKinds.TARGET)), "revision")))
+            assertIs<Outcome.Success<*>>(grant.consume(request.proposal))
+        }
     }
 
     @Test fun declinedPlanDoesNotIssueAGrant() = waiting(command()) { broker, request, answer, _ ->

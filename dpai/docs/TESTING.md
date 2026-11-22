@@ -36,6 +36,11 @@ JUnit замеров — `tests/integration/build/test-results/performanceTest/`
 проверяет `EnvironmentApprovalsTest`, Android/proot — приёмка в TODO
 приложения, а не эти хостовые тесты.
 
+`DependencyAutomationFlowTest` дополнительно требует Python с модулем
+venv/ensurepip: создаёт настоящий venv и выполняет report/pin/restore через
+прежний агент. pip работает с PIP_NO_INDEX и без проверки новой версии;
+сеть и внешний индекс для этого сценария не требуются.
+
 ## 2. Детерминизм
 
 - Время — `ManualClock`: `now()`, `advance()`; `Thread.sleep` в тестах
