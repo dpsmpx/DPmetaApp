@@ -148,7 +148,7 @@ object ToolchainDoctor {
 
     /** HotSpot check_pax проверяет mmap/mprotect, но не определяет установленный модуль PaX. */
     fun explain(output: String): Pair<String, String>? = when {
-        output.contains("u:r:untrusted_app:") && Regex("""["]rwxErrno["]\\s*:\\s*(1|13)\\b""").containsMatchIn(output) ->
+        output.contains("u:r:untrusted_app:") && Regex("""["]rwxErrno["]\s*:\s*(1|13)\b""").containsMatchIn(output) ->
             "ANDROID_SELINUX_EXECMEM" to "Проба mprotect RW→RWX получила EPERM/EACCES в домене Android untrusted_app. Это согласуется с запретом исполняемой памяти политикой SELinux; proot и uid=0 не меняют домен. Обычная JVM и Gradle здесь не запустятся: выберите execution target с работающей JVM (например SSH ПК)."
         output.contains("Failed to mark memory page as executable", ignoreCase = true) -> "JVM_EXECUTABLE_MEMORY" to
             "JVM получила отказ при переводе памяти в исполняемую (mprotect). Причина ещё не установлена: это не доказательство PaX/grsecurity. Запросите java_debug и memory для errno и размера страниц. Paxctl или смена ядра без этих данных не являются подтверждённым исправлением."
