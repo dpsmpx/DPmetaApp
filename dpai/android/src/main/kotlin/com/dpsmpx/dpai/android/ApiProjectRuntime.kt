@@ -271,6 +271,7 @@ internal object ApiProjectRuntime {
             return Outcome.success(JsonObject.of("packages" to JsonNumber.of(inventory.byName.size),
                 "problems" to JsonArray(problems.take(40).map { p -> JsonObject.of("package" to JsonString(p.pkg), "kind" to JsonString(p.kind.name), "detail" to JsonString(Redactor.STANDARD.redact(p.detail).take(300))) }),
                 "moreProblems" to JsonBool(problems.size > 40), "declaredNeedsSatisfied" to JsonBool(check.ok), "commandsProbed" to JsonBool(false),
+                "runtimeStatus" to JsonString("UNKNOWN"), "jvmStatus" to JsonString("NOT_PROBED"), "projectBuildVerified" to JsonBool(false),
                 "projectNeeds" to JsonString(Redactor.STANDARD.redact(ProjectNeeds.text(check)).take(6000))))
         }
 
@@ -279,7 +280,7 @@ internal object ApiProjectRuntime {
             append("Перед записью прочитай актуальный файл и его sha256. Не выдавай текст ответа за изменение файла, запуск тестов или успешную сборку: опирайся на результаты инструментов. ")
             append("Служебные каталоги и секреты недоступны. Создание, замена и удаление сохраняют копию для отмены. После правок запусти подходящий профиль и сообщи результат.\n")
             append("Сначала узнай доступные автоматизации list_automations, затем describe_automation. Предпочитай готовый инструмент повторному анализу. run_automation требует актуальную ревизию; OPEN_UI означает действие человека, не обходи его. Успешный вызов не означает, что все проверки прошли: смотри status, data/evidence и реальные коды.\n")
-            append("Окружение: environment.inspect читает только базу пакетов. environment.probe запускает настоящие пробы — наличие java не доказывает запуск JVM. Настрой окружение через environment.apk.add/fix/repair, environment.android_sdk или environment.command. Изменения ждут подтверждения человека прямо в приложении; не отправляй его вручную вводить команды. Не повторяй отклонённый план.\n")
+            append("Окружение: environment.inspect читает только базу пакетов; declaredNeedsSatisfied не означает, что инструменты запускаются. runtimeStatus=UNKNOWN и jvmStatus=NOT_PROBED — это отсутствие проверки, а не успех. Перед Gradle/Android-сборкой вызови environment.probe для java/jdk; для других стеков — project или all. Настрой окружение через environment.apk.add/fix/repair, environment.android_sdk или environment.command. Изменения ждут подтверждения человека прямо в приложении; не отправляй его вручную вводить команды. Не повторяй отклонённый план.\n")
             append("environment.command принимает argv как JSON-массив строк: [\"java\",\"-version\"], для shell явно [\"/bin/sh\",\"-c\",\"...\"]. apk запускай отдельным argv или штатным инструментом пакетов: ему нужен proot без /proc. Ключ API гостю не выдан. Proot не песочница; общие команды имеют расширенный доступ и отдельное опасное подтверждение.\n")
             append("После исправления повтори живые пробы и нужную сборку. Сообщение JVM check_pax о mprotect не доказывает PaX/grsecurity: не объявляй смену ядра или paxctl решением без проверки errno/Android/proot. Лицензии и неподдержанные нативные SDK-инструменты требуют явного решения человека, не объявляй проект готовым по одной базе пакетов.\n")
             append("Зависимости проекта: dependencies.project запускает прежние Gradle/pip/Conan после подтверждения плана, dependencies.report читает только штатные отчёты. Для pip выбирай Python venv проекта. Продолжай отчёт с nextOffset и прежним sha256; изменение файла требует нового чтения. Сохранённый отчёт не доказывает свежую проверку. После pin/restore просмотри diff, затем запусти проверки.\n")
@@ -367,7 +368,9 @@ internal object ApiProjectRuntime {
                 val details = if (finding == null) output else JsonObject(output.fields + mapOf("finding" to JsonString(finding.first), "explanation" to JsonString(finding.second)))
                 evidence(details)
                 if (refreshDependencies && inApp && view.results.isNotEmpty()) CodeService.dependenciesChanged(project.root, context.getString(R.string.env_changed_refresh))
-                return if (view.complete) Outcome.success(details) else Outcome.failure(DiagCode.PROCESS_EXIT_NONZERO, completed.first.note, prepared.get()?.value)
+                return if (view.complete) Outcome.success(details) else Outcome.failure(
+                    if (view.step == null) DiagCode.STATE_CONFLICT else DiagCode.PROCESS_EXIT_NONZERO,
+                    view.note.ifBlank { completed.first.note }, prepared.get()?.value)
             }
             profileCancel.cancel()
             return Outcome.failure(DiagCode.PROCESS_TIMEOUT, "ожидание профиля истекло; остановка запрошена, результат ещё не подтверждён")
