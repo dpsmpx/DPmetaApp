@@ -24,6 +24,7 @@ import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.testkit.RealTime
 import com.dpsmpx.dpai.ui.DependencyAutomations
+import com.dpsmpx.dpai.ui.AutomationPlan
 import com.dpsmpx.dpai.ui.ManualProfiles
 import com.dpsmpx.dpai.ui.ProjectEntry
 import com.dpsmpx.dpai.ui.ProjectWorkspaceView
@@ -54,14 +55,17 @@ class DependencyAutomationFlowTest {
         val host = LocalProcessHost()
         val venv = host.run(ProcessSpec(listOf("python3", "-m", "venv", ".venv"), dir.toString()), 1.minutes).valueOrNull()!!
         assertTrue(venv.ok, (venv.stdout + venv.stderr).joinToString("\n"))
-        val py = dir.resolve(".venv/bin/python").toString()
+        // The profile runs from the project root. Keep the interpreter project-relative:
+        // JUnit's random absolute @TempDir segment may resemble a secret to Redactor.
+        val py = "./.venv/bin/python"
         val target = TargetForm.inApp(ids.next(IdKinds.TARGET), "Тест", "/root/.claude-slot-1").valueOrNull()!!
         val project = ProjectEntry(ids.next(IdKinds.PROJECT), ids.next(IdKinds.REPOSITORY), target.id, dir.toString(), dir.resolve("trees").toString(), "main", emptyList())
         val store = ManualProfiles(DocumentStore(NioVfs(dir.resolve("state")), "profiles"), ids, Clock.SYSTEM)
         val client = AgentClient(InAppAgentHost.create(dir.resolve("agent").toString(), Clock.SYSTEM, "dependency-automation-test", native, host), listOf("dpai"), null, "test")
         try {
             for (mode in listOf("report", "pin", "restore")) {
-                val initial = DependencyAutomations.plan(mapOf("manager" to "python", "mode" to mode, "python" to py), TargetPlatform.POSIX, true).valueOrNull()!!
+                val planned = DependencyAutomations.plan(mapOf("manager" to "python", "mode" to mode, "python" to py), TargetPlatform.POSIX, true)
+                val initial = assertIs<Outcome.Success<AutomationPlan>>(planned, "план Python $mode: ${planned.diagnostics}").value
                 val plan = initial.copy(profile = initial.profile.copy(env = listOf("PIP_NO_INDEX" to "1", "PIP_DISABLE_PIP_VERSION_CHECK" to "1")))
                 val proposal = plan.proposal(project, "revision")
                 val ledger = ApprovalLedger()
