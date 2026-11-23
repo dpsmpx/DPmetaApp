@@ -7,6 +7,7 @@ import kotlin.test.assertTrue
 class AndroidNativeJdkTest {
     @Test fun bootstrapHasFixedVerifiedSourceAndPrivateVirtualPrefix() {
         val script = AndroidNativeJdk.install().last()
+        assertEquals(com.dpsmpx.dpai.execution.linux.ProotHost.REAL_USER_MARKER, AndroidNativeJdk.install().first())
         assertTrue(AndroidNativeJdk.BOOTSTRAP_URL.startsWith("https://github.com/termux/termux-packages/releases/download/"))
         assertEquals(64, AndroidNativeJdk.BOOTSTRAP_SHA256.length)
         assertTrue(script.contains("sha256sum -c -"))
@@ -14,6 +15,8 @@ class AndroidNativeJdkTest {
         assertTrue(script.contains("DPAI_NATIVE_JDK_JAVA_FAILED"))
         assertTrue(script.contains("DPAI_NATIVE_JDK_JAVAC_FAILED"))
         assertTrue(script.contains("DPAI_NATIVE_JDK_COMPILE_FAILED"))
+        assertTrue(script.contains("DPAI_NATIVE_JDK_FAKE_ROOT"))
+        assertTrue(script.contains("DPAI_NATIVE_JDK_REAL_UID"))
         assertTrue(script.contains("DPAI_JDK_ROUNDTRIP_OK"))
         assertTrue(script.contains("DPAI_NATIVE_JDK_OK"))
         assertTrue(script.contains("apt-get\" install -y openjdk-21"))

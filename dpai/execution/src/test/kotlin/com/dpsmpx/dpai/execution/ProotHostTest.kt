@@ -96,4 +96,16 @@ class ProotHostTest {
         assertTrue("/proc" in pairs(host.wrap(ProcessSpec(listOf("echo", "apk"))).command, "-b"))
         assertTrue("/proc" in pairs(host.wrap(ProcessSpec(listOf("/usr/bin/apk-tools-helper"))).command, "-b"))
     }
+
+    @Test
+    fun termuxAptRunsAsRealAndroidAppUidButAlpineApkKeepsFakeRoot() {
+        val host = ProotHost(Recorder(), layout)
+        val native = host.wrap(ProcessSpec(listOf(ProotHost.REAL_USER_MARKER, "/bin/sh", "-c", "apt-get update")))
+        assertFalse("-0" in native.command, "Termux apt refuses fake root UID 0")
+        assertEquals(listOf("/bin/sh", "-c", "apt-get update"), native.command.takeLast(3))
+        assertFalse(ProotHost.REAL_USER_MARKER in native.command, "the wrapper marker must not reach the guest")
+        assertTrue("/proc" in pairs(native.command, "-b"))
+        assertTrue("-0" in host.wrap(ProcessSpec(listOf("apk", "add", "curl"))).command,
+            "Alpine package maintenance must retain its established fake-root semantics")
+    }
 }

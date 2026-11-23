@@ -1,5 +1,7 @@
 package com.dpsmpx.dpai.ui
 
+import com.dpsmpx.dpai.execution.linux.ProotHost
+
 /**
  * Android/Bionic Java, built by Termux for its fixed prefix. It is installed into a
  * *private, emulated* prefix inside DPmetaApp's Alpine rootfs. PRoot translates
@@ -33,7 +35,7 @@ object AndroidNativeJdk {
      * pinned checksum, symlinks and permissions have been processed.
      * No external Termux installation, root, SSH or user-supplied executable needed.
      */
-    fun install(): List<String> = listOf("/bin/sh", "-c", """
+    fun install(): List<String> = listOf(ProotHost.REAL_USER_MARKER, "/bin/sh", "-c", """
         set -eu
         PREFIX='$PREFIX'
         HOME_NATIVE='$HOME'
@@ -83,6 +85,9 @@ object AndroidNativeJdk {
         mkdir -p "${'$'}HOME_NATIVE" "${'$'}PREFIX/tmp"
         export PREFIX HOME="${'$'}HOME_NATIVE" TMPDIR="${'$'}PREFIX/tmp"
         PATH="${'$'}PREFIX/bin:/system/bin:/usr/bin:/bin"; export PATH
+        DPAI_UID=${'$'}(id -u)
+        test "${'$'}DPAI_UID" != 0 || { echo 'DPAI_NATIVE_JDK_FAKE_ROOT: Termux apt refuses emulated root; check PRoot real-user marker'; exit 1; }
+        echo "DPAI_NATIVE_JDK_REAL_UID=${'$'}DPAI_UID"
         if ! test -x "${'$'}JAVA"; then
           "${'$'}PREFIX/bin/apt-get" update || { echo 'DPAI_NATIVE_JDK_APT_UPDATE_FAILED'; exit 1; }
           DEBIAN_FRONTEND=noninteractive "${'$'}PREFIX/bin/apt-get" install -y openjdk-21 || { echo 'DPAI_NATIVE_JDK_APT_INSTALL_FAILED'; exit 1; }

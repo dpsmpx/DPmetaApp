@@ -28,11 +28,27 @@ exposes `/data/data/com.termux/files/usr` for binary compatibility, but it is
 *not* the actual filesystem or UID of the installed Termux app. It preserves
 relative links from `SYMLINKS.txt`, executable permissions for `apt`, and uses
 APT's repository signatures to install Termux `openjdk-21` and its dependencies.
-System `/system`, `/apex` and `/linkerconfig` are bound for Bionic's loader.
+System `/system`, `/apex`, `/vendor` and `/linkerconfig` are bound for Bionic's loader.
+
+The first on-device run verified the bootstrap checksum but stopped at
+`DPAI_NATIVE_JDK_APT_UPDATE_FAILED`, immediately after Termux's exact message
+`Ability to run this command as root has been disabled permanently for safety purposes.`
+This is explained by DPmetaApp's existing global PRoot `-0`: Alpine `apk`
+needs the emulated root identity, but Termux's patched `apt-get` explicitly
+rejects it. The native JDK installer now carries an internal
+`ProotHost.REAL_USER_MARKER`; its *one* PRoot invocation omits `-0` and executes
+as the actual Android app UID. The marker is stripped by the wrapper and cannot
+leak to `/bin/sh`. Other processes, including `apk`, retain `-0` unchanged.
+Source confirmation:
+https://github.com/termux/termux-packages/wiki/Termux-file-system-layout
+and https://github.com/termux/termux-app/issues/2689.
+The concurrently printed `linkerconfig/ld.config.txt` warning is not by itself
+evidence of why APT refused UID 0; evaluate separately if it remains fatal.
 
 The installer is invoked by both the Android SDK UI and
 `environment.android_sdk` automation. It must successfully execute native
-`java -version` and `javac -version` before declaring the JDK installed.
+`java -version`, `javac -version` and a real Java compile/run round-trip before
+declaring the JDK installed.
 Android build profiles receive `JAVA_HOME` and `PATH` for that runtime and
 `ANDROID_HOME`/`ANDROID_SDK_ROOT` for the SDK. Preflight checks concrete
 Android toolchain executables before the first Gradle command. Alpine Java

@@ -54,7 +54,9 @@ DPAI_TARGET_SDK=36 DPAI_RELEASE_DEBUG_KEY=1 sh tools/build-apk.sh release
    официального bootstrap с фиксированной SHA-256 и устанавливает
    **Android/Bionic OpenJDK 21** вместе с зависимостями. Это не использует
    установленный Termux и не заменяет Alpine, в котором работают другие
-   инструменты. `openjdk21-jdk` из Alpine не является JDK для APK-сборки.
+   инструменты. Пакетный менеджер Termux запускается с реальным UID приложения:
+   его `apt-get` запрещает эмуляцию root, хотя `apk` Alpine продолжает работать
+   под PRoot `-0`. `openjdk21-jdk` из Alpine не является JDK для APK-сборки.
 3. Дождитесь `DPAI_NATIVE_JDK_OK` (реально запущены `java` и `javac`).
    При ошибке сначала сохраните вывод установки и `environment.probe`
    для `android_java`, `android_javac`, `memory`. Сообщение HotSpot

@@ -61,13 +61,20 @@ class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) 
 
     /** Команда хоста, которая запускает [spec] в госте. */
     fun wrap(spec: ProcessSpec): ProcessSpec {
-        val proc = !needsNoProc(spec.command)
+        // Alpine's apk needs fake UID 0, but Termux's patched apt explicitly
+        // refuses UID 0 (even when it is emulated by PRoot). The internal marker
+        // selects the actual Android app UID for a single command, and is never
+        // passed to the guest executable. Other guest commands remain unchanged.
+        val realUser = spec.command.firstOrNull() == REAL_USER_MARKER
+        val guestCommand = if (realUser) spec.command.drop(1) else spec.command
+        require(guestCommand.isNotEmpty()) { "PRoot: команда после маркера UID пуста" }
+        val proc = !needsNoProc(guestCommand)
         val argv = buildList {
             add(layout.proot)
             add("--kill-on-exit")
             add(LINK2SYMLINK)
             // Root-подделка: apk и права файлов корневой системы ждут uid 0.
-            add("-0")
+            if (!realUser) add("-0")
             add("-r")
             add(layout.rootfs)
             for (dev in DEVICES) {
@@ -88,7 +95,7 @@ class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) 
             }
             add("-w")
             add(spec.workDir ?: GUEST_HOME)
-            addAll(spec.command)
+            addAll(guestCommand)
         }
         val environment = (spec.environment ?: GUEST_ENVIRONMENT) + mapOf(
             "PROOT_LOADER" to layout.loader,
@@ -99,6 +106,8 @@ class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) 
     }
 
     companion object {
+        /** Only our PRoot wrapper recognizes this argv marker; not a shell executable. */
+        const val REAL_USER_MARKER: String = "dpai:proot-real-user"
         /** Жёсткая ссылка гостя — символьной на хосте (D-158): Android запрещает `link()` приложениям. */
         const val LINK2SYMLINK: String = "--link2symlink"
 
