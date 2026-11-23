@@ -37,8 +37,8 @@ object ToolchainDoctor {
     }
 
     /** Встроенная проверка перед Gradle в Linux приложения: JVM обязана реально стартовать. */
-    fun buildJvmPreflight(host: ProcessHost, installedTargetSdk: Int? = null, cancelled: () -> Boolean,
-                          nativeAndroid: Boolean = false): Outcome<Unit> {
+    fun buildJvmPreflight(host: ProcessHost, installedTargetSdk: Int? = null, nativeAndroid: Boolean = false,
+                          cancelled: () -> Boolean): Outcome<Unit> {
         val javaName = if (nativeAndroid) "android_java" else "java"
         val result = when (val probe = run(host, definitions.filter { it.name == javaName }, "/", cancelled)) {
             is Outcome.Failure -> return probe
