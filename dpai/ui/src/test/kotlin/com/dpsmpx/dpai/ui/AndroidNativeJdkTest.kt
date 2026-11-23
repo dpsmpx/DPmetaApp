@@ -19,7 +19,12 @@ class AndroidNativeJdkTest {
         assertTrue(script.contains("DPAI_NATIVE_JDK_REAL_UID"))
         assertTrue(script.contains("DPAI_JDK_ROUNDTRIP_OK"))
         assertTrue(script.contains("DPAI_NATIVE_JDK_OK"))
-        assertTrue(script.contains("apt-get\" install -y openjdk-21"))
+        assertTrue(script.contains("pkg\" install -y openjdk-21"), "prefer Termux's official mirror-selection wrapper")
+        assertTrue(script.contains("apt-get\" install -y openjdk-21"), "retain fallback for minimal bootstraps")
+        assertTrue(script.contains("APT::Update::Error-Mode=any"), "DNS failure during apt update must fail even if apt uses stale indexes")
+        assertTrue(script.contains("DPAI_NATIVE_JDK_APT_UPDATE_FAILED"))
+        assertTrue(script.contains("/root/tools/bin/"), "native java/javac must be the default in the Alpine terminal")
+        assertTrue(script.contains("DPAI_NATIVE_JDK_PATH_CONFLICT"), "do not overwrite user commands")
         assertTrue(AndroidNativeJdk.PREFIX.startsWith("/data/data/com.termux/files/"))
         assertEquals(AndroidNativeJdk.JAVA_HOME, AndroidNativeJdk.buildEnvironment["JAVA_HOME"])
     }

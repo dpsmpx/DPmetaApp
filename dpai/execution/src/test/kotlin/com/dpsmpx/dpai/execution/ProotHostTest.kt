@@ -48,9 +48,9 @@ class ProotHostTest {
         val argv = spec.command
         assertEquals(listOf(layout.proot, "--kill-on-exit", "--link2symlink", "-0", "-r", layout.rootfs), argv.take(6))
         val fd = listOf("/proc/self/fd:/dev/fd", "/proc/self/fd/0:/dev/stdin", "/proc/self/fd/1:/dev/stdout", "/proc/self/fd/2:/dev/stderr")
-        assertEquals(ProotHost.DEVICES + "/proc" + fd + "/data/user/0/app/files/work:/work", pairs(argv, "-b"))
+        assertEquals(ProotHost.DEVICES + ProotHost.DNS_PROXY_SOCKET + "/proc" + fd + "/data/user/0/app/files/work:/work", pairs(argv, "-b"))
         // D-93: ни всего /dev (там /dev/binder — службы системы от имени приложения), ни /sys.
-        assertTrue(pairs(argv, "-b").none { it == "/dev" || it.startsWith("/dev/binder") || it.startsWith("/sys") }, argv.toString())
+        assertTrue(pairs(argv, "-b").none { it == "/dev" || it == "/dev/socket" || it.startsWith("/dev/binder") || it.startsWith("/sys") }, argv.toString())
         assertEquals(listOf("/work/repo"), pairs(argv, "-w"))
         assertEquals(listOf("git", "status"), argv.takeLast(2))
         assertNull(spec.workDir, "каталог гостя — через -w, а не каталог процесса хоста")
@@ -105,6 +105,9 @@ class ProotHostTest {
         assertEquals(listOf("/bin/sh", "-c", "apt-get update"), native.command.takeLast(3))
         assertFalse(ProotHost.REAL_USER_MARKER in native.command, "the wrapper marker must not reach the guest")
         assertTrue("/proc" in pairs(native.command, "-b"))
+        assertTrue(ProotHost.DNS_PROXY_SOCKET in pairs(native.command, "-b"),
+            "Termux apt/Bionic getaddrinfo requires Android DNS Resolver, not Alpine resolv.conf")
+        assertFalse("/dev/socket" in pairs(native.command, "-b"), "expose only dnsproxyd, not other Android system services")
         assertTrue("-0" in host.wrap(ProcessSpec(listOf("apk", "add", "curl"))).command,
             "Alpine package maintenance must retain its established fake-root semantics")
     }

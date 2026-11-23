@@ -60,6 +60,9 @@ object LinuxSetup {
         // layout() is consulted before installation too: it MUST NOT create a
         // partial rootfs, otherwise RootfsInstaller can mistake it for Linux.
         if (!rootfs.isDirectory) return emptyList()
+        // PRoot maps just this one socket; its parent must exist in the guest
+        // without exposing the host's entire /dev/socket directory.
+        File(rootfs, "dev/socket").mkdirs()
         // Termux's own termux-chroot binds /vendor as well: certain Android
         // devices resolve vendor runtime libraries from there.
         return listOf("/system", "/apex", "/vendor", "/linkerconfig").mapNotNull { path ->

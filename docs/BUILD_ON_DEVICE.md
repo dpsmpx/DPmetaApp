@@ -55,9 +55,21 @@ DPAI_TARGET_SDK=36 DPAI_RELEASE_DEBUG_KEY=1 sh tools/build-apk.sh release
    **Android/Bionic OpenJDK 21** вместе с зависимостями. Это не использует
    установленный Termux и не заменяет Alpine, в котором работают другие
    инструменты. Пакетный менеджер Termux запускается с реальным UID приложения:
-   его `apt-get` запрещает эмуляцию root, хотя `apk` Alpine продолжает работать
-   под PRoot `-0`. `openjdk21-jdk` из Alpine не является JDK для APK-сборки.
-3. Дождитесь `DPAI_NATIVE_JDK_OK` (реально запущены `java` и `javac`).
+   его `pkg`/`apt-get` запрещает эмуляцию root, хотя `apk` Alpine продолжает работать
+   под PRoot `-0`. `pkg` выбирает живое зеркало Termux; если bootstrap
+   не содержит `pkg`, используется `apt-get` со строгой проверкой обновления
+   индексов. Для Bionic под PRoot гостю пробрасывается **только** системный
+   DNS-сокет Android `/dev/socket/dnsproxyd`, а не весь `/dev/socket`:
+   `/etc/resolv.conf` Alpine применяется к musl, но не к Bionic. Сбой вида
+   `Something wicked happened resolving` прежде не давал получить индекс
+   пакетов, после чего `apt` сообщал `Unable to locate package openjdk-21`.
+   `openjdk21-jdk` из Alpine не является JDK для APK-сборки.
+3. Дождитесь `DPAI_NATIVE_JDK_OK` (реально запущены `java` и `javac` и
+   выполнена компиляция/запуск пробного класса). После успешной установки
+   ярлыки `java` и `javac` в `~/tools/bin` ведут к Bionic JDK, поэтому
+   эти команды в новом терминале Linux больше не должны запускать
+   Alpine HotSpot. Уже имеющиеся пользовательские ярлыки не заменяются;
+   при конфликте печатается `DPAI_NATIVE_JDK_PATH_CONFLICT`.
    При ошибке сначала сохраните вывод установки и `environment.probe`
    для `android_java`, `android_javac`, `memory`. Сообщение HotSpot
    `Failed to mark memory page as executable` не доказывает PaX;

@@ -39,6 +39,7 @@ object AndroidNativeJdk {
         set -eu
         PREFIX='$PREFIX'
         HOME_NATIVE='$HOME'
+        JAVA_HOME='$JAVA_HOME'
         JAVA='$JAVA'
         mkdir -p "${'$'}{PREFIX%/usr}"
         if ! test -x "${'$'}PREFIX/bin/bash"; then
@@ -89,8 +90,16 @@ object AndroidNativeJdk {
         test "${'$'}DPAI_UID" != 0 || { echo 'DPAI_NATIVE_JDK_FAKE_ROOT: Termux apt refuses emulated root; check PRoot real-user marker'; exit 1; }
         echo "DPAI_NATIVE_JDK_REAL_UID=${'$'}DPAI_UID"
         if ! test -x "${'$'}JAVA"; then
-          "${'$'}PREFIX/bin/apt-get" update || { echo 'DPAI_NATIVE_JDK_APT_UPDATE_FAILED'; exit 1; }
-          DEBIAN_FRONTEND=noninteractive "${'$'}PREFIX/bin/apt-get" install -y openjdk-21 || { echo 'DPAI_NATIVE_JDK_APT_INSTALL_FAILED'; exit 1; }
+          # The official Termux pkg wrapper rotates/checks its mirrors before
+          # installing. Use it if present in the verified official bootstrap.
+          if test -x "${'$'}PREFIX/bin/pkg"; then
+            DEBIAN_FRONTEND=noninteractive "${'$'}PREFIX/bin/pkg" install -y openjdk-21 || { echo 'DPAI_NATIVE_JDK_PKG_FAILED: проверьте Bionic DNS (/dev/socket/dnsproxyd), сеть и зеркала Termux'; exit 1; }
+          else
+            # Bare bootstrap fallback: apt-get update may return 0 with DNS
+            # warnings and stale indexes. Treat any index error as fatal.
+            "${'$'}PREFIX/bin/apt-get" -o APT::Update::Error-Mode=any update || { echo 'DPAI_NATIVE_JDK_APT_UPDATE_FAILED: проверьте Bionic DNS (/dev/socket/dnsproxyd), сеть и зеркало Termux'; exit 1; }
+            DEBIAN_FRONTEND=noninteractive "${'$'}PREFIX/bin/apt-get" install -y openjdk-21 || { echo 'DPAI_NATIVE_JDK_APT_INSTALL_FAILED'; exit 1; }
+          fi
         fi
         "${'$'}JAVA" -Xmx128m -version || { echo 'DPAI_NATIVE_JDK_JAVA_FAILED'; exit 1; }
         '$JAVAC' -version || { echo 'DPAI_NATIVE_JDK_JAVAC_FAILED'; exit 1; }
@@ -101,6 +110,18 @@ object AndroidNativeJdk {
         printf 'class DpaiJdkCheck { public static void main(String[] args) { System.out.println("DPAI_JDK_ROUNDTRIP_OK"); } }\n' > "${'$'}CHECK/DpaiJdkCheck.java"
         '$JAVAC' -J-Xmx256m -d "${'$'}CHECK" "${'$'}CHECK/DpaiJdkCheck.java" || { echo 'DPAI_NATIVE_JDK_COMPILE_FAILED'; exit 1; }
         "${'$'}JAVA" -Xmx128m -cp "${'$'}CHECK" DpaiJdkCheck | grep -qx DPAI_JDK_ROUNDTRIP_OK || { echo 'DPAI_NATIVE_JDK_CLASS_FAILED'; exit 1; }
+        # Make unqualified `java` and `javac` in the Linux terminal use the
+        # verified Bionic JDK as well. Never overwrite user's own commands.
+        mkdir -p /root/tools/bin
+        for native_tool in java javac; do
+          dest="/root/tools/bin/${'$'}native_tool"
+          source="${'$'}JAVA_HOME/bin/${'$'}native_tool"
+          if test -e "${'$'}dest" || test -L "${'$'}dest"; then
+            test "${'$'}(readlink "${'$'}dest" 2>/dev/null || true)" = "${'$'}source" || echo "DPAI_NATIVE_JDK_PATH_CONFLICT: ${'$'}dest (сохранён пользовательский файл)"
+          else
+            ln -s "${'$'}source" "${'$'}dest"
+          fi
+        done
         echo 'DPAI_NATIVE_JDK_OK'
     """.trimIndent())
 }

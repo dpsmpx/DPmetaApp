@@ -83,6 +83,11 @@ workflow `.github/workflows/apk.yml` выполняет `full --strict`, тес�
 
 ## Выпуски
 
+- **0.4.0-dev.42** — восстановление DNS для Android/Bionic JDK под PRoot:
+  точечный доступ к `dnsproxyd`, штатный `pkg` Termux, отказ при сбое
+  индексов APT и `java`/`javac` из Bionic в терминале Linux. Сборка
+  на физическом телефоне требует проверки. Подробнее —
+  [заметки](releases/0.4.0-dev.42.md).
 - **0.4.0-dev.41** — основной APK с `targetSdk 28` для самостоятельной
   Linux-разработки внутри DPmetaApp, без внешнего Termux/SSH-target;
   дополнительный APK с `targetSdk 36`. `minSdk 30`, имя `DP_IDE` и
