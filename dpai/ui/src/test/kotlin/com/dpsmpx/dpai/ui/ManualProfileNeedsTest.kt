@@ -50,6 +50,7 @@ class ManualProfileNeedsTest {
         assertEquals(AndroidNativeJdk.JAVA_HOME, AndroidSdk.env(setOf(ManualNeed.ANDROID_SDK), emptyList()).toMap()["JAVA_HOME"])
         assertTrue(AndroidSdk.env(setOf(ManualNeed.ANDROID_SDK), emptyList()).toMap()["PATH"]!!.startsWith(AndroidNativeJdk.JAVA_HOME))
         assertEquals("/opt/sdk", AndroidSdk.env(setOf(ManualNeed.ANDROID_SDK), listOf("ANDROID_HOME" to "/opt/sdk")).toMap()["ANDROID_HOME"])
+        assertEquals("/opt/sdk", AndroidSdk.env(setOf(ManualNeed.ANDROID_SDK), listOf("ANDROID_HOME" to "/opt/sdk")).toMap()["ANDROID_SDK_ROOT"])
         assertEquals(listOf("A" to "1"), AndroidSdk.env(emptySet(), listOf("A" to "1")))
     }
 }

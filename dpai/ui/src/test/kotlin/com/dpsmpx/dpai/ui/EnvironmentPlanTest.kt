@@ -57,7 +57,10 @@ class EnvironmentPlanTest {
         val discovered = AndroidSdk.discoveredEnv(mapOf("PATH" to "/bin")) { true }
         assertEquals(AndroidSdk.HOME, discovered["ANDROID_HOME"])
         assertEquals(AndroidSdk.HOME, discovered["ANDROID_SDK_ROOT"])
+        assertEquals(AndroidNativeJdk.JAVA_HOME, discovered["JAVA_HOME"])
+        assertTrue(discovered["PATH"]!!.startsWith(AndroidNativeJdk.JAVA_HOME))
         val own = AndroidSdk.discoveredEnv(mapOf("ANDROID_HOME" to "/custom")) { false }
         assertEquals("/custom", own["ANDROID_SDK_ROOT"])
+        assertEquals(emptyMap(), AndroidSdk.discoveredEnv(emptyMap()) { false })
     }
 }

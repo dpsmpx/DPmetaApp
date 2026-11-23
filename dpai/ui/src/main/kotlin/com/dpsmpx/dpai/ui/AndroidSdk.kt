@@ -51,8 +51,9 @@ object AndroidSdk {
     fun env(needs: Set<ManualNeed>, env: List<Pair<String, String>>): List<Pair<String, String>> {
         if (ManualNeed.ANDROID_SDK !in needs && ManualNeed.ANDROID_NDK !in needs) return env
         val names = env.map { it.first }.toSet()
-        return env + (listOf("ANDROID_HOME" to HOME, "ANDROID_SDK_ROOT" to HOME) +
-            AndroidNativeJdk.buildEnvironment.toList()).filter { it.first !in names }
+        val sdkHome = env.firstOrNull { it.first == "ANDROID_HOME" || it.first == "ANDROID_SDK_ROOT" }?.second ?: HOME
+        val java = if ("JAVA_HOME" in names) emptyList() else AndroidNativeJdk.buildEnvironment.toList()
+        return env + (listOf("ANDROID_HOME" to sdkHome, "ANDROID_SDK_ROOT" to sdkHome) + java).filter { it.first !in names }
     }
 
     /** Подсказка экрана для [missing]. */
@@ -182,7 +183,13 @@ object AndroidSdk {
 
     /** SDK после установки виден следующим командам без ручного ANDROID_HOME; свой путь сильнее. */
     fun discoveredEnv(base: Map<String, String>, exists: (String) -> Boolean): Map<String, String> {
-        val home = base["ANDROID_HOME"] ?: base["ANDROID_SDK_ROOT"] ?: HOME.takeIf { exists("$it/cmdline-tools/latest/bin/sdkmanager") } ?: return base
-        return base + listOf("ANDROID_HOME", "ANDROID_SDK_ROOT").filter { it !in base }.associateWith { home }
+        val home = base["ANDROID_HOME"] ?: base["ANDROID_SDK_ROOT"] ?: HOME.takeIf { exists("$it/cmdline-tools/latest/bin/sdkmanager") }
+        var result = base
+        if (home != null) result += listOf("ANDROID_HOME", "ANDROID_SDK_ROOT").filter { it !in result }.associateWith { home }
+        if ("JAVA_HOME" !in result && exists(AndroidNativeJdk.JAVA)) {
+            result += "JAVA_HOME" to AndroidNativeJdk.JAVA_HOME
+            result += "PATH" to "${AndroidNativeJdk.JAVA_HOME}/bin:${AndroidNativeJdk.PREFIX}/bin:${result["PATH"].orEmpty()}"
+        }
+        return result
     }
 }

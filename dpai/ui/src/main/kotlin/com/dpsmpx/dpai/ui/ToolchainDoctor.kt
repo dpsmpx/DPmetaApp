@@ -138,6 +138,7 @@ object ToolchainDoctor {
         Probe("aapt2", listOf("aapt2", "version")),
         Probe("android_project", listOf("sh", "-c", """
             sdk=${'$'}{ANDROID_HOME:-${'$'}{ANDROID_SDK_ROOT:-}}
+            if test -z "${'$'}sdk" && test -f '${AndroidSdk.HOME}/cmdline-tools/latest/bin/sdkmanager'; then sdk='${AndroidSdk.HOME}'; fi
             if test -z "${'$'}sdk"; then echo 'ANDROID_HOME и ANDROID_SDK_ROOT не заданы для SSH-сессии' >&2; exit 1; fi
             if ! test -d "${'$'}sdk/platforms"; then echo 'Android SDK: нет каталога platforms' >&2; exit 1; fi
             if ! test -d "${'$'}sdk/build-tools"; then echo 'Android SDK: нет каталога build-tools' >&2; exit 1; fi
