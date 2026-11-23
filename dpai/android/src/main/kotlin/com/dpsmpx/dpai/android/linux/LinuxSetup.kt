@@ -63,6 +63,7 @@ object LinuxSetup {
         // PRoot maps just this one socket; its parent must exist in the guest
         // without exposing the host's entire /dev/socket directory.
         File(rootfs, "dev/socket").mkdirs()
+        val dns = ProotLayout.Bind("/dev/socket/dnsproxyd", "/dev/socket/dnsproxyd")
         // Termux's own termux-chroot binds /vendor as well: certain Android
         // devices resolve vendor runtime libraries from there.
         return listOf("/system", "/apex", "/vendor", "/linkerconfig").mapNotNull { path ->
@@ -70,7 +71,7 @@ object LinuxSetup {
             val mountPoint = File(rootfs, path.removePrefix("/"))
             if (!mountPoint.isDirectory && !mountPoint.mkdirs()) return@mapNotNull null
             ProotLayout.Bind(path, path)
-        }
+        } + dns
     }
 
     /**

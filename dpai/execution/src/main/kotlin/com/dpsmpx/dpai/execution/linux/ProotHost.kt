@@ -81,13 +81,6 @@ class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) 
                 add("-b")
                 add(dev)
             }
-            // Android/Bionic's getaddrinfo() uses Android's DNS Resolver over
-            // this UNIX socket, NOT Alpine's /etc/resolv.conf. Without it,
-            // native Termux apt reports "Something wicked happened resolving"
-            // even while Alpine curl/apk can resolve the same hostname.
-            // Bind ONLY the DNS socket, never /dev/socket (binder, netd, etc.).
-            add("-b")
-            add(DNS_PROXY_SOCKET)
             if (proc) {
                 add("-b")
                 add("/proc")
@@ -117,9 +110,6 @@ class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) 
         const val REAL_USER_MARKER: String = "dpai:proot-real-user"
         /** Жёсткая ссылка гостя — символьной на хосте (D-158): Android запрещает `link()` приложениям. */
         const val LINK2SYMLINK: String = "--link2symlink"
-
-        /** The one Android system socket required by Bionic's DNS resolver. */
-        const val DNS_PROXY_SOCKET: String = "/dev/socket/dnsproxyd"
 
         /** Узлы `/dev` хоста, которые видит гость (D-93): терминал, пустые и случайные устройства — и только. */
         val DEVICES: List<String> = listOf("/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom", "/dev/tty", "/dev/ptmx", "/dev/pts")

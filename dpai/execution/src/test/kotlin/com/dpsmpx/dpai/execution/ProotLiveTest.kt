@@ -88,11 +88,8 @@ class ProotLiveTest {
     fun guestSeesOnlyAllowedDevicesAndNoSys() {
         val dev = guest("/bin/ls", "/dev")
         assertEquals(0, dev.exitCode)
-        val allowed = ProotHost.DEVICES.map { it.removePrefix("/dev/") }.toSet() + setOf("fd", "stdin", "stdout", "stderr", "socket")
+        val allowed = ProotHost.DEVICES.map { it.removePrefix("/dev/") }.toSet() + setOf("fd", "stdin", "stdout", "stderr")
         assertTrue(dev.stdout.all { it in allowed }, "лишнее в /dev: ${dev.stdout - allowed}")
-        val sockets = guest("/bin/ls", "/dev/socket")
-        assertEquals(0, sockets.exitCode)
-        assertEquals(listOf("dnsproxyd"), sockets.stdout, "гостю доступен только DNS-сокет Android")
         val sys = guest("/bin/sh", "-c", "ls /sys 2>/dev/null | wc -l")
         assertEquals(listOf("0"), sys.stdout.map { it.trim() })
     }

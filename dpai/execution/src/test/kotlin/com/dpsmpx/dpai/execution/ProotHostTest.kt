@@ -26,7 +26,8 @@ class ProotHostTest {
         loader = "/data/app/lib/arm64/libproot-loader.so",
         rootfs = "/data/user/0/app/files/linux/rootfs",
         tmp = "/data/user/0/app/cache/proot",
-        binds = listOf(ProotLayout.Bind("/data/user/0/app/files/work", "/work")),
+        binds = listOf(ProotLayout.Bind("/data/user/0/app/files/work", "/work"),
+            ProotLayout.Bind("/dev/socket/dnsproxyd", "/dev/socket/dnsproxyd")),
     )
 
     private class Recorder : ProcessHost {
@@ -48,7 +49,7 @@ class ProotHostTest {
         val argv = spec.command
         assertEquals(listOf(layout.proot, "--kill-on-exit", "--link2symlink", "-0", "-r", layout.rootfs), argv.take(6))
         val fd = listOf("/proc/self/fd:/dev/fd", "/proc/self/fd/0:/dev/stdin", "/proc/self/fd/1:/dev/stdout", "/proc/self/fd/2:/dev/stderr")
-        assertEquals(ProotHost.DEVICES + ProotHost.DNS_PROXY_SOCKET + "/proc" + fd + "/data/user/0/app/files/work:/work", pairs(argv, "-b"))
+        assertEquals(ProotHost.DEVICES + "/proc" + fd + "/data/user/0/app/files/work:/work" + "/dev/socket/dnsproxyd:/dev/socket/dnsproxyd", pairs(argv, "-b"))
         // D-93: ни всего /dev (там /dev/binder — службы системы от имени приложения), ни /sys.
         assertTrue(pairs(argv, "-b").none { it == "/dev" || it == "/dev/socket" || it.startsWith("/dev/binder") || it.startsWith("/sys") }, argv.toString())
         assertEquals(listOf("/work/repo"), pairs(argv, "-w"))
@@ -105,9 +106,13 @@ class ProotHostTest {
         assertEquals(listOf("/bin/sh", "-c", "apt-get update"), native.command.takeLast(3))
         assertFalse(ProotHost.REAL_USER_MARKER in native.command, "the wrapper marker must not reach the guest")
         assertTrue("/proc" in pairs(native.command, "-b"))
-        assertTrue(ProotHost.DNS_PROXY_SOCKET in pairs(native.command, "-b"),
+        assertTrue("/dev/socket/dnsproxyd:/dev/socket/dnsproxyd" in pairs(native.command, "-b"),
             "Termux apt/Bionic getaddrinfo requires Android DNS Resolver, not Alpine resolv.conf")
         assertFalse("/dev/socket" in pairs(native.command, "-b"), "expose only dnsproxyd, not other Android system services")
+        val standalone = ProotHost(Recorder(), layout.copy(binds = emptyList()))
+            .wrap(ProcessSpec(listOf("/bin/sh", "-c", "true")))
+        assertFalse(pairs(standalone.command, "-b").any { "dnsproxyd" in it },
+            "non-Android PRoot environments must not depend on Android's socket")
         assertTrue("-0" in host.wrap(ProcessSpec(listOf("apk", "add", "curl"))).command,
             "Alpine package maintenance must retain its established fake-root semantics")
     }
