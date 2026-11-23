@@ -689,17 +689,23 @@ class DemoModel(
                 is Outcome.Success -> r.value
             }
             if (choices != null && !environment) controller.manualProfiles.saveChoices(p, profile.kind, choices)
+            // Older saved/manual Gradle profiles may omit needs despite building
+            // Android variants. Infer only recognizable Android tasks/artifacts;
+            // never require the SDK for a plain Java/Kotlin Gradle project.
+            val buildNeeds = if (target.inApp && com.dpsmpx.dpai.ui.ToolchainDoctor.needsAndroidSdk(resolved))
+                resolved.needs + com.dpsmpx.dpai.ui.ManualNeed.ANDROID_SDK else resolved.needs
+            val requested = if (buildNeeds == resolved.needs) resolved else resolved.copy(needs = buildNeeds)
             // Что профилю нужно (D-186): в Linux приложения — проверка до запуска и ANDROID_HOME в окружение шагов;
             // на ПК-target SDK — его собственный.
-            val ready = if (target.inApp && resolved.needs.isNotEmpty()) {
+            val ready = if (target.inApp && requested.needs.isNotEmpty()) {
                 val rootfs = java.io.File(app.filesDir, com.dpsmpx.dpai.android.linux.LinuxSetup.environment(app).rootfs)
                 val guest = { path: String -> java.io.File(rootfs, path.removePrefix("/")) }
-                val missing = com.dpsmpx.dpai.ui.AndroidSdk.missing(resolved.needs, { guest(it).exists() },
+                val missing = com.dpsmpx.dpai.ui.AndroidSdk.missing(requested.needs, { guest(it).exists() },
                     guest(com.dpsmpx.dpai.ui.AndroidSdk.HOME + "/ndk").list()?.isNotEmpty() == true)
                 if (missing.isNotEmpty()) return@start LongJobs.Done(com.dpsmpx.dpai.ui.AndroidSdk.hint(missing), failed = true)
-                resolved.copy(env = com.dpsmpx.dpai.ui.AndroidSdk.env(resolved.needs, resolved.env)).takeIf { it.valid }
+                requested.copy(env = com.dpsmpx.dpai.ui.AndroidSdk.env(requested.needs, requested.env)).takeIf { it.valid }
                     ?: return@start LongJobs.Done("окружение шагов переполнено: добавьте ANDROID_HOME в профиль сами", failed = true)
-            } else resolved
+            } else requested
             // Проверка наличия SDK идёт ДО JVM: иначе отсутствующий SDK маскируется
             // отказом Alpine HotSpot и человек бесконечно повторяет apk add openjdk.
             // Для Android/Gradle используется только Bionic JDK, как у Termux.

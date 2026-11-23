@@ -671,8 +671,10 @@ object NewProject {
             Template.KOTLIN_ANDROID -> {
                 val gradle = if (win) arrayOf("cmd.exe", "/c", "gradlew.bat", "--no-daemon") else arrayOf("./gradlew", "--no-daemon")
                 Commands(
-                    profile(ManualProfileKind.BUILD, listOf(step("Сборка APK", BUILD_TIMEOUT, *gradle, "assembleDebug")), listOf("app/build/outputs/apk/debug/*.apk")),
-                    profile(ManualProfileKind.CHECK, listOf(step("Тесты", BUILD_TIMEOUT, *gradle, "testDebugUnitTest"))),
+                    profile(ManualProfileKind.BUILD, listOf(step("Сборка APK", BUILD_TIMEOUT, *gradle, "assembleDebug")), listOf("app/build/outputs/apk/debug/*.apk"))
+                        .copy(needs = setOf(ManualNeed.ANDROID_SDK)),
+                    profile(ManualProfileKind.CHECK, listOf(step("Тесты", BUILD_TIMEOUT, *gradle, "testDebugUnitTest")))
+                        .copy(needs = setOf(ManualNeed.ANDROID_SDK)),
                     null,
                     listOf(*gradle, "testDebugUnitTest"),
                 )

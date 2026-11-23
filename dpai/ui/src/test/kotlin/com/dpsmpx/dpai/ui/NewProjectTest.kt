@@ -120,6 +120,10 @@ class NewProjectTest {
         assertEquals(RunProfile("python3 -m hello_app", "src", buildFirst = false), python)
         assertEquals(listOf("build/hello-app"), NewProject.commands(spec(Template.CPP_CMAKE), TargetPlatform.POSIX, true).build!!.artifacts)
         assertEquals(listOf("app/build/outputs/apk/debug/*.apk"), NewProject.commands(spec(Template.KOTLIN_ANDROID), TargetPlatform.POSIX, false).build!!.artifacts)
+        val android = NewProject.commands(spec(Template.KOTLIN_ANDROID), TargetPlatform.POSIX, false)
+        assertEquals(setOf(ManualNeed.ANDROID_SDK), android.build!!.needs)
+        assertEquals(setOf(ManualNeed.ANDROID_SDK), android.check.needs)
+        assertTrue(NewProject.commands(spec(Template.KOTLIN_GRADLE), TargetPlatform.POSIX, false).check.needs.isEmpty())
     }
 
     @Test

@@ -87,6 +87,9 @@ DPAI_TARGET_SDK=36 DPAI_RELEASE_DEBUG_KEY=1 sh tools/build-apk.sh release
 1. Откройте проект в IDE на локальном target **Linux приложения**.
 2. Откройте раздел **Сборка** → шаблон **APK Android** (ставит
    `./gradlew --no-daemon assembleDebug` и потребность в Android SDK).
+   Приложение также распознаёт `assembleDebug`, `assembleRelease`,
+   `testDebugUnitTest` и APK/AAB-артефакты в ранее сохранённых профилях,
+   даже если в их старой версии отсутствует поле `needs`.
 3. Проверьте команду и путь проекта, сохраните профиль, запустите.
 4. При успехе откройте **Артефакты** и установите/экспортируйте APK;
    перед установкой сравните подпись с уже установленной версией.
@@ -94,6 +97,10 @@ DPAI_TARGET_SDK=36 DPAI_RELEASE_DEBUG_KEY=1 sh tools/build-apk.sh release
 Этот путь предназначен для проектов с Gradle/Android Gradle Plugin.
 Наличие SDK и JVM проверяется до запуска, ошибки Gradle остаются в
 истории сборки, самодельный «успех» при ошибке JVM не выдаётся.
+Для Android-профиля обязательны одновременно `java`, `javac` из
+изолированного Android/Bionic JDK, `sdkmanager`, платформа SDK, build-tools,
+ARM64 `aapt2` и `zipalign`. При отсутствии компонентов не следует
+устанавливать Alpine `openjdk21-jdk`: используйте мастер «Android SDK…».
 Запуск JDK под PRoot на каждом телефоне требует проверки на устройстве;
 успех GitHub Actions не заменяет эту проверку.
 

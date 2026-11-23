@@ -30,6 +30,14 @@ object ProjectProfileDefaults {
             }
             else -> return null
         }
-        return ManualProfile(kind, listOf(ManualStep(if (kind == ManualProfileKind.CHECK) "Проверка проекта" else "Сборка проекта", argv, 1800)))
+        // An Android project can have the same `gradlew` wrapper as a JVM-only
+        // project; the AndroidManifest is the distinguishing marker. The saved
+        // profile remains authoritative when the author has customized it.
+        val android = ("gradlew" in root || "gradlew.bat" in root) &&
+            listOf("app/src/main", "src/main").any { dir ->
+                tree.list(dir).valueOrNull()?.any { it.name == "AndroidManifest.xml" && !it.dir } == true
+            }
+        return ManualProfile(kind, listOf(ManualStep(if (kind == ManualProfileKind.CHECK) "Проверка проекта" else "Сборка проекта", argv, 1800)),
+            needs = if (android) setOf(ManualNeed.ANDROID_SDK) else emptySet())
     }
 }

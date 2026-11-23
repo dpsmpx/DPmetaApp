@@ -43,6 +43,11 @@ object AndroidSdk {
     fun missing(needs: Set<ManualNeed>, exists: (String) -> Boolean, hasNdk: Boolean): List<String> = buildList {
         if (ManualNeed.ANDROID_SDK in needs || ManualNeed.ANDROID_NDK in needs) {
             for ((path, what) in listOf("$HOME/platforms/${PLATFORM.substringAfter(';')}" to PLATFORM, "$HOME/build-tools/${BUILD_TOOLS.substringAfter(';')}" to BUILD_TOOLS)) if (!exists(path)) add(what)
+            if (!exists(AndroidNativeJdk.JAVA)) add("Android/Bionic JDK: java")
+            if (!exists(AndroidNativeJdk.JAVAC)) add("Android/Bionic JDK: javac")
+            if (!exists("$HOME/cmdline-tools/latest/bin/sdkmanager")) add("sdkmanager")
+            if (!exists("$HOME/dpai/aapt2") && !exists("$HOME/build-tools/${BUILD_TOOLS.substringAfter(';')}/aapt2")) add("aapt2")
+            if (!exists("$HOME/build-tools/${BUILD_TOOLS.substringAfter(';')}/zipalign")) add("zipalign")
         }
         if (ManualNeed.ANDROID_NDK in needs && !hasNdk) add("NDK")
     }

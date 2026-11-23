@@ -37,9 +37,12 @@ class ManualProfileNeedsTest {
 
     @Test
     fun missingInGuestAndAndroidHome() {
-        val sdk = setOf(AndroidSdk.HOME + "/platforms/${AndroidSdk.PLATFORM.substringAfter(';')}", AndroidSdk.HOME + "/build-tools/36.1.0")
+        val sdk = setOf(AndroidSdk.HOME + "/platforms/${AndroidSdk.PLATFORM.substringAfter(';')}", AndroidSdk.HOME + "/build-tools/36.1.0",
+            AndroidNativeJdk.JAVA, AndroidNativeJdk.JAVAC, AndroidSdk.HOME + "/cmdline-tools/latest/bin/sdkmanager",
+            AndroidSdk.HOME + "/dpai/aapt2", AndroidSdk.HOME + "/build-tools/36.1.0/zipalign")
         assertEquals(emptyList(), AndroidSdk.missing(emptySet(), { false }, false))
-        assertEquals(listOf(AndroidSdk.PLATFORM, AndroidSdk.BUILD_TOOLS), AndroidSdk.missing(setOf(ManualNeed.ANDROID_SDK), { false }, false))
+        assertEquals(listOf(AndroidSdk.PLATFORM, AndroidSdk.BUILD_TOOLS, "Android/Bionic JDK: java", "Android/Bionic JDK: javac", "sdkmanager", "aapt2", "zipalign"),
+            AndroidSdk.missing(setOf(ManualNeed.ANDROID_SDK), { false }, false))
         assertEquals(emptyList(), AndroidSdk.missing(setOf(ManualNeed.ANDROID_SDK), { it in sdk }, false))
         assertEquals(listOf("NDK"), AndroidSdk.missing(setOf(ManualNeed.ANDROID_NDK), { it in sdk }, false), "NDK — вместе с SDK")
         assertEquals(emptyList(), AndroidSdk.missing(setOf(ManualNeed.ANDROID_NDK), { it in sdk }, true))

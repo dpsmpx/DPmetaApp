@@ -92,6 +92,11 @@ class AutomationSourcesTest {
         val posix = ProjectProfileDefaults.default(LocalTree(dir), ManualProfileKind.CHECK, TargetPlatform.POSIX)!!
         assertEquals(listOf("cmd.exe", "/c", "gradlew.bat", "check"), windows.steps.single().command)
         assertEquals(listOf("sh", "gradlew", "check"), posix.steps.single().command)
+        assertEquals(emptySet(), posix.needs, "обычный Gradle не требует Android SDK")
+        val manifest = dir.resolve("app/src/main/AndroidManifest.xml").toFile()
+        manifest.parentFile.mkdirs()
+        manifest.writeText("<manifest/>")
+        assertEquals(setOf(ManualNeed.ANDROID_SDK), ProjectProfileDefaults.default(LocalTree(dir), ManualProfileKind.BUILD)!!.needs)
     }
 
     @Test fun changingASavedParameterChoiceChangesTheAdvertisedDefaultAndRevision() {

@@ -34,6 +34,17 @@ class ToolchainDoctorTest {
         assertEquals(false, ToolchainDoctor.needsJvm(profile(ManualProfileKind.DEPENDENCIES, "./gradlew", "assemble")))
     }
 
+    @Test fun olderAndroidGradleProfilesInferSdkWithoutChangingJvmOnlyGradle() {
+        fun build(vararg command: String, artifacts: List<String> = emptyList()) =
+            ManualProfile(ManualProfileKind.BUILD, listOf(ManualStep("Build", command.toList(), 600)), artifacts)
+        assertTrue(ToolchainDoctor.needsAndroidSdk(build("./gradlew", "--no-daemon", "assembleDebug")))
+        assertTrue(ToolchainDoctor.needsAndroidSdk(build("sh", "gradlew", ":app:assembleRelease")))
+        assertTrue(ToolchainDoctor.needsAndroidSdk(build("./gradlew", "testDebugUnitTest")))
+        assertTrue(ToolchainDoctor.needsAndroidSdk(build("./gradlew", "build", artifacts = listOf("app/build/*.apk"))))
+        assertEquals(false, ToolchainDoctor.needsAndroidSdk(build("./gradlew", "build")))
+        assertEquals(false, ToolchainDoctor.needsAndroidSdk(build("./gradlew", "test")))
+    }
+
     @Test fun buildPreflightRejectsSelinuxDenialWithoutStartingGradle() {
         val calls = arrayListOf<String>()
         val host = object : ProcessHost {

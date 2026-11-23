@@ -36,6 +36,26 @@ object ToolchainDoctor {
         }
     }
 
+    /**
+     * Older saved Gradle profiles often have no `needs` field. Android variant
+     * tasks and APK/AAB artifacts still identify an Android build unambiguously;
+     * plain `gradlew build` (Java/Kotlin projects) must not require Android SDK.
+     */
+    fun needsAndroidSdk(profile: ManualProfile): Boolean {
+        if (profile.needs.any { it == ManualNeed.ANDROID_SDK || it == ManualNeed.ANDROID_NDK }) return true
+        if (profile.kind == ManualProfileKind.DEPENDENCIES) return false
+        if (profile.artifacts.any { it.endsWith(".apk", true) || it.endsWith(".aab", true) }) return true
+        return profile.steps.any { step ->
+            val gradle = step.command.any { it.substringAfterLast('/') in setOf("gradle", "gradlew", "gradlew.bat") }
+            gradle && step.command.any { word ->
+                val task = word.substringAfterLast(':')
+                ANDROID_GRADLE_TASK.matches(task)
+            }
+        }
+    }
+
+    private val ANDROID_GRADLE_TASK = Regex("(?:assemble|bundle|test|lint)[A-Za-z0-9_]*(?:Debug|Release)[A-Za-z0-9_]*")
+
     /** Встроенная проверка перед Gradle в Linux приложения: JVM обязана реально стартовать. */
     fun buildJvmPreflight(host: ProcessHost, installedTargetSdk: Int? = null, nativeAndroid: Boolean = false,
                           cancelled: () -> Boolean): Outcome<Unit> {
