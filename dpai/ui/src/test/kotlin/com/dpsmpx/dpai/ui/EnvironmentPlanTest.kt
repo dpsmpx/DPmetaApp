@@ -59,6 +59,8 @@ class EnvironmentPlanTest {
         assertEquals(AndroidSdk.HOME, discovered["ANDROID_SDK_ROOT"])
         assertEquals(AndroidNativeJdk.JAVA_HOME, discovered["JAVA_HOME"])
         assertTrue(discovered["PATH"]!!.startsWith(AndroidNativeJdk.JAVA_HOME))
+        val withoutPath = AndroidSdk.discoveredEnv(emptyMap()) { true }
+        assertEquals(AndroidNativeJdk.buildEnvironment["PATH"], withoutPath["PATH"], "PATH не должен включать текущий каталог пустым компонентом")
         val own = AndroidSdk.discoveredEnv(mapOf("ANDROID_HOME" to "/custom")) { false }
         assertEquals("/custom", own["ANDROID_SDK_ROOT"])
         assertEquals(emptyMap(), AndroidSdk.discoveredEnv(emptyMap()) { false })

@@ -188,7 +188,9 @@ object AndroidSdk {
         if (home != null) result += listOf("ANDROID_HOME", "ANDROID_SDK_ROOT").filter { it !in result }.associateWith { home }
         if ("JAVA_HOME" !in result && exists(AndroidNativeJdk.JAVA)) {
             result += "JAVA_HOME" to AndroidNativeJdk.JAVA_HOME
-            result += "PATH" to "${AndroidNativeJdk.JAVA_HOME}/bin:${AndroidNativeJdk.PREFIX}/bin:${result["PATH"].orEmpty()}"
+            val existingPath = result["PATH"]?.takeIf { it.isNotBlank() }
+            result += "PATH" to (if (existingPath == null) AndroidNativeJdk.buildEnvironment.getValue("PATH")
+                else "${AndroidNativeJdk.JAVA_HOME}/bin:${AndroidNativeJdk.PREFIX}/bin:$existingPath")
         }
         return result
     }
