@@ -146,10 +146,11 @@ fun LinuxScreen(onBack: () -> Unit, controller: Controller? = null, model: DemoM
                             is Outcome.Failure -> first
                             is Outcome.Success -> LinuxSetup.runSteps(context, listOf(first.value,
                                 com.dpsmpx.dpai.execution.process.ProcessSpec(AndroidNativeJdk.install()),
-                                com.dpsmpx.dpai.execution.process.ProcessSpec(AndroidSdk.install(licenses, ndk, aapt2, ndkCommunity))))
+                                com.dpsmpx.dpai.execution.process.ProcessSpec(AndroidSdk.install(licenses, ndk, aapt2, ndkCommunity)),
+                                com.dpsmpx.dpai.execution.process.ProcessSpec(AndroidSdk.probe(AndroidSdk.PLATFORM, AndroidSdk.BUILD_TOOLS, ndk))))
                         }
                     }) {
-                        if (it.ok && it.stdout.any { l -> "DPAI_ANDROID_SDK_OK" in l }) "Android SDK: ${AndroidSdk.HOME}; в профиль сборки — окружение ANDROID_HOME=${AndroidSdk.HOME}"
+                        if (it.ok && it.stdout.any { l -> "DPAI_ANDROID_TOOLS_OK" in l }) "Android SDK и Android/Bionic JDK проверены: ${AndroidSdk.HOME}; переменные сборки подставятся автоматически"
                         else "Установка завершилась с кодом ${it.exitCode} — причина в выводе ниже"
                     }
                 }

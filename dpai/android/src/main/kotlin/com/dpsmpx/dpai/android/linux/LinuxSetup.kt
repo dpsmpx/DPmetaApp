@@ -56,12 +56,17 @@ object LinuxSetup {
         )
     }
 
-    private fun nativeSystemBinds(rootfs: File): List<ProotLayout.Bind> = listOf("/system", "/apex", "/linkerconfig")
-        .filter { File(it).isDirectory }
-        .map { path ->
-            File(rootfs, path.removePrefix("/")).mkdirs()
+    private fun nativeSystemBinds(rootfs: File): List<ProotLayout.Bind> {
+        // layout() is consulted before installation too: it MUST NOT create a
+        // partial rootfs, otherwise RootfsInstaller can mistake it for Linux.
+        if (!rootfs.isDirectory) return emptyList()
+        return listOf("/system", "/apex", "/linkerconfig").mapNotNull { path ->
+            if (!File(path).isDirectory) return@mapNotNull null
+            val mountPoint = File(rootfs, path.removePrefix("/"))
+            if (!mountPoint.isDirectory && !mountPoint.mkdirs()) return@mapNotNull null
             ProotLayout.Bind(path, path)
         }
+    }
 
     /**
      * Каталоги приложения, которые оболочка показывает гостю (`DPmetaApp:D-70`:

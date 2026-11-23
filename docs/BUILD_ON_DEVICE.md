@@ -49,22 +49,21 @@ DPAI_TARGET_SDK=36 DPAI_RELEASE_DEBUG_KEY=1 sh tools/build-apk.sh release
 
 1. В DPmetaApp установите **Linux в приложении**. Это собственная среда
    приложения; пакет Termux не нужен.
-2. Через штатную операцию установки пакетов Alpine установите
-   `openjdk21-jdk`, `bash`, `git`, `curl`, `unzip`, `ca-certificates`.
-3. Выполните `environment.probe` для `java` и `jdk`.
-   Важно: наличие пакета в базе Alpine — не успешный запуск JVM.
-   При ошибке `Failed to mark memory page as executable` остановитесь;
-   сборка не начнётся. Совместимый APK помогает с W^X, но работа
-   `execmem` зависит и от политики конкретного телефона. Если preflight
-   пишет `targetSdk=36`, установлен старый или сравнительный APK:
-   синхронизация `main` **не** обновляет APK на устройстве. При
-   `targetSdk=28` и том же отказе сохраните вывод проб `java_debug`
-   и `memory`: обычный OpenJDK HotSpot проверяет `mprotect` до начала
-   выполнения, в том числе при `-Xint`. Интерпретатор Zero JVM может
-   быть перспективен, но проверенной Alpine ARM64-поставки пока нет;
-   объявлять это решение работающим преждевременно.
-4. Запустите **Android SDK…** в том же Linux приложения. Согласие
-   на лицензию выбирает человек. Приложение ставит Google cmdline-tools
+2. Запустите **Android SDK…** в том же Linux приложения. Установщик
+   сначала разворачивает изолированный Termux-совместимый префикс из
+   официального bootstrap с фиксированной SHA-256 и устанавливает
+   **Android/Bionic OpenJDK 21** вместе с зависимостями. Это не использует
+   установленный Termux и не заменяет Alpine, в котором работают другие
+   инструменты. `openjdk21-jdk` из Alpine не является JDK для APK-сборки.
+3. Дождитесь `DPAI_NATIVE_JDK_OK` (реально запущены `java` и `javac`).
+   При ошибке сначала сохраните вывод установки и `environment.probe`
+   для `android_java`, `android_javac`, `memory`. Сообщение HotSpot
+   `Failed to mark memory page as executable` не доказывает PaX;
+   успешная проба `mprotect` также не доказывает запуск JVM. Если
+   preflight пишет `targetSdk=36`, установлено другое приложение:
+   обновление Git-исходников не меняет APK на телефоне.
+4. В рамках того же **Android SDK…** примите лицензию Google; после JDK
+   приложение устанавливает Google cmdline-tools
    **20.0**, `platforms;android-37.0`, `build-tools;36.1.0` и на ARM64
    статическую `aapt2` от AndroidIDE-Dev v35.0.2 и совместимые
    `zipalign`/`aidl`/`aapt`/`split-select` из AndroidIDEOfficial v34.0.4,
@@ -93,6 +92,8 @@ DPAI_TARGET_SDK=36 DPAI_RELEASE_DEBUG_KEY=1 sh tools/build-apk.sh release
 Этот путь предназначен для проектов с Gradle/Android Gradle Plugin.
 Наличие SDK и JVM проверяется до запуска, ошибки Gradle остаются в
 истории сборки, самодельный «успех» при ошибке JVM не выдаётся.
+Запуск JDK под PRoot на каждом телефоне требует проверки на устройстве;
+успех GitHub Actions не заменяет эту проверку.
 
 ## 4. Физическая приёмка
 

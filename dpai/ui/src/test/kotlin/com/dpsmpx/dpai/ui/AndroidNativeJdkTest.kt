@@ -13,6 +13,8 @@ class AndroidNativeJdkTest {
         assertTrue(script.contains("SYMLINKS.txt"))
         assertTrue(script.contains("DPAI_NATIVE_JDK_JAVA_FAILED"))
         assertTrue(script.contains("DPAI_NATIVE_JDK_JAVAC_FAILED"))
+        assertTrue(script.contains("DPAI_NATIVE_JDK_COMPILE_FAILED"))
+        assertTrue(script.contains("DPAI_JDK_ROUNDTRIP_OK"))
         assertTrue(script.contains("DPAI_NATIVE_JDK_OK"))
         assertTrue(script.contains("apt-get\" install -y openjdk-21"))
         assertTrue(AndroidNativeJdk.PREFIX.startsWith("/data/data/com.termux/files/"))

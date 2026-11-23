@@ -152,6 +152,20 @@ Sysroot сборки proot — пакеты Alpine 3.24 `main` (в APK из ни
 В APK и репозиторий не входит: загружается в госте по согласию автора с
 лицензией Android SDK (`developer.android.com/studio/terms`).
 
+Перед SDK устанавливается отдельный Android/Bionic JDK 21 в виртуальном
+префиксе PRoot (`AndroidNativeJdk`): не копируется из данных Termux и не
+зависит от установки Termux на телефоне. Официальный bootstrap
+`bootstrap-2026.02.12-r1+apt.android-7/bootstrap-aarch64.zip` из
+`termux/termux-packages` имеет SHA-256
+`ea2aeba8819e517db711f8c32369e89e7c52cee73e07930ff91185e1ab93f4f3`
+(закреплён самим `termux/termux-app/app/build.gradle`). Ссылки восстанавливаются
+из `SYMLINKS.txt` по процедуре `TermuxInstaller.java`, затем APT устанавливает
+пакет `openjdk-21` и транзитивные зависимости из подписанного репозитория
+Termux. Исходный код OpenJDK — GPL-2.0 с Classpath Exception; у отдельных
+пакетов bootstrap свои лицензии. Дистрибутивы скачиваются в данные приложения
+после действия пользователя, в APK не включены. См.
+`dpai/docs/research/2026-11-23-native-jdk-termux.md`.
+
 | Что | Версия | SHA-256 | Откуда и как проверено |
 |---|---|---|---|
 | `commandlinetools-linux-14742923_latest.zip` | cmdline-tools 20.0 | `04453066b540409d975c676d781da1477479dde3761310f1a7eb92a1dfb15af7` | `dl.google.com/android/repository`; архив и запуск `sdkmanager --version` проверены 23 ноября 2026. В 23.0 sdkmanager скачивает отдельный Android CLI; в 20.0 — запускается в JVM без CLI |

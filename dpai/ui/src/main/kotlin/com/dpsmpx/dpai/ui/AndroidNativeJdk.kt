@@ -40,8 +40,7 @@ object AndroidNativeJdk {
         JAVA='$JAVA'
         mkdir -p "${'$'}{PREFIX%/usr}"
         if ! test -x "${'$'}PREFIX/bin/bash"; then
-          STAGE="${'$'}{PREFIX}.dpai-stage.${'$'}${'$'}"
-          mkdir -p "${'$'}STAGE"
+          STAGE=${'$'}(mktemp -d "${'$'}{PREFIX}.dpai-stage.XXXXXX")
           trap 'rm -rf "${'$'}STAGE"' EXIT
           curl --fail --location --retry 2 --proto '=https' --connect-timeout 30 --max-time 1800 '$BOOTSTRAP_URL' -o "${'$'}STAGE/bootstrap.zip"
           printf '%s  %s\n' '$BOOTSTRAP_SHA256' "${'$'}STAGE/bootstrap.zip" | sha256sum -c - || { echo 'DPAI_NATIVE_JDK_BOOTSTRAP_SHA256'; exit 1; }
@@ -90,6 +89,13 @@ object AndroidNativeJdk {
         fi
         "${'$'}JAVA" -Xmx128m -version || { echo 'DPAI_NATIVE_JDK_JAVA_FAILED'; exit 1; }
         '$JAVAC' -version || { echo 'DPAI_NATIVE_JDK_JAVAC_FAILED'; exit 1; }
+        # Versions alone do not prove that javac can compile or that the JVM can
+        # load application classes. A real, isolated round-trip gates the SDK.
+        CHECK=${'$'}(mktemp -d "${'$'}PREFIX/tmp/dpai-jdk-check.XXXXXX")
+        trap 'rm -rf "${'$'}CHECK"' EXIT
+        printf 'class DpaiJdkCheck { public static void main(String[] args) { System.out.println("DPAI_JDK_ROUNDTRIP_OK"); } }\n' > "${'$'}CHECK/DpaiJdkCheck.java"
+        '$JAVAC' -J-Xmx256m -d "${'$'}CHECK" "${'$'}CHECK/DpaiJdkCheck.java" || { echo 'DPAI_NATIVE_JDK_COMPILE_FAILED'; exit 1; }
+        "${'$'}JAVA" -Xmx128m -cp "${'$'}CHECK" DpaiJdkCheck | grep -qx DPAI_JDK_ROUNDTRIP_OK || { echo 'DPAI_NATIVE_JDK_CLASS_FAILED'; exit 1; }
         echo 'DPAI_NATIVE_JDK_OK'
     """.trimIndent())
 }
