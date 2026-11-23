@@ -49,21 +49,30 @@ DPAI_TARGET_SDK=36 DPAI_RELEASE_DEBUG_KEY=1 sh tools/build-apk.sh release
 
 1. В DPmetaApp установите **Linux в приложении**. Это собственная среда
    приложения; пакет Termux не нужен.
-2. Через штатную операцию установки пакетов Alpine установите
-   `openjdk21-jdk`, `bash`, `git`, `curl`, `unzip`, `ca-certificates`.
+2. Выберите **«Установить Android-native JDK 21»** в Linux приложения
+   или вызовите `environment.android_jdk` из чата. Это OpenJDK под
+   **Android ARM64/Bionic**, как в Termux/AndroidIDE, но со своим
+   каталогом `/opt/dpai-jdk21` в Linux DPmetaApp. Пакет `openjdk21-jdk`
+   из Alpine — другая (musl) сборка HotSpot; для мобильного APK-пути
+   больше не используется. Отдельное приложение Termux не требуется.
+
+   Источник: [MobileStudio OpenJDK 21.0.14 ARM64/Bionic](https://github.com/MobileStudio-AndroidIDE/MobileStudio_AndroidIDE/releases/tag/jdk21-android-21.0.14),
+   `jdk21-android-arm64.tar.gz`, закреплённый SHA-256
+   `8746f96a348c34b1e21508128478cb613de05f9d0aa9befad2967f83a9542680`.
+   Это сторонняя сборка OpenJDK, не дистрибутив Google и не официальный
+   бинарный релиз проекта OpenJDK. Приложение проверяет сумму до
+   распаковки и реально запускает `java` и `javac` до сообщения об успехе.
+   Системные библиотеки `/system`, `/apex`, `/linkerconfig` пробрасываются
+   гостю для Android linker64; `/sys` и `/dev/binder` не открываются.
 3. Выполните `environment.probe` для `java` и `jdk`.
-   Важно: наличие пакета в базе Alpine — не успешный запуск JVM.
-   При ошибке `Failed to mark memory page as executable` остановитесь;
-   сборка не начнётся. Совместимый APK помогает с W^X, но работа
-   `execmem` зависит и от политики конкретного телефона. Если preflight
-   пишет `targetSdk=36`, установлен старый или сравнительный APK:
-   синхронизация `main` **не** обновляет APK на устройстве. При
-   `targetSdk=28` и том же отказе сохраните вывод проб `java_debug`
-   и `memory`: обычный OpenJDK HotSpot проверяет `mprotect` до начала
-   выполнения, в том числе при `-Xint`. Интерпретатор Zero JVM может
-   быть перспективен, но проверенной Alpine ARM64-поставки пока нет;
-   объявлять это решение работающим преждевременно.
-4. Запустите **Android SDK…** в том же Linux приложения. Согласие
+   Важно: наличие файлов не доказывает запуск JVM. При необходимости
+   рантайм пробует совместимые `-XX:-UseCompressedOops -Xint`, но они
+   включаются **только если обычный Java не стартует**. Если оба варианта
+   дают ошибку, установщик возвращает отказ с живым stderr; Gradle
+   не запускается. Если preflight пишет `targetSdk=36`, установлен старый
+   APK: синхронизация `main` **не** обновляет APK на телефоне.
+4. Запустите **Android SDK…** в том же Linux приложения. Этот мастер
+   также ставит и проверяет Android-native JDK перед sdkmanager. Согласие
    на лицензию выбирает человек. Приложение ставит Google cmdline-tools
    **20.0**, `platforms;android-37.0`, `build-tools;36.1.0` и на ARM64
    статическую `aapt2` от AndroidIDE-Dev v35.0.2 и совместимые
@@ -93,6 +102,13 @@ DPAI_TARGET_SDK=36 DPAI_RELEASE_DEBUG_KEY=1 sh tools/build-apk.sh release
 Этот путь предназначен для проектов с Gradle/Android Gradle Plugin.
 Наличие SDK и JVM проверяется до запуска, ошибки Gradle остаются в
 истории сборки, самодельный «успех» при ошибке JVM не выдаётся.
+
+Если до обновления был установлен Alpine `openjdk21-jdk`, удалять его
+не обязательно: после успешной установки Android-native JDK его
+`bin` приоритетнее в `PATH`, `JAVA_HOME` указывает на новый runtime.
+Работа этого пути на Redmi Note 13 должна быть подтверждена физически;
+облачная компиляция Kotlin/Android не равнозначна проверке ELF/Bionic
+внутри proot на телефоне.
 
 ## 4. Физическая приёмка
 

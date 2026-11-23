@@ -30,6 +30,14 @@ object EnvironmentPlan {
                     ManualProfile(ManualProfileKind.DEPENDENCIES, repair + ManualStep("Пакеты Alpine", spec.command, 900) +
                         if (read) emptyList() else ToolchainDoctor.forPackages(packages).map { ManualStep("Проверить ${it.name}", it.command, it.seconds.toLong()) }), snapshot = !read))
             }
+            if (id == "environment.android_jdk") {
+                return Outcome.success(AutomationPlan(id, "Android-native JDK 21", ActionLevel.REVERSIBLE,
+                    ManualProfile(ManualProfileKind.DEPENDENCIES, listOf(
+                        ManualStep("Пакеты загрузки JDK", LinuxEnvironment.apk(LinuxEnvironment.Apk.ADD, AndroidJdk.packages).valueOrNull()!!.command, 900),
+                        ManualStep("Установить JDK Android ARM64 по SHA-256", AndroidJdk.install(), 1800),
+                        ManualStep("Проверить запуск Java и компилятора", AndroidJdk.probe(), 60))),
+                    estimatedBytes = 512L shl 20))
+            }
             if (id == "environment.android_sdk") {
                 val ndk = values["ndk"] == "yes"
                 val api = values["api"] ?: AndroidSdk.PLATFORM.substringAfter("android-")
@@ -39,6 +47,7 @@ object EnvironmentPlan {
                 return Outcome.success(AutomationPlan(id, "Android SDK", ActionLevel.REVERSIBLE,
                     ManualProfile(ManualProfileKind.DEPENDENCIES, listOf(
                         ManualStep("Пакеты для Android SDK", LinuxEnvironment.apk(LinuxEnvironment.Apk.ADD, AndroidSdk.packages).valueOrNull()!!.command, 900),
+                        ManualStep("Установить Android-native JDK 21", AndroidJdk.install(), 1800),
                         ManualStep("Проверить JVM для SDK", ToolchainDoctor.select("java", emptyList()).valueOrNull()!!.single().command, 30),
                         ManualStep("Установить закреплённые Android SDK tools", AndroidSdk.install(true, ndk, null, null, "platforms;android-$api", "build-tools;$tools"), 3600),
                         ManualStep("Проверить запрошенные Android SDK tools", AndroidSdk.probe("platforms;android-$api", "build-tools;$tools", ndk), 60))),

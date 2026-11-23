@@ -50,8 +50,24 @@ object LinuxSetup {
             loader = "$lib/libproot-loader.so",
             rootfs = rootfs.path,
             tmp = tmp.path,
-            binds = storageBinds(context, rootfs) + sharedBinds(rootfs),
+            binds = androidRuntimeBinds(rootfs) + storageBinds(context, rootfs) + sharedBinds(rootfs),
         )
+    }
+
+    /**
+     * Android-native JDK (D-222) использует системный Bionic linker64 и APEX.
+     * Это те же системные библиотеки, что видит приложение Android, а не
+     * каталоги Termux. Узлы /dev/binder и /sys по-прежнему не пробрасываем.
+     */
+    private fun androidRuntimeBinds(rootfs: File): List<ProotLayout.Bind> {
+        if (!rootfs.isDirectory) return emptyList()
+        return listOf("/system", "/apex", "/linkerconfig").mapNotNull { path ->
+            val source = File(path)
+            if (!source.isDirectory) return@mapNotNull null
+            val guest = File(rootfs, path.removePrefix("/"))
+            if (!guest.isDirectory && !guest.mkdirs()) return@mapNotNull null
+            ProotLayout.Bind(source.path, path)
+        }
     }
 
     /**
@@ -372,7 +388,11 @@ object LinuxSetup {
 
     private fun guestEnvironment(context: Context, base: Map<String, String>): Map<String, String> {
         val rootfs = File(context.filesDir, environment(context).rootfs)
-        return com.dpsmpx.dpai.ui.AndroidSdk.discoveredEnv(base) { File(rootfs, it.removePrefix("/")).isFile }
+        val jdk = com.dpsmpx.dpai.ui.AndroidJdk
+        val nativeDir = File(rootfs, jdk.HOME.removePrefix("/"))
+        val nativeJava = File(nativeDir, "bin/java")
+        val javaEnv = jdk.environment(base, nativeJava.isFile && nativeJava.canExecute(), File(nativeDir, jdk.INTERPRETER_MARKER).isFile)
+        return com.dpsmpx.dpai.ui.AndroidSdk.discoveredEnv(javaEnv) { File(rootfs, it.removePrefix("/")).isFile }
     }
 
     /** Завершить оболочку: процесс-лидер сеанса получает HUP, proot с `--kill-on-exit` уносит гостя с собой. */

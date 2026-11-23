@@ -15,7 +15,8 @@ object KotlinRuntime {
     private val coordinate = Regex("[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}:[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}:[A-Za-z0-9][A-Za-z0-9_.+-]{0,79}")
     val javaEnvironment = """
         if test -x /usr/lib/jvm/java-21-openjdk/bin/java; then
-            JAVA_HOME=/usr/lib/jvm/java-21-openjdk; export JAVA_HOME; PATH="${'$'}JAVA_HOME/bin:${'$'}PATH"; export PATH
+            if test -x ${AndroidJdk.HOME}/bin/java; then JAVA_HOME=${AndroidJdk.HOME}; else JAVA_HOME=/usr/lib/jvm/java-21-openjdk; fi
+            export JAVA_HOME; PATH="${'$'}JAVA_HOME/bin:${'$'}PATH"; export PATH
         fi
         JAVA_OPTS="${'$'}{JAVA_OPTS:--Xmx512m -Xms32m}"; export JAVA_OPTS
     """.trimIndent()

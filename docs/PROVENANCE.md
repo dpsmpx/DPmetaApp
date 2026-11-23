@@ -83,8 +83,24 @@ gradle/verification-metadata.xml и dpai/gradle/verification-metadata.xml
 ## Среды Python и Kotlin IDE (D-109)
 
 Среды скачиваются на target по подтверждению и не включаются в APK.
-Python 3/venv/pip и JDK 21 — пакеты установленной Alpine, лицензии и
-зависимости сохраняет apk. PyPI: https://pypi.org/simple/ ; известное
+Python 3/venv/pip — пакеты установленной Alpine, лицензии и
+зависимости сохраняет apk. Для общего Linux возможен Alpine JDK 21,
+но мобильный Android Gradle теперь использует отдельный OpenJDK 21
+под Android/Bionic (D-191), поскольку Alpine HotSpot не запускается
+на целевом телефоне даже при успешном RWX `mprotect` Python.
+Источник мобильного JDK: архив
+`jdk21-android-arm64.tar.gz` из
+https://github.com/MobileStudio-AndroidIDE/MobileStudio_AndroidIDE/releases/tag/jdk21-android-21.0.14,
+SHA-256 `8746f96a348c34b1e21508128478cb613de05f9d0aa9befad2967f83a9542680`.
+На машине разработки SHA совпала с GitHub release digest; ELF
+`aarch64`, interpreter `/system/bin/linker64`, Bionic/Android API 29,
+RUNPATH относительно бинарника. Это сторонняя сборка OpenJDK:
+проверка суммы подтверждает артефакт, не гарантирует его безопасность.
+Архив не включён в APK; скачивается по выбору автора, результат запуска
+проверяется в приложении. OpenJDK лицензируется GPL-2.0 с Classpath
+Exception; правовой статус дополнительных изменений автора релиза
+перед распространением бинарника отдельно требует проверки.
+PyPI: https://pypi.org/simple/ ; известное
 имя import сопоставляется с дистрибутивом, ручной ввод допускает точную
 версию. Код проектов туда не отправляется, системный Python не меняется.
 

@@ -63,7 +63,7 @@ object ToolchainDoctor {
         }
         val reason = when {
             selinux -> "JVM не стартует: Android SELinux untrusted_app запрещает исполняемую память (execmem)."
-            finding == "JVM_EXECUTABLE_MEMORY" -> "JVM не стартует: HotSpot получил отказ mprotect при выделении исполняемой памяти; проба memory не подтвердила источник отказа. -Xint не обходит первоначальную проверку HotSpot."
+            finding == "JVM_EXECUTABLE_MEMORY" -> "JVM не стартует: HotSpot получил отказ mprotect при выделении исполняемой памяти; проба memory не подтвердила источник отказа. -Xint не обходит первоначальную проверку Linux HotSpot. Установите Android-native JDK 21 (Bionic), а не openjdk21-jdk из Alpine, и повторите проверку."
             else -> "JVM не стартует: java -version завершился с ошибкой."
         }
         return Outcome.failure(DiagCode.EXECUTION_HOST_UNAVAILABLE,

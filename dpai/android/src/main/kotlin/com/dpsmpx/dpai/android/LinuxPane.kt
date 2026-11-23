@@ -134,6 +134,20 @@ fun LinuxScreen(onBack: () -> Unit, controller: Controller? = null, model: DemoM
                             if (it.ok) "tmux: установлен" else "apk завершился с кодом ${it.exitCode} — причина в выводе ниже"
                         }
                     }) { Text("Поставить tmux") }
+                    // Android-native JDK (D-222): отдельный Bionic/OpenJDK, не Alpine HotSpot под musl.
+                    TextButton(enabled = !running, onClick = {
+                        run("Android-native JDK 21", {
+                            (StorageSpace.check(context, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.DOWNLOAD, 512L shl 20, "Android JDK") as? Outcome.Failure)?.let { return@run it }
+                            when (val packages = LinuxEnvironment.apk(LinuxEnvironment.Apk.ADD, com.dpsmpx.dpai.ui.AndroidJdk.packages)) {
+                                is Outcome.Failure -> packages
+                                is Outcome.Success -> LinuxSetup.runSteps(context, listOf(packages.value,
+                                    com.dpsmpx.dpai.execution.process.ProcessSpec(com.dpsmpx.dpai.ui.AndroidJdk.install())))
+                            }
+                        }) {
+                            if (it.ok && it.stdout.any { line -> "DPAI_ANDROID_JDK_OK" in line }) "Android JDK: установлен и запущен внутри DPmetaApp"
+                            else "JDK не готов, код ${it.exitCode}; сохраните вывод диагностики ниже"
+                        }
+                    }) { Text("Установить Android-native JDK 21") }
                     // Android SDK по желанию (D-185): официальное по суммам, сборки сообщества — по сумме автора.
                     TextButton(enabled = !running, onClick = { sdkOpen = true }) { Text("Android SDK…") }
                 }
@@ -143,7 +157,9 @@ fun LinuxScreen(onBack: () -> Unit, controller: Controller? = null, model: DemoM
                         (StorageSpace.check(context, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.DOWNLOAD, AndroidSdk.spaceBytes(ndk), "Android SDK") as? Outcome.Failure)?.let { return@run it }
                         when (val first = LinuxEnvironment.apk(LinuxEnvironment.Apk.ADD, AndroidSdk.packages)) {
                             is Outcome.Failure -> first
-                            is Outcome.Success -> LinuxSetup.runSteps(context, listOf(first.value, com.dpsmpx.dpai.execution.process.ProcessSpec(AndroidSdk.install(licenses, ndk, aapt2, ndkCommunity))))
+                            is Outcome.Success -> LinuxSetup.runSteps(context, listOf(first.value,
+                                com.dpsmpx.dpai.execution.process.ProcessSpec(com.dpsmpx.dpai.ui.AndroidJdk.install()),
+                                com.dpsmpx.dpai.execution.process.ProcessSpec(AndroidSdk.install(licenses, ndk, aapt2, ndkCommunity))))
                         }
                     }) {
                         if (it.ok && it.stdout.any { l -> "DPAI_ANDROID_SDK_OK" in l }) "Android SDK: ${AndroidSdk.HOME}; в профиль сборки — окружение ANDROID_HOME=${AndroidSdk.HOME}"

@@ -30,8 +30,8 @@ object AndroidSdk {
     /** Папка SDK в госте; её же указывают в окружении профиля сборки: ANDROID_HOME. */
     const val HOME = "/root/android-sdk"
 
-    /** Пакеты Alpine: JDK для sdkmanager и Gradle, загрузка и распаковка. */
-    val packages = listOf("openjdk21-jdk", "bash", "curl", "unzip", "xz", "ca-certificates")
+    /** Пакеты Alpine для загрузки/распаковки; JVM — отдельный Android-native JDK (D-222). */
+    val packages = listOf("bash", "curl", "unzip", "xz", "ca-certificates", "tar")
 
     /** Сколько места нужно: SDK — около 1,5 ГБ, с NDK — около 4 ГБ. */
     fun spaceBytes(ndk: Boolean): Long = if (ndk) 4L shl 30 else 3L shl 29
