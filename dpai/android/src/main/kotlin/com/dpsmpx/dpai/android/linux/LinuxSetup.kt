@@ -60,7 +60,9 @@ object LinuxSetup {
         // layout() is consulted before installation too: it MUST NOT create a
         // partial rootfs, otherwise RootfsInstaller can mistake it for Linux.
         if (!rootfs.isDirectory) return emptyList()
-        return listOf("/system", "/apex", "/linkerconfig").mapNotNull { path ->
+        // Termux's own termux-chroot binds /vendor as well: certain Android
+        // devices resolve vendor runtime libraries from there.
+        return listOf("/system", "/apex", "/vendor", "/linkerconfig").mapNotNull { path ->
             if (!File(path).isDirectory) return@mapNotNull null
             val mountPoint = File(rootfs, path.removePrefix("/"))
             if (!mountPoint.isDirectory && !mountPoint.mkdirs()) return@mapNotNull null
