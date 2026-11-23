@@ -37,7 +37,7 @@ object ToolchainDoctor {
     }
 
     /** Встроенная проверка перед Gradle в Linux приложения: JVM обязана реально стартовать. */
-    fun buildJvmPreflight(host: ProcessHost, cancelled: () -> Boolean): Outcome<Unit> {
+    fun buildJvmPreflight(host: ProcessHost, installedTargetSdk: Int? = null, cancelled: () -> Boolean): Outcome<Unit> {
         val result = when (val probe = run(host, definitions.filter { it.name == "java" }, "/", cancelled)) {
             is Outcome.Failure -> return probe
             is Outcome.Success -> probe.value
@@ -47,20 +47,27 @@ object ToolchainDoctor {
         if (java["working"] == JsonBool(true)) return Outcome.success(Unit)
         val message = (java["stderr"] as? JsonString)?.value.orEmpty().ifBlank { (java["stdout"] as? JsonString)?.value.orEmpty() }.take(400)
         val finding = (java["finding"] as? JsonString)?.value
-        val selinux = if (finding == "JVM_EXECUTABLE_MEMORY") {
+        val memoryReport = if (finding == "JVM_EXECUTABLE_MEMORY") {
             when (val memory = run(host, definitions.filter { it.name == "memory" }, "/", cancelled)) {
                 is Outcome.Failure -> return memory
-                is Outcome.Success -> ((((memory.value["probes"] as? JsonArray)?.items?.firstOrNull() as? JsonObject)?.get("finding")) as? JsonString)?.value == "ANDROID_SELINUX_EXECMEM"
+                is Outcome.Success -> (memory.value["probes"] as? JsonArray)?.items?.firstOrNull() as? JsonObject
             }
-        } else false
+        } else null
         if (cancelled()) return Outcome.failure(DiagCode.CANCELLED_BY_USER, "проверка JVM отменена")
+        val selinux = (memoryReport?.get("finding") as? JsonString)?.value == "ANDROID_SELINUX_EXECMEM"
+        val memoryOutput = (memoryReport?.get("stdout") as? JsonString)?.value?.take(300).orEmpty()
+        val targetHint = when {
+            installedTargetSdk == null -> "Проверьте targetSdk установленного APK, а не исходников."
+            installedTargetSdk > 28 -> "Установленное приложение имеет targetSdk=$installedTargetSdk: обновление Git-исходников не меняет APK. Установите основной APK с targetSdk=28, подписанный совместимым ключом, и повторите пробы."
+            else -> "Установленное приложение имеет targetSdk=$installedTargetSdk (режим совместимости); это само по себе не снимает запреты mprotect/execmem."
+        }
         val reason = when {
             selinux -> "JVM не стартует: Android SELinux untrusted_app запрещает исполняемую память (execmem)."
-            finding == "JVM_EXECUTABLE_MEMORY" -> "JVM не стартует: отказ при выделении исполняемой памяти; причину уточните пробой memory."
+            finding == "JVM_EXECUTABLE_MEMORY" -> "JVM не стартует: HotSpot получил отказ mprotect при выделении исполняемой памяти; проба memory не подтвердила источник отказа. -Xint не обходит первоначальную проверку HotSpot."
             else -> "JVM не стартует: java -version завершился с ошибкой."
         }
         return Outcome.failure(DiagCode.EXECUTION_HOST_UNAVAILABLE,
-            "PRECHECK_FAILED: $reason Gradle не запускался; это не конфликт Git. Для самостоятельной сборки на телефоне нужен APK DPmetaApp в режиме совместимости (targetSdk 28), затем работающий JDK 21 и Android SDK в Linux приложения. Альтернатива — SSH-target. Вывод java: $message")
+            "PRECHECK_FAILED: $reason Gradle не запускался; это не конфликт Git. $targetHint Для самостоятельной сборки нужен запускающийся JDK 21 и Android SDK в Linux приложения. Альтернатива — SSH-target. Проба памяти: $memoryOutput. Вывод java: $message")
     }
 
     private val cpp = """

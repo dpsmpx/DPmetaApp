@@ -148,14 +148,15 @@ class AnthropicToolsTest {
     }
 
     @Test
-    fun roundsAreLimited() {
-        val t = FakeTransport { FakeReply(200, toolTurn(listOf("{\"project\":\"Alpha\"}"))) }
+    fun continuesAfterOldRoundLimitUntilModelFinishes() {
+        var round = 0
+        val t = FakeTransport { FakeReply(200, if (round++ < 20) toolTurn(listOf("{\"project\":\"Alpha\"}")) else answer) }
         var ran = 0
         val reply = chat(t, { ran++; ToolResult("x") }).valueOrNull()!!
-        assertEquals(AnthropicProvider.MAX_TOOL_ROUNDS, ran)
-        assertEquals(AnthropicProvider.MAX_TOOL_ROUNDS + 1, t.calls.size)
-        assertEquals(StopKind.OTHER, reply.stop)
-        assertEquals(AnthropicProvider.STOP_TOOL_ROUNDS, reply.stopReason)
+        assertEquals(20, ran)
+        assertEquals(21, t.calls.size)
+        assertEquals(StopKind.END, reply.stop)
+        assertEquals("end_turn", reply.stopReason)
     }
 
     @Test

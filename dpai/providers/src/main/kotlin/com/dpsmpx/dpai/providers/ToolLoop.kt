@@ -5,9 +5,8 @@ import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonValue
 
-/** Ограниченный цикл API-инструментов (D-214); владение проектом остаётся у вызывающего. */
+/** Цикл API-инструментов (D-221): до завершения ответа или явной отмены, без счётчика раундов. */
 internal object ToolLoop {
-    const val MAX_ROUNDS = 16
     const val MAX_CALLS = 64
     const val MAX_RESULT = 32_768
     private val NAME = Regex("[A-Za-z0-9_-]{1,64}")
@@ -24,7 +23,7 @@ internal object ToolLoop {
         val text = StringBuilder()
         var input: Long? = 0
         var output: Long? = 0
-        repeat(MAX_ROUNDS + 1) { number ->
+        while (true) {
             if (cancel.cancelled) return cancelled()
             val round = when (val r = turn(messages)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
             if (cancel.cancelled) return cancelled()
@@ -35,7 +34,6 @@ internal object ToolLoop {
             input = input?.let { a -> round.input?.takeIf { it >= 0 && a <= Long.MAX_VALUE - it }?.let { a + it } }
             output = output?.let { a -> round.output?.takeIf { it >= 0 && a <= Long.MAX_VALUE - it }?.let { a + it } }
             if (!round.useTools || round.calls.isEmpty()) return Outcome.success(ChatReply(text.toString(), round.stop, round.reason, ChatUsage.of(input, output)))
-            if (number == MAX_ROUNDS) return Outcome.success(ChatReply(text.toString(), StopKind.OTHER, "tool_round_limit", ChatUsage.of(input, output)))
             // Весь ответ проверяется до первого побочного эффекта; id однозначен внутри этого ответа.
             if (round.calls.size > MAX_CALLS || round.calls.any { it.id.isBlank() || it.id.length > 256 } || round.calls.map { it.id }.toSet().size != round.calls.size) {
                 return Outcome.failure(DiagCode.PROVIDER_REPLY_INVALID, "неверные или повторные вызовы инструментов")
@@ -49,7 +47,6 @@ internal object ToolLoop {
             messages += round.echo
             messages += results(values)
         }
-        return Outcome.failure(DiagCode.INTERNAL_ERROR, "цикл инструментов не завершился")
     }
 
     private fun cancelled() = Outcome.failure(DiagCode.CANCELLED_BY_USER, "ход API прерван")

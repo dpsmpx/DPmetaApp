@@ -694,7 +694,7 @@ class DemoModel(
             if (target.inApp && com.dpsmpx.dpai.ui.ToolchainDoctor.needsJvm(resolved)) {
                 val host = com.dpsmpx.dpai.android.linux.LinuxSetup.guestHost(app)
                     ?: return@start LongJobs.Done("PRECHECK_FAILED: Linux приложения недоступен; BUILD не запускался", failed = true)
-                when (val java = com.dpsmpx.dpai.ui.ToolchainDoctor.buildJvmPreflight(host, cancelled)) {
+                when (val java = com.dpsmpx.dpai.ui.ToolchainDoctor.buildJvmPreflight(host, app.applicationInfo.targetSdkVersion, cancelled)) {
                     is Outcome.Failure -> return@start LongJobs.Done(java.diagnostics.first().message, failed = true)
                     is Outcome.Success -> Unit
                 }

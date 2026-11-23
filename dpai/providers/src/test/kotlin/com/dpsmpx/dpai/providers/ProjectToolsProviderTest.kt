@@ -84,6 +84,20 @@ class ProjectToolsProviderTest {
         assertEquals(listOf("read_file", "write_file"), invoked)
     }
 
+    @Test fun compatibleProviderContinuesPastSixteenToolRounds() {
+        var round = 0
+        val t = FakeTransport { FakeReply(200, if (round++ < 24) {
+            openAi("""{"role":"assistant","tool_calls":[${call("id-$round", "read_file") }]}""", "tool_calls")
+        } else openAi("""{"role":"assistant","content":"Готово"}""", "stop")) }
+        val p = Providers.of(profile(ProviderKind.OPENAI_COMPATIBLE, "https://api.deepseek.com/v1"), null, t) as ToolChat
+        var executed = 0
+        val reply = p.chatWithTools(request, tools, Cancel(), {}) { executed++; ToolResult("ok") }.valueOrNull()!!
+        assertEquals(24, executed)
+        assertEquals(25, t.calls.size)
+        assertEquals("Готово", reply.text)
+        assertEquals(StopKind.END, reply.stop)
+    }
+
     @Test fun truncatedReplyNeverExecutesToolsAndUnknownToolNeverReachesExecutor() {
         for (reason in listOf("length", "content_filter")) {
             val t = FakeTransport { FakeReply(200, openAi("""{"role":"assistant","tool_calls":[${call("a", "write_file")}]}""", reason)) }

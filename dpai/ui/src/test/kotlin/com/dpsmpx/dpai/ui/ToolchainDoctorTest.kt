@@ -70,6 +70,31 @@ class ToolchainDoctorTest {
         assertIs<Outcome.Success<Unit>>(ToolchainDoctor.buildJvmPreflight(host) { false })
     }
 
+    @Test fun preflightDistinguishesInstalledApkFromGitSourcesAndReportsConflictingMemoryProbe() {
+        val host = object : ProcessHost {
+            override fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit): Outcome<RunningProcess> {
+                val java = spec.command.first() == "java"
+                onOutput(OutputLine(if (java) OutputStream.STDERR else OutputStream.STDOUT,
+                    if (java) "Failed to mark memory page as executable" else
+                        """{"pageSize":4096,"rwxErrno":0,"rxErrno":0,"selinuxContext":"u:r:untrusted_app:s0:c84"}"""))
+                return Outcome.success(object : RunningProcess {
+                    override val pid: Long? = null
+                    override val isAlive = false
+                    override fun awaitExit(timeout: Duration) = if (java) 1 else 0
+                    override fun stop(grace: Duration) = StopReport(1, false, emptyList())
+                })
+            }
+        }
+        val oldApk = assertIs<Outcome.Failure>(ToolchainDoctor.buildJvmPreflight(host, 36) { false }).diagnostics.first().message
+        assertTrue(oldApk.contains("targetSdk=36"))
+        assertTrue(oldApk.contains("обновление Git-исходников не меняет APK"))
+        assertTrue(oldApk.contains("\"rwxErrno\":0"))
+        val compatibleApk = assertIs<Outcome.Failure>(ToolchainDoctor.buildJvmPreflight(host, 28) { false }).diagnostics.first().message
+        assertTrue(compatibleApk.contains("targetSdk=28"))
+        assertTrue(compatibleApk.contains("не снимает запреты"))
+        assertTrue(compatibleApk.contains("проба memory не подтвердила"))
+    }
+
     @Test fun sshBuildDoctorUsesOnlyFixedReadOnlyCommandsWithoutRemoteWorkDir() {
         val seen = arrayListOf<List<String>>()
         val host = object : ProcessHost {

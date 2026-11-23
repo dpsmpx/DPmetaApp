@@ -65,7 +65,7 @@ class AnthropicProvider(profile: ApiProfile, key: Secret?, transport: Transport)
      * исполняется [run] и итоги уходят обратно одним сообщением. Ответ модели возвращается
      * ей как пришёл — с блоками рассуждений и их подписями: без них следующий запрос
      * отвергается. Вызовы не исполняются, если ответ оборван пределом или отказом. Расход —
-     * сумма по запросам хода. Не больше [MAX_TOOL_ROUNDS] обращений к данным за ответ.
+     * сумма по запросам хода. Ответ продолжается до завершения моделью или отмены (D-221).
      */
     override fun chatWithTools(request: ChatRequest, tools: List<ToolSpec>, cancel: Cancel, onText: (String) -> Unit, run: (ToolCall) -> ToolResult): Outcome<ChatReply> {
         keyMissing()?.let { return it }
@@ -74,7 +74,8 @@ class AnthropicProvider(profile: ApiProfile, key: Secret?, transport: Transport)
         var input: Long? = null
         var output: Long? = null
         var newRound = false
-        repeat(MAX_TOOL_ROUNDS + 1) { round ->
+        while (true) {
+            if (cancel.cancelled) return Outcome.failure(DiagCode.CANCELLED_BY_USER, "ответ прерван", subject)
             val t = when (val r = turn(request, JsonArray(messages), tools, cancel) { piece ->
                 // Текст следующего запроса хода — с новой строки, а не вплотную к прежнему.
                 if (newRound && text.isNotEmpty() && !text.endsWith("\n")) {
@@ -94,7 +95,6 @@ class AnthropicProvider(profile: ApiProfile, key: Secret?, transport: Transport)
             fun reply(stop: String?) = Outcome.success(ChatReply(text.toString(), stopKind(stop), stop, ChatUsage.of(input, output)))
             val calls = t.blocks.filter { it.type == "tool_use" }
             if (t.stop != "tool_use" || calls.isEmpty()) return reply(t.stop)
-            if (round == MAX_TOOL_ROUNDS) return reply(STOP_TOOL_ROUNDS)
             if (t.blocks.any { it.opaque }) {
                 return Outcome.failure(DiagCode.PROVIDER_REPLY_INVALID, "в ответе с инструментами — блок неизвестного вида: продолжить нельзя", subject)
             }
@@ -124,7 +124,6 @@ class AnthropicProvider(profile: ApiProfile, key: Secret?, transport: Transport)
             messages += message(ChatRole.ASSISTANT, JsonArray(t.blocks.mapNotNull { it.echo() }))
             messages += message(ChatRole.USER, JsonArray(results))
         }
-        return Outcome.failure(DiagCode.INTERNAL_ERROR, "ход с инструментами не завершился", subject)
     }
 
     private fun message(role: ChatRole, content: JsonValue) =
@@ -255,10 +254,6 @@ class AnthropicProvider(profile: ApiProfile, key: Secret?, transport: Transport)
         const val DEFAULT_MAX_TOKENS = 16_000
 
         private const val MAX_PAGES = 10
-
-        /** Обращений к данным за один ответ (D-118): дальше ход останавливается с [STOP_TOOL_ROUNDS]. */
-        const val MAX_TOOL_ROUNDS = 8
-        const val STOP_TOOL_ROUNDS = "tool_rounds_limit"
 
         /** Пределы текста инструмента для модели и возвращаемого ей неразобранного входа. */
         const val MAX_TOOL_RESULT = 60_000
