@@ -37,14 +37,27 @@ object ToolchainDoctor {
     }
 
     /** Встроенная проверка перед Gradle в Linux приложения: JVM обязана реально стартовать. */
-    fun buildJvmPreflight(host: ProcessHost, installedTargetSdk: Int? = null, cancelled: () -> Boolean): Outcome<Unit> {
-        val result = when (val probe = run(host, definitions.filter { it.name == "java" }, "/", cancelled)) {
+    fun buildJvmPreflight(host: ProcessHost, installedTargetSdk: Int? = null, cancelled: () -> Boolean,
+                          nativeAndroid: Boolean = false): Outcome<Unit> {
+        val javaName = if (nativeAndroid) "android_java" else "java"
+        val result = when (val probe = run(host, definitions.filter { it.name == javaName }, "/", cancelled)) {
             is Outcome.Failure -> return probe
             is Outcome.Success -> probe.value
         }
         val java = (result["probes"] as? JsonArray)?.items?.firstOrNull() as? JsonObject
             ?: return Outcome.failure(DiagCode.TARGET_CHECK_FAILED, "Проверка JVM не вернула результат; BUILD не запускался")
-        if (java["working"] == JsonBool(true)) return Outcome.success(Unit)
+        if (java["working"] == JsonBool(true)) {
+            if (nativeAndroid) {
+                val javac = when (val probe = run(host, definitions.filter { it.name == "android_javac" }, "/", cancelled)) {
+                    is Outcome.Failure -> return probe
+                    is Outcome.Success -> (probe.value["probes"] as? JsonArray)?.items?.firstOrNull() as? JsonObject
+                }
+                if (javac?.get("working") != JsonBool(true))
+                    return Outcome.failure(DiagCode.EXECUTION_HOST_UNAVAILABLE,
+                        "PRECHECK_FAILED: Android/Bionic java запущена, но javac не запускается. Повторите установку Android SDK/JDK; Gradle не запускался.")
+            }
+            return Outcome.success(Unit)
+        }
         val message = (java["stderr"] as? JsonString)?.value.orEmpty().ifBlank { (java["stdout"] as? JsonString)?.value.orEmpty() }.take(400)
         val finding = (java["finding"] as? JsonString)?.value
         val memoryReport = if (finding == "JVM_EXECUTABLE_MEMORY") {
@@ -62,6 +75,7 @@ object ToolchainDoctor {
             else -> "Установленное приложение имеет targetSdk=$installedTargetSdk (режим совместимости); это само по себе не снимает запреты mprotect/execmem."
         }
         val reason = when {
+            nativeAndroid -> "Нативный JDK Android/Bionic не запустился. Проверьте установку через Android SDK и диагностику android_java; Alpine JDK не является заменой."
             selinux -> "JVM не стартует: Android SELinux untrusted_app запрещает исполняемую память (execmem)."
             finding == "JVM_EXECUTABLE_MEMORY" -> "JVM не стартует: HotSpot получил отказ mprotect при выделении исполняемой памяти; проба memory не подтвердила источник отказа. -Xint не обходит первоначальную проверку HotSpot."
             else -> "JVM не стартует: java -version завершился с ошибкой."
@@ -88,6 +102,8 @@ object ToolchainDoctor {
     """.trimIndent()
     private val definitions = listOf(
         Probe("java", listOf("java", "-Xmx128m", "-version")),
+        Probe("android_java", listOf(AndroidNativeJdk.JAVA, "-Xmx128m", "-version")),
+        Probe("android_javac", listOf(AndroidNativeJdk.JAVAC, "-version")),
         Probe("java_debug", listOf("java", "-Xmx128m", "-Xlog:os=debug", "-version")),
         Probe("memory", listOf("python3", "-I", "-B", "-c", """
             import ctypes, mmap, os, json, sys

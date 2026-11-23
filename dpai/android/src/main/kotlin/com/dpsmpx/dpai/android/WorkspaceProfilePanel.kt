@@ -146,8 +146,8 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
         if (view.target?.inApp == true && kind in setOf(ManualProfileKind.CHECK, ManualProfileKind.BUILD)) {
             val compatible = context.applicationInfo.targetSdkVersion <= 28
             Text("APK внутри приложения: ${if (compatible) "режим совместимости с Termux включён (targetSdk 28)" else "этот APK имеет targetSdk 29+ — Android может запретить запуск JVM"}. " +
-                "В Linux установите openjdk21-jdk (Пакеты), затем «Android SDK…» (aapt2/zipalign/aidl ARM64 ставятся автоматически); выберите шаблон «APK Android». " +
-                "Перед Gradle приложение проверяет реальный старт JVM. Нативные проекты с C/C++ требуют также ARM64 NDK. SSH-target — запасной вариант.",
+                "В Linux откройте «Android SDK…»: приложение отдельно установит нативный Termux/Bionic JDK 21, SDK и инструменты ARM64 (aapt2/zipalign/aidl). Затем выберите шаблон «APK Android». " +
+                "Alpine openjdk21-jdk не заменяет нативный JDK. Перед Gradle приложение проверяет java и javac. Проекты с C/C++ требуют также ARM64 NDK.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text("В командах и окружении: \${PROJECT}, \${ROOT}, \${TREE}, \${BRANCH}, \${TARGET} и свои \${ИМЯ}; сам знак \${ — \$\${.",

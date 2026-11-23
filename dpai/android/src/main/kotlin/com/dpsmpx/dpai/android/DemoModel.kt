@@ -689,16 +689,6 @@ class DemoModel(
                 is Outcome.Success -> r.value
             }
             if (choices != null && !environment) controller.manualProfiles.saveChoices(p, profile.kind, choices)
-            // Пакет openjdk в Alpine не означает работающую JVM: SELinux может запретить execmem (D-216).
-            // Штатные Gradle/JVM-шаги не запускаем до подтверждения, что `java -version` реально работает.
-            if (target.inApp && com.dpsmpx.dpai.ui.ToolchainDoctor.needsJvm(resolved)) {
-                val host = com.dpsmpx.dpai.android.linux.LinuxSetup.guestHost(app)
-                    ?: return@start LongJobs.Done("PRECHECK_FAILED: Linux приложения недоступен; BUILD не запускался", failed = true)
-                when (val java = com.dpsmpx.dpai.ui.ToolchainDoctor.buildJvmPreflight(host, app.applicationInfo.targetSdkVersion, cancelled)) {
-                    is Outcome.Failure -> return@start LongJobs.Done(java.diagnostics.first().message, failed = true)
-                    is Outcome.Success -> Unit
-                }
-            }
             // Что профилю нужно (D-186): в Linux приложения — проверка до запуска и ANDROID_HOME в окружение шагов;
             // на ПК-target SDK — его собственный.
             val ready = if (target.inApp && resolved.needs.isNotEmpty()) {
@@ -710,6 +700,18 @@ class DemoModel(
                 resolved.copy(env = com.dpsmpx.dpai.ui.AndroidSdk.env(resolved.needs, resolved.env)).takeIf { it.valid }
                     ?: return@start LongJobs.Done("окружение шагов переполнено: добавьте ANDROID_HOME в профиль сами", failed = true)
             } else resolved
+            // Проверка наличия SDK идёт ДО JVM: иначе отсутствующий SDK маскируется
+            // отказом Alpine HotSpot и человек бесконечно повторяет apk add openjdk.
+            // Для Android/Gradle используется только Bionic JDK, как у Termux.
+            if (target.inApp && com.dpsmpx.dpai.ui.ToolchainDoctor.needsJvm(ready)) {
+                val host = com.dpsmpx.dpai.android.linux.LinuxSetup.guestHost(app)
+                    ?: return@start LongJobs.Done("PRECHECK_FAILED: Linux приложения недоступен; BUILD не запускался", failed = true)
+                val androidBuild = ready.needs.any { it == com.dpsmpx.dpai.ui.ManualNeed.ANDROID_SDK || it == com.dpsmpx.dpai.ui.ManualNeed.ANDROID_NDK }
+                when (val java = com.dpsmpx.dpai.ui.ToolchainDoctor.buildJvmPreflight(host, app.applicationInfo.targetSdkVersion, cancelled, nativeAndroid = androidBuild)) {
+                    is Outcome.Failure -> return@start LongJobs.Done(java.diagnostics.first().message, failed = true)
+                    is Outcome.Success -> Unit
+                }
+            }
             // Сборка в Linux приложения пишет на диск телефона — под защитой места (DPmetaApp:D-113); на ПК-target место — его.
             if (profile.kind != com.dpsmpx.dpai.ui.ManualProfileKind.CHECK && target.inApp) {
                 (StorageSpace.check(app, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.BUILD, null, "ручная сборка проекта") as? Outcome.Failure)

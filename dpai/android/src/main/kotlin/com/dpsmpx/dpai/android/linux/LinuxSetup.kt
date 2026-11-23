@@ -50,9 +50,18 @@ object LinuxSetup {
             loader = "$lib/libproot-loader.so",
             rootfs = rootfs.path,
             tmp = tmp.path,
-            binds = storageBinds(context, rootfs) + sharedBinds(rootfs),
+            // Bionic tools (the same native ABI used by Termux) need the Android
+            // dynamic linker and APEX libraries visible *inside* PRoot.
+            binds = nativeSystemBinds(rootfs) + storageBinds(context, rootfs) + sharedBinds(rootfs),
         )
     }
+
+    private fun nativeSystemBinds(rootfs: File): List<ProotLayout.Bind> = listOf("/system", "/apex", "/linkerconfig")
+        .filter { File(it).isDirectory }
+        .map { path ->
+            File(rootfs, path.removePrefix("/")).mkdirs()
+            ProotLayout.Bind(path, path)
+        }
 
     /**
      * Каталоги приложения, которые оболочка показывает гостю (`DPmetaApp:D-70`:

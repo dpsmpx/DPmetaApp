@@ -45,8 +45,11 @@ class ManualProfileNeedsTest {
         assertEquals(emptyList(), AndroidSdk.missing(setOf(ManualNeed.ANDROID_NDK), { it in sdk }, true))
         assertTrue("Android SDK…" in AndroidSdk.hint(listOf("NDK")))
         // ANDROID_HOME — сам, если профиль не задал свой.
-        assertEquals(listOf("ANDROID_HOME" to AndroidSdk.HOME, "ANDROID_SDK_ROOT" to AndroidSdk.HOME), AndroidSdk.env(setOf(ManualNeed.ANDROID_SDK), emptyList()))
-        assertEquals(listOf("ANDROID_HOME" to "/opt/sdk", "ANDROID_SDK_ROOT" to AndroidSdk.HOME), AndroidSdk.env(setOf(ManualNeed.ANDROID_SDK), listOf("ANDROID_HOME" to "/opt/sdk")))
+        assertEquals(AndroidSdk.HOME, AndroidSdk.env(setOf(ManualNeed.ANDROID_SDK), emptyList()).toMap()["ANDROID_HOME"])
+        assertEquals(AndroidSdk.HOME, AndroidSdk.env(setOf(ManualNeed.ANDROID_SDK), emptyList()).toMap()["ANDROID_SDK_ROOT"])
+        assertEquals(AndroidNativeJdk.JAVA_HOME, AndroidSdk.env(setOf(ManualNeed.ANDROID_SDK), emptyList()).toMap()["JAVA_HOME"])
+        assertTrue(AndroidSdk.env(setOf(ManualNeed.ANDROID_SDK), emptyList()).toMap()["PATH"]!!.startsWith(AndroidNativeJdk.JAVA_HOME))
+        assertEquals("/opt/sdk", AndroidSdk.env(setOf(ManualNeed.ANDROID_SDK), listOf("ANDROID_HOME" to "/opt/sdk")).toMap()["ANDROID_HOME"])
         assertEquals(listOf("A" to "1"), AndroidSdk.env(emptySet(), listOf("A" to "1")))
     }
 }

@@ -30,11 +30,11 @@ object AndroidSdk {
     /** Папка SDK в госте; её же указывают в окружении профиля сборки: ANDROID_HOME. */
     const val HOME = "/root/android-sdk"
 
-    /** Пакеты Alpine: JDK для sdkmanager и Gradle, загрузка и распаковка. */
-    val packages = listOf("openjdk21-jdk", "bash", "curl", "unzip", "xz", "ca-certificates")
+    /** Alpine hosts the installer only; Java is Android/Bionic (Termux), not Alpine/musl. */
+    val packages = listOf("bash", "curl", "unzip", "xz", "ca-certificates")
 
-    /** Сколько места нужно: SDK — около 1,5 ГБ, с NDK — около 4 ГБ. */
-    fun spaceBytes(ndk: Boolean): Long = if (ndk) 4L shl 30 else 3L shl 29
+    /** Reserve extra space for the independent Bionic JDK and its Termux dependencies. */
+    fun spaceBytes(ndk: Boolean): Long = if (ndk) 6L shl 30 else 4L shl 30
 
     /**
      * Чего из [needs] профиля нет в госте (D-186): [exists] — есть ли путь гостя, [hasNdk] —
@@ -49,9 +49,10 @@ object AndroidSdk {
 
     /** Окружение шагов профиля, которому нужен SDK (D-186): ANDROID_HOME и ANDROID_SDK_ROOT, если профиль не задал свои. */
     fun env(needs: Set<ManualNeed>, env: List<Pair<String, String>>): List<Pair<String, String>> {
-        if (needs.isEmpty()) return env
+        if (ManualNeed.ANDROID_SDK !in needs && ManualNeed.ANDROID_NDK !in needs) return env
         val names = env.map { it.first }.toSet()
-        return env + listOf("ANDROID_HOME" to HOME, "ANDROID_SDK_ROOT" to HOME).filter { it.first !in names }
+        return env + (listOf("ANDROID_HOME" to HOME, "ANDROID_SDK_ROOT" to HOME) +
+            AndroidNativeJdk.buildEnvironment.toList()).filter { it.first !in names }
     }
 
     /** Подсказка экрана для [missing]. */
@@ -84,8 +85,10 @@ object AndroidSdk {
         // Адрес и сумма идут в скрипт: проверка — и здесь, конструктор Community открыт (проверка PR #190).
         for (c in listOfNotNull(aapt2, ndkCommunity)) require(URL.matches(c.url) && SHA.matches(c.sha256)) { "сборка сообщества — только через community()" }
         val script = buildString {
-            appendLine(KotlinRuntime.javaEnvironment)
             appendLine("set -e")
+            appendLine("test -x '${AndroidNativeJdk.JAVA}' || { echo 'DPAI_NATIVE_JDK_MISSING: установите Android/Bionic JDK через Android SDK'; exit 1; }")
+            appendLine("JAVA_HOME='${AndroidNativeJdk.JAVA_HOME}'; export JAVA_HOME")
+            appendLine("PATH='${AndroidNativeJdk.JAVA_HOME}/bin:${AndroidNativeJdk.PREFIX}/bin':\${PATH}; export PATH")
             appendLine("SDK='$HOME'")
             appendLine("mkdir -p \"\$SDK\"")
             appendLine("ARCH=\$(uname -m)")
@@ -151,6 +154,8 @@ object AndroidSdk {
         requireVersions(platform, buildTools)
         return listOf("/bin/sh", "-c", buildString {
             appendLine("set -eu")
+            appendLine("JAVA_HOME='${AndroidNativeJdk.JAVA_HOME}'; export JAVA_HOME")
+            appendLine("PATH='${AndroidNativeJdk.JAVA_HOME}/bin:${AndroidNativeJdk.PREFIX}/bin':\${PATH}; export PATH")
             appendLine("SDK=\${ANDROID_HOME:-'$HOME'}")
             appendLine("test -f \"\$SDK/platforms/${platform.substringAfter(';')}/android.jar\" || { echo 'DPAI_ANDROID_PLATFORM_MISSING: $platform'; exit 1; }")
             appendLine("test -f \"\$SDK/build-tools/${buildTools.substringAfter(';')}/source.properties\" || { echo 'DPAI_ANDROID_BUILD_TOOLS_MISSING: $buildTools'; exit 1; }")

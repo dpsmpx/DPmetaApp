@@ -39,7 +39,9 @@ object EnvironmentPlan {
                 return Outcome.success(AutomationPlan(id, "Android SDK", ActionLevel.REVERSIBLE,
                     ManualProfile(ManualProfileKind.DEPENDENCIES, listOf(
                         ManualStep("Пакеты для Android SDK", LinuxEnvironment.apk(LinuxEnvironment.Apk.ADD, AndroidSdk.packages).valueOrNull()!!.command, 900),
-                        ManualStep("Проверить JVM для SDK", ToolchainDoctor.select("java", emptyList()).valueOrNull()!!.single().command, 30),
+                        ManualStep("Установить нативный JDK (Termux/Bionic)", AndroidNativeJdk.install(), 3600),
+                        ManualStep("Проверить Android JVM для SDK", ToolchainDoctor.select("android_java", emptyList()).valueOrNull()!!.single().command, 30),
+                        ManualStep("Проверить Android javac", ToolchainDoctor.select("android_javac", emptyList()).valueOrNull()!!.single().command, 30),
                         ManualStep("Установить закреплённые Android SDK tools", AndroidSdk.install(true, ndk, null, null, "platforms;android-$api", "build-tools;$tools"), 3600),
                         ManualStep("Проверить запрошенные Android SDK tools", AndroidSdk.probe("platforms;android-$api", "build-tools;$tools", ndk), 60))),
                     sdkLicense = true, estimatedBytes = AndroidSdk.spaceBytes(ndk)))

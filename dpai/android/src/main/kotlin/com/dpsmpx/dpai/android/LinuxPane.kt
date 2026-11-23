@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.android.linux.LinuxSetup
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.ui.AndroidSdk
+import com.dpsmpx.dpai.ui.AndroidNativeJdk
 import com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -143,7 +144,9 @@ fun LinuxScreen(onBack: () -> Unit, controller: Controller? = null, model: DemoM
                         (StorageSpace.check(context, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.DOWNLOAD, AndroidSdk.spaceBytes(ndk), "Android SDK") as? Outcome.Failure)?.let { return@run it }
                         when (val first = LinuxEnvironment.apk(LinuxEnvironment.Apk.ADD, AndroidSdk.packages)) {
                             is Outcome.Failure -> first
-                            is Outcome.Success -> LinuxSetup.runSteps(context, listOf(first.value, com.dpsmpx.dpai.execution.process.ProcessSpec(AndroidSdk.install(licenses, ndk, aapt2, ndkCommunity))))
+                            is Outcome.Success -> LinuxSetup.runSteps(context, listOf(first.value,
+                                com.dpsmpx.dpai.execution.process.ProcessSpec(AndroidNativeJdk.install()),
+                                com.dpsmpx.dpai.execution.process.ProcessSpec(AndroidSdk.install(licenses, ndk, aapt2, ndkCommunity))))
                         }
                     }) {
                         if (it.ok && it.stdout.any { l -> "DPAI_ANDROID_SDK_OK" in l }) "Android SDK: ${AndroidSdk.HOME}; в профиль сборки — окружение ANDROID_HOME=${AndroidSdk.HOME}"
