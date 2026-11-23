@@ -176,13 +176,53 @@ jobs:
           install -d -m 700 "$RUNNER_TEMP/dpai-signing"
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/dpai-signing/release-key.keystore"
           test -s "$RUNNER_TEMP/dpai-signing/release-key.keystore" || { echo 'Empty release keystore'; exit 1; }
+          # The build-logic plugin reads dotted dpai.release.* Gradle properties.
+          # Passing their names as ORG_GRADLE_PROJECT_* env variables did not reach
+          # this included build: it silently selected the debug signingConfig.
+          # A private Gradle user-home properties file is the documented input.
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          def java_property(value: str) -> str:
+              result = []
+              for char in value:
+                  if char == '\\':
+                      result.append('\\\\')
+                  elif char == '\n':
+                      result.append('\\n')
+                  elif char == '\r':
+                      result.append('\\r')
+                  elif char == '\t':
+                      result.append('\\t')
+                  elif char in ' =:#!':
+                      result.append('\\' + char)
+                  elif 32 <= ord(char) <= 126:
+                      result.append(char)
+                  else:
+                      data = char.encode('utf-16-be')
+                      result.extend('\\u%04x' % int.from_bytes(data[i:i + 2], 'big') for i in range(0, len(data), 2))
+              return ''.join(result)
+
+          directory = Path(os.environ['RUNNER_TEMP']) / 'dpai-gradle-home'
+          directory.mkdir(mode=0o700, exist_ok=True)
+          props = directory / 'gradle.properties'
+          entries = {
+              'dpai.release.storeFile': str(Path(os.environ['RUNNER_TEMP']) / 'dpai-signing/release-key.keystore'),
+              'dpai.release.storePassword': os.environ['KEYSTORE_PASSWORD'],
+              'dpai.release.keyAlias': os.environ['KEY_ALIAS'],
+              'dpai.release.keyPassword': os.environ['KEY_PASSWORD'],
+          }
+          with props.open('x', encoding='ascii') as output:
+              for key, value in entries.items():
+                  output.write(key + '=' + java_property(value) + '\n')
+          props.chmod(0o600)
+          PY
+          test "$(stat -c '%a' "$RUNNER_TEMP/dpai-gradle-home/gradle.properties")" = 600
       - name: Build and verify primary APK using author key
         shell: bash
         env:
-          ORG_GRADLE_PROJECT_dpai.release.storeFile: ${{ runner.temp }}/dpai-signing/release-key.keystore
-          ORG_GRADLE_PROJECT_dpai.release.storePassword: ${{ secrets.KEYSTORE_PASSWORD }}
-          ORG_GRADLE_PROJECT_dpai.release.keyAlias: ${{ secrets.KEY_ALIAS }}
-          ORG_GRADLE_PROJECT_dpai.release.keyPassword: ${{ secrets.KEY_PASSWORD }}
+          GRADLE_USER_HOME: ${{ runner.temp }}/dpai-gradle-home
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
@@ -243,4 +283,7 @@ jobs:
         run: |
           if test -f "$RUNNER_TEMP/dpai-signing/release-key.keystore"; then
             rm -f "$RUNNER_TEMP/dpai-signing/release-key.keystore"
+          fi
+          if test -f "$RUNNER_TEMP/dpai-gradle-home/gradle.properties"; then
+            rm -f "$RUNNER_TEMP/dpai-gradle-home/gradle.properties"
           fi

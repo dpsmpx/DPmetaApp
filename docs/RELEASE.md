@@ -31,8 +31,8 @@ workflow `.github/workflows/apk.yml` выполняет `full --strict`, тес�
 а затем отдельное задание `signed-release`. То же задание можно запустить
 вручную через `workflow_dispatch` с `publish_release=true` на `main`.
 Оно берёт `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`
-только из Secrets GitHub Actions, записывает файл ключа во временную папку
-runner с режимом 0600 и передаёт пароли Gradle через окружение, а не argv.
+только из Secrets GitHub Actions, записывает файл ключа и временный
+`gradle.properties` на runner с режимом 0600 (пароли не передаются через argv).
 Проверяет, что сертификат готового APK совпадает с сертификатом ключа,
 подпись не debug, package и SDK соответствуют выпуску. Публикует лишь
 основной APK с `targetSdk 28`, `SHA256SUMS.txt` и публичный SHA-256 сертификата;
