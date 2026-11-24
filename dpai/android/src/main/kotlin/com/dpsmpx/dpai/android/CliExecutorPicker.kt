@@ -85,7 +85,7 @@ internal fun CliExecutorPicker(screen: SessionScreen, model: DemoModel, controll
                         }
                     }) { Text("API · ${profile.name}") }
                 }
-                note?.let { Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall) }
+                note?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall) }
             }
         },
         confirmButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Закрыть") } },

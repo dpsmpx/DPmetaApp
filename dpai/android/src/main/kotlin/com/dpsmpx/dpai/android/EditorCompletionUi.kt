@@ -157,7 +157,7 @@ internal fun rememberAiCompletion(path: String): AiCompletionState? {
 /** Полоса ИИ-дополнения под панелью редактора: ход, предложение, «Вставить» и «Отклонить». */
 @Composable
 internal fun AiCompletionBar(state: AiCompletionState, buffer: CodeEditorBuffer, enabled: Boolean, onChange: () -> Unit) {
-    state.note?.let { Text(it, Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall) }
+    state.note?.let { DiagnosticText(it, Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall) }
     if (state.busy) TextButton(onClick = state::stop) { Text("Отменить запрос") }
     state.offer?.let { o ->
         Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
@@ -242,7 +242,7 @@ internal fun AiCompletionSettings(place: AiCompletionPlace, onClose: () -> Unit)
                     Checkbox(consent, onCheckedChange = { consent = it })
                     Text("Разрешаю отправлять код проекта «${place.project.project.value}» (окно открытого файла) на ${picked.host} — провайдеру профиля «${picked.name}»", style = MaterialTheme.typography.bodySmall)
                 }
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                error?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },
         confirmButton = {

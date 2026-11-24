@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -63,7 +62,7 @@ internal fun ManualHistorySection(model: DemoModel, project: ProjectEntry, kind:
             Text("История", Modifier.weight(1f).padding(vertical = 8.dp), style = MaterialTheme.typography.titleSmall)
             if (entries.isNotEmpty() || error != null) TextButton(onClick = { clearing = true }) { Text("Очистить") }
         }
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        error?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         if (shown.isEmpty() && error == null) Text("Запусков ещё не было.", style = MaterialTheme.typography.bodySmall)
         for (e in shown) {
             val expanded = open == e.run.value
@@ -95,26 +94,29 @@ internal fun ManualHistorySection(model: DemoModel, project: ProjectEntry, kind:
 @Composable
 private fun HistoryDetails(e: ManualHistoryEntry, location: WorkspaceLocation?, onProblem: (String, Int) -> Unit) {
     Column(Modifier.padding(start = 12.dp, top = 4.dp)) {
+        DiagnosticText("${e.target}\nВетка: ${e.branch}\nHEAD: ${e.head ?: "не записан"}\n${e.note}", style = MaterialTheme.typography.bodySmall)
+        CopyDiagnostic(listOf(e.target, e.branch, e.head.orEmpty(), e.note, e.output).filter { it.isNotEmpty() }.joinToString("\n\n"),
+            copyLabel = R.string.diagnostic_copy_result)
         e.steps.forEachIndexed { i, (name, r) ->
             val m = when {
                 r == null -> "·"
                 r.ok -> "✓"
                 else -> "✗"
             }
-            Text("$m ${i + 1}. $name — ${r?.let { if (it.ok) "успешно" else it.reason } ?: "не запускался"}", style = MaterialTheme.typography.bodySmall)
+            DiagnosticText("$m ${i + 1}. $name — ${r?.let { if (it.ok) "успешно" else it.reason } ?: "не запускался"}", style = MaterialTheme.typography.bodySmall)
         }
         val problems = remember(e.output) { BuildProblems.parse(e.output) }
         if (problems.items.isNotEmpty()) {
             Text("Ошибки — ${problems.summary()}", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
             for (p in problems.items.take(30)) {
                 val rel = location?.let { BuildProblems.relative(p.path, it.path) }
-                Text("${rel ?: p.path}:${p.line} — ${p.message}", style = MaterialTheme.typography.bodySmall, maxLines = 2,
+                DiagnosticText("${rel ?: p.path}:${p.line} — ${p.message}", style = MaterialTheme.typography.bodySmall, maxLines = 2,
                     modifier = if (rel != null) Modifier.clickable { onProblem(rel, p.line) }.padding(vertical = 4.dp) else Modifier.padding(vertical = 4.dp))
             }
         }
-        if (e.output.isNotEmpty()) SelectionContainer {
-            Text(e.output.takeLast(4000), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
-        }
+        if (e.output.isNotEmpty()) DiagnosticText(e.output.takeLast(4000), copyText = e.output,
+            fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp),
+            copyLabel = R.string.diagnostic_copy_output)
     }
 }
 

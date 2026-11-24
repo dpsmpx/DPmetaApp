@@ -186,7 +186,7 @@ internal fun ApiQuickStartWizard(onOpen: (Conversation) -> Unit, onAdvanced: () 
                 LazyColumn(Modifier.height(150.dp)) { items(models, key = { it.id }) { m -> FilterChip(selected = m.id == selectedModel, onClick = { if (!busy) selectedModel = m.id }, label = { Text(m.name ?: m.id, maxLines = 1) }) } }
             } else existing?.model?.takeIf { it.isNotBlank() }?.let { Text(it) }
             Text(stringResource(R.string.api_work_consent), style = MaterialTheme.typography.bodySmall)
-            note?.let { Text(it, color = if (busy) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error) }
+            note?.let { DiagnosticText(it, color = if (busy) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error) }
             if (busy) CircularProgressIndicator()
         } },
         confirmButton = { TextButton(enabled = !busy && selected != null && checked != null && selectedModel.isNotBlank(), onClick = ::start) { Text(stringResource(R.string.api_work_start)) } },

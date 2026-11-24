@@ -88,8 +88,8 @@ internal fun AutomationCenter(project: ProjectEntry, onOpen: (AutomationDefiniti
                 if (running) TextButton(onClick = { AutomationUiCalls.stop(project.project) }) { Text(stringResource(R.string.automation_stop)) }
             }
             if (loading || running) CircularProgressIndicator()
-            problem?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            snapshot?.sourceIssues?.forEach { Text(it.message, color = MaterialTheme.colorScheme.error) }
+            problem?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error) }
+            snapshot?.sourceIssues?.forEach { DiagnosticText(it.message, color = MaterialTheme.colorScheme.error) }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 FilterChip(selected = filter == null, onClick = { filter = null }, label = { Text(stringResource(R.string.automation_all)) })
                 for (s in AutomationSource.entries) FilterChip(selected = filter == s.name, onClick = { filter = s.name }, label = { Text(sourceTitle(s)) })
@@ -108,13 +108,13 @@ internal fun AutomationCenter(project: ProjectEntry, onOpen: (AutomationDefiniti
         }
         work?.let { job -> item {
             Text(stringResource(R.string.automation_last_result), style = MaterialTheme.typography.titleSmall)
-            job.note?.let { Text(it) }
+            job.note?.let { DiagnosticText(it) }
             val result = job.output.firstOrNull()?.let { JsonParser().parse(it).valueOrNull() as? JsonObject }
             result?.let { r ->
                 (r["status"] as? JsonString)?.value?.let { Text(it, fontFamily = FontFamily.Monospace) }
                 val data = r["data"] as? JsonObject ?: r["evidence"] as? JsonObject
                 (data?.get("note") as? JsonString)?.value?.let { Text(it) }
-                (r["diagnostics"] as? JsonArray)?.items?.forEach { d -> ((d as? JsonObject)?.get("message") as? JsonString)?.value?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
+                (r["diagnostics"] as? JsonArray)?.items?.forEach { d -> ((d as? JsonObject)?.get("message") as? JsonString)?.value?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error) } }
                 val output = (data?.get("output") as? JsonString)?.value ?: data?.let(CanonicalJson::write)
                 output?.let { Text(it, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
             }
@@ -127,7 +127,7 @@ private fun AutomationDetails(d: AutomationDefinition, running: Boolean, onRun: 
     var values by remember(d.revision) { mutableStateOf(d.parameters.associate { it.name to (it.defaultValue ?: it.choices.firstOrNull().orEmpty()) }) }
     Text(stringResource(R.string.automation_level, d.level.code), style = MaterialTheme.typography.bodySmall)
     Text(stringResource(if (d.invocation == AutomationInvocation.DIRECT) R.string.automation_direct else R.string.automation_existing_ui), style = MaterialTheme.typography.bodySmall)
-    d.reason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+    d.reason?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
     if (d.source == AutomationSource.PULT) Text(d.purpose, style = MaterialTheme.typography.bodySmall)
     if (d.dependencies.isNotEmpty()) Text(stringResource(R.string.automation_dependencies, d.dependencies.joinToString()), style = MaterialTheme.typography.bodySmall)
     d.timeoutSeconds?.let { Text(stringResource(R.string.automation_timeout, it), style = MaterialTheme.typography.bodySmall) }

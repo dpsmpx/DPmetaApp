@@ -96,7 +96,7 @@ fun GitHubPane(model: DemoModel, onBack: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(enabled = !loading, onClick = { load() }) { Text(if (loading) "Загружаю…" else "Обновить") }
         }
-        failure?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        failure?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         val list = prs ?: return
         if (list.isEmpty()) Text("Открытых PR нет.", style = MaterialTheme.typography.bodySmall)
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -183,7 +183,7 @@ internal fun GitHubSendSection(model: DemoModel, task: TaskId, title: String, ob
         TextButton(enabled = !busy, onClick = { asking = true }) { Text(if (busy) "Отправляю…" else "Отправить ветку и открыть PR…") }
     }
     result?.let { url -> TextButton(onClick = { link(url) }) { Text("PR: $url") } }
-    failure?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+    failure?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
     if (asking) {
         AlertDialog(
             onDismissRequest = { asking = false },
@@ -297,7 +297,7 @@ private fun PrActions(v: GhPrDetail, desk: com.dpsmpx.dpai.orchestrator.github.G
         colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
     ) { Text("Слить…") }
     if (busy) Text("Выполняю…", style = MaterialTheme.typography.labelSmall)
-    note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+    note?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall) }
 
     if (askComment) {
         AlertDialog(

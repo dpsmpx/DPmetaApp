@@ -203,15 +203,16 @@ fun LinuxScreen(onBack: () -> Unit, controller: Controller? = null, model: DemoM
                 Text("${j.label}…", style = MaterialTheme.typography.labelSmall)
                 androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
             } else {
-                j.note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+                j.note?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall) }
             }
         }
         busy?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
-        note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+        note?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall) }
         val output = work?.output.orEmpty()
         // Вывод — последней строкой с «показать всё» (терминал §4, п. 9): итог и ошибка — в хвосте.
         if (output.isNotEmpty()) {
-            Text((if (allOutput) output else output.takeLast(1)).joinToString("\n"), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
+            DiagnosticText((if (allOutput) output else output.takeLast(1)).joinToString("\n"), copyText = output.joinToString("\n"),
+                style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, copyLabel = R.string.diagnostic_copy_output)
             if (output.size > 1) TextButton(onClick = { allOutput = !allOutput }) { Text(if (allOutput) "Свернуть вывод" else "Показать весь вывод (${output.size} строк)") }
         }
     }
@@ -295,7 +296,7 @@ private fun AndroidSdkDialog(onCancel: () -> Unit, onInstall: (Boolean, Boolean,
                     OutlinedTextField(ndkUrl, { ndkUrl = it.take(500) }, label = { Text("NDK arm64 (сообщество): адрес https") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(ndkSha, { ndkSha = it.take(64) }, label = { Text("NDK: SHA-256") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 }
-                problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                problem?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },
         confirmButton = {

@@ -74,7 +74,7 @@ internal fun SigningKeysPanel(project: String, projectName: String, enabled: Boo
             Text("Сборки этого проекта подписываются ${choice.title}" + if (choice == SigningKeys.Choice.NONE) "." else " — сами после успешной сборки и после «На телефон».", style = MaterialTheme.typography.bodySmall)
             if (choice == SigningKeys.Choice.NONE) Text(SignAfterBuild.NO_KEY, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
-        problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        problem?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         androidx.compose.runtime.key(project, version) {
             KeyLevelRow("Ключ проекта «$projectName»", project, own, ownFailed, ownStored, enabled && loaded, onChanged, onNote)
             KeyLevelRow("Глобальный ключ (все проекты)", null, global, globalFailed, globalStored, enabled && loaded, onChanged, onNote)
@@ -144,7 +144,7 @@ private fun ReleaseKeyDialog(onClose: () -> Unit, onNote: (String?) -> Unit) {
                     visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
                 OutlinedTextField(repeat, { repeat = it.take(256) }, label = { Text("Пароль ещё раз") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
-                problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                problem?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                 TextButton(onClick = { copy(com.dpsmpx.dpai.ui.ReleaseKeyCommand.Shell.POSIX) }) { Text("Скопировать для Linux/bash") }
                 TextButton(onClick = { copy(com.dpsmpx.dpai.ui.ReleaseKeyCommand.Shell.POWERSHELL) }) { Text("Скопировать для ПК (PowerShell)") }
             }
@@ -224,7 +224,7 @@ private fun KeyLevelRow(title: String, level: String?, key: SigningKeys.Info?, u
             TextButton(enabled = enabled, onClick = { creating = true }) { Text("Создать…") }
         }
     } else {
-        Text("${key.subject} (${key.algorithm})\nSHA-256: ${key.certSha256}", style = MaterialTheme.typography.bodySmall)
+        DiagnosticText("${key.subject} (${key.algorithm})\nSHA-256: ${key.certSha256}", style = MaterialTheme.typography.bodySmall)
     }
     if (key != null || unreadable || stored) TextButton(enabled = enabled, onClick = { deleting = true }) { Text("Удалить ключ…") }
     picked?.let { bytes ->
@@ -337,7 +337,7 @@ private fun CreateKeyDialog(onCancel: () -> Unit, onCreate: (String, CharArray) 
                     visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
                 OutlinedTextField(repeat, { repeat = it.take(256) }, label = { Text("Пароль ещё раз") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
-                problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                problem?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = { TextButton(enabled = problem == null, onClick = {

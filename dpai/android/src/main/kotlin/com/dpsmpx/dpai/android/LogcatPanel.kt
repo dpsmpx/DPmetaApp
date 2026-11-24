@@ -113,7 +113,7 @@ internal fun LogcatPanel(initialPackage: String? = null, onClose: () -> Unit, on
                     }) { Text("Подключить") }
                     if (adb.paired) TextButton(enabled = !adb.busy, onClick = { AdbBridge.forget(context) }) { Text("Забыть", color = MaterialTheme.colorScheme.error) }
                 }
-                adb.note?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                adb.note?.let { DiagnosticText(it, style = MaterialTheme.typography.bodyMedium) }
             }
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
         }
@@ -129,9 +129,11 @@ internal fun LogcatPanel(initialPackage: String? = null, onClose: () -> Unit, on
             OutlinedButton(enabled = stream.running || stream.lines.isNotEmpty(), onClick = { paused = if (paused == null) stream.lines else null }) { Text(if (paused == null) "Пауза" else "Дальше") }
             TextButton(onClick = { LogcatStream.clear(); paused = null }) { Text("Очистить") }
         }
-        (note ?: stream.note)?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        (note ?: stream.note)?.let { DiagnosticText(it, style = MaterialTheme.typography.bodyMedium) }
         val filter = Logcat.Filter(level, stream.pid, query)
         val shown = remember(paused, stream.lines, filter) { (paused ?: stream.lines).filter(filter::matches) }
+        val text = remember(shown) { shown.map { l -> if (l.header) "${l.time.substringAfter(' ')} ${l.level.letter} ${l.tag}: ${l.message}" else "    ${l.message}" } }
+        CopyDiagnostic(text.joinToString("\n"), copyLabel = R.string.diagnostic_copy_output)
         val list = rememberLazyListState()
         LaunchedEffect(shown.size, paused) { if (paused == null && shown.isNotEmpty()) list.scrollToItem(shown.size - 1) }
         LazyColumn(Modifier.fillMaxWidth().weight(1f), state = list) {
@@ -144,12 +146,12 @@ internal fun LogcatPanel(initialPackage: String? = null, onClose: () -> Unit, on
                     Logcat.Level.VERBOSE, Logcat.Level.DEBUG -> MaterialTheme.colorScheme.onSurfaceVariant
                     else -> MaterialTheme.colorScheme.onSurface
                 }
-                Text(
-                    if (l.header) "${l.time.substringAfter(' ')} ${l.level.letter} ${l.tag}: ${l.message}" else "    ${l.message}",
+                Clipboard.Sensitive { androidx.compose.foundation.text.selection.SelectionContainer { Text(
+                    text[i],
                     Modifier.fillMaxWidth().then(if (frame != null) Modifier.clickable { onFrame?.invoke(frame) } else Modifier).padding(vertical = 1.dp),
                     color = color, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall,
                     textDecoration = if (frame != null) androidx.compose.ui.text.style.TextDecoration.Underline else null,
-                )
+                ) } }
             }
         }
     }

@@ -170,7 +170,7 @@ fun TaskSheet(
                 if (d.dependencies.isNotEmpty()) {
                     Text("зависит от: ${d.dependencies.joinToString(" · ") { "${it.title} (${Words.task(it.state)})" }}", style = MaterialTheme.typography.labelSmall)
                 }
-                d.reason?.let { Text("причина: $it · повторов: ${d.retries}", style = MaterialTheme.typography.labelSmall) }
+                d.reason?.let { DiagnosticText("причина: $it · повторов: ${d.retries}", style = MaterialTheme.typography.labelSmall) }
                 // Кто выполняет и кому передавалась (D-56): слот — target и подписка.
                 d.executor?.let { Text("Выполняет: $it", style = MaterialTheme.typography.bodySmall) }
                 if (d.assignments.size > 1 || (d.assignments.isNotEmpty() && d.executor == null)) {
@@ -188,7 +188,7 @@ fun TaskSheet(
                     }
                 }
                 // Цвет ошибки — только у отказа (аудит удобства, A-19): «Принято» и «В очереди» — обычным.
-                status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = if ("Не принято" in it) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) }
+                status?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall, color = if ("Не принято" in it) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) }
                 // Редкое — свёрнутыми разделами (AI:A-9).
                 var moving by rememberSaveable(task.value) { mutableStateOf(false) }
                 Text(if (moving) "Слот следующего хода ▾" else "Слот следующего хода ▸", Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { moving = !moving }.padding(vertical = 12.dp), fontWeight = FontWeight.SemiBold)
@@ -285,7 +285,7 @@ private fun PolicyEditor(d: TaskDetail, busy: Boolean, onSave: (TaskClass, Strin
         }
         OutlinedTextField(budget, { budget = it }, label = { Text("Предел стоимости хода, $ (пусто — без предела)") }, singleLine = true)
         ReviewChips(reviews) { reviews = it }
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
+        error?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
         TextButton(enabled = !busy, onClick = {
             when (val c = com.dpsmpx.dpai.ui.NewTaskForm.budgetCents(budget)) {
                 is Outcome.Failure -> error = c.diagnostics.first().message
@@ -363,7 +363,7 @@ internal fun ChangesSection(model: DemoModel, task: TaskId) {
         }
         TextButton(enabled = !loading, onClick = { load() }) { Text(if (loading) "Загружаю…" else if (view == null) "Показать" else "Обновить") }
     }
-    failure?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+    failure?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
     val v = view ?: return
     Text(v.summary, style = MaterialTheme.typography.bodySmall)
     if (v.lines.isEmpty()) return
@@ -450,7 +450,7 @@ private fun ReviewsSection(reviews: List<ReviewLine>) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         for (r in reviews) {
             Text("${r.label}: ${r.verdict}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = toneColor(r.tone))
-            r.note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+            r.note?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall) }
             for (f in r.findings) {
                 Text(
                     "${Words.severity(f.severity.name)} · ${f.title}${f.where?.let { " ($it)" } ?: ""}",

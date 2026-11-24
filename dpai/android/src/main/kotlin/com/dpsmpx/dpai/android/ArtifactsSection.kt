@@ -233,9 +233,9 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
 
         Text("Шаблоны: ${patterns.ifEmpty { TreeArtifacts.DEFAULT }.joinToString(" ")} — меняются в профиле выше.", style = MaterialTheme.typography.bodySmall)
         SigningKeysPanel(projectId, projectId, busy == null, keysVersion, onChanged = { keysVersion++ }, onNote = { note = it })
-        keyProblem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        keyProblem?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         busy?.let { Text("$it…", style = MaterialTheme.typography.bodySmall) }
-        note?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        note?.let { DiagnosticText(it, style = MaterialTheme.typography.bodyMedium) }
         val list = found
         if (list != null && list.items.isEmpty()) Text("Артефактов по шаблонам нет — соберите проект или поправьте шаблоны.", style = MaterialTheme.typography.bodySmall)
         if (list?.limited == true) Text("Показана часть: уточните шаблоны.", style = MaterialTheme.typography.bodySmall)
@@ -378,7 +378,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
             }
         }
         details?.let { text ->
-            AlertDialog(onDismissRequest = { details = null }, title = { Text("APK") }, text = { Text(text, style = MaterialTheme.typography.bodySmall) },
+            AlertDialog(onDismissRequest = { details = null }, title = { Text("APK") }, text = { DiagnosticText(text, style = MaterialTheme.typography.bodySmall) },
                 confirmButton = { TextButton(onClick = { details = null }) { Text("Закрыть") } })
         }
         // Перед установкой и подписью — пакет, версия, подпись и сумма копии (D-157, T22).
@@ -395,7 +395,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                                 Modifier.padding(bottom = 8.dp), color = MaterialTheme.colorScheme.error,
                             )
                         }
-                        Text(r.text, style = MaterialTheme.typography.bodySmall)
+                        DiagnosticText(r.text, style = MaterialTheme.typography.bodySmall)
                         Text(
                             if (action == ApkAction.INSTALL) "Ставится проверенная копия: изменения файла в дереве после этой проверки в установку не попадут." else "Подписывается проверенная копия; подписанный файл ляжет рядом с исходным.",
                             Modifier.padding(top = 8.dp), style = MaterialTheme.typography.labelSmall,

@@ -374,7 +374,7 @@ internal fun CloudCard(model: DemoModel, framed: Boolean = true) {
                 Text("$busy…", style = MaterialTheme.typography.bodySmall)
                 androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
             } else {
-                message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                message?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
             }
             // Отказ «чужая копия» — и от кнопки, и от такта службы (последняя отправка).
             if (busy == null && (message ?: s?.last?.second)?.let(CloudSync::isForeignCopy) == true) {
@@ -457,7 +457,7 @@ private fun CloudSettingsDialog(onDismiss: () -> Unit, onNote: (String) -> Unit)
                     Checkbox(checked = daily, onCheckedChange = null)
                     Text("Отправлять раз в сутки сама", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.bodySmall)
                 }
-                problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                problem?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },
         confirmButton = {
@@ -570,7 +570,7 @@ private fun CloudRestoreDialog(onDismiss: () -> Unit) {
                     }
                 }
                 if (busy) Text("Работаю…", style = MaterialTheme.typography.bodySmall)
-                problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                problem?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },
         confirmButton = {

@@ -151,7 +151,7 @@ fun EnvironmentScreen(onBack: () -> Unit, controller: Controller? = null, model:
                 note?.takeIf { section == EnvSection.ALPINE }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 if (section == EnvSection.COMPONENTS && loaded) Text(AppComponents.summary(components), style = MaterialTheme.typography.bodyMedium)
                 current?.takeIf { section == EnvSection.ALPINE }?.let { c ->
-                    Text(AlpineView.summary(c, problems), style = MaterialTheme.typography.bodyMedium)
+                    DiagnosticText(AlpineView.summary(c, problems), style = MaterialTheme.typography.bodyMedium)
                     // Итог проверки обновлений (D-197): версии, что новее в зеркале, — только из него, не стоявшие уже ушли.
                     val newer = updates?.packages.orEmpty().filter { u -> c.byName[u.name]?.version == u.installed }
                     if (newer.isNotEmpty()) Text("Есть новее (проверено ${EnvSnapshotStore.time(updates!!.at)}): ${newer.size} — «Обновить всё» или у пакета", style = MaterialTheme.typography.bodySmall)
@@ -173,12 +173,13 @@ fun EnvironmentScreen(onBack: () -> Unit, controller: Controller? = null, model:
                         Text("${j.label}…", style = MaterialTheme.typography.labelSmall)
                         LinearProgressIndicator(Modifier.fillMaxWidth())
                     } else {
-                        j.note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+                        j.note?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall) }
                     }
                 }
                 val output = work?.output.orEmpty()
                 if (output.isNotEmpty()) {
-                    Text((if (allOutput) output else output.takeLast(1)).joinToString("\n"), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
+                    DiagnosticText((if (allOutput) output else output.takeLast(1)).joinToString("\n"), copyText = output.joinToString("\n"),
+                        style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, copyLabel = R.string.diagnostic_copy_output)
                     if (output.size > 1) TextButton(onClick = { allOutput = !allOutput }) { Text(if (allOutput) "Свернуть вывод" else "Показать весь вывод (${output.size} строк)") }
                 }
                 if (current != null && section == EnvSection.ALPINE) {
@@ -231,7 +232,7 @@ fun EnvironmentScreen(onBack: () -> Unit, controller: Controller? = null, model:
                 }
                 val tags = listOfNotNull("ваш".takeIf { row.mine }, "система".takeIf { row.system }, row.requiredBy.takeIf { it.isNotEmpty() }?.let { "нужен для ${it.size}" })
                 if (tags.isNotEmpty()) Text(tags.joinToString(" · "), style = MaterialTheme.typography.labelSmall)
-                for (p in row.problems) Text(p, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                for (p in row.problems) DiagnosticText(p, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                 val pkg = current?.byName?.get(row.name)
                 if (open == row.name && pkg != null) {
                     for ((k, v) in AlpineView.details(pkg, current)) Text("$k: $v", style = MaterialTheme.typography.bodySmall)

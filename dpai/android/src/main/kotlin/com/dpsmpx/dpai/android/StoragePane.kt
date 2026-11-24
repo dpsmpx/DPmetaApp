@@ -124,7 +124,7 @@ fun StorageSecretsCard() {
                 }
             }, onRemove = if (SecretGrants.isCustom(r.id)) ({ removing = r }) else null)
             OutlinedButton(onClick = { adding = true }) { Text("Добавить свой секрет") }
-            note?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+            note?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         }
     }
 }
@@ -158,7 +158,7 @@ private fun OwnSecretDialog(onClose: () -> Unit, onSaved: () -> Unit) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, autoCorrectEnabled = false))
                 OutlinedTextField(value, { value = it.take(8192); error = null }, label = { Text("Значение") }, singleLine = true,
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+                error?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
             }
         },
         confirmButton = {

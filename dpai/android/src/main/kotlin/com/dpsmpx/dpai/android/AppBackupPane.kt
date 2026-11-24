@@ -135,7 +135,7 @@ fun AppBackupCard() {
                 OutlinedButton(enabled = !busy, onClick = { pick.launch(arrayOf("application/json", "application/octet-stream", "*/*")) }) { Text("Восстановить…") }
             }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            status?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
             PortableSshRow(refresh) { refresh++ }
         }
     }
@@ -221,7 +221,7 @@ private fun SaveDialog(onCancel: () -> Unit, onSave: (SavePlan) -> Unit) {
                         visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
                     Text("Пароль приложение не хранит. Забыт — копию не прочитать никому.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 }
-                problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                problem?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = { TextButton(enabled = problem == null, onClick = { onSave(SavePlan(chosen, if (secrets) Secret(password) else null)) }) { Text("Выбрать место…") } },
@@ -242,7 +242,7 @@ private fun PasswordDialog(onCancel: () -> Unit, onOpen: (Secret, (String?) -> U
                 OutlinedTextField(password, { password = it; error = null }, label = { Text("Пароль копии") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
                 if (busy) Text("Проверяю пароль — это несколько секунд…", style = MaterialTheme.typography.bodySmall)
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                error?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },
         confirmButton = {
@@ -336,7 +336,7 @@ fun EmergencyRevokeCard() {
                 Text("Стереть отмеченные (${chosen.size})…", color = MaterialTheme.colorScheme.error)
             }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            status?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
             if (confirm) EraseDialog(chosen, onCancel = { confirm = false }) {
                 confirm = false
                 busy = true
@@ -406,7 +406,7 @@ private fun PortableSshRow(refresh: Int, onChanged: () -> Unit) {
             note = "Строка скопирована — добавьте её в ~/.ssh/authorized_keys на SSH-targets"
         }) { Text("Скопировать строку ключа") }
     }
-    note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+    note?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
     if (confirm) AlertDialog(
         onDismissRequest = { confirm = false },
         title = { Text("Новый ключ SSH") },

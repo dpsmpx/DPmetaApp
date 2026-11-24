@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -222,16 +221,18 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
                 run.step == i + 1 -> "▶"
                 else -> "·"
             }
-            Text("$mark ${i + 1}. ${s.name}" + (r?.takeIf { !it.ok }?.let { " — ${it.reason}" }.orEmpty()), style = MaterialTheme.typography.bodyMedium)
+            DiagnosticText("$mark ${i + 1}. ${s.name}" + (r?.takeIf { !it.ok }?.let { " — ${it.reason}" }.orEmpty()), style = MaterialTheme.typography.bodyMedium)
         }
-        note?.let { Text(it) }
-        state[LongJobs.WORKSPACE_PROFILE]?.let { job -> if (!job.running) job.note?.let { Text(it) } }
+        note?.let { DiagnosticText(it) }
+        state[LongJobs.WORKSPACE_PROFILE]?.let { job -> if (!job.running) job.note?.let { DiagnosticText(it) } }
         if (run.blocked) {
             Text("Весь контур проекта на паузе", color = MaterialTheme.colorScheme.error)
-            run.active?.let { Text("${it.target.label}: ${it.path}\n${it.branch}", style = MaterialTheme.typography.bodySmall) }
+            run.active?.let { DiagnosticText("${it.target.label}: ${it.path}\n${it.branch}", style = MaterialTheme.typography.bodySmall) }
             TextButton(onClick = { model.stopManualProfile(); ControllerService.resume(context) }) { Text("Безопасно остановить и снять паузу") }
         }
-        if (run.note.isNotEmpty()) Text(run.note)
+        if (run.note.isNotEmpty() || run.output.isNotEmpty()) CopyDiagnostic(
+            listOf(run.note, run.output).filter { it.isNotEmpty() }.joinToString("\n\n"), copyLabel = R.string.diagnostic_copy_result)
+        if (run.note.isNotEmpty()) DiagnosticText(run.note)
         // Места в коде из вывода (D-153): касание — файл дерева вкладкой на строке.
         var found by remember { mutableStateOf<com.dpsmpx.dpai.ui.BuildProblemList?>(null) }
         LaunchedEffect(run.output) { found = withContext(Dispatchers.Default) { com.dpsmpx.dpai.ui.BuildProblems.parse(run.output) }.takeIf { it.items.isNotEmpty() } }
@@ -248,7 +249,7 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
                     Text("$mark ${rel ?: p.path}:${p.line}${p.column?.let { ":$it" }.orEmpty()}" + if (rel == null) " — вне дерева" else "",
                         style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace,
                         color = if (p.severity == com.dpsmpx.dpai.ui.ProblemSeverity.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(p.message, style = MaterialTheme.typography.bodySmall, maxLines = 3)
+                    DiagnosticText(p.message, style = MaterialTheme.typography.bodySmall, maxLines = 3)
                 }
             }
             if (list.items.size > PROBLEMS_SHOWN) Text("…и ещё ${list.items.size - PROBLEMS_SHOWN}: исправьте первые и запустите снова", style = MaterialTheme.typography.bodySmall)
@@ -319,7 +320,8 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
                 dismissButton = { TextButton(onClick = { askAi = false }) { Text("Отмена") } },
             )
         }
-        if (run.output.isNotEmpty()) SelectionContainer { Text(run.output, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
+        if (run.output.isNotEmpty()) DiagnosticText(run.output, fontFamily = FontFamily.Monospace,
+            style = MaterialTheme.typography.bodySmall, copyLabel = R.string.diagnostic_copy_output)
         if (kind == ManualProfileKind.BUILD) {
             val saved = remember(artifactsText) { (com.dpsmpx.dpai.files.TreeArtifacts.patterns(artifactsText) as? Outcome.Success)?.value.orEmpty() }
             // Последняя успешная сборка не старше суток — её новые APK подписываются сами (D-178).

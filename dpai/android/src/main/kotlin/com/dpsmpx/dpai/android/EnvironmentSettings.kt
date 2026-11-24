@@ -118,7 +118,7 @@ internal fun EnvironmentSettingsSection(release: String?, repositories: List<Str
             val problem = OwnVariables.problem(name, value)
             if (problem != null) note = problem else save(vars.filter { it.name != name } + OwnVariables.Var(name, value)) { name = ""; value = "" }
         }) { Text("Добавить или заменить") }
-        note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        note?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         HorizontalDivider()
         RepositoriesBlock(release, repositories, running, onApply)
         HorizontalDivider()
@@ -177,7 +177,7 @@ private fun RepositoriesBlock(release: String?, repositories: List<String>, runn
             Text("и testing (пакеты на пробе)", style = MaterialTheme.typography.bodySmall)
         }
     }
-    AlpineRepositories.warning(choice)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+    AlpineRepositories.warning(choice)?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
     val unchanged = current == choice
     TextButton(enabled = !running && !unchanged, onClick = {
         (AlpineRepositories.text(choice, release) as? Outcome.Success)?.value?.let { confirm = it }

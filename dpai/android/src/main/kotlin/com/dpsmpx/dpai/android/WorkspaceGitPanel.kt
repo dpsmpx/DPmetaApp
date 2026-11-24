@@ -48,23 +48,21 @@ internal fun WorkspaceGitPanel(model: DemoModel, project: ProjectEntry, location
             Text("Снимок Git", Modifier.weight(1f).padding(vertical = 8.dp), style = MaterialTheme.typography.titleSmall)
             TextButton(enabled = !busy, onClick = ::load) { Text(if (busy) "Обновляю…" else "Обновить Git") }
         }
-        error?.let { Text("Не обновлён: $it", color = MaterialTheme.colorScheme.error) }
+        error?.let { DiagnosticText("Не обновлён: $it", color = MaterialTheme.colorScheme.error) }
         status?.let { s ->
-            Text("Ветка на диске: ${s.branch ?: if (s.head != null) "detached HEAD" else "неизвестна"}")
-            Text("HEAD: ${s.head ?: "коммитов ещё нет"}", style = MaterialTheme.typography.bodySmall)
-            if (s.branch != location.branch) Text("Ветка отличается от назначенной: ${location.branch}", color = MaterialTheme.colorScheme.error)
-            Text(if (s.clean) "Рабочее дерево чистое" else "Изменено: ${s.changed.size} · новые: ${s.untracked.size} · конфликты: ${s.conflicted.size}")
+            DiagnosticText("Ветка на диске: ${s.branch ?: if (s.head != null) "detached HEAD" else "неизвестна"}\n" +
+                "HEAD: ${s.head ?: "коммитов ещё нет"}\n" +
+                if (s.clean) "Рабочее дерево чистое" else "Изменено: ${s.changed.size} · новые: ${s.untracked.size} · конфликты: ${s.conflicted.size}",
+                style = MaterialTheme.typography.bodySmall)
+            if (s.branch != location.branch) DiagnosticText("Ветка отличается от назначенной: ${location.branch}", color = MaterialTheme.colorScheme.error)
             if (!s.clean) {
                 TextButton(onClick = { details = !details }) { Text(if (details) "Скрыть файлы" else "Показать файлы") }
-                if (details) Clipboard.Sensitive {
-                    androidx.compose.foundation.text.selection.SelectionContainer {
-                        Column {
-                            for ((label, files) in listOf("Изменён" to s.changed, "Не отслеживается" to s.untracked, "Конфликт" to s.conflicted)) {
-                                files.take(100).forEach { Text("$label: $it", style = MaterialTheme.typography.bodySmall) }
-                                if (files.size > 100) Text("Ещё ${files.size - 100}", style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
+                if (details) {
+                    val groups = listOf("Изменён" to s.changed, "Не отслеживается" to s.untracked, "Конфликт" to s.conflicted)
+                    val all = groups.flatMap { (label, files) -> files.map { "$label: $it" } }.joinToString("\n")
+                    val shown = groups.flatMap { (label, files) -> files.take(100).map { "$label: $it" } +
+                        if (files.size > 100) listOf("Ещё ${files.size - 100}") else emptyList() }.joinToString("\n")
+                    DiagnosticText(shown, copyText = all, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

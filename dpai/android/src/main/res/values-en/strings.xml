@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="diagnostic_copy">Copy text</string>
+    <string name="diagnostic_copy_output">Copy output</string>
+    <string name="diagnostic_copy_result">Copy result</string>
+    <string name="diagnostic_clip_label">Diagnostics</string>
+    <string name="diagnostic_copied">Text copied</string>
+    <string name="diagnostic_copy_failed">Could not copy the complete text</string>
     <string name="automation_plan_project">Run project plan?</string>
     <string name="automation_project_scope">Commands run on the shown target in the selected worktree. The manager may execute project code, download packages, and access available files and network.</string>
     <string name="automation_project_files">This is not a full project backup. Review file changes in Git after the operation.</string>

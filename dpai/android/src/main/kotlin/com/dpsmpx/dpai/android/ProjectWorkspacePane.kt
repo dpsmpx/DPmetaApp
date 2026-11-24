@@ -319,7 +319,7 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
                 TextButton(onClick = { searching = true }) { Text("Поиск") }
                 TextButton(onClick = { refresh++ }) { Text("Обновить") }
             }
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp)) }
+            error?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp)) }
             if (entries == null && error == null) CircularProgressIndicator()
             LazyColumn {
                 if (entries?.isEmpty() == true) item { Text("Пусто", Modifier.padding(12.dp)) }

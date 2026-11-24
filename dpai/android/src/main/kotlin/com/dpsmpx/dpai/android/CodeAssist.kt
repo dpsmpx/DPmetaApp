@@ -272,7 +272,7 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                     state.switchTo?.let { other -> TextButton(enabled = !busy, onClick = { switchPython(other) }) { Text("Взять: ${other.title}") } }
                 }
                 is CodeService.State.Failed -> {
-                    Text("$title: ${state.message}", Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    DiagnosticText("$title: ${state.message}", Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     for (action in state.actions) TextButton(enabled = !busy, onClick = { confirm = action }) { Text(action.title) }
                     TextButton(enabled = !busy, onClick = { launch("…") { withContext(Dispatchers.IO) { CodeService.start(context, session, guestRoot) }; note = null } }) { Text("Повторить") }
                 }
@@ -362,8 +362,8 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                 }
             }
         }
-        (state as? CodeService.State.Ready)?.note?.let { Text(it, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall) }
-        note?.let { Text(it, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall) }
+        (state as? CodeService.State.Ready)?.note?.let { DiagnosticText(it, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall) }
+        note?.let { DiagnosticText(it, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall) }
         signature?.let { s ->
             Text(buildAnnotatedString {
                 val p = s.parameter
@@ -492,7 +492,7 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
 
     confirm?.let { what ->
         AlertDialog(onDismissRequest = { confirm = null }, title = { Text(what.title) },
-            text = { Text(what.note, style = MaterialTheme.typography.bodySmall) },
+            text = { DiagnosticText(what.note, style = MaterialTheme.typography.bodySmall) },
             confirmButton = { TextButton(onClick = { confirm = null; install(what) }) { Text("Поставить") } },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("Отмена") } })
     }

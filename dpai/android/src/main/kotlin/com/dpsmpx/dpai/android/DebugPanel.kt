@@ -64,7 +64,7 @@ internal fun DebugPanel(modifier: Modifier = Modifier) {
                 )
                 TextButton(onClick = { Debugger.close() }) { Text(if (state.active) "Закрыть" else "Скрыть") }
             }
-            state.note?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            state.note?.let { DiagnosticText(it, style = MaterialTheme.typography.bodyMedium) }
             if (state.missing != null) {
                 OutlinedButton(enabled = !state.busy, onClick = { Debugger.install(context) }) { Text("Поставить ${state.missing?.title?.substringBefore(" ")}") }
             }
@@ -114,13 +114,16 @@ internal fun DebugPanel(modifier: Modifier = Modifier) {
                                     Debugger.evaluate(expression) { r -> result = when (r) { is Outcome.Success -> r.value; is Outcome.Failure -> "Ошибка: " + r.diagnostics.first().message } }
                                 }) { Text("Вычислить") }
                             }
-                            result?.let { Text(it, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodyMedium) }
+                            result?.let { DiagnosticText(it, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodyMedium) }
                         }
                     }
                     PAGE_OUT -> {
                         val lines = if (view.output.isEmpty() && state.build.isNotEmpty()) state.build else view.output
                         if (lines.isEmpty()) item { Hint("Вывода программы пока нет.") }
-                        items(lines.size) { i -> Text(lines[i], fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
+                        if (lines.isNotEmpty()) item { CopyDiagnostic(lines.joinToString("\n"), copyLabel = R.string.diagnostic_copy_output) }
+                        items(lines.size) { i -> Clipboard.Sensitive { androidx.compose.foundation.text.selection.SelectionContainer {
+                            Text(lines[i], fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                        } } }
                         if (state.problems.isNotEmpty()) item { Hint("Ошибки сборки: ${state.problems.size} — откройте файл и строку из списка ошибок запуска.") }
                     }
                     PAGE_MARKS -> {

@@ -156,7 +156,7 @@ internal fun RequestItem(model: DemoModel, card: RequestCard) {
                     onDismiss = { confirming = null },
                 )
             }
-            status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = if (it.startsWith("Принято")) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error) }
+            status?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall, color = if (it.startsWith("Принято")) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error) }
         }
     }
 }
@@ -208,7 +208,7 @@ fun ProbePanel(model: DemoModel) {
                     }) { Text(com.dpsmpx.dpai.ui.RequestScreens.kindLabel(k)) }
                 }
             }
-            note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+            note?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall) }
         }
     }
 }

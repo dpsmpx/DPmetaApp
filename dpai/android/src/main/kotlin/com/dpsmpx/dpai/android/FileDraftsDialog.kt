@@ -49,7 +49,7 @@ internal fun FileDraftsDialog(onClose: () -> Unit) {
     if (draft == null) FullScreenDialog(onClose, "Черновики файлов") {
         LazyColumn {
             item { Text("Записанные копии восстанавливаются после перезапуска. Здесь можно скопировать текст, даже если дерево задачи уже убрано.", style = MaterialTheme.typography.bodySmall) }
-            if (recovery.note.isNotEmpty()) item { Text(recovery.note, Modifier.padding(12.dp)) }
+            if (recovery.note.isNotEmpty()) item { DiagnosticText(recovery.note, Modifier.padding(12.dp)) }
             if (recovery.unreadable > 0) item { TextButton(onClick = { confirm = true }) { Text("Удалить недоступные копии (${recovery.unreadable})") } }
             if (recovery.ready && drafts.isEmpty()) item { Text("Несохранённых правок нет", Modifier.padding(12.dp)) }
             items(drafts, key = { it.first }) { (key, _) ->

@@ -158,7 +158,7 @@ internal fun EditorAiSheet(model: DemoModel, project: ProjectEntry, task: Worksp
                     SelectionContainer { Text(EditorAiContext.block(i), Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState()), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
                 }
                 if (input == null) Text("Собираю контекст…", style = MaterialTheme.typography.bodySmall)
-                note?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                note?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },
         confirmButton = { TextButton(enabled = !busy && input != null && route != null, onClick = { route?.let { send(it, null) } }) { Text("Отправить") } },

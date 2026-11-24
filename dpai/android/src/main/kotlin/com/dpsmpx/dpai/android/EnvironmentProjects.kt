@@ -58,7 +58,7 @@ internal fun EnvironmentProjectsSection(checks: List<ProjectNeeds.Check>, runnin
         if (checks.isEmpty()) Text("Проектов на target «в приложении» нет.", style = MaterialTheme.typography.bodySmall)
         for (c in checks) {
             Text(c.project, style = MaterialTheme.typography.bodyMedium)
-            Text(ProjectNeeds.text(c), style = MaterialTheme.typography.bodySmall, color = if (c.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
+            DiagnosticText(ProjectNeeds.text(c), style = MaterialTheme.typography.bodySmall, color = if (c.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
             for (n in c.needs.filter { it.found == null }) Text("• ${n.command} — ${n.why}", style = MaterialTheme.typography.labelSmall)
             val packages = ProjectNeeds.installs(c)
             if (packages.isNotEmpty()) TextButton(enabled = !running, onClick = { onInstall(packages, "Для ${c.project}: поставить ${packages.joinToString(" ")}") }) { Text("Поставить: ${packages.joinToString(" ")}") }

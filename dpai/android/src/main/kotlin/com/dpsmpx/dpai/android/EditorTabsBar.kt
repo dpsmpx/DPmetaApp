@@ -159,7 +159,7 @@ internal fun EditorTabsBar(files: OpenEditorFiles, draftKey: (String) -> String)
             EditorIcon(R.drawable.ic_editor_run, "Запустить в терминале", !files.busy && files.canRun, files::run)
         }
     }
-    if (!zen) files.note?.let { Text(it, Modifier.padding(horizontal = 8.dp)) }
+    if (!zen) files.note?.let { DiagnosticText(it, Modifier.padding(horizontal = 8.dp)) }
 }
 
 @Composable

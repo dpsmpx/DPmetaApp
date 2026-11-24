@@ -212,7 +212,7 @@ internal fun WorkspaceRunPanel(model: DemoModel, view: ProjectWorkspaceView, loc
         run.active?.takeIf { awaiting }?.let { a ->
             Text("Сборка: шаг ${run.step ?: "?"} из ${a.profile.steps.size}", style = MaterialTheme.typography.bodyMedium)
         }
-        note?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        note?.let { DiagnosticText(it, style = MaterialTheme.typography.bodyMedium) }
         DebugPanel()
     }
 }

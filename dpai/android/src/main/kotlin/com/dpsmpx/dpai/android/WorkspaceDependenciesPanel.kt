@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.AlertDialog
@@ -85,10 +84,10 @@ internal fun WorkspaceDependenciesPanel(model: DemoModel, view: ProjectWorkspace
         TextButton(enabled = available, onClick = { start(DependencyTools.Mode.REPORT) }) { Text(stringResource(R.string.dependencies_analyze)) }
         TextButton(enabled = available, onClick = { pending = DependencyTools.Mode.PIN.name }) { Text(stringResource(R.string.dependencies_pin)) }
         if (manager == DependencyTools.Manager.PYTHON) TextButton(enabled = available, onClick = { pending = DependencyTools.Mode.RESTORE.name }) { Text(stringResource(R.string.dependencies_restore)) }
-        note?.let { Text(it) }
+        note?.let { DiagnosticText(it) }
         if (run.active?.profile?.kind == ManualProfileKind.DEPENDENCIES || run.active == null && run.note.startsWith("DEPENDENCIES:")) {
-            Text(run.note)
-            Clipboard.Sensitive { SelectionContainer { Text(run.output, style = MaterialTheme.typography.bodySmall) } }
+            if (run.note.isNotEmpty()) DiagnosticText(run.note)
+            if (run.output.isNotEmpty()) DiagnosticText(run.output, style = MaterialTheme.typography.bodySmall, copyLabel = R.string.diagnostic_copy_output)
             if (run.blocked) TextButton(onClick = { model.stopManualProfile(); ControllerService.resume(context) }) { Text(stringResource(R.string.dependencies_stop)) }
         }
         ManualHistorySection(model, view.project, ManualProfileKind.DEPENDENCIES, location, run.finished) { _, _ -> }

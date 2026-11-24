@@ -81,7 +81,7 @@ fun QuickRow(quick: QuickActions, model: DemoModel) {
                 })
             }
         }
-        status?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+        status?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall) }
     }
     if (confirmHold && !nothingToHold) {
         // Пауза останавливает идущие ходы с handoff (D-42) — после подтверждения; ключ серии — один на нажатие «Да».

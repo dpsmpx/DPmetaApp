@@ -90,8 +90,8 @@ internal fun RemoteSharedVerifyDialog(controller: Controller, target: TargetEntr
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Одна папка для всех исполнителей на этом target. Нужны обновлённый агент dpai, Git и Python 3.11+; на Windows также Git Bash. Зависимости на ПК автоматически не устанавливаются.", style = MaterialTheme.typography.bodySmall)
                 if (busy) LinearProgressIndicator()
-                message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                job?.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                message?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error) }
+                job?.note?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
                 status?.let { current ->
                     Text(if (current.configured == null) "К новым ИИ-ходам не подключено" else "Подключено: ${current.configured?.repository}", style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(root, { root = it }, enabled = !busy && current.configured == null, label = { Text("Абсолютный путь папки на target") }, singleLine = true)

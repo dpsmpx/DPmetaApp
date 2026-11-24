@@ -83,7 +83,7 @@ fun RoutinesPane(model: DemoModel, onBack: () -> Unit) {
                             "с показом текста до отправки и записью в журнал действий.",
                         style = MaterialTheme.typography.bodySmall,
                     )
-                    problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    problem?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                     Button(onClick = { adding = true }) { Text("Добавить маршрут") }
                 }
             }
@@ -189,7 +189,7 @@ private fun RoutineDialog(existing: Routine?, subs: List<SubscriptionState>, onD
                         }
                     }
                 }
-                status?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                status?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {

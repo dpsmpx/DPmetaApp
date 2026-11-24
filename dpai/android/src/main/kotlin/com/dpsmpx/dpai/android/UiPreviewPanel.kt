@@ -166,7 +166,7 @@ internal fun UiPreviewDialog(tree: FileTree, treeKey: String, path: String, text
                     }
                 }
                 for ((name, why) in found.skipped) Text("$name — $why", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                note?.let { Text(it, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodyMedium) }
+                note?.let { DiagnosticText(it, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodyMedium) }
                 opened?.let { name ->
                     TextButton(enabled = !busy, onClick = {
                         val port = AdbBridge.state.value.connectPort ?: run { note = "adb не подключён"; return@TextButton }
