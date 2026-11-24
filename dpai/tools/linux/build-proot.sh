@@ -16,7 +16,8 @@ set -eu
 ARCH=${1:?aarch64 или x86_64}
 OUT=${2:?каталог итога}
 CACHE=${3:-${XDG_CACHE_HOME:-$HOME/.cache}/dpai-proot}
-NDK=${NDK:?каталог NDK в переменной NDK}
+# На ARM64 в Alpine доступны собственные clang, compiler-rt и binutils.
+# Путь CI с NDK остаётся умолчанием; sysroot и исходники одинаково проверяются.
 HERE=$(cd "$(dirname "$0")" && pwd)
 
 # Тег v5.1.107.102 — версия, которую выпускает пакет proot Termux (packages/proot/build.sh).
@@ -46,10 +47,20 @@ esac
 fail() { echo "build-proot.sh: $*" >&2; exit 1; }
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d ' ' -f 1; }
 
+if [ "${DPAI_PROOT_NATIVE:-0}" = 1 ]; then
+    [ "$ARCH:$(uname -m)" = aarch64:aarch64 ] || fail 'нужен нативный ARM64'
+    CLANG=$(command -v clang); NM=$(command -v nm); STRIP=$(command -v strip)
+    BUILTINS=$($CLANG --print-libgcc-file-name --rtlib=compiler-rt)
+    [ -f "$BUILTINS" ] || fail 'нет compiler-rt для ARM64'
+else
+: "${NDK:?каталог NDK в переменной NDK}"
 TC=$(ls -d "$NDK"/toolchains/llvm/prebuilt/*/ 2>/dev/null | head -n 1)
 [ -n "$TC" ] && [ -x "$TC/bin/clang" ] || fail "нет clang в $NDK/toolchains/llvm/prebuilt"
 BUILTINS=$(ls "$TC"/lib/clang/*/lib/linux/libclang_rt.builtins-"$ARCH"-android.a 2>/dev/null | head -n 1)
 [ -n "$BUILTINS" ] || fail "нет libclang_rt.builtins-$ARCH-android.a в NDK"
+
+CLANG=$TC/bin/clang; NM=$TC/bin/llvm-nm; STRIP=$TC/bin/llvm-strip
+fi
 
 mkdir -p "$CACHE" "$OUT"
 CACHE=$(cd "$CACHE" && pwd)
@@ -59,11 +70,17 @@ OUT=$(cd "$OUT" && pwd)
 # закрепляет всё дерево. Каталог уже есть, но не тот коммит или правленый, — отказ, не стирание.
 SRC=$CACHE/proot-$COMMIT
 if [ ! -d "$SRC" ]; then
-    TMP=$(mktemp -d "$CACHE/proot-fetch.XXXXXX")
+    if [ "${DPAI_PROOT_NATIVE:-0}" = 1 ]; then
+        # Ссылки link2symlink абсолютные: после fetch каталог уже нельзя переносить.
+        mkdir "$SRC"
+        TMP=$SRC
+    else
+        TMP=$(mktemp -d "$CACHE/proot-fetch.XXXXXX")
+    fi
     git -C "$TMP" init -q
     git -C "$TMP" fetch -q --depth 1 "$REPO" "$COMMIT"
     git -C "$TMP" -c advice.detachedHead=false checkout -q FETCH_HEAD
-    mv "$TMP" "$SRC"
+    if [ "$TMP" != "$SRC" ]; then mv "$TMP" "$SRC"; fi
 fi
 [ "$(git -C "$SRC" rev-parse HEAD)" = "$COMMIT" ] || fail "$SRC — не коммит $COMMIT; удалите каталог"
 git -C "$SRC" diff --quiet HEAD && [ -z "$(git -C "$SRC" status --porcelain)" ] || fail "$SRC изменён; удалите каталог"
@@ -86,7 +103,7 @@ if [ ! -f "$SYSROOT/.ready" ]; then
     touch "$SYSROOT/.ready"
 fi
 
-CC="$TC/bin/clang --target=$ARCH-linux-musl --sysroot=$SYSROOT"
+CC="$CLANG --target=$ARCH-linux-musl --sysroot=$SYSROOT"
 B=$(mktemp -d "$OUT/build.XXXXXX")
 S=$SRC/src
 arch_value() { $CC -E -dM -DNO_LIBC_HEADER "$S/arch.h" | awk -v k="$1" '$2 == k { $1 = ""; $2 = ""; sub(/^ +/, ""); print }'; }
@@ -128,7 +145,7 @@ $CC -static -nostdlib -fuse-ld=lld "-Wl,--build-id=none,-Ttext=$LOADER_ADDRESS,-
 OBJECTS=$(sed -n '/^OBJECTS += /,/^$/p' "$S/GNUmakefile" | tr -d '\\' | tr -s ' \t' '\n' | grep '\.o$')
 if [ -n "$POKEDATA" ]; then
     # loader-info.c — как loader/loader-info.awk: смещение pokedata_workaround от _start загрузчика.
-    nm_addr() { "$TC/bin/llvm-nm" "$B/loader/loader" | awk -v k="$1" '$3 == k { print $1 }'; }
+    nm_addr() { "$NM" "$B/loader/loader" | awk -v k="$1" '$3 == k { print $1 }'; }
     P=$(nm_addr pokedata_workaround)
     T=$(nm_addr _start)
     [ -n "$P" ] && [ -n "$T" ] || fail "в загрузчике нет pokedata_workaround или _start"
@@ -147,8 +164,8 @@ L=$SYSROOT/usr/lib
 $CC -static-pie -nostdlib -fuse-ld=lld -Wl,-z,noexecstack -o "$B/proot" \
     "$L/rcrt1.o" "$L/crti.o" $LINK "-L$L" -ltalloc -lc "$BUILTINS" "$L/crtn.o"
 
-"$TC/bin/llvm-strip" --strip-all -o "$OUT/proot" "$B/proot"
-"$TC/bin/llvm-strip" --strip-all -o "$OUT/loader" "$B/loader/loader"
+"$STRIP" --strip-all -o "$OUT/proot" "$B/proot"
+"$STRIP" --strip-all -o "$OUT/loader" "$B/loader/loader"
 chmod 755 "$OUT/proot" "$OUT/loader"
 rm -rf "$B"
 echo "proot $VERSION ($COMMIT), $ARCH: $OUT/proot, $OUT/loader"

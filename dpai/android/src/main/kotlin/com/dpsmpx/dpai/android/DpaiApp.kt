@@ -512,7 +512,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 failure?.takeIf { corrupted == null }?.let {
                     // Пустое состояние ведёт дальше (AI:A-17): к targets и к журналу.
                     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-                        Text("Контроллер не работает: $it.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        DiagnosticText("Контроллер не работает: $it.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                         Row {
                             TextButton(onClick = { openTab(AiTab.TARGETS) }) { Text("Открыть Targets") }
                             TextButton(onClick = { selectedId = null; settings = true; settingsSub = SETTINGS_LOG }) { Text("Журнал") }
@@ -814,7 +814,7 @@ private fun SessionExtras(screen: SessionScreen, model: DemoModel) {
             }
         }
     }
-    status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+    status?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
 }
 
 /** «работает N мин» с медленно крутящимся кружком — ровно одна строка. */
@@ -993,7 +993,7 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel, maxHeight: androi
         )
     }
     Column(Modifier.padding(horizontal = 6.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+        status?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
         // Пусто — одна строка на всю ширину и рядом «стоп» (или «свежая сессия»); начали писать — поле растёт
         // до высоты окна, под ним «Отправить» и «Модель и усилие» (D-61). Ход сообщением не прерывается (D-60).
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1150,7 +1150,7 @@ private fun SearchDialog(model: DemoModel, onDone: () -> Unit, onOpen: (com.dpsm
                                 val link = h.link?.takeIf { it.kind != com.dpsmpx.dpai.notifications.DeepLink.Kind.EVENT }
                                 Column(Modifier.fillMaxWidth().then(if (link != null) Modifier.clickable { onOpen(link) } else Modifier).padding(vertical = 2.dp)) {
                                     Text(h.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
-                                    Text(h.detail, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3)
+                                    DiagnosticText(h.detail, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3)
                                 }
                             }
                         }
@@ -1292,7 +1292,7 @@ internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
                         }
                     }
                 }
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                error?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error) }
             }
     }
 }
@@ -1335,7 +1335,7 @@ private fun ConfirmDialog(model: DemoModel, requests: List<RequestCard>, uri: St
                 } else {
                     Text("Он отвечен, истёк или снят.", style = MaterialTheme.typography.bodySmall)
                 }
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                error?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {
@@ -1450,7 +1450,7 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
                     Text("Брать задачи подписок у предела (с handoff)" + if (wantRotation != null) " · применится" else "", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
                 }
             }
-            status?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
+            status?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
         }
     }
 }

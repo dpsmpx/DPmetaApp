@@ -171,6 +171,44 @@ class ManualProfilesTest {
         assertEquals(null, restored.snapshot().active)
     }
 
+    @Test fun bindingMustBeDurableBeforeThePauseIsReleasedAndRecoveryDoesNotRestartCommand() {
+        val host = Host()
+        var writes = 0
+        var writable = false
+        lateinit var s: ManualProfiles
+        s = ManualProfiles(DocumentStore(NioVfs(dir), "profiles"), ids, clock) { _, _ ->
+            assertTrue(s.blocked)
+            writes++
+            if (writable) Outcome.success(Unit) else Outcome.failure(DiagCode.STORAGE_IO_FAILED, "диск недоступен")
+        }
+        val run = s.prepare(project, target, location, profile).valueOrNull()!!
+        s.launch(run, host.client()); host.state = RunState.EXITED
+        assertTrue(s.poll(host.client()))
+        assertTrue(store().blocked)
+        writable = true
+        // Восстановленная сессия повторяет только короткую запись, а не start агента.
+        s = ManualProfiles(DocumentStore(NioVfs(dir), "profiles"), ids, clock) { _, _ ->
+            assertTrue(s.blocked); writes++; Outcome.success(Unit)
+        }
+        assertFalse(s.poll(host.client()))
+        assertEquals(1, host.starts)
+        assertEquals(2, writes)
+        assertFalse(store().blocked)
+    }
+
+    @Test fun cancellingAfterCommandBeforeBindingDoesNotReportSuccessOrStartFollowingBuild() {
+        val host = Host()
+        val s = ManualProfiles(DocumentStore(NioVfs(dir), "profiles"), ids, clock) { _, _ ->
+            Outcome.failure(DiagCode.STORAGE_IO_FAILED, "привязка ещё не записана")
+        }
+        val run = s.prepare(project, target, location, profile).valueOrNull()!!
+        s.launch(run, host.client()); host.state = RunState.EXITED
+        assertTrue(s.poll(host.client()))
+        assertFalse(s.stop(host.client()))
+        assertFalse(s.snapshot().complete)
+        assertEquals(1, host.starts)
+    }
+
     private val steps = ManualProfile.form(ManualProfileKind.BUILD, listOf(
         Triple("Настройка", "cmake -S . -B build", "60"),
         Triple("Сборка", "cmake --build build", "60"),

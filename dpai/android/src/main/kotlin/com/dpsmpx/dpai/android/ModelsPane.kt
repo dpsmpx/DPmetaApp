@@ -123,7 +123,7 @@ fun ModelsPane(controller: Controller, model: DemoModel, onSession: (ExecutorCha
                 androidx.compose.ui.res.stringResource(R.string.api_work_models_intro),
                 style = MaterialTheme.typography.bodySmall,
             )
-            problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            problem?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 androidx.compose.material3.Button(onClick = { ApiQuickStartRequests.request() }) { Text("API-чат с проектом") }
                 androidx.compose.material3.FilledTonalButton(onClick = { creatingTask = true }) { Text("Чат CLI / задача") }
@@ -359,7 +359,7 @@ private fun ProfileDialog(existing: ApiProfile?, onDone: () -> Unit) {
                         }
                     }
                 }) { Text("Проверить ключ") }
-                status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                status?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
                 if (models.isNotEmpty()) {
                     Column(Modifier.heightIn(max = 180.dp).verticalScroll(rememberScrollState())) {
                         for (m in models) {
@@ -478,7 +478,7 @@ private fun UsagePane(p: ApiProfile, onBack: () -> Unit) {
             null -> item(key = "wait") { CircularProgressIndicator() }
             is Outcome.Failure -> item(key = "fail") {
                 Column {
-                    Text(v.errors.first().let { "${Words.reason(it.code.name)}: ${it.message}" }, color = MaterialTheme.colorScheme.error)
+                    DiagnosticText(v.errors.first().let { "${Words.reason(it.code.name)}: ${it.message}" }, color = MaterialTheme.colorScheme.error)
                     TextButton(onClick = { reload++ }) { Text("Повторить") }
                 }
             }
@@ -709,7 +709,7 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, profiles: List<ApiProfile>
                 EntryView(ChatEntry(ChatRole.ASSISTANT, r.text.ifEmpty { "…" }, p?.model), streaming = true)
             } }
         }
-        note?.let { Text(it, Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        note?.let { DiagnosticText(it, Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         if (files.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 for (f in files) {

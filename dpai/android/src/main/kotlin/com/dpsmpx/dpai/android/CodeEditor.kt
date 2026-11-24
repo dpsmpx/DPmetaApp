@@ -170,7 +170,7 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
             }
         }
         if (!zen) Text("${CodeSyntax.language(path)} · ${position.first}:${position.second} · ${if (EditorActions.separator(buffer.text) == "\r\n") "CRLF" else "LF"}", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall)
-        if (!zen) note?.let { Text(it, Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall) }
+        if (!zen) note?.let { DiagnosticText(it, Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall) }
         if (!zen) aiCompletion?.let { AiCompletionBar(it, buffer, enabled) { changed() } }
         if (guestPath != null && guestRoot != null) CodeAssist(buffer, guestPath, guestRoot, revision, enabled, width, tabs, onChange = { changed() }, onMarks = { marks = it }, compact = zen, onOpen = callbacks.open, editorRootKey = editorRootKey, relativePath = path)
         // Отладка (D-159): точки — касанием номера строки у файлов C, C++, Python в Linux; строка остановки — фоном.

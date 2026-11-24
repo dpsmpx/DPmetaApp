@@ -103,7 +103,7 @@ fun LogPane(model: DemoModel) {
                 }
             }
         }
-        note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+        note?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall) }
         if (debug) ProbePanel(model)
         LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             items(lines, key = { it.seq }) { l ->

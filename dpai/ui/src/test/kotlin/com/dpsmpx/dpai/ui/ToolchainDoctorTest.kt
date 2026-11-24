@@ -30,6 +30,7 @@ class ToolchainDoctorTest {
         assertTrue(ToolchainDoctor.needsJvm(profile(ManualProfileKind.BUILD, "sh", "gradlew", "assemble")))
         assertTrue(ToolchainDoctor.needsJvm(profile(ManualProfileKind.CHECK, "/usr/bin/java", "-version")))
         assertTrue(ToolchainDoctor.needsJvm(profile(ManualProfileKind.BUILD, "env", "JAVA_HOME=/opt/jdk", "gradle", "build")))
+        assertTrue(ToolchainDoctor.needsJvm(profile(ManualProfileKind.BUILD, "sh", "./tools/build-apk.sh", "release").copy(needs = setOf(ManualNeed.ANDROID_SDK))))
         assertEquals(false, ToolchainDoctor.needsJvm(profile(ManualProfileKind.BUILD, "cmake", "--build", "build")))
         assertEquals(false, ToolchainDoctor.needsJvm(profile(ManualProfileKind.DEPENDENCIES, "./gradlew", "assemble")))
     }
@@ -79,6 +80,26 @@ class ToolchainDoctorTest {
             })
         }
         assertIs<Outcome.Success<Unit>>(ToolchainDoctor.buildJvmPreflight(host) { false })
+    }
+
+    @Test fun nativePreflightUsesTheSameHeapCompatibilityAsGradleForJavaAndJavac() {
+        val seen = arrayListOf<List<String>>()
+        val host = object : ProcessHost {
+            override fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit): Outcome<RunningProcess> {
+                seen += spec.command
+                val compatible = "LD_PRELOAD=${AndroidNativeJdk.COMPAT}" in spec.command
+                return Outcome.success(object : RunningProcess {
+                    override val pid: Long? = null
+                    override val isAlive = false
+                    override fun awaitExit(timeout: Duration) = if (compatible) 0 else 134
+                    override fun stop(grace: Duration) = StopReport(0, false, emptyList())
+                })
+            }
+        }
+        assertIs<Outcome.Success<Unit>>(ToolchainDoctor.buildJvmPreflight(host, 28, nativeAndroid = true) { false })
+        assertEquals(2, seen.size)
+        assertTrue(seen.any { AndroidNativeJdk.JAVA in it })
+        assertTrue(seen.any { AndroidNativeJdk.JAVAC in it })
     }
 
     @Test fun preflightDistinguishesInstalledApkFromGitSourcesAndReportsConflictingMemoryProbe() {

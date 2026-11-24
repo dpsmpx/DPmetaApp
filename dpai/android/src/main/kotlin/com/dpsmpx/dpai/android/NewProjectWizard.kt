@@ -164,7 +164,7 @@ internal fun NewProjectWizard(onLinux: () -> Unit, onOpen: () -> Unit, onClose: 
                                     RadioButton(selected = placeKey == o.place.key, onClick = null, enabled = problem == null)
                                     Column(Modifier.padding(start = 8.dp)) {
                                         Text(o.place.title, style = MaterialTheme.typography.bodyLarge)
-                                        problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                                        problem?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                                     }
                                 }
                             }
@@ -196,7 +196,7 @@ internal fun NewProjectWizard(onLinux: () -> Unit, onOpen: () -> Unit, onClose: 
                                                 NewProjectRun.install(context, template)
                                             }
                                         }) { Text(if (installing) "Ставлю…" else "Поставить недостающее") }
-                                        installNote?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                                        installNote?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                                     } else {
                                         Text("Установите их на «${place?.title}». Проект можно создать и сейчас: соберётся, когда инструменты появятся." +
                                             (if ("git" in m) " Без Git проект не создать." else ""), style = MaterialTheme.typography.bodySmall)
@@ -212,7 +212,7 @@ internal fun NewProjectWizard(onLinux: () -> Unit, onOpen: () -> Unit, onClose: 
                             busy?.let { Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.padding(end = 8.dp)); Text(it) } }
                         }
                     }
-                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    error?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error) }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                     if (created != null) {

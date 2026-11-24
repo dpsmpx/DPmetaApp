@@ -61,7 +61,7 @@ internal fun ProjectEditPreview(plan: WorkspaceEditPlan, busy: Boolean, note: St
     AlertDialog(onDismissRequest = { if (!busy) onClose() }, title = { Text(stringResource(R.string.project_edit_title, plan.files.size, plan.editCount)) },
         text = { Column {
             Text(stringResource(R.string.project_edit_copy), style = MaterialTheme.typography.bodySmall)
-            note?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            note?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error) }
             LazyColumn {
                 for (file in plan.files) {
                     item(key = "file:${file.path}") { Text(file.path, style = MaterialTheme.typography.titleSmall) }

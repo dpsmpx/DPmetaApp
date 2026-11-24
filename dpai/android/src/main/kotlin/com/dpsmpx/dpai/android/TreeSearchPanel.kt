@@ -115,7 +115,7 @@ internal fun TreeSearchPanel(tree: FileTree, dir: String, stateKey: String, onOp
         }
         report?.let { Text(it, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall) }
         if (searching || replacing) LinearProgressIndicator(Modifier.fillMaxWidth())
-        error?.let { Text(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error) }
+        error?.let { DiagnosticText(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error) }
         val summary = names?.let { status(it.hits.size, it.limited, it.scanned, 0, "файлов") } ?: lines?.let { status(it.hits.size, it.limited, it.scanned, it.skipped, "строк") }
         summary?.let { Text(it, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall) }
         LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)) {

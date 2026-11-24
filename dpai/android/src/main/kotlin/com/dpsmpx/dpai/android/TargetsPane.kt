@@ -398,7 +398,7 @@ private fun ProjectsCard(controller: Controller, model: DemoModel, targets: List
                     }
                 }
             }
-            failed?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+            failed?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
         }
     }
     asking?.let { p ->
@@ -522,7 +522,7 @@ internal fun AddTargetDialog(controller: Controller, onDone: (TargetEntry?) -> U
                         Checkbox(windows, { windows = it })
                         Text("Windows")
                     }
-                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    error?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error) }
                 }
             } else {
                 Column {
@@ -530,7 +530,7 @@ internal fun AddTargetDialog(controller: Controller, onDone: (TargetEntry?) -> U
                     Text("ssh-keygen -l -f <каталог ssh>/ssh_host_*_key.pub", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
                     Text(probed.second.type, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
                     SelectionContainer { Text(probed.second.fingerprint, fontFamily = FontFamily.Monospace) }
-                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    error?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error) }
                 }
             }
         },
@@ -608,7 +608,7 @@ internal fun ProjectDialog(controller: Controller, target: TargetEntry, withClau
                     OutlinedTextField(key, { key = it }, label = { Text("Ключ SSH на ${on.label}") }, singleLine = true)
                     OutlinedTextField(known, { known = it }, label = { Text("known_hosts на нём (необязательно)") }, singleLine = true)
                 }
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                error?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {
@@ -676,7 +676,7 @@ internal fun ControlCard(model: DemoModel) {
                 Text("Передавать задачи у предела другому ИИ автоматически", Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodySmall)
             }
             Text(if (auto) "У предела всех слотов задача сама уходит к Codex или Gemini (по кругу), с контекстом." else "У предела задача ждёт; передать её другому подключённому ИИ можно кнопкой у задачи.", style = MaterialTheme.typography.labelSmall)
-            note?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
+            note?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
         }
     }
 }
@@ -807,7 +807,7 @@ internal fun CliCard() {
                     )
                 }
             }
-            note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+            note?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall) }
         }
     }
 }
@@ -876,7 +876,7 @@ internal fun BackupCard(controller: Controller, framed: Boolean = true, onRestor
                     (last?.let { "Последняя: ${it.first}" } ?: "Копий ещё нет."),
                 style = MaterialTheme.typography.bodySmall,
             )
-            message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            message?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
             Row {
                 TextButton(onClick = {
                     scope.launch {
@@ -957,7 +957,7 @@ private fun TmuxSwitch(controller: Controller, t: TargetEntry) {
             Text("После обрыва связи вкладка вернётся в ту же сессию; нужен tmux на target", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-    note?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
+    note?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
 }
 
 /**
@@ -988,7 +988,7 @@ private fun SessionsRow(controller: Controller, t: TargetEntry) {
             }, label = { Text("$k") }, modifier = Modifier.padding(end = 4.dp))
         }
     }
-    note?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    note?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 }
 
 private const val PROBING = "проверяю вход…"

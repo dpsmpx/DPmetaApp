@@ -45,6 +45,24 @@ object LinuxSetup {
         val lib = context.applicationInfo.nativeLibraryDir
         val tmp = File(context.cacheDir, "linux-tmp").apply { mkdirs() }
         val rootfs = File(context.filesDir, environment(context).rootfs)
+        // --link2symlink превращает жёсткие ссылки apk (binutils: nm, strip) в абсолютные ссылки
+        // на путь хоста /data/data/<пакет>/…/rootfs; гостю этот путь виден только привязкой.
+        val binRel = "usr/aarch64-alpine-linux-musl/bin"
+        val bin = File(rootfs, binRel)
+        // Берём фактический путь из ссылки этого пользователя, а не путь первого профиля Android.
+        val linkedDir = try {
+            File(android.system.Os.readlink(File(rootfs, "usr/bin/nm").path)).parentFile
+        } catch (_: android.system.ErrnoException) { null }
+        val selfBind = if (linkedDir != null && linkedDir.isAbsolute && linkedDir.path.endsWith("/$binRel") &&
+            runCatching { java.nio.file.Files.isSameFile(bin.toPath(), linkedDir.toPath()) }.getOrDefault(false)) {
+            listOf(ProotLayout.Bind(bin.path, linkedDir.path))
+        } else emptyList()
+        val compat = File(lib, "libdpai-jvm-compat.so")
+        val guestCompat = com.dpsmpx.dpai.ui.AndroidNativeJdk.COMPAT_ASSET
+        val compatBinds = if (rootfs.isDirectory && compat.isFile) {
+            File(rootfs, guestCompat.removePrefix("/")).parentFile?.mkdirs()
+            listOf(ProotLayout.Bind(compat.path, guestCompat))
+        } else emptyList()
         return ProotLayout(
             proot = "$lib/libproot.so",
             loader = "$lib/libproot-loader.so",
@@ -52,7 +70,7 @@ object LinuxSetup {
             tmp = tmp.path,
             // Bionic tools (the same native ABI used by Termux) need the Android
             // dynamic linker and APEX libraries visible *inside* PRoot.
-            binds = nativeSystemBinds(rootfs) + storageBinds(context, rootfs) + sharedBinds(rootfs),
+            binds = nativeSystemBinds(rootfs) + compatBinds + selfBind + storageBinds(context, rootfs) + sharedBinds(rootfs),
         )
     }
 

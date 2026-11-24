@@ -17,6 +17,10 @@ object AndroidNativeJdk {
     const val JAVA_HOME = "$PREFIX/lib/jvm/java-21-openjdk"
     const val JAVA = "$JAVA_HOME/bin/java"
     const val JAVAC = "$JAVA_HOME/bin/javac"
+    const val COMPAT_ASSET = "/opt/dpai/libdpai-jvm-compat.so"
+    const val COMPAT = "$PREFIX/lib/libdpai-jvm-compat.so"
+    /** Sysroot API 30 для сборки JNI самой студией (DPAI_ARM64_SYSROOT в dpai/android/build.gradle.kts). */
+    const val SYSROOT = "/root/.dpai/arm64-sysroot"
 
     // Same pinned bootstrap as the official Termux application (apt.android-7),
     // termux-app/app/build.gradle, downloadBootstraps. SHA-256 is checked before extraction.
@@ -27,6 +31,9 @@ object AndroidNativeJdk {
     val buildEnvironment = mapOf(
         "JAVA_HOME" to JAVA_HOME,
         "PATH" to "$JAVA_HOME/bin:$PREFIX/bin:/root/tools/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        // Без неё HotSpot на устройствах с маркировкой указателей падает SIGABRT (sdkmanager, Gradle).
+        "LD_PRELOAD" to COMPAT,
+        "DPAI_ARM64_SYSROOT" to SYSROOT,
     )
 
     /**
@@ -101,15 +108,45 @@ object AndroidNativeJdk {
             DEBIAN_FRONTEND=noninteractive "${'$'}PREFIX/bin/apt-get" install -y openjdk-21 || { echo 'DPAI_NATIVE_JDK_APT_INSTALL_FAILED'; exit 1; }
           fi
         fi
-        "${'$'}JAVA" -Xmx128m -version || { echo 'DPAI_NATIVE_JDK_JAVA_FAILED'; exit 1; }
-        '$JAVAC' -version || { echo 'DPAI_NATIVE_JDK_JAVAC_FAILED'; exit 1; }
+        # Sysroot Android API 30 для JNI и библиотеки совместимости — без NDK с ПК:
+        # заголовки и crt*.o — пакет Termux ndk-sysroot, libc/libdl/libm — системные.
+        mkdir -p "${'$'}{PREFIX%/files/usr}/cache/apt/archives/partial"
+        if ! test -f "${'$'}PREFIX/lib/crtbegin_so.o"; then
+          DEBIAN_FRONTEND=noninteractive "${'$'}PREFIX/bin/apt-get" install -y ndk-sysroot || { echo 'DPAI_NATIVE_SYSROOT_FAILED'; exit 1; }
+        fi
+        SYSROOT_LIB='$SYSROOT/usr/lib/aarch64-linux-android/30'
+        mkdir -p "${'$'}SYSROOT_LIB"
+        test -e '$SYSROOT/usr/include' || ln -s "${'$'}PREFIX/include" '$SYSROOT/usr/include'
+        for crt in crtbegin_so.o crtend_so.o; do cp "${'$'}PREFIX/lib/${'$'}crt" "${'$'}SYSROOT_LIB/${'$'}crt"; done
+        for so in libc libdl libm; do
+          test -e "/system/lib64/${'$'}so.so" || { echo "DPAI_NATIVE_SYSROOT_FAILED: нет /system/lib64/${'$'}so.so"; exit 1; }
+          ln -sf "/system/lib64/${'$'}so.so" "${'$'}SYSROOT_LIB/${'$'}so.so"
+        done
+        test -f '$SYSROOT/usr/include/malloc.h' || { echo 'DPAI_NATIVE_SYSROOT_FAILED: нет заголовков'; exit 1; }
+        # cacerts JDK Termux — ссылка на файл, который строит postinst ca-certificates-java;
+        # без него sdkmanager и Gradle не проверяют TLS. Источник — java-cacerts Alpine.
+        CACERTS="${'$'}JAVA_HOME/lib/security/cacerts"
+        if ! test -s "${'$'}CACERTS"; then
+          test -s /etc/ssl/certs/java/cacerts || { echo 'DPAI_NATIVE_JDK_CACERTS_MISSING: нужен пакет Alpine java-cacerts'; exit 1; }
+          CACERTS_TARGET=${'$'}(readlink "${'$'}CACERTS" || true)
+          case "${'$'}CACERTS_TARGET" in
+            "${'$'}PREFIX"/etc/*) mkdir -p "${'$'}(dirname "${'$'}CACERTS_TARGET")"; cp /etc/ssl/certs/java/cacerts "${'$'}CACERTS_TARGET" ;;
+            '') cp /etc/ssl/certs/java/cacerts "${'$'}CACERTS" ;;
+            *) echo "DPAI_NATIVE_JDK_CACERTS_LINK: ${'$'}CACERTS_TARGET"; exit 1 ;;
+          esac
+          test -s "${'$'}CACERTS" || { echo 'DPAI_NATIVE_JDK_CACERTS_MISSING'; exit 1; }
+        fi
+        test -r '$COMPAT_ASSET' || { echo 'DPAI_NATIVE_JDK_COMPAT_MISSING'; exit 1; }
+        /usr/bin/install -m 755 '$COMPAT_ASSET' '$COMPAT'
+        LD_PRELOAD='$COMPAT' "${'$'}JAVA" -Xmx128m -version || { echo 'DPAI_NATIVE_JDK_JAVA_FAILED'; exit 1; }
+        LD_PRELOAD='$COMPAT' '$JAVAC' -version || { echo 'DPAI_NATIVE_JDK_JAVAC_FAILED'; exit 1; }
         # Versions alone do not prove that javac can compile or that the JVM can
         # load application classes. A real, isolated round-trip gates the SDK.
         CHECK=${'$'}(mktemp -d "${'$'}PREFIX/tmp/dpai-jdk-check.XXXXXX")
         trap 'rm -rf "${'$'}CHECK"' EXIT
         printf 'class DpaiJdkCheck { public static void main(String[] args) { System.out.println("DPAI_JDK_ROUNDTRIP_OK"); } }\n' > "${'$'}CHECK/DpaiJdkCheck.java"
-        '$JAVAC' -J-Xmx256m -d "${'$'}CHECK" "${'$'}CHECK/DpaiJdkCheck.java" || { echo 'DPAI_NATIVE_JDK_COMPILE_FAILED'; exit 1; }
-        "${'$'}JAVA" -Xmx128m -cp "${'$'}CHECK" DpaiJdkCheck | grep -qx DPAI_JDK_ROUNDTRIP_OK || { echo 'DPAI_NATIVE_JDK_CLASS_FAILED'; exit 1; }
+        LD_PRELOAD='$COMPAT' '$JAVAC' -J-Xmx256m -d "${'$'}CHECK" "${'$'}CHECK/DpaiJdkCheck.java" || { echo 'DPAI_NATIVE_JDK_COMPILE_FAILED'; exit 1; }
+        LD_PRELOAD='$COMPAT' "${'$'}JAVA" -Xmx128m -cp "${'$'}CHECK" DpaiJdkCheck | grep -qx DPAI_JDK_ROUNDTRIP_OK || { echo 'DPAI_NATIVE_JDK_CLASS_FAILED'; exit 1; }
         # Make unqualified `java` and `javac` in the Linux terminal use the
         # verified Bionic JDK as well. Never overwrite user's own commands.
         mkdir -p /root/tools/bin

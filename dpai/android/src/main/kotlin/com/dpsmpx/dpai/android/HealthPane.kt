@@ -138,7 +138,7 @@ internal fun HealthPane(model: DemoModel, nav: HealthNav, onBack: () -> Unit) {
         // Идущая или законченная операция гостя — итог словами, как на экране Linux.
         for (key in listOf(LongJobs.LINUX_INSTALL, LongJobs.LINUX_APK)) {
             state[key]?.let { job ->
-                Text(if (job.running) "${job.label}…" else "${job.label}: ${job.note.orEmpty()}", style = MaterialTheme.typography.bodySmall)
+                DiagnosticText(if (job.running) "${job.label}…" else "${job.label}: ${job.note.orEmpty()}", style = MaterialTheme.typography.bodySmall)
             }
         }
         val f = facts
@@ -184,7 +184,7 @@ private fun HealthCard(item: HealthItem, enabled: Boolean, onAction: (HealthActi
     Card(Modifier.fillMaxWidth(), colors = colors) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(item.title, style = MaterialTheme.typography.titleSmall)
-            Text(item.detail, style = MaterialTheme.typography.bodySmall)
+            DiagnosticText(item.detail, style = MaterialTheme.typography.bodySmall)
             if (item.actions.isNotEmpty()) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (a in item.actions) Button(enabled = enabled, onClick = { onAction(a) }) { Text(a.label) }
@@ -208,7 +208,7 @@ private fun SetupStepRow(step: SetupStepItem, enabled: Boolean, onAction: (Healt
         )
         Column(Modifier.weight(1f)) {
             Text(step.title + if (step.optional && step.done != true) " · по желанию" else "", style = MaterialTheme.typography.bodyMedium)
-            Text(step.text, style = MaterialTheme.typography.bodySmall)
+            DiagnosticText(step.text, style = MaterialTheme.typography.bodySmall)
         }
         step.action?.let { a -> TextButton(enabled = enabled, onClick = { onAction(a) }) { Text(a.label) } }
     }
@@ -251,7 +251,7 @@ private fun GitIdentityDialog(onDone: (Boolean) -> Unit) {
                 Text("Запишется в ~/.gitconfig Linux приложения: git commit в терминале и у ИИ будет подписан этим именем и почтой.", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(name, { name = it; error = null }, label = { Text("Имя") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(email, { email = it; error = null }, label = { Text("Почта") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                error?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },
         confirmButton = {

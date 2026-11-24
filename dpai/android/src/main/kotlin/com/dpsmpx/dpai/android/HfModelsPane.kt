@@ -98,7 +98,7 @@ fun HfDownloadSection() {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
             }
         }
-        s.note?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = if (s.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) }
+        s.note?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall, color = if (s.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) }
         if (s.needToken && s.busy == null) {
             TextButton(onClick = { asking = true }) { Text(if (hasToken) "Заменить токен…" else "Ввести токен…") }
         }

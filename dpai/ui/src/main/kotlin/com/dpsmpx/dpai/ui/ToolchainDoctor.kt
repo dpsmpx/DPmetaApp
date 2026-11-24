@@ -20,7 +20,7 @@ object ToolchainDoctor {
     data class Probe(val name: String, val command: List<String>, val seconds: Int = 30)
 
     /** Только распознаваемые JVM-launcher'ы. Произвольные shell-скрипты по имени не угадываем. */
-    fun needsJvm(profile: ManualProfile): Boolean = profile.kind != ManualProfileKind.DEPENDENCIES && profile.steps.any { step ->
+    fun needsJvm(profile: ManualProfile): Boolean = profile.kind != ManualProfileKind.DEPENDENCIES && (needsAndroidSdk(profile) || profile.steps.any { step ->
         val words = step.command
         val first = words.firstOrNull()?.substringAfterLast('/')
         val command = if (first == "env") words.drop(1).dropWhile { '=' in it } else words
@@ -34,7 +34,7 @@ object ToolchainDoctor {
             }
             else -> false
         }
-    }
+    })
 
     /**
      * Older saved Gradle profiles often have no `needs` field. Android variant
@@ -122,8 +122,8 @@ object ToolchainDoctor {
     """.trimIndent()
     private val definitions = listOf(
         Probe("java", listOf("java", "-Xmx128m", "-version")),
-        Probe("android_java", listOf(AndroidNativeJdk.JAVA, "-Xmx128m", "-version")),
-        Probe("android_javac", listOf(AndroidNativeJdk.JAVAC, "-version")),
+        Probe("android_java", listOf("env", "LD_PRELOAD=${AndroidNativeJdk.COMPAT}", AndroidNativeJdk.JAVA, "-Xmx128m", "-version")),
+        Probe("android_javac", listOf("env", "LD_PRELOAD=${AndroidNativeJdk.COMPAT}", AndroidNativeJdk.JAVAC, "-version")),
         Probe("java_debug", listOf("java", "-Xmx128m", "-Xlog:os=debug", "-version")),
         Probe("memory", listOf("python3", "-I", "-B", "-c", """
             import ctypes, mmap, os, json, sys
@@ -169,6 +169,7 @@ object ToolchainDoctor {
         Probe("c++", listOf("/bin/sh", "-c", cpp), 60),
         Probe("android_sdk", listOf("/bin/sh", "-c", """
             set -eu
+            LD_PRELOAD='${AndroidNativeJdk.COMPAT}'; export LD_PRELOAD
             sdk=${'$'}{ANDROID_HOME:-/root/android-sdk}
             printf 'SDK=%s\n' "${'$'}sdk"
             "${'$'}sdk/cmdline-tools/latest/bin/sdkmanager" --version

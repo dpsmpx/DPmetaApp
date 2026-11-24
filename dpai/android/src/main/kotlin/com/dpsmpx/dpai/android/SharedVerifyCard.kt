@@ -69,10 +69,10 @@ fun SharedVerifyCard() {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Общие инструменты DP-Verify", style = MaterialTheme.typography.titleSmall)
             Text("Одна папка для Claude, Codex и Gemini на этом телефоне. ИИ может обновлять инструменты; каждая версия проверяется до отправки в main.", style = MaterialTheme.typography.bodySmall)
-            Text(note.ifEmpty { "Чтение состояния…" }, style = MaterialTheme.typography.bodySmall)
-            authMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            DiagnosticText(note.ifEmpty { "Чтение состояния…" }, style = MaterialTheme.typography.bodySmall)
+            authMessage?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
             jobs[LongJobs.SHARED_VERIFY]?.note?.takeIf { it != note }?.let {
-                Text("Последняя операция: $it", style = MaterialTheme.typography.bodySmall)
+                DiagnosticText("Последняя операция: $it", style = MaterialTheme.typography.bodySmall)
             }
             if (jobs[LongJobs.SHARED_VERIFY]?.running == true) {
                 Text("Получение и полная проверка версии могут занять несколько минут", style = MaterialTheme.typography.bodySmall)

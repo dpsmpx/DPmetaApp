@@ -13,6 +13,9 @@ plugins {
     id("dpai.android-library")
 }
 
+// Отдельный режим для Linux студии: sysroot r28c с заголовками и библиотеками API 30.
+val deviceSysroot = providers.environmentVariable("DPAI_ARM64_SYSROOT").orNull
+
 android {
     namespace = "com.dpsmpx.dpai.android"
     compileSdk = 37
@@ -37,7 +40,7 @@ android {
     // Процессы и псевдотерминал Linux-среды — свой код на C через JNI (D-75, шаг 3; D-17: NDK — только здесь).
     // Версия NDK — та, что AGP берёт по умолчанию: NDK r28 выравнивает библиотеки под страницы 16 КБ.
     ndkVersion = "28.2.13676358"
-    externalNativeBuild {
+    if (deviceSysroot == null) externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
@@ -84,7 +87,16 @@ val linuxFiles = tasks.register("linuxFiles") {
     val gpl = file("linux/GPL-2.0.txt")
     val buildProot = file("../tools/linux/build-proot.sh")
     val compat = file("../tools/linux/proot-musl-compat.h")
-    val ndk = androidComponents.sdkComponents.ndkDirectory
+    val ndk = if (deviceSysroot == null) androidComponents.sdkComponents.ndkDirectory else null
+    val sysroot = deviceSysroot
+    val nativeSource = file("src/main/cpp/dpai_native.c")
+    val jvmCompatSource = file("src/main/cpp/dpai_jvm_compat.c")
+    inputs.property("nativeMode", sysroot ?: "ndk")
+    if (sysroot != null) {
+        inputs.files(nativeSource, jvmCompatSource)
+        inputs.dir(File(sysroot, "usr/include"))
+        inputs.dir(File(sysroot, "usr/lib/aarch64-linux-android/30"))
+    }
     val work = temporaryDir
     // Адрес → закреплённая сумма SHA-256.
     val minirootfs = "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/alpine-minirootfs-3.24.3-aarch64.tar.gz" to
@@ -111,9 +123,15 @@ val linuxFiles = tasks.register("linuxFiles") {
 
         // proot и загрузчик для aarch64 — скриптом; его вывод — в ошибку сборки, если он не справился.
         val built = work.resolve("proot-aarch64")
-        val process = ProcessBuilder("sh", buildProot.path, "aarch64", built.path, cache.resolve("proot").path)
+        val process = ProcessBuilder("sh", buildProot.path, "aarch64", built.path, cache.resolve(if (sysroot == null) "proot" else "proot-native").path)
             .redirectErrorStream(true)
-            .apply { environment()["NDK"] = ndk.get().asFile.path }
+            .apply {
+                if (ndk != null) environment()["NDK"] = ndk.get().asFile.path
+                else {
+                    environment().remove("LD_PRELOAD") // Bionic-библиотека JVM несовместима с musl гостя.
+                    environment()["DPAI_PROOT_NATIVE"] = "1"
+                }
+            }
             .start()
         val log = process.inputStream.bufferedReader().readText()
         if (process.waitFor() != 0) throw GradleException("сборка proot (tools/linux/build-proot.sh):\n" + log.lines().takeLast(40).joinToString("\n"))
@@ -130,6 +148,25 @@ val linuxFiles = tasks.register("linuxFiles") {
         jni.get().asFile.deleteRecursively()
         assets.get().asFile.deleteRecursively()
         val abi = jni.get().asFile.resolve("arm64-v8a").apply { mkdirs() }
+        if (sysroot != null) {
+            val lib = File(sysroot, "usr/lib/aarch64-linux-android/30")
+            val obj = work.resolve("dpai-native.o")
+            fun runNative(vararg argv: String) {
+                val p = ProcessBuilder(*argv).redirectErrorStream(true)
+                    .apply { environment().remove("LD_PRELOAD") }.start()
+                val output = p.inputStream.bufferedReader().readText()
+                if (p.waitFor() != 0) throw GradleException("${argv.first()}: $output")
+            }
+            for ((source, name) in listOf(nativeSource to "libdpai-native.so", jvmCompatSource to "libdpai-jvm-compat.so")) {
+                runNative("clang", "--target=aarch64-linux-android30", "--sysroot=$sysroot", "-std=c11", "-Wall", "-Wextra", "-Werror", "-fPIC", "-c", source.path, "-o", obj.path)
+                // Совместимость JVM — без crtbegin_so/crtend_so: её через LD_PRELOAD наследуют и программы musl.
+                // Только NEEDED libm.so, как у CMake-сборки: Bionic через неё находит mallopt в libc,
+                // а musl отдаёт libm.so из самой libc. crtbegin_so и libdl не нужны (их нет у musl).
+                val args = if (name == "libdpai-jvm-compat.so") listOf(obj.path, "-L$lib", "-lm")
+                    else listOf("$lib/crtbegin_so.o", obj.path, "-L$lib", "-lc", "-ldl", "$lib/crtend_so.o")
+                runNative("ld.lld", "-shared", "-z", "max-page-size=16384", "-z", "defs", "-soname", name, "-o", abi.resolve(name).path, *args.toTypedArray())
+            }
+        }
         abi.resolve("libproot.so").writeBytes(proot)
         abi.resolve("libproot-loader.so").writeBytes(loader)
         val out = assets.get().asFile.resolve("linux").apply { mkdirs() }

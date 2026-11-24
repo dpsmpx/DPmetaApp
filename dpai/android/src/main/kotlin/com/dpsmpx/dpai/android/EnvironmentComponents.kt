@@ -121,7 +121,7 @@ internal fun ComponentRow(
         }
         if (c.outdated) Text("Эта сборка DP_IDE ставит ${c.expected}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
         if (open) {
-            for ((k, v) in AppComponents.details(c)) Text("$k: $v", style = MaterialTheme.typography.bodySmall)
+            DiagnosticText(AppComponents.details(c).joinToString("\n") { (k, v) -> "$k: $v" }, style = MaterialTheme.typography.bodySmall)
             EnvironmentComponents.hint(c)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 onInstall?.let { TextButton(enabled = !running, onClick = it) { Text(if (c.outdated) "Обновить" else "Поставить заново") } }

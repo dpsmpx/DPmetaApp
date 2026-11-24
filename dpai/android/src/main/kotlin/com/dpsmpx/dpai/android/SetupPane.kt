@@ -106,7 +106,7 @@ private fun SectionCard(s: GuideSection) {
                     }) { Text(a.label) }
                 }
             }
-            note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+            note?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall) }
         }
     }
 }

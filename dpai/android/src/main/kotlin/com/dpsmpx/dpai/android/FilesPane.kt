@@ -216,7 +216,7 @@ fun FilesPane(onLinux: () -> Unit = {}, model: DemoModel? = null, onSession: (St
             }
         }
         item {
-            problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            problem?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Папки — копией в Linux", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                 TextButton(enabled = linux, onClick = { pick.launch(null) }) { Text("+ Папка") }
@@ -226,7 +226,7 @@ fun FilesPane(onLinux: () -> Unit = {}, model: DemoModel? = null, onSession: (St
                 Text("Нужна Linux-среда приложения.", style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = onLinux) { Text("Установить: «Targets» → «Linux в приложении» ▸") }
             }
-            note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            note?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
         }
         // Отвязанная, но ещё не подтверждённая снэкбаром — не видна (AI:A-4).
         items(links.filter { undo?.hidden?.containsKey("link:${it.id.value}") != true }, key = { it.id.value }) { l ->
@@ -475,7 +475,7 @@ private fun BrowserContent(p: Place, onPlace: (Place) -> Unit, onClose: () -> Un
             TextButton(onClick = { logcat = true }) { Text("Logcat") }
             p.guestDir?.let { g -> TextButton(onClick = { TerminalActivity.startLinux(context, g) }) { Text("В терминале") } }
         }
-        error?.let { Text(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error) }
+        error?.let { DiagnosticText(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error) }
         val list = entries
         if (list == null && error == null) CircularProgressIndicator(Modifier.padding(12.dp))
         LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)) {
@@ -728,9 +728,9 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
             if (readOnly) Text("Только чтение: дерево занято или контроллер не готов", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall)
             if (!recovery.ready) Text(recovery.note, Modifier.padding(horizontal = 8.dp), color = MaterialTheme.colorScheme.error)
             if (draft != null) Text(Drafts.checkpoint(draftKey), Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall)
-            status?.let { Text(it, Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall) }
+            status?.let { DiagnosticText(it, Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall) }
         }
-        error?.let { Text(it, Modifier.padding(8.dp), color = MaterialTheme.colorScheme.error) }
+        error?.let { DiagnosticText(it, Modifier.padding(8.dp), color = MaterialTheme.colorScheme.error) }
         val source = text
         val preview = remember(source) { source?.let { com.dpsmpx.dpai.ui.CodeEditorBuffer(it) } }
         val binding = editorDocumentBinding(draft, preview, editing)

@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -110,8 +109,34 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
                 rows.clear()
                 rows.addAll(t.steps.map { (n, c, s) -> StepRow(n, c, s) })
                 if (t.title == "APK Android") needsText = com.dpsmpx.dpai.ui.ManualNeed.ANDROID_SDK.code
-                note = "Шаблон «${t.title}» подставлен — проверьте команды и сохраните"
+                if (t.title == "DPmetaApp") {
+                    needsText = com.dpsmpx.dpai.ui.ManualNeed.ANDROID_SDK.code
+                    artifactsText = "shell/build/outputs/apk/release/*.apk"
+                    envText = "DPAI_RELEASE_DEBUG_KEY=1"
+                    note = "Самосборка DPmetaApp: APK с отладочной подписью. Для обновления установленной студии переподпишите своим прежним ключом."
+                }
+                else note = "Шаблон «${t.title}» подставлен — проверьте команды и сохраните"
             }) { Text(t.title) }
+        }
+        if (kind == ManualProfileKind.BUILD && location?.task == null && location != null) {
+            Text("Последний PR: автоматически выбирается самый новый открытый PR origin, включая черновики. Совместимые локальные изменения и новые файлы сохраняются и входят в сборку; при пересечении Git укажет файлы. Свои коммиты не перезаписываются; вход gh — на target проекта.", style = MaterialTheme.typography.bodySmall)
+            Row(Modifier.horizontalScroll(rememberScrollState())) {
+                TextButton(enabled = editable && view.ready && !run.blocked && state[LongJobs.WORKSPACE_PROFILE]?.running != true, onClick = {
+                    if (model.startLatestPr(view.project, location)) {
+                        ControllerService.resume(context)
+                        note = "Подтягиваю последний PR; привязка обновится автоматически"
+                    } else note = "Сначала завершите другую операцию"
+                }) { Text("Подтянуть последний PR") }
+                TextButton(enabled = editable && view.ready && !run.blocked && state[LongJobs.WORKSPACE_PROFILE]?.running != true, onClick = {
+                    when (val p = form()) {
+                        is Outcome.Failure -> note = p.errors.first().message
+                        is Outcome.Success -> if (model.startLatestPr(view.project, location, p.value, choices)) {
+                            ControllerService.resume(context)
+                            note = "После подготовки последнего PR запущу выбранный профиль сборки"
+                        } else note = "Сначала завершите другую операцию"
+                    }
+                }) { Text("Собрать последний PR") }
+            }
         }
         rows.forEachIndexed { i, row ->
             Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
@@ -196,16 +221,18 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
                 run.step == i + 1 -> "▶"
                 else -> "·"
             }
-            Text("$mark ${i + 1}. ${s.name}" + (r?.takeIf { !it.ok }?.let { " — ${it.reason}" }.orEmpty()), style = MaterialTheme.typography.bodyMedium)
+            DiagnosticText("$mark ${i + 1}. ${s.name}" + (r?.takeIf { !it.ok }?.let { " — ${it.reason}" }.orEmpty()), style = MaterialTheme.typography.bodyMedium)
         }
-        note?.let { Text(it) }
-        state[LongJobs.WORKSPACE_PROFILE]?.let { job -> if (!job.running) job.note?.let { Text(it) } }
+        note?.let { DiagnosticText(it) }
+        state[LongJobs.WORKSPACE_PROFILE]?.let { job -> if (!job.running) job.note?.let { DiagnosticText(it) } }
         if (run.blocked) {
             Text("Весь контур проекта на паузе", color = MaterialTheme.colorScheme.error)
-            run.active?.let { Text("${it.target.label}: ${it.path}\n${it.branch}", style = MaterialTheme.typography.bodySmall) }
+            run.active?.let { DiagnosticText("${it.target.label}: ${it.path}\n${it.branch}", style = MaterialTheme.typography.bodySmall) }
             TextButton(onClick = { model.stopManualProfile(); ControllerService.resume(context) }) { Text("Безопасно остановить и снять паузу") }
         }
-        if (run.note.isNotEmpty()) Text(run.note)
+        if (run.note.isNotEmpty() || run.output.isNotEmpty()) CopyDiagnostic(
+            listOf(run.note, run.output).filter { it.isNotEmpty() }.joinToString("\n\n"), copyLabel = R.string.diagnostic_copy_result)
+        if (run.note.isNotEmpty()) DiagnosticText(run.note)
         // Места в коде из вывода (D-153): касание — файл дерева вкладкой на строке.
         var found by remember { mutableStateOf<com.dpsmpx.dpai.ui.BuildProblemList?>(null) }
         LaunchedEffect(run.output) { found = withContext(Dispatchers.Default) { com.dpsmpx.dpai.ui.BuildProblems.parse(run.output) }.takeIf { it.items.isNotEmpty() } }
@@ -222,7 +249,7 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
                     Text("$mark ${rel ?: p.path}:${p.line}${p.column?.let { ":$it" }.orEmpty()}" + if (rel == null) " — вне дерева" else "",
                         style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace,
                         color = if (p.severity == com.dpsmpx.dpai.ui.ProblemSeverity.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(p.message, style = MaterialTheme.typography.bodySmall, maxLines = 3)
+                    DiagnosticText(p.message, style = MaterialTheme.typography.bodySmall, maxLines = 3)
                 }
             }
             if (list.items.size > PROBLEMS_SHOWN) Text("…и ещё ${list.items.size - PROBLEMS_SHOWN}: исправьте первые и запустите снова", style = MaterialTheme.typography.bodySmall)
@@ -293,7 +320,8 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
                 dismissButton = { TextButton(onClick = { askAi = false }) { Text("Отмена") } },
             )
         }
-        if (run.output.isNotEmpty()) SelectionContainer { Text(run.output, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
+        if (run.output.isNotEmpty()) DiagnosticText(run.output, fontFamily = FontFamily.Monospace,
+            style = MaterialTheme.typography.bodySmall, copyLabel = R.string.diagnostic_copy_output)
         if (kind == ManualProfileKind.BUILD) {
             val saved = remember(artifactsText) { (com.dpsmpx.dpai.files.TreeArtifacts.patterns(artifactsText) as? Outcome.Success)?.value.orEmpty() }
             // Последняя успешная сборка не старше суток — её новые APK подписываются сами (D-178).
