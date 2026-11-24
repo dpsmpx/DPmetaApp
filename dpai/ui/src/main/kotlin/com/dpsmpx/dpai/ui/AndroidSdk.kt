@@ -205,12 +205,14 @@ object AndroidSdk {
         if (home != null) result += listOf("ANDROID_HOME", "ANDROID_SDK_ROOT").filter { it !in result }.associateWith { home }
         if ("JAVA_HOME" !in result && exists(AndroidNativeJdk.JAVA)) {
             result += "JAVA_HOME" to AndroidNativeJdk.JAVA_HOME
-            if ("LD_PRELOAD" !in result && exists(AndroidNativeJdk.COMPAT)) result += "LD_PRELOAD" to AndroidNativeJdk.COMPAT
-            if ("DPAI_ARM64_SYSROOT" !in result && exists("${AndroidNativeJdk.SYSROOT}/usr/lib/aarch64-linux-android/30/crtbegin_so.o"))
-                result += "DPAI_ARM64_SYSROOT" to AndroidNativeJdk.SYSROOT
             val existingPath = result["PATH"]?.takeIf { it.isNotBlank() }
             result += "PATH" to (if (existingPath == null) AndroidNativeJdk.buildEnvironment.getValue("PATH")
                 else "${AndroidNativeJdk.JAVA_HOME}/bin:${AndroidNativeJdk.PREFIX}/bin:$existingPath")
+        }
+        if (result["JAVA_HOME"] == AndroidNativeJdk.JAVA_HOME) {
+            if ("LD_PRELOAD" !in result && exists(AndroidNativeJdk.COMPAT)) result += "LD_PRELOAD" to AndroidNativeJdk.COMPAT
+            if ("DPAI_ARM64_SYSROOT" !in result && exists("${AndroidNativeJdk.SYSROOT}/usr/lib/aarch64-linux-android/30/crtbegin_so.o"))
+                result += "DPAI_ARM64_SYSROOT" to AndroidNativeJdk.SYSROOT
         }
         return result
     }

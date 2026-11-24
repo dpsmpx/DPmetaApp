@@ -28,6 +28,10 @@ class AndroidSdkTest {
         assertEquals("/custom/compat.so", own["LD_PRELOAD"])
         val other = AndroidSdk.env(setOf(ManualNeed.ANDROID_SDK), listOf("JAVA_HOME" to "/other/jdk")).toMap()
         assertFalse("LD_PRELOAD" in other)
+        val discovered = AndroidSdk.discoveredEnv(explicit.toMap()) { true }
+        assertEquals(AndroidNativeJdk.COMPAT, discovered["LD_PRELOAD"])
+        assertEquals(AndroidNativeJdk.SYSROOT, discovered["DPAI_ARM64_SYSROOT"])
+        assertEquals("/custom/bin", discovered["PATH"])
     }
 
     @Test

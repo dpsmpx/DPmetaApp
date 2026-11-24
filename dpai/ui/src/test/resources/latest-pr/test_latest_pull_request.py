@@ -41,7 +41,7 @@ class LatestPrTest(unittest.TestCase):
         self.bin = self.root / "bin"
         self.bin.mkdir()
         gh = self.bin / "gh"
-        gh.write_text("#!" + sys.executable + "\nimport os,sys\nfrom pathlib import Path\nassert sys.argv[1:] == ['api','repos/unit/repo/pulls?state=open&sort=created&direction=desc&per_page=1']\nprint(Path(os.environ['PR_RESPONSE']).read_text())\n", encoding="utf-8")
+        gh.write_text("#!" + sys.executable + "\nimport os,sys\nfrom pathlib import Path\nassert sys.argv[1:] == ['api','--hostname','github.com','repos/unit/repo/pulls?state=open&sort=created&direction=desc&per_page=1']\nprint(Path(os.environ['PR_RESPONSE']).read_text())\n", encoding="utf-8")
         gh.chmod(0o755)
 
     def git(self, *args):

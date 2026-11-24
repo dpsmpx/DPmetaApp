@@ -658,10 +658,6 @@ class DemoModel(
     fun saveManualChoices(p: ProjectEntry, kind: com.dpsmpx.dpai.ui.ManualProfileKind, values: Map<String, String>) =
         controller.manualProfiles.saveChoices(p, kind, values)
 
-    /**
-     * [choices] — выбранные варианты своих параметров (D-183); `null` — последний сохранённый
-     * выбор (сборка перед запуском, предпросмотр). Профиль раскрывается здесь, до `prepare`.
-     */
     /** Сам выбирает последний открытый PR origin; успешная подготовка обновляет привязку до BUILD. */
     fun startLatestPr(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation,
         build: com.dpsmpx.dpai.ui.ManualProfile? = null, choices: Map<String, String>? = null): Boolean {
@@ -677,6 +673,7 @@ class DemoModel(
             })
     }
 
+    /** [choices] — варианты параметров (D-183); null — последний выбор. Раскрываются до prepare. */
     fun startManualProfile(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, profile: com.dpsmpx.dpai.ui.ManualProfile,
         choices: Map<String, String>? = null,
         cancelled: () -> Boolean = { false },

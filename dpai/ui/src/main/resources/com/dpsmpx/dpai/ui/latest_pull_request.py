@@ -31,7 +31,7 @@ def main():
     repo = repo.removesuffix(".git")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
         raise RuntimeError("не удалось определить репозиторий origin")
-    rows = json.loads(command("gh", "api", "repos/" + repo + "/pulls?state=open&sort=created&direction=desc&per_page=1"))
+    rows = json.loads(command("gh", "api", "--hostname", "github.com", "repos/" + repo + "/pulls?state=open&sort=created&direction=desc&per_page=1"))
     if not isinstance(rows, list) or not rows:
         raise RuntimeError("в origin нет открытых PR; текущая ветка и привязка сохранены")
     pr = rows[0]
