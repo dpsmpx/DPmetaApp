@@ -682,9 +682,9 @@ class DemoModel(
         environment: Boolean = false,
         beforePrepare: (() -> Outcome<Unit>)? = null,
         environmentSnapshot: Boolean = true,
-        onFinished: ((LongJobs.Done, com.dpsmpx.dpai.ui.ManualRunView) -> Unit)? = null,
         sourceRefresh: Boolean = false,
-        afterFinished: (() -> Unit)? = null): Boolean {
+        afterFinished: (() -> Unit)? = null,
+        onFinished: ((LongJobs.Done, com.dpsmpx.dpai.ui.ManualRunView) -> Unit)? = null): Boolean {
         val app = context ?: return false
         if (sourceRefresh && (environment || location.task != null || !com.dpsmpx.dpai.ui.LatestPullRequest.isProfile(profile))) return false
         if (environment && (profile.kind != com.dpsmpx.dpai.ui.ManualProfileKind.DEPENDENCIES || beforePrepare == null)) return false
