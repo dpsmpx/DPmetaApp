@@ -38,8 +38,10 @@ class EnvironmentPlanTest {
         assertTrue(plan.profile.valid)
         assertTrue(plan.sdkLicense)
         assertTrue(plan.profile.steps.any { it.command == AndroidNativeJdk.install() })
-        assertTrue(plan.profile.steps.any { it.command.first() == AndroidNativeJdk.JAVA })
-        assertTrue(plan.profile.steps.any { it.command.first() == AndroidNativeJdk.JAVAC })
+        val java = plan.profile.steps.single { AndroidNativeJdk.JAVA in it.command }.command
+        val javac = plan.profile.steps.single { AndroidNativeJdk.JAVAC in it.command }.command
+        assertEquals(listOf("env", "LD_PRELOAD=${AndroidNativeJdk.COMPAT}", AndroidNativeJdk.JAVA, "-Xmx128m", "-version"), java)
+        assertEquals(listOf("env", "LD_PRELOAD=${AndroidNativeJdk.COMPAT}", AndroidNativeJdk.JAVAC, "-version"), javac)
         val script = plan.profile.steps.single { AndroidSdk.CMDLINE_URL in it.command.last() }.command.last()
         assertTrue(script.contains("'platforms;android-37' 'build-tools;37.0.0'"))
         assertTrue(script.contains(AndroidSdk.CMDLINE_SHA256))
