@@ -31,7 +31,10 @@ object AndroidSdk {
     const val HOME = "/root/android-sdk"
 
     /** Alpine hosts the installer only; Java is Android/Bionic (Termux), not Alpine/musl. */
-    val packages = listOf("bash", "curl", "unzip", "xz", "ca-certificates")
+    /** java-cacerts — хранилище доверенных CA для Bionic JDK (sdkmanager и Gradle ходят по HTTPS). */
+    val packages = listOf("bash", "curl", "unzip", "xz", "ca-certificates", "java-cacerts",
+        // Сборка PRoot и JNI самой студией (DPAI_PROOT_NATIVE, DPAI_ARM64_SYSROOT): компилятор Alpine.
+        "git", "clang", "lld", "compiler-rt", "binutils")
 
     /** Reserve extra space for the independent Bionic JDK and its Termux dependencies. */
     fun spaceBytes(ndk: Boolean): Long = if (ndk) 6L shl 30 else 4L shl 30
@@ -93,6 +96,8 @@ object AndroidSdk {
         val script = buildString {
             appendLine("set -e")
             appendLine("test -x '${AndroidNativeJdk.JAVA}' || { echo 'DPAI_NATIVE_JDK_MISSING: установите Android/Bionic JDK через Android SDK'; exit 1; }")
+            appendLine("test -r '${AndroidNativeJdk.COMPAT}' || { echo 'DPAI_NATIVE_JDK_COMPAT_MISSING'; exit 1; }")
+            appendLine("LD_PRELOAD='${AndroidNativeJdk.COMPAT}'; export LD_PRELOAD")
             appendLine("JAVA_HOME='${AndroidNativeJdk.JAVA_HOME}'; export JAVA_HOME")
             appendLine("PATH='${AndroidNativeJdk.JAVA_HOME}/bin:${AndroidNativeJdk.PREFIX}/bin':\${PATH}; export PATH")
             appendLine("SDK='$HOME'")
@@ -124,6 +129,9 @@ object AndroidSdk {
             appendLine("  \"\$SDK/dpai/aapt2\" version || { echo 'DPAI_ANDROID_AAPT2: не запускается на этом процессоре'; exit 1; }")
             appendLine("  grep -v '^android.aapt2FromMavenOverride=' /root/.gradle/gradle.properties > \"\$STAGE/gp\" || true")
             appendLine("  printf 'android.aapt2FromMavenOverride=%s\\n' \"\$SDK/dpai/aapt2\" >> \"\$STAGE/gp\" && mv \"\$STAGE/gp\" /root/.gradle/gradle.properties")
+            // ARM64 aapt2 в optimize возвращает успех без выходного архива: release терял манифест.
+            appendLine("  grep -v '^android.enableResourceOptimizations=' /root/.gradle/gradle.properties > \"\$STAGE/gp\" || true")
+            appendLine("  printf 'android.enableResourceOptimizations=false\\n' >> \"\$STAGE/gp\" && mv \"\$STAGE/gp\" /root/.gradle/gradle.properties")
             // AGP также вызывает native zipalign и иногда aidl. Официальные
             // linux-x86_64 инструменты из SDK на телефоне не выполняются.
             appendLine("  curl --fail --location --proto '=https' --connect-timeout 30 --max-time 1200 '$ARM64_TOOLS_URL' -o \"\$STAGE/arm-tools.tar.xz\"")
@@ -160,6 +168,7 @@ object AndroidSdk {
         requireVersions(platform, buildTools)
         return listOf("/bin/sh", "-c", buildString {
             appendLine("set -eu")
+            appendLine("if test -r '${AndroidNativeJdk.COMPAT}'; then LD_PRELOAD='${AndroidNativeJdk.COMPAT}'; export LD_PRELOAD; fi")
             appendLine("JAVA_HOME='${AndroidNativeJdk.JAVA_HOME}'; export JAVA_HOME")
             appendLine("PATH='${AndroidNativeJdk.JAVA_HOME}/bin:${AndroidNativeJdk.PREFIX}/bin':\${PATH}; export PATH")
             appendLine("SDK=\${ANDROID_HOME:-'$HOME'}")
@@ -193,6 +202,9 @@ object AndroidSdk {
         if (home != null) result += listOf("ANDROID_HOME", "ANDROID_SDK_ROOT").filter { it !in result }.associateWith { home }
         if ("JAVA_HOME" !in result && exists(AndroidNativeJdk.JAVA)) {
             result += "JAVA_HOME" to AndroidNativeJdk.JAVA_HOME
+            if ("LD_PRELOAD" !in result && exists(AndroidNativeJdk.COMPAT)) result += "LD_PRELOAD" to AndroidNativeJdk.COMPAT
+            if ("DPAI_ARM64_SYSROOT" !in result && exists("${AndroidNativeJdk.SYSROOT}/usr/lib/aarch64-linux-android/30/crtbegin_so.o"))
+                result += "DPAI_ARM64_SYSROOT" to AndroidNativeJdk.SYSROOT
             val existingPath = result["PATH"]?.takeIf { it.isNotBlank() }
             result += "PATH" to (if (existingPath == null) AndroidNativeJdk.buildEnvironment.getValue("PATH")
                 else "${AndroidNativeJdk.JAVA_HOME}/bin:${AndroidNativeJdk.PREFIX}/bin:$existingPath")

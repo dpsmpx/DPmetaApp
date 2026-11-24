@@ -57,7 +57,14 @@ if [ "${DPAI_ON_DEVICE_BUILD:-0}" = 1 ] && [ "$TARGET_SDK" != 28 ]; then
 fi
 # targetSdk 28 — стандартная сборка IDE, не вариант для Google Play.
 # Сохранены package name, versioning и ключ подписи; отдельный Termux не участвует.
-sh ./gradlew --console=plain "-Pdpmeta.targetSdk=$TARGET_SDK" "$MODULE:$TASK"
+set -- --console=plain "-Pdpmeta.targetSdk=$TARGET_SDK"
+if [ -n "${DPAI_ARM64_SYSROOT:-}" ]; then
+  # ARM64 aapt2: optimize возвращает успех без выходного архива. R8 остаётся включён.
+  if [ "$MODE" = release ]; then set -- "$@" -Pandroid.enableResourceOptimizations=false; fi
+  test -x "$SDK/dpai/aapt2" || { echo '✗ не установлен ARM64 aapt2'; exit 1; }
+  set -- "$@" "-Pandroid.aapt2FromMavenOverride=$SDK/dpai/aapt2"
+fi
+sh ./gradlew "$@" "$MODULE:$TASK"
 OUT="$OUT_DIR/build/outputs/apk/$MODE"
 ls "$OUT/"*.apk
 
