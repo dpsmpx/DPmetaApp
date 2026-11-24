@@ -67,6 +67,10 @@ class LatestPrTest(unittest.TestCase):
             self.assertEqual("build/latest", self.git("branch", "--show-current"))
             self.assertEqual(self.head, self.git("rev-parse", "HEAD"))
             self.assertIn('"number": 233', r.stdout)
+            receipt = json.loads(r.stdout.split("DPAI_LATEST_PR_READY ", 1)[1])
+            self.assertEqual(self.head, "".join(receipt["head"]))
+            self.assertEqual("build/latest", "".join(receipt["branch"]))
+            self.assertTrue(all(len(part) <= 16 for key in ("head", "branch", "repo") for part in receipt[key]))
 
     def test_existing_branch_fast_forwards(self):
         self.git("branch", "build/latest", self.base)

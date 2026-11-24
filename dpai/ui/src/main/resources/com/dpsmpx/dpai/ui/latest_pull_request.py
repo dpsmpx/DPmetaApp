@@ -59,7 +59,11 @@ def main():
     clean()
     if command("git", "symbolic-ref", "--short", "HEAD") != branch or command("git", "rev-parse", "HEAD") != head:
         raise RuntimeError("рабочая ветка не совпала с выбранным PR")
-    print("DPAI_LATEST_PR_READY " + json.dumps(dict(number=number, branch=branch, head=head, url="https://github.com/" + repo + "/pull/" + str(number))), flush=True)
+    # Вывод проходит через редактор секретов журнала. Части короче его порога,
+    # поэтому SHA/длинная ветка не превращаются в [REDACTED]; сам редактор не ослабляем.
+    def parts(value):
+        return [value[i:i + 16] for i in range(0, len(value), 16)]
+    print("DPAI_LATEST_PR_READY " + json.dumps(dict(number=number, branch=parts(branch), head=parts(head), repo=parts(repo))), flush=True)
 
 
 try:

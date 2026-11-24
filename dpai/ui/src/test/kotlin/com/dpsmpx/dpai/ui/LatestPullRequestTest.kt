@@ -5,6 +5,7 @@ import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.diagnostics.Redactor
 import com.dpsmpx.dpai.execution.process.LocalProcessHost
 import com.dpsmpx.dpai.execution.process.ProcessSpec
 import java.nio.file.Path
@@ -20,7 +21,7 @@ class LatestPullRequestTest {
     private val ids = IdGenerator(ManualClock(), RandomSource.seeded(191))
     private val target = TargetForm.inApp(ids.next(IdKinds.TARGET), "Linux", "/root/claude").valueOrNull()!!
     private val project = ProjectEntry(ids.next(IdKinds.PROJECT), ids.next(IdKinds.REPOSITORY), target.id, "/root/repo", "/root/trees", "main", emptyList())
-    private val output = LatestPullRequest.MARKER + """{"number":233,"branch":"build/selfbuild","head":"${"a".repeat(40)}","url":"https://github.com/unit/repo/pull/233"}"""
+    private val output = LatestPullRequest.MARKER + """{"number":233,"branch":["build/selfbuild"],"head":["${"a".repeat(16)}","${"a".repeat(16)}","${"a".repeat(8)}"],"repo":["unit/repo"]}"""
 
     @Test fun bindingKeepsIdentitySettingsSelectionAndIsIdempotentAfterRestart() {
         val other = project.copy(project = ids.next(IdKinds.PROJECT), repository = ids.next(IdKinds.REPOSITORY), root = "/root/other")
@@ -39,9 +40,17 @@ class LatestPullRequestTest {
 
     @Test fun invalidOrMissingEvidenceCannotChangeBinding() {
         assertIs<Outcome.Failure>(LatestPullRequest.ready("код выхода 0"))
-        for (bad in listOf(output.replace("build/selfbuild", "--force"), output.replace("/pull/233", "/pull/1"), output.replace("a".repeat(40), "bad"))) {
+        for (bad in listOf(output.replace("build/selfbuild", "--force"), output.replace("unit/repo", "bad"), output.replace("a".repeat(16), "bad"))) {
             assertIs<Outcome.Failure>(LatestPullRequest.ready(bad))
         }
+    }
+
+    @Test fun receiptSurvivesTheActualJournalRedactorIncludingALongBranch() {
+        val receipt = output.replace("[\"build/selfbuild\"]", "[\"build/abcdefghij\",\"klmnopqrstuvwxyz\",\"0123456789\"]")
+        val ready = LatestPullRequest.ready(Redactor.STANDARD.redact(receipt)).valueOrNull()!!
+        assertEquals("a".repeat(40), ready.head)
+        assertEquals("build/abcdefghijklmnopqrstuvwxyz0123456789", ready.branch)
+        assertEquals("https://github.com/unit/repo/pull/233", ready.url)
     }
 
     @Test fun actualGitCheckoutRefusesDirtyTreesDivergenceAndMovedPr() {

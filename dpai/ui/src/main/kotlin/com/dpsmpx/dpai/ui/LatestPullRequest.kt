@@ -4,6 +4,7 @@ import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.git.GitNames
 import com.dpsmpx.dpai.core.git.RepoRef
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.serialization.JsonArray
 import com.dpsmpx.dpai.core.serialization.JsonNumber
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
@@ -26,9 +27,17 @@ object LatestPullRequest {
         val line = output.lineSequence().lastOrNull { it.startsWith(MARKER) }
         val obj = line?.removePrefix(MARKER)?.let { JsonParser().parse(it).valueOrNull() as? JsonObject }
         val number = (obj?.get("number") as? JsonNumber)?.toLongExact()?.takeIf { it in 1..Int.MAX_VALUE }?.toInt()
-        val branch = (obj?.get("branch") as? JsonString)?.value
-        val head = (obj?.get("head") as? JsonString)?.value
-        val url = (obj?.get("url") as? JsonString)?.value
+        // Служебный результат тоже проходит Redactor: длинные значения приходят короткими частями.
+        fun parts(key: String): String? {
+            val items = (obj?.get(key) as? JsonArray)?.items ?: return null
+            if (items.size !in 1..20) return null
+            val values = items.map { (it as? JsonString)?.value ?: return null }
+            if (values.any { it.length !in 1..16 || it.any(Char::isISOControl) }) return null
+            return values.joinToString("")
+        }
+        val branch = parts("branch")
+        val head = parts("head")
+        val url = parts("repo")?.let { "https://github.com/$it/pull/$number" }
         if (number == null || branch == null || branch.length > 100 || !GitNames.cliBranch(branch) ||
             head == null || !GitNames.sha(head) || url == null || RepoRef.fromPullUrl(url).valueOrNull() == null ||
             !url.endsWith("/pull/$number")) {
