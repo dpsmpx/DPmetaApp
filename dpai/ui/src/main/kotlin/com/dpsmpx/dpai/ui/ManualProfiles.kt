@@ -189,6 +189,7 @@ data class ManualProfile(
                 )),
                 Template("Gradle", listOf(Triple("Сборка", "./gradlew assembleDebug", "3600"))),
                 Template("APK Android", listOf(Triple("APK (Gradle)", "./gradlew --no-daemon assembleDebug", "3600"))),
+                Template("DPmetaApp", listOf(Triple("Самосборка студии", "sh ./tools/build-apk.sh release", "7200"))),
                 Template("Make", listOf(Triple("Сборка", "make -j2", "3600"))),
             )
             ManualProfileKind.CHECK -> listOf(
@@ -311,7 +312,10 @@ data class ManualRunView(
  * останавливается (`fence-stop` закрывает запуск навсегда, опоздавший start не
  * пройдёт). Намерение потеряно или повреждено — новые шаги не запускаются.
  */
-class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerator, private val clock: Clock) {
+class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerator, private val clock: Clock,
+    /** Короткая идемпотентная запись привязки до снятия durable-паузы; без сети и повторного start. */
+    private val beforeRelease: (ManualRun, String) -> Outcome<Unit> = { _, _ -> Outcome.success(Unit) },
+) {
     @Volatile private var view = load()
     private var sequence = 0L
     private var tail = ""
@@ -641,6 +645,14 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
         when (val r = client.fenceStop(run.id)) {
             is Outcome.Failure -> { note("пауза сохраняется: ${r.errors.first().message}"); return true }
             is Outcome.Success -> Unit
+        }
+        // Контур всё ещё на паузе. При рестарте callback повторяется по сохранённому выводу,
+        // сама команда агента не повторяется. Вызов вне synchronized: не меняем порядок замков store/Controller.
+        if (outcome == ManualOutcome.OK && results.size == run.profile.steps.size && results.all { it.ok }) {
+            when (val saved = beforeRelease(run, tail)) {
+                is Outcome.Failure -> { note("пауза сохраняется: ${saved.errors.first().message}"); return true }
+                is Outcome.Success -> Unit
+            }
         }
         synchronized(this) {
             val note = Redactor.STANDARD.redact(summary(run, results, result)).take(MAX_NOTE)

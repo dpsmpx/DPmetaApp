@@ -662,6 +662,21 @@ class DemoModel(
      * [choices] — выбранные варианты своих параметров (D-183); `null` — последний сохранённый
      * выбор (сборка перед запуском, предпросмотр). Профиль раскрывается здесь, до `prepare`.
      */
+    /** Сам выбирает последний открытый PR origin; успешная подготовка обновляет привязку до BUILD. */
+    fun startLatestPr(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation,
+        build: com.dpsmpx.dpai.ui.ManualProfile? = null, choices: Map<String, String>? = null): Boolean {
+        if (location.task != null) return false
+        var ready = false
+        return startManualProfile(p, location, com.dpsmpx.dpai.ui.LatestPullRequest.profile(), sourceRefresh = true,
+            onFinished = { done, result -> ready = !done.failed && result.complete },
+            afterFinished = {
+                if (ready && build != null) {
+                    val current = workspace()
+                    if (current?.project?.project == p.project) startManualProfile(current.project, current.main, build, choices)
+                }
+            })
+    }
+
     fun startManualProfile(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, profile: com.dpsmpx.dpai.ui.ManualProfile,
         choices: Map<String, String>? = null,
         cancelled: () -> Boolean = { false },
@@ -670,14 +685,17 @@ class DemoModel(
         environment: Boolean = false,
         beforePrepare: (() -> Outcome<Unit>)? = null,
         environmentSnapshot: Boolean = true,
-        onFinished: ((LongJobs.Done, com.dpsmpx.dpai.ui.ManualRunView) -> Unit)? = null): Boolean {
+        onFinished: ((LongJobs.Done, com.dpsmpx.dpai.ui.ManualRunView) -> Unit)? = null,
+        sourceRefresh: Boolean = false,
+        afterFinished: (() -> Unit)? = null): Boolean {
         val app = context ?: return false
+        if (sourceRefresh && (environment || location.task != null || !com.dpsmpx.dpai.ui.LatestPullRequest.isProfile(profile))) return false
         if (environment && (profile.kind != com.dpsmpx.dpai.ui.ManualProfileKind.DEPENDENCIES || beforePrepare == null)) return false
         return LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST,
             onFinished = { done ->
                 (app.applicationContext as? DpaiApplication)?.studioChanged()
                 onFinished?.invoke(done, controller.manualProfiles.snapshot())
-            }) {
+            }, afterFinished = { afterFinished?.invoke() }) {
             if (cancelled()) return@start LongJobs.Done("Запуск отменён до подготовки", failed = true)
             val target = controller.targets().firstOrNull { it.id == location.target }
                 ?: return@start LongJobs.Done("target удалён", failed = true)
@@ -758,6 +776,12 @@ class DemoModel(
                     is Outcome.Success -> Unit
                 }
                 if (cancelled()) { controller.manualProfiles.stop(client); return@start LongJobs.Done("План окружения отменён до команды", failed = true) }
+                controller.manualProfiles.launch(ownRun, client)
+                return@start watchManual(client, cancelled)
+            }
+            // Только этот фиксированный профиль сам меняет ветку. Все проверки свободного дерева,
+            // черновиков и durable prepare выше сохраняются; обычный BUILD по-прежнему сверяет ветку.
+            if (sourceRefresh) {
                 controller.manualProfiles.launch(ownRun, client)
                 return@start watchManual(client, cancelled)
             }

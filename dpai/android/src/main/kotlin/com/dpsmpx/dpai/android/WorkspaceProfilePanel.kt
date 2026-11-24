@@ -110,8 +110,34 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
                 rows.clear()
                 rows.addAll(t.steps.map { (n, c, s) -> StepRow(n, c, s) })
                 if (t.title == "APK Android") needsText = com.dpsmpx.dpai.ui.ManualNeed.ANDROID_SDK.code
-                note = "Шаблон «${t.title}» подставлен — проверьте команды и сохраните"
+                if (t.title == "DPmetaApp") {
+                    needsText = com.dpsmpx.dpai.ui.ManualNeed.ANDROID_SDK.code
+                    artifactsText = "shell/build/outputs/apk/release/*.apk"
+                    envText = "DPAI_RELEASE_DEBUG_KEY=1"
+                    note = "Самосборка DPmetaApp: APK с отладочной подписью. Для обновления установленной студии переподпишите своим прежним ключом."
+                }
+                else note = "Шаблон «${t.title}» подставлен — проверьте команды и сохраните"
             }) { Text(t.title) }
+        }
+        if (kind == ManualProfileKind.BUILD && location?.task == null && location != null) {
+            Text("Последний PR: автоматически выбирается самый новый открытый PR origin, включая черновики. Изменения и локальные коммиты не перезаписываются; вход gh — на target проекта.", style = MaterialTheme.typography.bodySmall)
+            Row(Modifier.horizontalScroll(rememberScrollState())) {
+                TextButton(enabled = editable && view.ready && !run.blocked && state[LongJobs.WORKSPACE_PROFILE]?.running != true, onClick = {
+                    if (model.startLatestPr(view.project, location)) {
+                        ControllerService.resume(context)
+                        note = "Подтягиваю последний PR; привязка обновится автоматически"
+                    } else note = "Сначала завершите другую операцию"
+                }) { Text("Подтянуть последний PR") }
+                TextButton(enabled = editable && view.ready && !run.blocked && state[LongJobs.WORKSPACE_PROFILE]?.running != true, onClick = {
+                    when (val p = form()) {
+                        is Outcome.Failure -> note = p.errors.first().message
+                        is Outcome.Success -> if (model.startLatestPr(view.project, location, p.value, choices)) {
+                            ControllerService.resume(context)
+                            note = "После подготовки последнего PR запущу выбранный профиль сборки"
+                        } else note = "Сначала завершите другую операцию"
+                    }
+                }) { Text("Собрать последний PR") }
+            }
         }
         rows.forEachIndexed { i, row ->
             Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {

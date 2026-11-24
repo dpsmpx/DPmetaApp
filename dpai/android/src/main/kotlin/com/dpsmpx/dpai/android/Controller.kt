@@ -197,7 +197,21 @@ class Controller(private val root: File, val version: String?, workspaceCopyRoot
         NioVfs(workspaceCopyRoot.toPath()), DraftEncryption)
 
     val manualProfiles = com.dpsmpx.dpai.ui.ManualProfiles(
-        DocumentStore(NioVfs(File(root.parentFile, "manual-profiles").toPath()), "docs"), IdGenerator(Clock.SYSTEM, RandomSource.secure()), Clock.SYSTEM)
+        DocumentStore(NioVfs(File(root.parentFile, "manual-profiles").toPath()), "docs"), IdGenerator(Clock.SYSTEM, RandomSource.secure()), Clock.SYSTEM,
+        beforeRelease = ::bindLatestPr)
+
+    /** Только фиксированная подготовка PR, пока якорь запуска ещё держит весь контур. */
+    @Synchronized
+    private fun bindLatestPr(run: com.dpsmpx.dpai.ui.ManualRun, output: String): Outcome<Unit> {
+        if (!com.dpsmpx.dpai.ui.LatestPullRequest.isProfile(run.profile)) return Outcome.success(Unit)
+        return when (val updated = com.dpsmpx.dpai.ui.LatestPullRequest.rebind(projects(), run, output)) {
+            is Outcome.Failure -> updated
+            is Outcome.Success -> when (val written = docs.write(PROJECTS, com.dpsmpx.dpai.ui.Projects.toJson(updated.value))) {
+                is Outcome.Failure -> { projectsCache = null; written }
+                is Outcome.Success -> { projectsCache = updated.value; Outcome.success(Unit) }
+            }
+        }
+    }
 
     /** Клиент закреплённого target: смена настроек не перенаправит остановку старой команды. */
     fun profileAgent(target: TargetEntry, inApp: com.dpsmpx.dpai.execution.process.ProcessHost?): com.dpsmpx.dpai.execution.agent.AgentClient? {

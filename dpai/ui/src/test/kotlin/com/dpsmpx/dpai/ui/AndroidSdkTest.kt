@@ -17,6 +17,19 @@ class AndroidSdkTest {
     @TempDir lateinit var dir: Path
     private val sha = "ab".repeat(32)
 
+    @Test fun explicitNativeJavaHomeStillGetsCompatibilityAndSysrootWithoutOverwritingUserEnvironment() {
+        val explicit = listOf("JAVA_HOME" to AndroidNativeJdk.JAVA_HOME, "PATH" to "/custom/bin")
+        val env = AndroidSdk.env(setOf(ManualNeed.ANDROID_SDK), explicit).toMap()
+        assertEquals(AndroidNativeJdk.COMPAT, env["LD_PRELOAD"])
+        assertEquals(AndroidNativeJdk.SYSROOT, env["DPAI_ARM64_SYSROOT"])
+        assertEquals("/custom/bin", env["PATH"])
+        assertEquals(AndroidNativeJdk.JAVA_HOME, env["JAVA_HOME"])
+        val own = AndroidSdk.env(setOf(ManualNeed.ANDROID_SDK), explicit + ("LD_PRELOAD" to "/custom/compat.so")).toMap()
+        assertEquals("/custom/compat.so", own["LD_PRELOAD"])
+        val other = AndroidSdk.env(setOf(ManualNeed.ANDROID_SDK), listOf("JAVA_HOME" to "/other/jdk")).toMap()
+        assertFalse("LD_PRELOAD" in other)
+    }
+
     @Test
     fun officialPathIsPinnedAndNeedsLicense() {
         val script = AndroidSdk.install(licenses = true, ndk = false, aapt2 = null, ndkCommunity = null).last()

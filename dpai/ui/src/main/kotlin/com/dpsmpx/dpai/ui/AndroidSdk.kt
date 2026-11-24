@@ -60,7 +60,10 @@ object AndroidSdk {
         if (ManualNeed.ANDROID_SDK !in needs && ManualNeed.ANDROID_NDK !in needs) return env
         val names = env.map { it.first }.toSet()
         val sdkHome = env.firstOrNull { it.first == "ANDROID_HOME" || it.first == "ANDROID_SDK_ROOT" }?.second ?: HOME
-        val java = if ("JAVA_HOME" in names) emptyList() else AndroidNativeJdk.buildEnvironment.toList()
+        val nativeJdk = env.firstOrNull { it.first == "JAVA_HOME" }?.second
+        val java = if (nativeJdk == null) AndroidNativeJdk.buildEnvironment.toList()
+            else if (nativeJdk == AndroidNativeJdk.JAVA_HOME) AndroidNativeJdk.buildEnvironment.filterKeys { it != "JAVA_HOME" }.toList()
+            else emptyList()
         return env + (listOf("ANDROID_HOME" to sdkHome, "ANDROID_SDK_ROOT" to sdkHome) + java).filter { it.first !in names }
     }
 
