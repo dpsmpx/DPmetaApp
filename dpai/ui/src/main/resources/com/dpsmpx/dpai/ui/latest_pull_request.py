@@ -13,13 +13,14 @@ def command(*args, codes=(0,)):
     return result.stdout.decode("utf-8", "strict").strip()
 
 
-def clean():
-    if command("git", "status", "--porcelain=v1", "--untracked-files=all"):
-        raise RuntimeError("сначала сохраните и закоммитьте изменения и новые файлы; последний PR не переключён")
+def check_conflicts():
+    conflicts = command("git", "diff", "--name-only", "--diff-filter=U")
+    if conflicts:
+        raise RuntimeError("сначала разрешите конфликты Git; файлы сохранены:\n" + conflicts)
 
 
 def main():
-    clean()
+    check_conflicts()
     remote = command("git", "config", "--get", "remote.origin.url")
     if remote.startswith("git@github.com:"):
         repo = remote[len("git@github.com:"):]
@@ -51,14 +52,21 @@ def main():
         ancestor = subprocess.run(["git", "merge-base", "--is-ancestor", existing, head], timeout=30)
         if ancestor.returncode != 0:
             raise RuntimeError("локальная ветка " + branch + " содержит свои коммиты; автоматическая перезапись запрещена")
-    clean()
+    check_conflicts()
     if not existing:
         command("git", "branch", "--no-track", "--", branch, head)
-    command("git", "switch", "--no-guess", branch)
-    command("git", "merge", "--ff-only", "--no-edit", head)
-    clean()
+    # Само наличие dirty/untracked не мешает Git перенести совместимые изменения.
+    # Запрещаем также штатное молчаливое затирание игнорируемых файлов Git.
+    try:
+        command("git", "switch", "--no-guess", "--no-overwrite-ignore", branch)
+        command("git", "merge", "--ff-only", "--no-edit", "--no-overwrite-ignore", head)
+    except RuntimeError as error:
+        raise RuntimeError("Git не смог безопасно перенести локальные файлы; перезапись отключена. Причина и файлы:\n" + str(error)) from error
+    check_conflicts()
     if command("git", "symbolic-ref", "--short", "HEAD") != branch or command("git", "rev-parse", "HEAD") != head:
         raise RuntimeError("рабочая ветка не совпала с выбранным PR")
+    if command("git", "status", "--porcelain=v1", "--untracked-files=all"):
+        print("Локальные изменения и новые файлы сохранены; последующая сборка включает их.", flush=True)
     # Вывод проходит через редактор секретов журнала. Части короче его порога,
     # поэтому SHA/длинная ветка не превращаются в [REDACTED]; сам редактор не ослабляем.
     def parts(value):

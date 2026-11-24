@@ -77,15 +77,108 @@ class LatestPrTest(unittest.TestCase):
         self.assertEqual(0, self.run_script().returncode)
         self.assertEqual(self.head, self.git("rev-parse", "HEAD"))
 
+    def test_existing_branch_fast_forwards_with_staged_and_new_files(self):
+        self.git("branch", "build/latest", self.base)
+        (self.repo / "base.txt").write_text("staged", encoding="utf-8")
+        self.git("add", "base.txt")
+        (self.repo / "base.txt").write_text("unstaged", encoding="utf-8")
+        (self.repo / "notes.txt").write_text("notes", encoding="utf-8")
+        cached, unstaged = self.git("diff", "--cached"), self.git("diff")
+        r = self.run_script()
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertEqual(self.head, self.git("rev-parse", "HEAD"))
+        self.assertEqual(cached, self.git("diff", "--cached"))
+        self.assertEqual(unstaged, self.git("diff"))
+        self.assertEqual("notes", (self.repo / "notes.txt").read_text())
+
     def test_dirty_file_is_preserved(self):
         (self.repo / "base.txt").write_text("user change", encoding="utf-8")
-        self.refused()
+        r = self.run_script()
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertEqual(self.head, self.git("rev-parse", "HEAD"))
         self.assertEqual("user change", (self.repo / "base.txt").read_text())
 
     def test_untracked_file_is_preserved(self):
+        (self.repo / "notes.txt").write_text("user new file", encoding="utf-8")
+        r = self.run_script()
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertEqual(self.head, self.git("rev-parse", "HEAD"))
+        self.assertEqual("user new file", (self.repo / "notes.txt").read_text())
+        self.assertIn("notes.txt", self.git("ls-files", "--others", "--exclude-standard"))
+
+    def test_conflicting_untracked_file_is_preserved(self):
         (self.repo / "new.txt").write_text("user new file", encoding="utf-8")
         self.refused()
         self.assertEqual("user new file", (self.repo / "new.txt").read_text())
+
+    def test_staged_and_unstaged_versions_are_both_preserved(self):
+        (self.repo / "base.txt").write_text("staged", encoding="utf-8")
+        self.git("add", "base.txt")
+        (self.repo / "base.txt").write_text("unstaged", encoding="utf-8")
+        cached = self.git("diff", "--cached")
+        unstaged = self.git("diff")
+        r = self.run_script()
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertEqual(cached, self.git("diff", "--cached"))
+        self.assertEqual(unstaged, self.git("diff"))
+
+    def test_deleted_local_file_stays_deleted(self):
+        (self.repo / "base.txt").unlink()
+        r = self.run_script()
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertFalse((self.repo / "base.txt").exists())
+        self.assertIn("base.txt", self.git("diff", "--name-only"))
+
+    def test_current_pr_can_be_built_again_with_local_edits(self):
+        self.assertEqual(0, self.run_script().returncode)
+        (self.repo / "new.txt").write_text("local edit of PR", encoding="utf-8")
+        (self.repo / "notes.txt").write_text("notes", encoding="utf-8")
+        r = self.run_script()
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertEqual(self.head, self.git("rev-parse", "HEAD"))
+        self.assertEqual("local edit of PR", (self.repo / "new.txt").read_text())
+        self.assertTrue((self.repo / "notes.txt").is_file())
+
+    def test_ignored_collision_is_not_overwritten(self):
+        self.git("config", "core.excludesFile", str(self.root / "ignore"))
+        (self.root / "ignore").write_text("new.txt\n", encoding="utf-8")
+        (self.repo / "new.txt").write_text("ignored user data", encoding="utf-8")
+        r = self.refused()
+        self.assertIn("new.txt", r.stderr)
+        self.assertEqual("ignored user data", (self.repo / "new.txt").read_text())
+
+    def test_actual_tracked_conflict_is_not_overwritten(self):
+        self.git("switch", "-qc", "source")
+        (self.repo / "base.txt").write_text("remote edit", encoding="utf-8")
+        self.git("add", ".")
+        self.git("commit", "-qm", "remote edit")
+        self.head = self.git("rev-parse", "HEAD")
+        self.pr["head"]["sha"] = self.head
+        self.git("push", "-q", str(self.remote), "+" + self.head + ":refs/pull/233/head")
+        self.git("switch", "-q", "main")
+        (self.repo / "base.txt").write_text("user edit", encoding="utf-8")
+        r = self.refused()
+        self.assertIn("base.txt", r.stderr)
+        self.assertEqual("user edit", (self.repo / "base.txt").read_text())
+
+    def test_unresolved_merge_is_preserved_and_not_built(self):
+        self.git("switch", "-qc", "other")
+        (self.repo / "base.txt").write_text("other", encoding="utf-8")
+        self.git("add", ".")
+        self.git("commit", "-qm", "other")
+        self.git("switch", "-q", "main")
+        (self.repo / "base.txt").write_text("main", encoding="utf-8")
+        self.git("add", ".")
+        self.git("commit", "-qm", "main")
+        conflict = subprocess.run(["git", "merge", "--no-edit", "other"], cwd=self.repo, capture_output=True)
+        self.assertEqual(1, conflict.returncode)
+        before, index = (self.repo / "base.txt").read_bytes(), self.git("ls-files", "--unmerged")
+        r = self.run_script()
+        self.assertNotEqual(0, r.returncode)
+        self.assertNotIn("DPAI_LATEST_PR_READY", r.stdout)
+        self.assertIn("base.txt", r.stderr)
+        self.assertEqual(before, (self.repo / "base.txt").read_bytes())
+        self.assertEqual(index, self.git("ls-files", "--unmerged"))
 
     def test_diverged_branch_is_preserved(self):
         self.git("switch", "-qc", "build/latest")

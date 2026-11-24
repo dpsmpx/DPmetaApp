@@ -120,7 +120,7 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
             }) { Text(t.title) }
         }
         if (kind == ManualProfileKind.BUILD && location?.task == null && location != null) {
-            Text("Последний PR: автоматически выбирается самый новый открытый PR origin, включая черновики. Изменения и локальные коммиты не перезаписываются; вход gh — на target проекта.", style = MaterialTheme.typography.bodySmall)
+            Text("Последний PR: автоматически выбирается самый новый открытый PR origin, включая черновики. Совместимые локальные изменения и новые файлы сохраняются и входят в сборку; при пересечении Git укажет файлы. Свои коммиты не перезаписываются; вход gh — на target проекта.", style = MaterialTheme.typography.bodySmall)
             Row(Modifier.horizontalScroll(rememberScrollState())) {
                 TextButton(enabled = editable && view.ready && !run.blocked && state[LongJobs.WORKSPACE_PROFILE]?.running != true, onClick = {
                     if (model.startLatestPr(view.project, location)) {

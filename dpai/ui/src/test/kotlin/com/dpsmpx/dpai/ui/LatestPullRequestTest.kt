@@ -54,7 +54,7 @@ class LatestPullRequestTest {
         assertEquals("https://github.com/unit/repo/pull/233", ready.url)
     }
 
-    @Test fun actualGitCheckoutRefusesDirtyTreesDivergenceAndMovedPr() {
+    @Test fun actualGitCheckoutPreservesLocalEditsAndRefusesConflictsAndMovedPr() {
         val script = dir.resolve("latest.py").toFile().apply {
             writeText(this@LatestPullRequestTest.javaClass.getResource("/com/dpsmpx/dpai/ui/latest_pull_request.py")!!.readText())
         }
