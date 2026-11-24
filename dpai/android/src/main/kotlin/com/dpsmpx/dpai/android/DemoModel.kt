@@ -747,6 +747,8 @@ class DemoModel(
             }
             val prepared = lock.withLock {
                 if (cancelled()) return@withLock Outcome.failure(DiagCode.CANCELLED_BY_USER, "запуск отменён до подготовки")
+                // PR мог только что сохранить новую ветку: BUILD не ждёт фонового такта.
+                current()
                 val fresh = controller.project()
                 val allowed = fresh?.let { workspaceLocked(it).allow(p, location, true) }
                     ?: return@withLock Outcome.failure(DiagCode.STATE_CONFLICT, "проект отключён")
