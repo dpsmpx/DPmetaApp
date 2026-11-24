@@ -196,6 +196,19 @@ class ManualProfilesTest {
         assertFalse(store().blocked)
     }
 
+    @Test fun cancellingAfterCommandBeforeBindingDoesNotReportSuccessOrStartFollowingBuild() {
+        val host = Host()
+        val s = ManualProfiles(DocumentStore(NioVfs(dir), "profiles"), ids, clock) { _, _ ->
+            Outcome.failure(DiagCode.STORAGE_IO_FAILED, "привязка ещё не записана")
+        }
+        val run = s.prepare(project, target, location, profile).valueOrNull()!!
+        s.launch(run, host.client()); host.state = RunState.EXITED
+        assertTrue(s.poll(host.client()))
+        assertFalse(s.stop(host.client()))
+        assertFalse(s.snapshot().complete)
+        assertEquals(1, host.starts)
+    }
+
     private val steps = ManualProfile.form(ManualProfileKind.BUILD, listOf(
         Triple("Настройка", "cmake -S . -B build", "60"),
         Triple("Сборка", "cmake --build build", "60"),

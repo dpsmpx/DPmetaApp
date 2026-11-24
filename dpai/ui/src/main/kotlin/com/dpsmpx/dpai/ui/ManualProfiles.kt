@@ -667,7 +667,7 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
             docs.delete(PROGRESS)
             val deleted = docs.delete(ACTIVE)
             if (deleted is Outcome.Failure) { note("не удалось снять паузу на диске"); return true }
-            val complete = results.size == run.profile.steps.size && results.all { it.ok }
+            val complete = outcome == ManualOutcome.OK && results.size == run.profile.steps.size && results.all { it.ok }
             view = ManualRunView(null, false, note + historyNote, tail, results = results, finished = run.id, complete = complete)
             stopRequested = false
         }

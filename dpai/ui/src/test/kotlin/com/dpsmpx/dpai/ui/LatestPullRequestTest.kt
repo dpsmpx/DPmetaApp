@@ -8,6 +8,7 @@ import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.diagnostics.Redactor
 import com.dpsmpx.dpai.execution.process.LocalProcessHost
 import com.dpsmpx.dpai.execution.process.ProcessSpec
+import com.dpsmpx.dpai.execution.process.run
 import java.nio.file.Path
 import org.junit.jupiter.api.io.TempDir
 import kotlin.test.Test
