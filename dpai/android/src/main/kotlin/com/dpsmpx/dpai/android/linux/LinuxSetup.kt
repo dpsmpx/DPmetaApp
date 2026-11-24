@@ -47,9 +47,16 @@ object LinuxSetup {
         val rootfs = File(context.filesDir, environment(context).rootfs)
         // --link2symlink превращает жёсткие ссылки apk (binutils: nm, strip) в абсолютные ссылки
         // на путь хоста /data/data/<пакет>/…/rootfs; гостю этот путь виден только привязкой.
-        val selfPath = "/data/data/${context.packageName}/files/${environment(context).rootfs}"
-        val selfBind = if (rootfs.isDirectory && File(rootfs, selfPath.removePrefix("/")).let { it.isDirectory || it.mkdirs() })
-            listOf(ProotLayout.Bind(rootfs.path, selfPath)) else emptyList()
+        val binRel = "usr/aarch64-alpine-linux-musl/bin"
+        val bin = File(rootfs, binRel)
+        // Берём фактический путь из ссылки этого пользователя, а не путь первого профиля Android.
+        val linkedDir = try {
+            File(android.system.Os.readlink(File(rootfs, "usr/bin/nm").path)).parentFile
+        } catch (_: android.system.ErrnoException) { null }
+        val selfBind = if (linkedDir != null && linkedDir.isAbsolute && linkedDir.path.endsWith("/$binRel") &&
+            runCatching { java.nio.file.Files.isSameFile(bin.toPath(), linkedDir.toPath()) }.getOrDefault(false)) {
+            listOf(ProotLayout.Bind(bin.path, linkedDir.path))
+        } else emptyList()
         val compat = File(lib, "libdpai-jvm-compat.so")
         val guestCompat = com.dpsmpx.dpai.ui.AndroidNativeJdk.COMPAT_ASSET
         val compatBinds = if (rootfs.isDirectory && compat.isFile) {
