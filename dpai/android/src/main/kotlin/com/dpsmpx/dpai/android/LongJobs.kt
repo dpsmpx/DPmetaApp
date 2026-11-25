@@ -38,8 +38,11 @@ class LongJobs(private val scope: CoroutineScope, private val onDone: (String, D
     val state: StateFlow<Map<String, Job>> = flow
 
     /** Идёт ли хоть одна из [keys] — у экрана, где кнопки делят один процесс (пакеты, установка). */
-    fun busy(vararg keys: String): Boolean = keys.any { flow.value[it]?.running == true }
-    fun busyGuest(): Boolean = synchronized(this) { guestOwners.isNotEmpty() || GUEST.any { flow.value[it]?.running == true } }
+    fun busy(vararg keys: String): Boolean = if (keys.toSet().containsAll(GUEST)) busyGuest()
+        else keys.any { flow.value[it]?.running == true }
+    fun busyGuest(snapshot: Map<String, Job> = flow.value): Boolean = synchronized(this) {
+        (guestOwners + GUEST).any { snapshot[it]?.running == true }
+    }
 
     /**
      * Запустить, если не идёт ни [key], ни что-то из [excludes] (например,

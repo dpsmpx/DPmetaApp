@@ -259,7 +259,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     wizard?.takeIf { !quickStart }?.let { f ->
         val jobs = remember { LongJobs.get(context) }
         val jobState by jobs.state.collectAsState()
-        val busy = LongJobs.GUEST.any { jobState[it]?.running == true }
+        val busy = jobs.busyGuest(jobState)
         // Шаги мастера обновляются по мере работы: после установки — новый сбор фактов.
         LaunchedEffect(busy) {
             if (!busy) withContext(Dispatchers.IO) { runCatching { HealthProbe.collect(context, model) }.getOrNull() }?.let { wizard = it }

@@ -110,7 +110,7 @@ internal fun HealthPane(model: DemoModel, nav: HealthNav, onBack: () -> Unit) {
     val context = LocalContext.current
     val jobs = remember { LongJobs.get(context) }
     val state by jobs.state.collectAsState()
-    val guestBusy = LongJobs.GUEST.any { state[it]?.running == true }
+    val guestBusy = jobs.busyGuest(state)
     var facts by remember { mutableStateOf<HealthFacts?>(null) }
     var round by remember { mutableIntStateOf(0) }
     var identity by rememberSaveable { mutableStateOf(false) }

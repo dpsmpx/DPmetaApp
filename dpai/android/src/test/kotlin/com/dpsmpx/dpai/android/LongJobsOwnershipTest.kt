@@ -21,6 +21,8 @@ class LongJobsOwnershipTest {
         assertTrue(jobs.start("workflow:project", "Сценарий", excludes = LongJobs.GUEST) { parent.await(); LongJobs.Done("готово") })
         val permit = assertNotNull(jobs.permit("workflow:project"))
         assertTrue(jobs.busyGuest())
+        assertTrue(jobs.busy(*LongJobs.GUEST.toTypedArray()), "старые вызывающие тоже видят сценарий")
+        assertTrue(jobs.busyGuest(jobs.state.value), "Compose видит динамический ключ в своём снимке")
         assertFalse(jobs.start(LongJobs.LINUX_APK, "Пакеты", excludes = LongJobs.GUEST) { LongJobs.Done("не должен") })
         assertTrue(jobs.start(LongJobs.WORKSPACE_CHILD, "Проверка", excludes = LongJobs.GUEST, parent = permit) {
             child.await(); LongJobs.Done("проверено")

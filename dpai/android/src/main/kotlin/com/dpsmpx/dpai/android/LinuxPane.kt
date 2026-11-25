@@ -64,7 +64,7 @@ fun LinuxScreen(onBack: () -> Unit, controller: Controller? = null, model: DemoM
     val install = state[LongJobs.LINUX_INSTALL]
     val work = state[LongJobs.LINUX_APK]
     // Процессы гостя — по одному (база apk под замком): и llama.cpp во «Моделях» тоже.
-    val running = LongJobs.GUEST.any { state[it]?.running == true }
+    val running = jobs.busyGuest(state)
     LaunchedEffect(install?.running) {
         if (install?.running != true) {
             installed = withContext(Dispatchers.IO) { LinuxSetup.environment(context).installed() }
