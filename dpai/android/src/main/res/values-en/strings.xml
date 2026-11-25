@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="progress_bytes">%1$d of %2$d bytes</string>
+    <string name="progress_bytes">Bytes transferred: %1$d / %2$d</string>
     <string name="progress_installed">Already installed</string>
     <string name="progress_unpack">Unpacking</string>
     <string name="progress_configure">Configuring build</string>
