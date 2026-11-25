@@ -340,6 +340,36 @@ class LspClient(
         timeout, LspParse::locations,
     )
 
+    /** Иерархия вызовов LSP 3.17; opaque item возвращается только породившей его службе (D-223). */
+    fun calls(uri: String, at: Position, incoming: Boolean, timeout: Duration = SLOW_TIMEOUT, cancelled: () -> Boolean = { false }): Outcome<List<Location>> {
+        if (info?.capabilities?.callHierarchy != true) return Outcome.failure(DiagCode.UNSUPPORTED, "служба не поддерживает иерархию вызовов")
+        if (cancelled()) return Outcome.failure(DiagCode.CANCELLED_BY_USER, "иерархия вызовов отменена")
+        val requestTimeout = minOf(timeout, REQUEST_TIMEOUT)
+        val prepared = when (val r = ask("textDocument/prepareCallHierarchy", place(uri, at), requestTimeout) { value ->
+            if (value == com.dpsmpx.dpai.core.serialization.JsonNull) emptyList() else (value as? JsonArray)?.items?.take(4)?.map {
+                val item = it as? JsonObject ?: return@ask null
+                if (com.dpsmpx.dpai.core.serialization.CanonicalJson.write(item).length > 32_000 ||
+                    LspParse.str(item["uri"]) == null || LspParse.range(item["range"]) == null) return@ask null
+                item
+            }
+        }) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
+        val out = arrayListOf<Location>()
+        for (item in prepared) {
+            if (cancelled()) return Outcome.failure(DiagCode.CANCELLED_BY_USER, "иерархия вызовов отменена")
+            val reply = ask(if (incoming) "callHierarchy/incomingCalls" else "callHierarchy/outgoingCalls", JsonObject.of("item" to item), requestTimeout) { value ->
+                val values = (value as? JsonArray)?.items ?: if (value == com.dpsmpx.dpai.core.serialization.JsonNull) emptyList() else return@ask null
+                values.take(LspParse.MAX_ITEMS).map { call ->
+                    val node = (call as? JsonObject)?.get(if (incoming) "from" else "to") as? JsonObject ?: return@ask null
+                    Location(LspParse.str(node["uri"]) ?: return@ask null,
+                        LspParse.range(node["selectionRange"] ?: node["range"]) ?: return@ask null)
+                }
+            }
+            when (reply) { is Outcome.Failure -> return reply; is Outcome.Success -> out += reply.value }
+            if (out.size >= LspParse.MAX_ITEMS) break
+        }
+        return Outcome.success(out.take(LspParse.MAX_ITEMS))
+    }
+
     /** Правки переименования символа под курсором по всем файлам; сами файлы клиент не трогает. */
     fun rename(uri: String, at: Position, newName: String, timeout: Duration = SLOW_TIMEOUT): Outcome<WorkspaceEdit> =
         ask("textDocument/rename", JsonObject(place(uri, at).fields + ("newName" to json(newName))), timeout, LspParse::workspaceEdit)
@@ -448,6 +478,7 @@ class LspClient(
             ),
             "definition" to JsonObject(emptyMap()),
             "references" to JsonObject(emptyMap()),
+            "callHierarchy" to JsonObject.of("dynamicRegistration" to com.dpsmpx.dpai.core.serialization.JsonBool(false)),
             "documentSymbol" to JsonObject.of("hierarchicalDocumentSymbolSupport" to json(true)),
             "rename" to JsonObject(emptyMap()),
             "formatting" to JsonObject(emptyMap()),

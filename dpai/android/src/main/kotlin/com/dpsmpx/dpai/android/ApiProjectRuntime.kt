@@ -155,6 +155,7 @@ internal object ApiProjectRuntime {
             val entries = (ManualAutomations.describe(profiles, run, project.root, target.platform, choices) +
                 VerificationAutomations.describe(project.profile(), project.root) +
                 DependencyAutomations.describe(project.root, target.platform, inApp) +
+                com.dpsmpx.dpai.ui.DevelopmentTools.describe(project.root, target.platform, inApp) +
                 EnvironmentAutomations.describe(inApp, inApp && LinuxSetup.environment(context).installed() != null, project.root)).toMutableList()
             val issues = arrayListOf<Diagnostic>()
             when (val pult = AutomationBridge.catalog(project.root, inApp)) {
@@ -184,11 +185,13 @@ internal object ApiProjectRuntime {
                     // Полномочия не выводятся из id или числового уровня: только явно подключённые обработчики.
                     if (entry.source != com.dpsmpx.dpai.automation.AutomationSource.VERIFICATION &&
                         entry.source != com.dpsmpx.dpai.automation.AutomationSource.PULT &&
+                        entry.id !in com.dpsmpx.dpai.ui.DevelopmentTools.ids &&
                         entry.id !in setOf("manual.check", "manual.build", "manual.dependencies", DependencyAutomations.RUN, DependencyAutomations.REPORT, "environment.inspect", "environment.probe", "environment.command", "environment.android_sdk") &&
                         com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment.Apk.entries.none { it in EnvironmentPlan.packageActions && entry.id == "environment.apk.${it.name.lowercase()}" }) Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "нужен прежний экран инструмента")
                     else model.workspaceAccess(project, location, write = false) { Outcome.success(Unit) }
                 },
                 { entry, values -> when (entry.id) {
+                    in com.dpsmpx.dpai.ui.DevelopmentTools.ids -> development(entry.id, values, cancel, snapshot.catalog)
                     "verification.fast", "verification.normal", "verification.full" -> verification(entry, cancel, confirmProfiles) { evidence = it }
                     "manual.dependencies" -> {
                         val chosen = snapshot.profiles[ManualProfileKind.DEPENDENCIES]
@@ -226,6 +229,32 @@ internal object ApiProjectRuntime {
                     else environment(entry, values, cancel) { evidence = it }
                 } })
             return Outcome.success(AutomationJson.result(result, if (result.outcome is Outcome.Failure) evidence else null))
+        }
+
+        private fun development(id: String, values: Map<String, String>, cancel: Cancel, catalog: AutomationCatalog): Outcome<JsonObject> {
+            val result = model.workspaceAccess(project, location, false) {
+                if (!sameTarget()) return@workspaceAccess targetChanged()
+                com.dpsmpx.dpai.ui.DevelopmentTools.run(id, values, tree, project.root, Clock.SYSTEM,
+                    cancelled = { cancel.cancelled }, history = { model.manualHistory(project) }, checks = catalog.entries,
+                    progress = { phase, count -> parent?.let { permit ->
+                        val note = when (phase) {
+                            com.dpsmpx.dpai.ui.DevelopmentTools.Phase.SCAN -> context.getString(R.string.development_scan, count)
+                            com.dpsmpx.dpai.ui.DevelopmentTools.Phase.READ -> context.getString(R.string.development_read)
+                            com.dpsmpx.dpai.ui.DevelopmentTools.Phase.ANALYZE -> context.getString(R.string.development_analyze)
+                        }
+                        LongJobs.get(context).report(permit.key, permit.runId, note)
+                    } },
+                    git = { patch -> model.developmentGit(project, location, patch) },
+                    semantic = { path, bytes, input ->
+                        val service = if (inApp) CodeService.sessionOf(project.root.trimEnd('/') + "/" + path)?.ready() else null
+                        val line = input["line"]?.toIntOrNull() ?: if (input["line"] == null) 1 else 0
+                        val column = input["column"]?.toIntOrNull() ?: if (input["column"] == null) 1 else 0
+                        if (service == null) Outcome.failure(DiagCode.UNSUPPORTED, "откройте сохранённый файл в редакторе и запустите его языковую службу")
+                        else com.dpsmpx.dpai.ui.DevelopmentSymbols.inspect(service, project.root, path, bytes, input["sha256"].orEmpty(),
+                            input["operation"] ?: "symbols", line, column) { cancel.cancelled }
+                    })
+            }
+            return model.workspaceAccess(project, location, false) { if (!sameTarget()) targetChanged() else result }
         }
 
         private fun verification(entry: AutomationDefinition, cancel: Cancel, confirm: Boolean, evidence: (JsonObject) -> Unit): Outcome<JsonObject> {

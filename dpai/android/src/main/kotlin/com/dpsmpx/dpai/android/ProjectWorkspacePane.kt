@@ -168,6 +168,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
                 } else AutomationCenter(project) { definition ->
                     when (definition.source) {
                         com.dpsmpx.dpai.automation.AutomationSource.PULT -> AutomationBridge.openPult?.invoke(context)
+                        com.dpsmpx.dpai.automation.AutomationSource.DEVELOPMENT -> openPage(WorkspacePage.FILES.name)
                         com.dpsmpx.dpai.automation.AutomationSource.ENVIRONMENT -> environment = true
                         com.dpsmpx.dpai.automation.AutomationSource.VERIFICATION -> { openPage(WorkspacePage.AI.name); if (selected != null) taskSheet = true }
                         com.dpsmpx.dpai.automation.AutomationSource.MANUAL -> openPage(when (definition.id) {

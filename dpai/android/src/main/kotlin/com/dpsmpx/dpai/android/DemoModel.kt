@@ -854,18 +854,41 @@ class DemoModel(
     }
 
     /** Только захват ссылки — под замком; сам Git работает вне него (D-133). */
-    fun workspaceGit(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation): Outcome<com.dpsmpx.dpai.git.GitStatus> {
+    fun workspaceGit(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, timeout: Duration? = null): Outcome<com.dpsmpx.dpai.git.GitStatus> {
         if (!lock.tryLock()) return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.WORKTREE_OWNED, "контроллер занят; повторите обновление Git")
         val read = try {
             val current = controller.project() ?: return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, "проект отключён")
             when (val allowed = workspaceLocked(current).allow(p, location, false)) {
                 is Outcome.Failure -> return allowed
-                is Outcome.Success -> (built as LiveSystem).orchestrator.workspaceGitProbe(location.path)
+                is Outcome.Success -> (built as LiveSystem).orchestrator.workspaceGitProbe(location.path, timeout)
             }
         } finally { lock.unlock() }
         return when (read) {
             is Outcome.Failure -> read
             is Outcome.Success -> read.value()
+        }
+    }
+
+    /** D-223: только разрешённые файлы; черновик и история задач не изменяются. */
+    fun developmentGit(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, patch: Boolean): Outcome<com.dpsmpx.dpai.ui.DevelopmentTools.GitEvidence> {
+        val status = when (val r = workspaceGit(p, location, Duration.parse("20s"))) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
+        val paths = (status.changed + status.conflicted).distinct().filter(com.dpsmpx.dpai.ui.DevelopmentTools::safePath)
+        if (!patch || paths.isEmpty()) return Outcome.success(com.dpsmpx.dpai.ui.DevelopmentTools.GitEvidence(status))
+        val head = status.head ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у дерева ещё нет HEAD для diff")
+        if (!lock.tryLock()) return Outcome.failure(DiagCode.WORKTREE_OWNED, "контроллер занят; повторите анализ")
+        val probe = try {
+            val current = controller.project() ?: return Outcome.failure(DiagCode.STATE_CONFLICT, "проект отключён")
+            when (val allowed = workspaceLocked(current).allow(p, location, false)) {
+                is Outcome.Failure -> return allowed
+                is Outcome.Success -> (built as LiveSystem).orchestrator.workspaceDiffProbe(location.path, head, paths.take(50))
+            }
+        } finally { lock.unlock() }
+        val diff = when (probe) { is Outcome.Failure -> return probe; is Outcome.Success -> probe.value() }
+        return when (diff) {
+            is Outcome.Failure -> diff
+            is Outcome.Success -> workspaceAccess(p, location, false) {
+                Outcome.success(com.dpsmpx.dpai.ui.DevelopmentTools.GitEvidence(status, diff.value.stdout.joinToString("\n"), diff.value.truncated || paths.size > 50))
+            }
         }
     }
 

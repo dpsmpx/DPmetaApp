@@ -196,6 +196,12 @@ D-184, `KeyWrap`: файлы в `noBackupFilesDir/dpai-keys`. Это внутр�
 
 ## Сценарии автоматизаций (D-222)
 
+D-223: результат чтения разработки — `dpai.development-report` v1;
+набор замеров — `dpai.measurements` v1. Это входы/выходы инструментов,
+не новые форматы журнала задач. Полнота, свежесть, метаданные и хеши
+содержимого различаются; чтение отчёта не записывает PASSED задачи.
+Пределы и корпус — DPmetaApp:docs/UNIVERSAL_DEVELOPMENT_TOOLS.md.
+
 Приватный каталог проекта `noBackupFilesDir/automation/<ProjectId>` не входит
 в дерево проекта или контекст модели. DocumentStore хранит определения
 `dpai.workflow` v1, результаты `dpai.workflow-run` v1 и очередь

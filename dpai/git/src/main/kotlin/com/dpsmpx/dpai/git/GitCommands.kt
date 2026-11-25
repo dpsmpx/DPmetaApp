@@ -48,6 +48,8 @@ enum class GitOp(val level: ActionLevel) {
     PUSH_FORCE(ActionLevel.DANGEROUS),
     BRANCH_DELETE_FORCE(ActionLevel.DANGEROUS),
     WORKTREE_REMOVE_FORCE(ActionLevel.DANGEROUS),
+    /** D-223: diff от точного HEAD только для явно отобранных буквальных путей. */
+    DIFF_FILES(ActionLevel.READ),
     ;
 
     /** Прежние признаки для вызывающего кода, вычисляются из единого уровня. */
@@ -80,9 +82,12 @@ class GitCommands(private val approvals: ApprovalLedger, private val git: String
         }
         val need = ARITY.getValue(op)
         if (args.size !in need) return Outcome.failure(DiagCode.VALUE_INVALID, "у ${op.name} аргументов ${need.first}…${need.last}, дано ${args.size}", worktree)
+        if (op == GitOp.DIFF_FILES && !args.first().matches(Regex("[a-fA-F0-9]{40}|[a-fA-F0-9]{64}")))
+            return Outcome.failure(DiagCode.VALUE_INVALID, "diff требует точный хеш коммита")
         val tail: List<String> = when (op) {
             GitOp.STATUS -> listOf("status", "--porcelain=v2", "--branch")
             GitOp.DIFF -> listOf("diff", "--no-color", "--no-ext-diff") + (if (args.isEmpty()) emptyList() else listOf("--") + args)
+            GitOp.DIFF_FILES -> listOf("diff", "--no-color", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all", args.first(), "--") + args.drop(1)
             GitOp.LOG -> listOf("log", "--no-color", "--format=%H %s", "-n", "50")
             GitOp.HEAD -> listOf("rev-parse", "--verify", "HEAD")
             GitOp.MERGE_BASE -> listOf("merge-base") + args
@@ -109,7 +114,7 @@ class GitCommands(private val approvals: ApprovalLedger, private val git: String
             GitOp.BRANCH_DELETE_FORCE -> listOf("branch", "-D", "--") + args
             GitOp.WORKTREE_REMOVE_FORCE -> listOf("worktree", "remove", "--force", "--", args.single())
         }
-        val read = if (op in READ_ONLY) READ_OPTIONS else emptyList()
+        val read = (if (op in READ_ONLY) READ_OPTIONS else emptyList()) + if (op == GitOp.DIFF_FILES) listOf("--literal-pathspecs") else emptyList()
         val paths = if (op in PATH_OUTPUT) UNQUOTED_PATHS else emptyList()
         return Outcome.success(listOf(git) + read + HARDENING + paths + listOf("-C", worktree) + tail)
     }
@@ -134,17 +139,19 @@ class GitCommands(private val approvals: ApprovalLedger, private val git: String
         private val READ_ONLY = setOf(
             GitOp.STATUS, GitOp.DIFF, GitOp.LOG, GitOp.HEAD, GitOp.MERGE_BASE, GitOp.DIFF_FROM, GitOp.DIFF_STAT_FROM, GitOp.MERGES_BETWEEN, GitOp.WORKTREE_LIST,
             GitOp.REV_PARSE, GitOp.GREP,
+            GitOp.DIFF_FILES,
         )
 
         /** Пути — как есть, в UTF-8: при `core.quotePath=true` кириллица шла бы «\320\227…» в кавычках. */
         private val UNQUOTED_PATHS = listOf("-c", "core.quotePath=false")
-        private val PATH_OUTPUT = setOf(GitOp.STATUS, GitOp.DIFF, GitOp.DIFF_FROM, GitOp.DIFF_STAT_FROM, GitOp.GREP)
+        private val PATH_OUTPUT = setOf(GitOp.STATUS, GitOp.DIFF, GitOp.DIFF_FROM, GitOp.DIFF_STAT_FROM, GitOp.GREP, GitOp.DIFF_FILES)
 
         /**
          * Хуки проекта при коммите оркестратора не исполняются (`--no-verify`, T4):
          * проверка проекта — отдельный шаг профиля (этап 10), а не побочный эффект коммита.
          */
         private val ARITY: Map<GitOp, IntRange> = mapOf(
+            GitOp.DIFF_FILES to 2..51,
             GitOp.STATUS to 0..0, GitOp.DIFF to 0..50, GitOp.LOG to 0..0, GitOp.HEAD to 0..0, GitOp.MERGE_BASE to 2..2, GitOp.DIFF_FROM to 1..2, GitOp.DIFF_STAT_FROM to 1..2, GitOp.MERGES_BETWEEN to 2..2, GitOp.WORKTREE_LIST to 0..0, GitOp.REV_PARSE to 1..1, GitOp.GREP to 1..51, GitOp.FETCH to 0..2,
             GitOp.ADD to 1..1000, GitOp.COMMIT to 1..1, GitOp.BRANCH_CREATE to 1..2, GitOp.WORKTREE_ADD to 2..3,
             GitOp.WORKTREE_REMOVE to 1..1, GitOp.MERGE to 1..1, GitOp.MERGE_ABORT to 0..0, GitOp.PUSH to 1..2, GitOp.RESET_HARD to 0..1,

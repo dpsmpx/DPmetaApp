@@ -111,6 +111,7 @@ data class ServerCapabilities(
     val codeActionResolve: Boolean = false,
     val completionResolve: Boolean = false,
     val executeCommands: Set<String> = emptySet(),
+    val callHierarchy: Boolean = false,
 )
 
 /** Имя и версия службы, если она их назвала. */
@@ -381,6 +382,7 @@ internal object LspParse {
             codeActionResolve = ((o["codeActionProvider"] as? JsonObject)?.get("resolveProvider") as? JsonBool)?.value == true,
             completionResolve = ((o["completionProvider"] as? JsonObject)?.get("resolveProvider") as? JsonBool)?.value == true,
             executeCommands = (((o["executeCommandProvider"] as? JsonObject)?.get("commands") as? JsonArray)?.items.orEmpty()).take(128).mapNotNull { str(it) }.toSet(),
+            callHierarchy = has("callHierarchyProvider"),
         )
     }
 

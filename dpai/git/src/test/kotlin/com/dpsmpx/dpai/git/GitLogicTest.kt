@@ -33,6 +33,16 @@ class GitLogicTest {
     private val clock = ManualClock()
     private val ids = IdGenerator(clock, RandomSource.seeded(61))
 
+    @Test fun developmentDiffUsesLiteralPathsExactHeadAndNoProjectExecutables() {
+        val c = GitCommands(ApprovalLedger())
+        val argv = c.argv(GitOp.DIFF_FILES, "/project", listOf("a".repeat(40), "./*"), clock.now()).valueOrNull()!!
+        for (flag in listOf("--no-optional-locks", "--literal-pathspecs", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all")) assertTrue(flag in argv)
+        assertEquals(listOf("a".repeat(40), "--", "./*"), argv.takeLast(3))
+        assertIs<Outcome.Failure>(c.argv(GitOp.DIFF_FILES, "/project", listOf("HEAD", "file"), clock.now()))
+        assertIs<Outcome.Failure>(c.argv(GitOp.DIFF_FILES, "/project", listOf("a".repeat(40)), clock.now()))
+        assertEquals(ActionLevel.READ, GitOp.DIFF_FILES.level)
+    }
+
     @Test
     fun porcelainV2IsParsedStrictly() {
         val lines = listOf(
@@ -108,6 +118,7 @@ class GitLogicTest {
                 GitOp.WORKTREE_ADD -> listOf("/p", "b")
                 GitOp.MERGE_BASE, GitOp.MERGES_BETWEEN -> listOf("main", "HEAD")
                 GitOp.DIFF_FROM, GitOp.DIFF_STAT_FROM, GitOp.REV_PARSE -> listOf("main")
+                GitOp.DIFF_FILES -> listOf("a".repeat(40), "./file")
                 else -> emptyList()
             }
             val argv = c.argv(op, "/w", args, clock.now()).valueOrNull() ?: error("$op")

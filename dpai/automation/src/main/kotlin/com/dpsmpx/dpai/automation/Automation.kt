@@ -19,8 +19,8 @@ import com.dpsmpx.dpai.execution.target.TargetPlatform
 import com.dpsmpx.dpai.verification.VerifyStep
 import com.dpsmpx.dpai.core.diagnostics.Redactor
 
-/** Четыре существующих источника D-172; это не новые хранилища или исполнители. */
-enum class AutomationSource { PULT, MANUAL, VERIFICATION, ENVIRONMENT }
+/** Четыре существующих источника D-172 и чтения разработки D-223; своих исполнителей нет. */
+enum class AutomationSource { PULT, MANUAL, VERIFICATION, ENVIRONMENT, DEVELOPMENT }
 enum class AutomationCategory { REPOSITORY, BUILD, CHECK, RUN, ENVIRONMENT }
 
 /** OPEN_UI сохраняет подтверждение/терминал прежнего инструмента, не имитирует прямой вызов. */

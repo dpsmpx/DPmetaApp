@@ -1,0 +1,1 @@
+{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"synthetic-checker","version":"1"}},"invocations":[{"executionSuccessful":true}],"results":[{"ruleId":"unused-component","level":"warning","message":{"text":"Synthetic finding; check applicability"},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"src/main.kt"},"region":{"startLine":3}}}]}]}]}

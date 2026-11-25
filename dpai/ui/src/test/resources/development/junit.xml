@@ -1,0 +1,6 @@
+<testsuite name="synthetic" tests="3" failures="1" errors="0" skipped="1">
+  <properties><property name="seed" value="223"/></properties>
+  <testcase classname="example.Checks" name="works" time="0.1"/>
+  <testcase classname="example.Checks" name="fails" time="0.2"><failure message="synthetic assertion"/></testcase>
+  <testcase classname="example.Checks" name="needsDevice"><skipped/></testcase>
+</testsuite>

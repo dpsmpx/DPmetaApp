@@ -127,7 +127,8 @@ internal fun AutomationCenter(project: ProjectEntry, onOpen: (AutomationDefiniti
                 (data?.get("note") as? JsonString)?.value?.let { Text(it) }
                 (r["diagnostics"] as? JsonArray)?.items?.forEach { d -> ((d as? JsonObject)?.get("message") as? JsonString)?.value?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error) } }
                 val output = (data?.get("output") as? JsonString)?.value ?: data?.let(CanonicalJson::write)
-                output?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
+                if (data?.get("format") == JsonString("dpai.development-report")) DevelopmentReportView(data)
+                else output?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
             }
         } }
     }
@@ -140,15 +141,17 @@ private fun AutomationDetails(d: AutomationDefinition, running: Boolean, onRun: 
     Text(stringResource(if (d.invocation == AutomationInvocation.DIRECT) R.string.automation_direct else R.string.automation_existing_ui), style = MaterialTheme.typography.bodySmall)
     d.reason?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
     if (d.source == AutomationSource.PULT) Text(d.purpose, style = MaterialTheme.typography.bodySmall)
+    if (d.source == AutomationSource.DEVELOPMENT) Text(stringResource(R.string.development_intro), style = MaterialTheme.typography.bodySmall)
     if (d.dependencies.isNotEmpty()) Text(stringResource(R.string.automation_dependencies, d.dependencies.joinToString()), style = MaterialTheme.typography.bodySmall)
     d.timeoutSeconds?.let { Text(stringResource(R.string.automation_timeout, it), style = MaterialTheme.typography.bodySmall) }
     for (p in d.parameters) {
+        val title = if (d.source == AutomationSource.DEVELOPMENT) stringResource(developmentParameter(p.name)) + if (p.required) " *" else "" else p.title
         if (p.text) {
             OutlinedTextField(values[p.name].orEmpty(), { values = values + (p.name to it.take(p.maxLength)) },
-                enabled = !running, label = { Text(p.title) }, modifier = Modifier.fillMaxWidth())
+                enabled = !running, label = { Text(title) }, modifier = Modifier.fillMaxWidth())
             continue
         }
-        Text(p.title)
+        Text(title)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             for (v in p.choices) FilterChip(selected = values[p.name] == v, enabled = !running, onClick = { values = values + (p.name to v) }, label = { Text(v) })
         }
@@ -163,6 +166,7 @@ private fun sourceTitle(source: AutomationSource): String = stringResource(when 
     AutomationSource.MANUAL -> R.string.automation_profiles
     AutomationSource.VERIFICATION -> R.string.automation_verification
     AutomationSource.ENVIRONMENT -> R.string.automation_environment
+    AutomationSource.DEVELOPMENT -> R.string.automation_development
 })
 
 @Composable
@@ -178,6 +182,7 @@ private fun automationTitle(d: AutomationDefinition): String = when (d.id) {
     "environment.command" -> stringResource(R.string.env_linux_command)
     "environment.android_sdk" -> stringResource(R.string.env_sdk_install)
     else -> when (d.source) {
+        AutomationSource.DEVELOPMENT -> stringResource(developmentTitle(d.id))
         AutomationSource.VERIFICATION -> stringResource(R.string.automation_verification_level, d.title)
         AutomationSource.ENVIRONMENT -> stringResource(R.string.automation_package_operation, d.title)
         else -> d.title
