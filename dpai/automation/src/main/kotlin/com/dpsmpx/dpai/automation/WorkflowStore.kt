@@ -96,8 +96,24 @@ class WorkflowStore(private val vfs: Vfs, private val acquire: () -> Closeable?)
     fun result(workflow: String, event: String): Outcome<JsonObject?> {
         if (!Workflow.storedId(workflow) || event.length !in 1..200 || '\u0000' in event)
             return Outcome.failure(DiagCode.VALUE_INVALID, "неверный запрос результата сценария")
-        return run(com.dpsmpx.dpai.core.hashing.Hashing.sha256(workflow + ":" + event).hex)
+        return observedRun(com.dpsmpx.dpai.core.hashing.Hashing.sha256(workflow + ":" + event).hex)
     }
+
+    /** Свободная аренда доказывает отсутствие исполнителя: чтение не оставляет фантомный RUNNING. */
+    private fun observedRun(key: String): Outcome<JsonObject?> {
+        val original = when (val r = run(key)) { is Outcome.Failure -> return r; is Outcome.Success -> r }
+        if (original.value?.get("status") != JsonString("RUNNING")) return original
+        val reconciled = locked {
+            val current = when (val r = run(key)) { is Outcome.Failure -> return@locked r; is Outcome.Success -> r.value }
+            if (current?.get("status") != JsonString("RUNNING")) return@locked Outcome.success(current)
+            val interrupted = JsonObject(current.fields + mapOf("status" to JsonString("INCOMPLETE"),
+                "note" to JsonString("исполнение прервано; сверьте историю инструмента, начатый шаг сам не повторяется")))
+            record(key, interrupted).map { interrupted }
+        }
+        // Аренда занята настоящим worker, в том числе проверкой владельца дерева задачи.
+        return if (reconciled is Outcome.Failure && reconciled.errors.any { it.code == DiagCode.WORKTREE_OWNED }) original else reconciled
+    }
+
     internal fun record(key: String, value: JsonObject): Outcome<Unit> {
         if (!validRun(key, value)) return Outcome.failure(DiagCode.VALUE_INVALID, "неверный результат сценария")
         return when (val written = runs.write(key, value)) {
@@ -135,7 +151,11 @@ class WorkflowStore(private val vfs: Vfs, private val acquire: () -> Closeable?)
         if (!Workflow.storedId(workflow)) return Outcome.failure(DiagCode.VALUE_INVALID, "неверный id сценария")
         return when (val r = read(last, definitionKey(workflow))) {
             is Outcome.Failure -> r
-            is Outcome.Success -> Outcome.success(r.value?.get("summary") as? JsonObject)
+            is Outcome.Success -> {
+                val summary = r.value?.get("summary") as? JsonObject
+                if (summary?.get("status") == JsonString("RUNNING")) latest(workflow).map { it?.let { value -> JsonObject(value.fields - "results") } }
+                else Outcome.success(summary)
+            }
         }
     }
 
@@ -147,7 +167,7 @@ class WorkflowStore(private val vfs: Vfs, private val acquire: () -> Closeable?)
         }
         val key = (pointer["key"] as? com.dpsmpx.dpai.core.serialization.JsonString)?.value
             ?.takeIf { Workflow.HASH.matches(it) } ?: return Outcome.failure(DiagCode.STORAGE_CORRUPTED, "повреждена ссылка результата")
-        return run(key)
+        return observedRun(key)
     }
 
     private fun validRun(key: String, o: JsonObject): Boolean {

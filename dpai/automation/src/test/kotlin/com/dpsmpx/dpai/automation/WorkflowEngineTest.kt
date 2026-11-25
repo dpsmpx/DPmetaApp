@@ -57,8 +57,13 @@ class WorkflowEngineTest {
         var effects = 0
         try {
             WorkflowEngine(s, clock).run(w.id, w.revision, event(), { false }, { Outcome.success(catalog(d)) },
-                { _, _ -> Outcome.success(Unit) }, { _, _, _ -> effects++; throw AssertionError("simulated process death") })
+                { _, _ -> Outcome.success(Unit) }, { _, _, _ ->
+                    effects++
+                    assertEquals(JsonString("RUNNING"), store().latestSummary(w.id).valueOrNull()!!["status"], "живой worker сохраняет свою аренду")
+                    throw AssertionError("simulated process death")
+                })
         } catch (_: AssertionError) { }
+        assertEquals(JsonString("INCOMPLETE"), store().latestSummary(w.id).valueOrNull()!!["status"], "после смерти процесса UI не показывает фантомный RUNNING")
         val recovered = WorkflowEngine(store(), clock).run(w.id, w.revision, event(), { false }, { Outcome.success(catalog(d)) },
             { _, _ -> Outcome.success(Unit) }, { _, _, _ -> effects++; success() })
         assertEquals("INCOMPLETE", status(recovered))
