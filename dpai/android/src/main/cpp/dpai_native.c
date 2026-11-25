@@ -230,6 +230,10 @@ Java_com_dpsmpx_dpai_android_linux_NativeCalls_resize(JNIEnv *env, jclass cls, j
 JNIEXPORT jint JNICALL
 Java_com_dpsmpx_dpai_android_linux_NativeCalls_read(JNIEnv *env, jclass cls, jint fd, jbyteArray buf, jint off, jint len) {
     (void) cls;
+    if (buf == NULL) return -EINVAL;
+    jsize size = (*env)->GetArrayLength(env, buf);
+    if (off < 0 || len < 0 || off > size || len > size - off) return -EINVAL;
+    if (len == 0) return 0;
     char tmp[CHUNK];
     ssize_t n;
     do {
@@ -244,6 +248,10 @@ Java_com_dpsmpx_dpai_android_linux_NativeCalls_read(JNIEnv *env, jclass cls, jin
 JNIEXPORT jint JNICALL
 Java_com_dpsmpx_dpai_android_linux_NativeCalls_write(JNIEnv *env, jclass cls, jint fd, jbyteArray buf, jint off, jint len) {
     (void) cls;
+    if (buf == NULL) return -EINVAL;
+    jsize size = (*env)->GetArrayLength(env, buf);
+    if (off < 0 || len < 0 || off > size || len > size - off) return -EINVAL;
+    if (len == 0) return 0;
     char tmp[CHUNK];
     jint done = 0;
     while (done < len) {
@@ -256,6 +264,7 @@ Java_com_dpsmpx_dpai_android_linux_NativeCalls_write(JNIEnv *env, jclass cls, ji
                 if (errno == EINTR) continue;
                 return -errno;
             }
+            if (n == 0) return -EIO;
             sent += (jint) n;
         }
         done += part;

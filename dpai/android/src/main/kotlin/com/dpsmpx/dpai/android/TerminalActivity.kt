@@ -34,6 +34,7 @@ import kotlin.concurrent.thread
  * стрелки). Открывается с карточки target: оболочка или `claude` слота.
  */
 class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
+    private var clipboardDialog: AlertDialog? = null
     private lateinit var view: TerminalView
     private lateinit var tabsRow: LinearLayout
     private lateinit var statusRow: LinearLayout
@@ -120,6 +121,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     }
 
     override fun onDestroy() {
+        clipboardDialog?.dismiss()
+        clipboardDialog = null
         getSharedPreferences(com.dpsmpx.dpai.ui.UiLook.PREFS, MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(lookListener)
         dependencyUi?.close()
         super.onDestroy()
@@ -341,6 +344,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                 Toast.makeText(this, "Программа на «${tab.label}» прислала для буфера обмена ${text.length} знаков — слишком много, не записано", Toast.LENGTH_LONG).show()
                 return@runOnUiThread
             }
+            if (clipboardDialog?.isShowing == true) return@runOnUiThread
             fun write() {
                 try {
                     // Экран терминала несёт секреты (D-86): с пометкой «чувствительное» (терминал:A-11).
@@ -357,7 +361,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             val always = android.widget.CheckBox(this).apply { this.text = "Разрешать этой вкладке до закрытия" }
             val dialog = AlertDialog.Builder(this)
                 .setTitle("Запись в буфер обмена")
-                .setMessage("Программа на «${tab.label}» просит записать в буфер обмена:\n\n${text.take(PREVIEW)}")
+                .setMessage("Программа на «${tab.label}» просит записать в буфер обмена:\n\n${getString(R.string.terminal_clipboard_details, text.length, com.dpsmpx.dpai.terminal.PasteGuard.lines(text))}\n${if (text.length > PREVIEW) getString(R.string.terminal_clipboard_truncated) + "\n" else ""}${com.dpsmpx.dpai.terminal.PasteGuard.visible(text, PREVIEW)}")
                 .setView(android.widget.FrameLayout(this).apply { setPadding(dp(20), 0, dp(20), 0); addView(always) })
                 .setPositiveButton("Записать") { _, _ ->
                     if (always.isChecked) tab.clipboardAllowed = true
@@ -367,8 +371,10 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                 .create()
             // У диалога своё окно, и FLAG_SECURE активности его не закрывает (D-86, как `Ui.secure` DPpass).
             dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+            clipboardDialog = dialog
+            dialog.setOnDismissListener { if (clipboardDialog === dialog) clipboardDialog = null }
             dialog.show()
-        Looks.styleDialog(dialog)
+            Looks.styleDialog(dialog)
         }
     }
 

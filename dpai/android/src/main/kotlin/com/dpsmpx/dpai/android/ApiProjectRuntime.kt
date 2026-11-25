@@ -104,7 +104,7 @@ internal object ApiProjectRuntime {
         return when (val r = controller.putProject(project)) { is Outcome.Failure -> r; is Outcome.Success -> Outcome.success(project) }
     }
 
-    fun open(context: Context, id: ProjectId, approvalOwner: String? = null): Outcome<Session> {
+    fun open(context: Context, id: ProjectId, approvalOwner: String? = null, parent: LongJobs.Permit? = null): Outcome<Session> {
         val controller = Controller.get(context.filesDir)
         val project = controller.projects().projects.firstOrNull { it.project == id }
             ?: return Outcome.failure(DiagCode.STATE_CONFLICT, "проект разговора удалён; выберите проект в мастере")
@@ -115,12 +115,13 @@ internal object ApiProjectRuntime {
             val relative = WorkspacePaths.homeRelative(target, project.root) ?: return Outcome.failure(DiagCode.VALUE_INVALID, "каталог проекта вне домашней папки")
             SubTree(GuestPaths.homeTree(context), relative)
         } else when (val r = model.pcFiles(target, project.root, writable = true)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
-        return Outcome.success(Session(context.applicationContext, model, project, view.main, tree, target, approvalOwner))
+        return Outcome.success(Session(context.applicationContext, model, project, view.main, tree, target, approvalOwner, parent))
     }
 
     class Session(private val context: Context, private val model: DemoModel, val project: ProjectEntry,
         private val location: com.dpsmpx.dpai.ui.WorkspaceLocation, private val tree: FileTree, private val targetSnapshot: com.dpsmpx.dpai.ui.TargetEntry,
-        private val approvalOwner: String?) : AutoCloseable {
+        private val approvalOwner: String?, private val parent: LongJobs.Permit? = null) : AutoCloseable {
+        val contextRevision: String get() = com.dpsmpx.dpai.ui.AutomationContext.revision(project, targetSnapshot)
         private val deniedEnvironment = HashSet<String>()
         private val inApp: Boolean get() = targetSnapshot.inApp
         private fun sameTarget() = Controller.get(context.filesDir).targets().firstOrNull { it.id == project.target } == targetSnapshot
@@ -132,10 +133,11 @@ internal object ApiProjectRuntime {
         val tools: List<ToolSpec> = ApiProjectFiles.tools().map { ToolSpec(it.first, it.second, it.third) } + ToolSpec("run_profile",
             "Запустить CHECK или BUILD выбранного проекта через штатные профили; получить настоящий итог и вывод. Не публикует и не выполняет произвольный shell.",
             JsonObject.of("type" to JsonString("object"), "properties" to JsonObject.of("kind" to JsonObject.of("type" to JsonString("string"), "enum" to JsonArray(listOf(JsonString("CHECK"), JsonString("BUILD"))))), "required" to JsonArray(listOf(JsonString("kind"))))) +
-            AutomationApi.tools().map { ToolSpec(it.first, it.second, it.third) }
+            (AutomationApi.tools() + com.dpsmpx.dpai.automation.WorkflowApi.tools()).map { ToolSpec(it.first, it.second, it.third) }
 
         data class Snapshot(val catalog: AutomationCatalog, val profiles: Map<ManualProfileKind, ManualProfile?>,
-            val choices: Map<ManualProfileKind, Map<String, String>>, val sourceIssues: List<Diagnostic>)
+            val choices: Map<ManualProfileKind, Map<String, String>>, val sourceIssues: List<Diagnostic>,
+            val contextRevision: String = "", val disabled: Set<String> = emptySet())
 
         /** Снимок, а не новая база: профили читаются заново перед каждым действием. */
         fun catalog(): Outcome<Snapshot> = model.workspaceAccess(project, location, write = false) {
@@ -159,13 +161,20 @@ internal object ApiProjectRuntime {
                 is Outcome.Success -> entries += pult.value
                 is Outcome.Failure -> issues += pult.diagnostics
             }
+            val disabled = when (val r = AutomationWorkflows.store(context, project.project).disabled()) {
+                is Outcome.Failure -> return@workspaceAccess r
+                is Outcome.Success -> r.value
+            }
+            for (i in entries.indices) if (entries[i].id in disabled)
+                entries[i] = entries[i].copy(available = false, reason = "инструмент выключен пользователем")
             when (val r = com.dpsmpx.dpai.ui.AutomationContext.bind(entries, project, target)) {
                 is Outcome.Failure -> r
-                is Outcome.Success -> Outcome.success(Snapshot(r.value, profiles, choices, issues))
+                is Outcome.Success -> Outcome.success(Snapshot(r.value, profiles, choices, issues, contextRevision, disabled))
             }
         }
 
-        fun invokeAutomation(id: String, revision: String, parameters: JsonObject, cancel: Cancel, actor: ActorKind = ActorKind.AGENT): Outcome<JsonObject> {
+        fun invokeAutomation(id: String, revision: String, parameters: JsonObject, cancel: Cancel, actor: ActorKind = ActorKind.AGENT,
+            confirmProfiles: Boolean = false, workflow: Boolean = false): Outcome<JsonObject> {
             val snapshot = when (val r = catalog()) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
             var evidence: JsonObject? = null
             val result = snapshot.catalog.invoke(id, revision, parameters, Provenance(Actor(actor, "Automation"), projectId = project.project,
@@ -173,11 +182,24 @@ internal object ApiProjectRuntime {
                 { cancel.cancelled },
                 { entry ->
                     // Полномочия не выводятся из id или числового уровня: только явно подключённые обработчики.
-                    if (entry.id !in setOf("manual.check", "manual.build", DependencyAutomations.RUN, DependencyAutomations.REPORT, "environment.inspect", "environment.probe", "environment.command", "environment.android_sdk") &&
+                    if (entry.source != com.dpsmpx.dpai.automation.AutomationSource.VERIFICATION &&
+                        entry.source != com.dpsmpx.dpai.automation.AutomationSource.PULT &&
+                        entry.id !in setOf("manual.check", "manual.build", "manual.dependencies", DependencyAutomations.RUN, DependencyAutomations.REPORT, "environment.inspect", "environment.probe", "environment.command", "environment.android_sdk") &&
                         com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment.Apk.entries.none { it in EnvironmentPlan.packageActions && entry.id == "environment.apk.${it.name.lowercase()}" }) Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "нужен прежний экран инструмента")
                     else model.workspaceAccess(project, location, write = false) { Outcome.success(Unit) }
                 },
                 { entry, values -> when (entry.id) {
+                    "verification.fast", "verification.normal", "verification.full" -> verification(entry, cancel, confirmProfiles) { evidence = it }
+                    "manual.dependencies" -> {
+                        val chosen = snapshot.profiles[ManualProfileKind.DEPENDENCIES]
+                            ?: return@invoke Outcome.failure(DiagCode.STATE_CONFLICT, "профиль зависимостей не настроен")
+                        val resolved = when (val r = chosen.resolve(com.dpsmpx.dpai.ui.ManualVars.builtIns(project, targetSnapshot, location) +
+                            snapshot.choices[ManualProfileKind.DEPENDENCIES].orEmpty() + values)) {
+                            is Outcome.Failure -> return@invoke r; is Outcome.Success -> r.value
+                        }
+                        confirmed(AutomationPlan(entry.id, entry.title, entry.level, resolved,
+                            snapshot = false, scope = AutomationPlan.Scope.PROJECT), entry.revision, cancel) { evidence = it }
+                    }
                     DependencyAutomations.REPORT -> model.workspaceAccess(project, location, write = false) {
                         if (!sameTarget()) targetChanged() else DependencyAutomations.read(tree, values)
                     }
@@ -190,21 +212,70 @@ internal object ApiProjectRuntime {
                     "manual.check", "manual.build" -> {
                         val kind = if (entry.id == "manual.check") ManualProfileKind.CHECK else ManualProfileKind.BUILD
                         val chosen = snapshot.profiles[kind] ?: return@invoke Outcome.failure(DiagCode.STATE_CONFLICT, "профиль удалён")
-                        profile(chosen, snapshot.choices[kind].orEmpty() + values, cancel, evidence = { evidence = it })
+                        if (confirmProfiles) {
+                            val resolved = when (val r = chosen.resolve(com.dpsmpx.dpai.ui.ManualVars.builtIns(project, targetSnapshot, location) +
+                                snapshot.choices[kind].orEmpty() + values)) { is Outcome.Failure -> return@invoke r; is Outcome.Success -> r.value }
+                            confirmed(AutomationPlan(entry.id, entry.title, entry.level, resolved,
+                                snapshot = false, scope = AutomationPlan.Scope.PROJECT), entry.revision, cancel, automationHooks = !workflow) { evidence = it }
+                        } else profile(chosen, snapshot.choices[kind].orEmpty() + values, cancel, saveChoices = !workflow, evidence = { evidence = it }, automationHooks = !workflow)
                     }
-                    else -> environment(entry, values, cancel) { evidence = it }
+                    else -> if (entry.source == com.dpsmpx.dpai.automation.AutomationSource.PULT)
+                        AutomationBridge.invokePult(context, project, entry.id) { plan ->
+                            confirmed(plan, entry.revision, cancel) { evidence = it }
+                        }
+                    else environment(entry, values, cancel) { evidence = it }
                 } })
             return Outcome.success(AutomationJson.result(result, if (result.outcome is Outcome.Failure) evidence else null))
+        }
+
+        private fun verification(entry: AutomationDefinition, cancel: Cancel, confirm: Boolean, evidence: (JsonObject) -> Unit): Outcome<JsonObject> {
+            val level = com.dpsmpx.dpai.verification.VerifyLevel.entries.firstOrNull { "verification." + it.name.lowercase() == entry.id }
+                ?: return Outcome.failure(DiagCode.VALUE_INVALID, "неизвестный уровень проверки")
+            if (confirm) {
+                val plan = AutomationPlan(entry.id, entry.title, entry.level, ManualProfile(ManualProfileKind.CHECK,
+                    entry.steps.map { com.dpsmpx.dpai.ui.ManualStep(it.name.take(60), it.command, it.timeout.inWholeSeconds) }),
+                    snapshot = false, scope = AutomationPlan.Scope.PROJECT)
+                val grant = when (val r = EnvironmentApprovalBroker.shared.await(approvalOwner, project, plan, entry.revision,
+                    targetSnapshot.label, targetSnapshot) { cancel.cancelled }) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
+                when (val r = grant?.consume(plan.proposal(project, entry.revision)) ?: Outcome.success(Unit)) {
+                    is Outcome.Failure -> return r
+                    is Outcome.Success -> Unit
+                }
+            }
+            val originals = arrayListOf<com.dpsmpx.dpai.core.serialization.JsonValue>()
+            val verifier = com.dpsmpx.dpai.verification.Verifier(com.dpsmpx.dpai.verification.StepRunner { command, _, timeout ->
+                if (cancel.cancelled) return@StepRunner Outcome.failure(DiagCode.CANCELLED_BY_USER, "проверка отменена")
+                var proof: JsonObject? = null
+                val single = ManualProfile(ManualProfileKind.CHECK, listOf(com.dpsmpx.dpai.ui.ManualStep("Проверка сценария", command, timeout.inWholeSeconds)))
+                val result = profile(single, emptyMap(), cancel, saveChoices = false, evidence = { proof = it })
+                proof?.let(originals::add)
+                val p = proof ?: return@StepRunner when (result) {
+                    is Outcome.Failure -> result
+                    is Outcome.Success -> Outcome.failure(DiagCode.STATE_CONFLICT, "нет доказательства ручного запуска")
+                }
+                val code = ((((p["steps"] as? JsonArray)?.items?.lastOrNull() as? JsonObject)?.get("exitCode")) as? JsonNumber)?.toLongExact()?.toInt()
+                    ?: return@StepRunner Outcome.failure(DiagCode.VERIFICATION_STEP_UNAVAILABLE, "команда не подтвердила код выхода")
+                Outcome.success(com.dpsmpx.dpai.execution.process.Completed(code,
+                    listOf((p["output"] as? JsonString)?.value.orEmpty()), emptyList(),
+                    (p["outputTruncated"] as? JsonBool)?.value == true))
+            }, Clock.SYSTEM)
+            val report = verifier.verify(project.profile(), level, project.root, null)
+            val output = JsonObject.of("report" to report.toJson(), "manualEvidence" to JsonArray(originals),
+                "note" to JsonString("Самостоятельная проверка; состояние задачи не меняется. Полные хеши вывода — в manualEvidence."))
+            evidence(output)
+            return if (report.verdict == com.dpsmpx.dpai.verification.Verdict.PASSED) Outcome.success(output)
+                else Outcome.failure(DiagCode.VERIFICATION_FAILED, "проверка: " + report.verdict.name)
         }
 
         private fun environment(entry: AutomationDefinition, values: Map<String, String>, cancel: Cancel, evidence: (JsonObject) -> Unit): Outcome<JsonObject> {
             if (!inApp) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "план окружения относится к Linux приложения")
             val broken = if (entry.id.startsWith("environment.apk.")) when (val result = LinuxSetup.environment(context).brokenPackages()) { is Outcome.Failure -> return result; is Outcome.Success -> result.value.map { it.name } } else emptyList()
             val plan = when (val result = EnvironmentPlan.create(entry.id, values, broken)) { is Outcome.Failure -> return result; is Outcome.Success -> result.value }
-            return confirmed(plan, entry.revision, cancel, evidence)
+            return confirmed(plan, entry.revision, cancel, evidence = evidence)
         }
 
-        private fun confirmed(plan: AutomationPlan, revision: String, cancel: Cancel, evidence: (JsonObject) -> Unit): Outcome<JsonObject> {
+        private fun confirmed(plan: AutomationPlan, revision: String, cancel: Cancel, automationHooks: Boolean = true,
+            evidence: (JsonObject) -> Unit): Outcome<JsonObject> {
             val hash = plan.proposal(project, revision).hash.hex
             if (hash in deniedEnvironment) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "человек уже отклонил этот план; дождитесь нового поручения")
             val grant = when (val result = EnvironmentApprovalBroker.shared.await(approvalOwner, project, plan, revision, targetSnapshot.label, targetSnapshot) { cancel.cancelled }) {
@@ -212,7 +283,8 @@ internal object ApiProjectRuntime {
                 is Outcome.Success -> result.value
             }
             return profile(plan.profile, emptyMap(), cancel, evidence, environment = plan.scope == AutomationPlan.Scope.GUEST,
-                environmentSnapshot = plan.snapshot, refreshDependencies = plan.effect != AutomationPlan.Effect.DEPENDENCY_REPORT, saveChoices = false, authorize = {
+                environmentSnapshot = plan.snapshot, refreshDependencies = plan.effect != AutomationPlan.Effect.DEPENDENCY_REPORT, saveChoices = false,
+                automationHooks = automationHooks, authorize = {
                 when (val allowed = grant?.consume(plan.proposal(project, revision)) ?: Outcome.success(Unit)) { is Outcome.Failure -> allowed; is Outcome.Success -> {
                     if (!sameTarget()) targetChanged()
                     else plan.estimatedBytes?.let { bytes ->
@@ -234,7 +306,7 @@ internal object ApiProjectRuntime {
             val stop = Cancel()
             val finished = CompletableFuture<Outcome<JsonObject>>()
             var own: Outcome<JsonObject>? = null
-            val started = LongJobs.get(context).start(LongJobs.LINUX_APK, context.getString(R.string.env_probe_title), LongJobs.GUEST,
+            val started = LongJobs.get(context).start(LongJobs.LINUX_APK, context.getString(R.string.env_probe_title), LongJobs.GUEST, parent = parent,
                 onFinished = { job -> finished.complete(own ?: Outcome.failure(DiagCode.INTERNAL_ERROR, job.note)) }) {
                 own = ToolchainDoctor.run(host, probes, project.root) { cancel.cancelled || stop.cancelled }
                 LongJobs.Done(context.getString(R.string.env_probe_finished), failed = own is Outcome.Failure)
@@ -298,7 +370,31 @@ internal object ApiProjectRuntime {
         fun run(call: ToolCall, cancel: Cancel): ToolResult {
             if (cancel.cancelled) return ToolResult("ход прерван", true)
             if (!sameTarget()) return ToolResult("подключение target изменилось; откройте проект заново", true)
+            if (call.name in setOf("write_file", "replace_text", "delete_file")) {
+                val inputHash = Hashing.sha256(call.input).hex
+                val checked = AutomationWorkflows.dispatch(context, project.project,
+                    com.dpsmpx.dpai.automation.AutomationTrigger.BEFORE_ACCEPT,
+                    "api-accept:" + Hashing.sha256(call.id + ":" + inputHash).hex, inputHash,
+                    cancelled = { cancel.cancelled }, parent = parent, approvalOwner = approvalOwner)
+                if (checked is Outcome.Failure) return ToolResult(checked.errors.joinToString("; ") { it.message }, true)
+            }
             val result = when (call.name) {
+                "list_workflows" -> {
+                    when (val r = AutomationWorkflows.store(context, project.project).list()) {
+                        is Outcome.Failure -> r.mapJson()
+                        is Outcome.Success -> com.dpsmpx.dpai.automation.WorkflowApi.list(r.value.filter { it.context == contextRevision }, call.input).mapJson()
+                    }
+                }
+                "run_workflow" -> {
+                    val id = (call.input["id"] as? JsonString)?.value
+                    val revision = (call.input["revision"] as? JsonString)?.value
+                    if (call.input.fields.keys != setOf("id", "revision") || id == null || revision == null)
+                        Outcome.failure(DiagCode.VALUE_INVALID, "нужны id и ревизия сценария").mapJson()
+                    else AutomationUiCalls.awaitWorkflow(context, project.project, id, revision,
+                        com.dpsmpx.dpai.automation.AutomationEvent(AutomationWorkflows.eventId(),
+                            com.dpsmpx.dpai.automation.AutomationTrigger.AI, contextRevision, Hashing.sha256(contextRevision).hex),
+                        cancel, approvalOwner, ActorKind.AGENT).mapJson()
+                }
                 "list_automations", "describe_automation" -> {
                     when (val snapshot = catalog()) {
                         is Outcome.Failure -> snapshot
@@ -337,9 +433,11 @@ internal object ApiProjectRuntime {
                         else if (inApp) CodeService.dependenciesChanged(project.root, context.getString(R.string.api_work_lsp_refresh_failed))
                         Drafts.reloadWorkspace(location, tree, inApp)
                         changed.value = changed.value + 1
+                        AutomationEvents.fileChanged(context, project.project, path, Hashing.sha256(result.value).hex)
                     }
-                    val failed = call.name in setOf("run_automation", "run_profile") &&
-                        (com.dpsmpx.dpai.core.serialization.JsonParser().parse(result.value).valueOrNull() as? JsonObject)?.get("status") == JsonString("FAILED")
+                    val status = (com.dpsmpx.dpai.core.serialization.JsonParser().parse(result.value).valueOrNull() as? JsonObject)?.get("status")
+                    val failed = (call.name in setOf("run_automation", "run_profile") && status == JsonString("FAILED")) ||
+                        (call.name == "run_workflow" && status != JsonString("PASSED"))
                     ToolResult(result.value, failed)
                 }
             }
@@ -347,13 +445,18 @@ internal object ApiProjectRuntime {
 
         private fun profile(chosen: ManualProfile, values: Map<String, String>, cancel: Cancel, evidence: (JsonObject) -> Unit,
             environment: Boolean = false, environmentSnapshot: Boolean = true, refreshDependencies: Boolean = false, saveChoices: Boolean = true,
+            automationHooks: Boolean = true,
             authorize: (() -> Outcome<Unit>)? = null): Outcome<JsonObject> {
             val prepared = java.util.concurrent.atomic.AtomicReference<com.dpsmpx.dpai.core.ids.SessionId?>(null)
             val profileCancel = Cancel()
             val done = CompletableFuture<Pair<LongJobs.Done, ManualRunView>>()
+            val captured = java.util.concurrent.atomic.AtomicReference<Pair<LongJobs.Done, ManualRunView>?>(null)
             if (!model.startManualProfile(project, location, chosen, choices = if (saveChoices) values else null, cancelled = { cancel.cancelled || profileCancel.cancelled }, expectedTarget = targetSnapshot,
                     onPrepared = { prepared.set(it.id) }, environment = environment, beforePrepare = authorize, environmentSnapshot = environmentSnapshot,
-                    onFinished = { job, r -> done.complete(job to r) })) return Outcome.failure(DiagCode.WORKTREE_OWNED, "контур занят; дождитесь завершения команды")
+                    automationHooks = automationHooks, parent = parent,
+                    automationOwner = approvalOwner,
+                    onFinished = { job, r -> captured.set(job to r) },
+                    afterFinished = { captured.get()?.let(done::complete) })) return Outcome.failure(DiagCode.WORKTREE_OWNED, "контур занят; дождитесь завершения команды")
             ControllerService.resume(context)
             val begun = Clock.SYSTEM.monotonicNanos()
             val timeout = (chosen.steps.sumOf { it.timeoutSeconds } + 60).seconds
@@ -375,7 +478,7 @@ internal object ApiProjectRuntime {
                 val details = if (finding == null) output else JsonObject(output.fields + mapOf("finding" to JsonString(finding.first), "explanation" to JsonString(finding.second)))
                 evidence(details)
                 if (refreshDependencies && inApp && view.results.isNotEmpty()) CodeService.dependenciesChanged(project.root, context.getString(R.string.env_changed_refresh))
-                return if (view.complete) Outcome.success(details) else Outcome.failure(
+                return if (view.complete && !completed.first.failed) Outcome.success(details) else Outcome.failure(
                     if (view.results.isEmpty()) DiagCode.STATE_CONFLICT else DiagCode.PROCESS_EXIT_NONZERO,
                     view.note.ifBlank { completed.first.note }, prepared.get()?.value)
             }

@@ -3,7 +3,7 @@ package com.dpsmpx.dpai.monitoring
 /** Состояние самого приложения (ТЗ, §79). */
 enum class SystemHealth { HEALTHY, DEGRADED, RECOVERY, BLOCKED, STORAGE_ERROR, EXECUTION_UNAVAILABLE, SECURITY_LOCKDOWN }
 
-/** Что разрешено в текущем состоянии (ТЗ, §80). Просмотр разрешён всегда. */
+/** Рекомендуемые ограничения по снимку диагностики (ТЗ, §80); сами полномочия проверяют исполнители. */
 enum class Capability { VIEW, SCHEDULE, GIT, NOTIFY, DESTRUCTIVE_WRITES }
 
 /** Сигналы самодиагностики; неизвестное — `null` и считается недоступным, а не здоровым (D-13). */
@@ -29,7 +29,9 @@ data class SelfDiagnosis(val health: SystemHealth, val allowed: Set<Capability>,
  * разрушительной записи и без планирования; восстановление → без
  * планирования до конца сверки; нет ни одного target → без планирования;
  * нет Git → без Git и планирования, просмотр есть; сломаны уведомления —
- * планировщик не останавливается.
+ * планировщик не останавливается. Это вычисляемый отчёт, не общий шлюз
+ * авторизации: обязательные ограничения хранилища, восстановления,
+ * владельца и подтверждения реализованы у соответствующих исполнителей.
  */
 object SelfDiagnostics {
     fun evaluate(s: SystemSignals): SelfDiagnosis {

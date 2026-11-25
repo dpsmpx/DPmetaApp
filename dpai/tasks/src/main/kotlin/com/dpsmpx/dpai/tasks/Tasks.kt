@@ -475,8 +475,13 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
         mode: TransitionMode = TransitionMode.ORDINARY,
     ): Outcome<List<TaskEvent>> {
         val t = state.tasks[id] ?: return notFound(id)
-        if (to == TaskState.DONE && t.state != TaskState.DONE && reason == null && t.verification?.verdict != "PASSED") {
-            return Outcome.failure(DiagCode.VERIFICATION_REQUIRED, "в DONE — через complete: нужна проверка или исключение", "task $id")
+        if (to == TaskState.DONE && t.state != TaskState.DONE) {
+            val verified = t.state == TaskState.VERIFIED && t.verification?.verdict == "PASSED" && t.reviewsLeft().isEmpty()
+            val waived = t.state == TaskState.COMPLETION_UNVERIFIED && reason == DiagCode.VERIFICATION_WAIVED &&
+            t.verification?.let { it.verdict == "WAIVED" && !it.waivedBy.isNullOrBlank() && !it.reason.isNullOrBlank() } == true
+            if (!verified && !waived) {
+                return Outcome.failure(DiagCode.VERIFICATION_REQUIRED, "в DONE — через complete: нужна проверка или исключение", "task $id")
+            }
         }
         return when (val r = TaskLifecycle.table.transition(t.state, to, mode, "task $id")) {
             is Outcome.Failure -> r
@@ -512,6 +517,7 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                     check(TaskLifecycle.table.isAllowed(t.state, e.to, TransitionMode.EXPLICIT)) { "задача ${e.task}: ${t.state} → ${e.to}" }
                     t.copy(
                         state = e.to,
+                        verification = if (e.to in setOf(TaskState.QUEUED, TaskState.READY, TaskState.RUNNING)) null else t.verification,
                         // Снова в работе (повтор, переоткрытие) — из архива: прятать идущее нельзя.
                         archived = t.archived && e.to in TaskLifecycle.table.terminal,
                         updatedAt = e.at,

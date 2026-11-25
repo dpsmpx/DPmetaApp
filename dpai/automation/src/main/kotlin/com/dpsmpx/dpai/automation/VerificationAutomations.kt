@@ -19,8 +19,10 @@ object VerificationAutomations {
                 "required" to JsonBool(s.required), "timeout" to JsonNumber.of(s.timeout.inWholeMilliseconds)) }))
         AutomationDefinition("verification.${level.name.lowercase()}", level.name, "Проверка задачи по существующему профилю; итог не заменяет приёмку всей задачи.",
             AutomationSource.VERIFICATION, AutomationCategory.CHECK, Hashing.sha256(source).hex, ActionLevel.REVERSIBLE,
-            listOf(root), AutomationInvocation.OPEN_UI, steps.isNotEmpty(), if (steps.isEmpty()) "уровень проверки не настроен" else null,
+            listOf(root, "project:registered-worktrees"), if (steps.all { it.timeout.inWholeSeconds in 1..86400 && it.command.size <= 128 }) AutomationInvocation.DIRECT else AutomationInvocation.OPEN_UI,
+            steps.isNotEmpty(), if (steps.isEmpty()) "уровень проверки не настроен" else null,
             timeoutSeconds = steps.sumOf { it.timeout.inWholeSeconds }.takeIf { it > 0 },
-            verification = "StepEvidence и VerificationReport прежнего контура", triggers = setOf("MANUAL", "TASK_VERIFICATION"), steps = steps)
+            verification = "Verifier и доказательства прежних ручных запусков; не меняет состояние задачи",
+            cancellable = true, triggers = setOf("MANUAL", "AI", "TASK_VERIFICATION"), steps = steps)
     }
 }

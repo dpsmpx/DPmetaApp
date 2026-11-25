@@ -48,7 +48,7 @@ class Notifier(private val context: Context) {
                 .setOnlyAlertOnce(true)
                 .setAutoCancel(true)
                 // Названия задач и текст — не для экрана блокировки (аудит безопасности, A-12).
-                .setVisibility(if (style.privacy) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_PUBLIC)
+                .setVisibility(if (style.privacy) NotificationCompat.VISIBILITY_SECRET else NotificationCompat.VISIBILITY_PUBLIC)
                 .setPublicVersion(lockScreen(context, selectedChannel, title(n.category)))
                 .setSilent(style.silent)
                 // Срок жизни (аудит стабильности, A-4): у приложения не больше 50 уведомлений, лишние система

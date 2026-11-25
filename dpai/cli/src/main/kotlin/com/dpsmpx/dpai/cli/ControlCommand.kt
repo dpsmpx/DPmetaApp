@@ -92,13 +92,14 @@ class SignedTransport(private val wire: Wire, private val clock: Clock = Clock.S
  * `--yes` (ТЗ, §68). Id можно сокращать до однозначного начала или конца.
  */
 class ControlCommand(
-    private val out: (String) -> Unit,
+    out: (String) -> Unit,
     private val err: (String) -> Unit,
     private val config: Vfs = defaultConfig(),
     private val transport: (Int) -> ControlTransport = { port -> SignedTransport(JdkWire(System.getenv("DPAI_CONTROL_URL") ?: "http://127.0.0.1:$port")) },
 ) {
     private val keys = IdGenerator(Clock.SYSTEM, RandomSource.secure())
     private var json = false
+    private val out: (String) -> Unit = { text -> out(if (json) text else ConsoleText.visible(text)) }
 
     fun run(cmd: String, all: List<String>): Int {
         json = "--json" in all

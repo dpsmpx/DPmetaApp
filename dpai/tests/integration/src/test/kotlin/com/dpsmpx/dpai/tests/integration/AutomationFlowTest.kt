@@ -86,10 +86,42 @@ class AutomationFlowTest {
         assertFalse(root.resolve("built.txt").exists())
     }
 
+    @Test fun workflowExecutesRealProfilesAndNeverRepeatsADeliveredEvent() {
+        for (code in listOf(0, 7)) {
+            val name = "pipeline-$code"
+            scenario(name, ActorKind.USER, code) { catalog, tool, revision, invoke ->
+                val context = Hashing.sha256(name).hex
+                val store = com.dpsmpx.dpai.automation.WorkflowStore(NioVfs(dir.resolve("ledger-$code")))
+                val workflow = com.dpsmpx.dpai.automation.Workflow("real-profiles", "Две настоящие команды", context,
+                    List(2) { com.dpsmpx.dpai.automation.WorkflowStep(tool, revision) }, enabled = true)
+                assertTrue(store.save(workflow, null).isSuccess)
+                val event = com.dpsmpx.dpai.automation.AutomationEvent("integration:1",
+                    com.dpsmpx.dpai.automation.AutomationTrigger.MANUAL, context, context)
+                val engine = com.dpsmpx.dpai.automation.WorkflowEngine(store, Clock.SYSTEM)
+                val calls = arrayListOf<OperationResult<JsonObject>>()
+                val result = engine.run(workflow.id, workflow.revision, event, { false }, { Outcome.success(catalog) },
+                    { _, _ -> Outcome.success(Unit) }, { step, _, _ ->
+                        assertEquals(tool, step.id); assertEquals(revision, step.revision)
+                        val actual = invoke().also(calls::add)
+                        Outcome.success(AutomationJson.result(actual))
+                    }).valueOrNull()!!
+                assertEquals(JsonString(if (code == 0) "PASSED" else "FAILED"), result["status"])
+                assertEquals(if (code == 0) 2 else 1, calls.size)
+                assertEquals(calls.size, calls.map { it.operationId }.distinct().size)
+                val restored = com.dpsmpx.dpai.automation.WorkflowEngine(
+                    com.dpsmpx.dpai.automation.WorkflowStore(NioVfs(dir.resolve("ledger-$code"))), Clock.SYSTEM)
+                assertEquals(result, restored.run(workflow.id, workflow.revision, event, { false }, { Outcome.success(catalog) },
+                    { _, _ -> Outcome.success(Unit) }, { _, _, _ -> error("доставленное событие не повторяет настоящий процесс") }).valueOrNull())
+                calls.first()
+            }
+        }
+    }
+
     private fun profile(code: Int) = ManualProfile(ManualProfileKind.BUILD, listOf(ManualStep("Реальный процесс", listOf("python3", "-c",
         "from pathlib import Path; import sys; Path('built.txt').write_text('executed'); print('real profile output'); sys.exit($code)"), 30)))
 
-    private fun scenario(name: String, actor: ActorKind, code: Int): OperationResult<JsonObject> {
+    private fun scenario(name: String, actor: ActorKind, code: Int,
+        around: (AutomationCatalog, String, String, () -> OperationResult<JsonObject>) -> OperationResult<JsonObject> = { _, _, _, invoke -> invoke() }): OperationResult<JsonObject> {
         val root = dir.resolve(name).toFile().apply { mkdirs() }
         val target = TargetForm.inApp(ids.next(IdKinds.TARGET), "Тест", "/root/.claude-slot-1").valueOrNull()!!
         val project = ProjectEntry(ids.next(IdKinds.PROJECT), ids.next(IdKinds.REPOSITORY), target.id, root.path, dir.resolve("trees").toString(), "main", emptyList())
@@ -101,7 +133,7 @@ class AutomationFlowTest {
         val description = AutomationApi.describe(catalog, JsonObject.of("id" to JsonString("manual.build"))).valueOrNull()!!
         val call = AutomationApi.call(JsonObject.of("id" to description["id"]!!, "revision" to description["revision"]!!)).valueOrNull()!!
         try {
-            return catalog.invoke(call.id, call.revision, call.parameters, Provenance(Actor(actor, "тест"), projectId = project.project, executionTargetId = target.id),
+            return around(catalog, call.id, call.revision) { catalog.invoke(call.id, call.revision, call.parameters, Provenance(Actor(actor, "тест"), projectId = project.project, executionTargetId = target.id),
                 ids, Clock.SYSTEM, { false }, { Outcome.success(Unit) }, { _, _ ->
                     val run = store.prepare(project, target, location, profile).valueOrNull()!!
                     assertTrue(store.blocked, "прежняя долговечная пауза выставлена до start")
@@ -114,7 +146,7 @@ class AutomationFlowTest {
                     assertFalse(store.blocked)
                     val evidence = JsonObject.of("run" to JsonString(run.id.value), "outputHash" to JsonString(Hashing.sha256(view.output).hex))
                     if (view.complete) Outcome.success(evidence) else Outcome.failure(DiagCode.PROCESS_EXIT_NONZERO, view.note)
-                })
+                }) }
         } finally {
             if (store.blocked) RealTime.await(30.seconds, "остановка тестового профиля") { if (store.stop(client)) null else Unit }
         }

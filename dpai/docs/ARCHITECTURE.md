@@ -84,7 +84,7 @@ OPEN_UI возвращает человека к прежнему экрану, 
 | `tasks` | задачи, очередь, приоритеты, DAG, политики, планировщик | `core`, `security`, `accounts`, `execution` | 7 |
 | `sessions` | реестр сессий, жизненный цикл, heartbeat, поток событий | `core`, `accounts`, `execution` | 6 |
 | `verification` | профили FAST/NORMAL/FULL, доказательства, адаптер DP-Verify | `core`, `execution`, `git` | 10 |
-| `automation` | общий каталог нынешних инструментов, схемы входов, проверка ревизии и OperationResult без своего worker (D-215) | `core`, `verification` | — |
+| `automation` | каталог, схемы, ревизии, последовательные сценарии, долговечные результаты и доставка событий; прежние исполнители, без своего worker (D-215, D-222) | `core`, `verification`, `storage` | — |
 | `monitoring` | сводки, временная шкала, свежесть, устаревание, ресурсы, самодиагностика | `core`, `accounts`, `execution`, `sessions`, `tasks` | 11 |
 | `notifications` | категории, дедупликация, агрегация, cooldown, deep links, запросы человеку (D-44) | `core` | 12 |
 | `connectors` | GitHub и другие внешние сервисы | `core`, `security` | 15 |

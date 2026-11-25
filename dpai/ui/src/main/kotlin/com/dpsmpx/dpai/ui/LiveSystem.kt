@@ -118,6 +118,7 @@ class LiveSystem(
     private val externalPause: () -> Boolean = { false },
     /** Сессии контуров других рабочих проектов на тех же target (D-179). */
     private val neighbours: com.dpsmpx.dpai.orchestrator.NeighbourLoad = com.dpsmpx.dpai.orchestrator.NeighbourLoad.NONE,
+    private val automationGate: com.dpsmpx.dpai.automation.AutomationGate = com.dpsmpx.dpai.automation.AutomationGate.NONE,
 ) : ControlView, AutoCloseable {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
@@ -272,7 +273,7 @@ class LiveSystem(
             // Места target (D-180): заданные у target, общие для рабочих проектов (D-179).
             working.map { TargetSlot(it.id, emptySet(), maxSessions = it.sessions.coerceIn(TargetForm.SESSIONS), label = it.label) }, git, verifier,
             snapshots = snapshots, snapshotEvery = SEGMENT.toLong(), documents = DocumentStore(vfs, "docs"),
-            onEvents = onEvents, onProblem = onProblem, externalPause = externalPause, neighbours = neighbours,
+            onEvents = onEvents, onProblem = onProblem, externalPause = externalPause, neighbours = neighbours, automationGate = automationGate,
         )
         orchestrator = o
         // Слот target — после первой пробы входа: подписка выбирается по аккаунту (см. [placeSlot]).

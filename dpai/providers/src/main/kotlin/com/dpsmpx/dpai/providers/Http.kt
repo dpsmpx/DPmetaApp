@@ -74,17 +74,22 @@ fun interface Transport {
  * Отмена запроса человеком: блокирующее чтение потока прерывается
  * закрытием соединения ([onCancel] регистрирует это у транспорта).
  */
-class Cancel {
+class Cancel(private val parent: () -> Boolean = { false }) {
     private val hooks = mutableListOf<() -> Unit>()
 
     @Volatile
-    var cancelled: Boolean = false
-        private set
+    private var requested: Boolean = false
+
+    /** Вложенная операция проверяет общий бюджет при штатном опросе, без нового таймера. */
+    val cancelled: Boolean get() {
+        if (!requested && parent()) cancel()
+        return requested
+    }
 
     fun cancel() {
         val run = synchronized(hooks) {
-            if (cancelled) return
-            cancelled = true
+            if (requested) return
+            requested = true
             hooks.toList().also { hooks.clear() }
         }
         run.forEach { runCatching(it) }
@@ -92,9 +97,10 @@ class Cancel {
 
     /** [hook] — сейчас, если запрос уже отменён; иначе — при отмене. */
     fun onCancel(hook: () -> Unit) {
+        if (parent()) cancel()
         val now = synchronized(hooks) {
-            if (!cancelled) hooks += hook
-            cancelled
+            if (!requested) hooks += hook
+            requested
         }
         if (now) runCatching(hook)
     }

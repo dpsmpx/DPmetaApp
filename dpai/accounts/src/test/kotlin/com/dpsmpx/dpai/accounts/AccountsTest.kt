@@ -445,4 +445,24 @@ class AccountsTest {
         assertEquals("2 ч 10 мин", Accounts.formatDuration(130.minutes))
         assertEquals(Timestamp(0), Timestamp(0))
     }
+    @Test fun knownUsageExpiresEvenWhenWindowLevelIsOk() {
+        val f = Fixture(); val sub = f.subscription(); val slot = f.slot(sub); f.login(slot)
+        f.ok(f.accounts.observeUsage(f.state, slot, LimitWindow.SESSION, 0.9, f.now + 1.minutes, f.now))
+        assertEquals(0.9, f.state.subscriptions.getValue(sub).window(LimitWindow.SESSION).utilization)
+        f.clock.advance(2.minutes); f.tick()
+        assertNull(f.state.subscriptions.getValue(sub).window(LimitWindow.SESSION).utilization)
+    }
+
+    @Test fun cachedActiveCountsBelongToTheirImmutableStateAndDoNotLeakToNewStates() {
+        val f = Fixture(); val sub = f.subscription(); val slot = f.slot(sub); f.login(slot)
+        val before = f.state
+        assertEquals(0, before.activeSessions(sub))
+        val (session, leased) = f.lease(f.task())
+        assertTrue(leased.isSuccess)
+        assertEquals(1, f.state.activeSessions(sub)); assertEquals(0, before.activeSessions(sub))
+        val during = f.state
+        f.ok(f.accounts.release(f.state, session, f.now))
+        assertEquals(0, f.state.activeSessions(sub)); assertEquals(1, during.activeSessions(sub))
+    }
+
 }

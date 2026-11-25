@@ -46,7 +46,6 @@ import kotlinx.coroutines.withContext
 /** Первый центр автоматизаций основного дерева; исполнение не принадлежит Compose (D-215). */
 @Composable
 internal fun AutomationCenter(project: ProjectEntry, onOpen: (AutomationDefinition) -> Unit) {
-    EnvironmentApprovalUi(AutomationUiCalls.key(project.project))
     val context = LocalContext.current.applicationContext
     val jobs = remember { LongJobs.get(context) }
     val states by jobs.state.collectAsState()
@@ -94,11 +93,23 @@ internal fun AutomationCenter(project: ProjectEntry, onOpen: (AutomationDefiniti
                 FilterChip(selected = filter == null, onClick = { filter = null }, label = { Text(stringResource(R.string.automation_all)) })
                 for (s in AutomationSource.entries) FilterChip(selected = filter == s.name, onClick = { filter = s.name }, label = { Text(sourceTitle(s)) })
             }
+            snapshot?.let { WorkflowSection(project, it, running) { refresh++ } }
         }
         items(snapshot?.catalog?.entries.orEmpty().filter { filter == null || it.source.name == filter }, key = { it.id }) { d ->
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = { expanded = if (expanded == d.id) null else d.id }) { Text(automationTitle(d)) }
                 Text(d.id, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                androidx.compose.material3.FilterChip(selected = d.id !in snapshot?.disabled.orEmpty(), enabled = !running || d.id !in snapshot?.disabled.orEmpty(),
+                    onClick = {
+                        val disabled = d.id in snapshot?.disabled.orEmpty()
+                        loading = true
+                        // Вызов сохранения идёт в прежнем worker, не блокирует Compose.
+                        jobs.start("automation-setting:" + project.project.value, context.getString(R.string.workflow_tool_enabled)) {
+                            val result = AutomationWorkflows.store(context, project.project).disable(d.id, !disabled)
+                            refresh++
+                            LongJobs.Done(result.errors.joinToString("; ") { it.message }, failed = result is Outcome.Failure)
+                        }
+                    }, label = { Text(stringResource(R.string.workflow_tool_enabled)) })
                 Text(stringResource(if (d.available) R.string.automation_configured else R.string.automation_unavailable), style = MaterialTheme.typography.bodySmall)
                 if (expanded == d.id) AutomationDetails(d, running,
                     onRun = { values -> AutomationUiCalls.start(context, project.project, d.id, d.revision, JsonObject(values.mapValues { JsonString(it.value) })) },
@@ -116,7 +127,7 @@ internal fun AutomationCenter(project: ProjectEntry, onOpen: (AutomationDefiniti
                 (data?.get("note") as? JsonString)?.value?.let { Text(it) }
                 (r["diagnostics"] as? JsonArray)?.items?.forEach { d -> ((d as? JsonObject)?.get("message") as? JsonString)?.value?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error) } }
                 val output = (data?.get("output") as? JsonString)?.value ?: data?.let(CanonicalJson::write)
-                output?.let { Text(it, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
+                output?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
             }
         } }
     }

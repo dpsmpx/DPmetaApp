@@ -15,4 +15,14 @@ object PasteGuard {
 
     /** Сколько строк уйдёт: последний перевод строки в конце — тоже строка (Enter). */
     fun lines(text: String): Int = text.replace("\r\n", "\n").count { it == '\n' || it == '\r' } + 1
+    /** Скрытые управляющие знаки в вопросе OSC 52 видны, сам буфер не изменяется (Fable:N-05). */
+    fun visible(text: String, limit: Int): String = buildString {
+        require(limit >= 0)
+        for (c in text.take(limit)) {
+            if ((c.isISOControl() && c != '\n' && c != '\t') || Character.getType(c) == Character.FORMAT.toInt())
+                append("\\u" + c.code.toString(16).padStart(4, '0'))
+            else append(c)
+        }
+    }
+
 }

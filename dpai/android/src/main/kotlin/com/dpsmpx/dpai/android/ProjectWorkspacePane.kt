@@ -73,6 +73,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
         return
     }
     val project = current.project
+    EnvironmentApprovalUi(AutomationUiCalls.key(project.project))
     val previous = remember(project.project.value) { IdeState.state.value.lastPlace?.split("\u0001") }
     var taskKey by rememberSaveable(project.project.value) { mutableStateOf(previous?.takeIf { it.size == 3 && it[0] == "workspace" && it[1] == project.project.value }?.get(2)?.ifEmpty { null }) }
     LaunchedEffect(project.project, taskKey) { IdeState.place("workspace\u0001${project.project.value}\u0001${taskKey.orEmpty()}") }
@@ -289,6 +290,8 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
             override fun list(dir: String) = model.workspaceAccess(view.project, location, false) { inner.list(dir) }
             override fun read(path: String, maxBytes: Long) = model.workspaceAccess(view.project, location, false) { inner.read(path, maxBytes) }
             override fun write(path: String, bytes: ByteArray) = model.workspaceAccess(view.project, location, true) { inner.write(path, bytes) }.also { r ->
+                if (r is Outcome.Success && location.task == null)
+                    AutomationEvents.fileChanged(context, view.project.project, path, com.dpsmpx.dpai.core.hashing.Hashing.sha256(bytes).hex)
                 // Запись на ПК — действие вне приложения (D-07): строка журнала — путь и размер, без содержимого.
                 if (remote != null && target != null) {
                     val what = if (r is Outcome.Success) "записан" else "не записан (${(r as Outcome.Failure).diagnostics.first().code})"
@@ -321,6 +324,11 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
     val editPlace = remember(view.project, location, tree) {
         ProjectEditPlace(tree, location.path, { Drafts.dirtyIn(location, target?.inApp == true) }, { plan ->
             val result = model.workspaceChange(view.project, location) { changes -> changes.apply(view.project.project.value, location.key, inner, plan) }
+            if (result is Outcome.Success && location.task == null && plan.files.isNotEmpty())
+                AutomationEvents.fileChanged(context, view.project.project, location.path,
+                    com.dpsmpx.dpai.core.hashing.Hashing.sha256(plan.files.joinToString("\n") {
+                        it.path + ":" + com.dpsmpx.dpai.core.hashing.Hashing.sha256(it.after).hex
+                    }).hex)
             val reloaded = Drafts.reloadWorkspace(location, tree, target?.inApp == true)
             if (result is Outcome.Failure) result else reloaded
         }, ::completed)

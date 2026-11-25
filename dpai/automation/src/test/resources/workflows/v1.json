@@ -1,0 +1,22 @@
+{
+  "format": "dpai.workflow",
+  "version": 1,
+  "id": "project.flow",
+  "title": "Проверить проект",
+  "context": "0000000000000000000000000000000000000000000000000000000000000000",
+  "enabled": false,
+  "timeoutSeconds": 60,
+  "steps": [
+    {
+      "id": "manual.check",
+      "revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "parameters": {}
+    }
+  ],
+  "triggers": [
+    {
+      "type": "MANUAL",
+      "event": ""
+    }
+  ]
+}

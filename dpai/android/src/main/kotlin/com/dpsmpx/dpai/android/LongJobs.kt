@@ -20,18 +20,26 @@ import kotlinx.coroutines.launch
  * гостя без точек остановки.
  */
 class LongJobs(private val scope: CoroutineScope, private val onDone: (String, Done) -> Unit = { _, _ -> }) {
+    /** Только действующий родитель разрешает вложенный шаг с тем же ресурсом; сетевого представления нет. */
+    class Permit internal constructor(internal val key: String, internal val ticket: Any, internal val runId: String)
+    fun permit(key: String): Permit? = synchronized(this) {
+        tickets[key]?.takeIf { flow.value[key]?.running == true }?.let { Permit(key, it, flow.value.getValue(key).runId) }
+    }
     /** Операция: [running] — идёт; [note] — итог; [output] — хвост вывода. */
-    data class Job(val label: String, val running: Boolean, val note: String? = null, val output: List<String> = emptyList())
+    data class Job(val label: String, val running: Boolean, val note: String? = null, val output: List<String> = emptyList(),
+        val runId: String = "", val failed: Boolean = false, val result: com.dpsmpx.dpai.core.serialization.JsonObject? = null)
 
     /** Итог работы: строка и вывод; [failed] — неудача, вывод идёт и в журнал. */
     data class Done(val note: String, val output: List<String> = emptyList(), val failed: Boolean = false)
 
     private val flow = MutableStateFlow<Map<String, Job>>(emptyMap())
     private val tickets = mutableMapOf<String, Any>()
+    private val guestOwners = mutableSetOf<String>()
     val state: StateFlow<Map<String, Job>> = flow
 
     /** Идёт ли хоть одна из [keys] — у экрана, где кнопки делят один процесс (пакеты, установка). */
     fun busy(vararg keys: String): Boolean = keys.any { flow.value[it]?.running == true }
+    fun busyGuest(): Boolean = synchronized(this) { guestOwners.isNotEmpty() || GUEST.any { flow.value[it]?.running == true } }
 
     /**
      * Запустить, если не идёт ни [key], ни что-то из [excludes] (например,
@@ -39,11 +47,25 @@ class LongJobs(private val scope: CoroutineScope, private val onDone: (String, D
      * не запущено.
      */
     fun start(key: String, label: String, excludes: Set<String> = emptySet(), onFinished: ((Done) -> Unit)? = null,
-        afterFinished: ((Done) -> Unit)? = null, work: suspend () -> Done): Boolean {
+        afterFinished: ((Done) -> Unit)? = null, onAccepted: (String) -> Unit = {}, parent: Permit? = null,
+        work: suspend () -> Done): Boolean {
         synchronized(this) {
-            if ((excludes + key).any { flow.value[it]?.running == true }) return false
+            val guest = excludes.containsAll(GUEST)
+            if (parent != null && (key == parent.key || tickets[parent.key] !== parent.ticket ||
+                    flow.value[parent.key]?.running != true)) return false
+            if (guest && guestOwners.any { it != parent?.key }) return false
+            if ((excludes + key).any { it != parent?.key && flow.value[it]?.running == true }) return false
             tickets[key] = Any()
-            flow.value = flow.value + (key to Job(label, running = true))
+            if (guest) guestOwners += key
+            val id = com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM,
+                com.dpsmpx.dpai.core.clock.RandomSource.secure()).next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
+            val previous = flow.value[key]
+            flow.value = flow.value + (key to Job(label, running = true, runId = id))
+            try { onAccepted(id) } catch (_: Exception) {
+                tickets.remove(key); guestOwners.remove(key)
+                flow.value = if (previous == null) flow.value - key else flow.value + (key to previous)
+                return false
+            }
         }
         scope.launch {
             val done = try {
@@ -57,11 +79,16 @@ class LongJobs(private val scope: CoroutineScope, private val onDone: (String, D
                 // Итог принадлежит этому запуску: следующий ещё не может занять ключ.
                 onFinished?.invoke(done)
             } finally {
-                synchronized(this@LongJobs) { tickets.remove(key); flow.value = flow.value + (key to Job(label, running = false, note = done.note, output = done.output)) }
+                synchronized(this@LongJobs) {
+                    val current = flow.value[key]
+                    val id = current?.runId.orEmpty()
+                    tickets.remove(key); guestOwners.remove(key)
+                    flow.value = flow.value + (key to Job(label, running = false, note = done.note, output = done.output,
+                        runId = id, failed = done.failed, result = current?.result))
+                }
+                // Продолжение получает исход и при сбое уведомления; ключ уже свободен.
+                try { onDone(label, done) } finally { afterFinished?.invoke(done) }
             }
-            onDone(label, done)
-            // Явное продолжение только после публикации итога и освобождения ключа.
-            afterFinished?.invoke(done)
         }
         return true
     }
@@ -91,6 +118,23 @@ class LongJobs(private val scope: CoroutineScope, private val onDone: (String, D
         synchronized(this) { if (flow.value[key]?.running == false) flow.value = flow.value - key }
     }
 
+    fun report(key: String, runId: String, note: String) {
+        synchronized(this) {
+            val current = flow.value[key]
+            if (current?.running == true && current.runId == runId) flow.value = flow.value +
+                (key to current.copy(note = com.dpsmpx.dpai.core.diagnostics.Redactor.STANDARD.redact(note).take(1000)))
+        }
+    }
+
+    /** Результат основной сборки не заменяется итогом её вложенной проверки. */
+    fun result(key: String, runId: String, value: com.dpsmpx.dpai.core.serialization.JsonObject) {
+        synchronized(this) {
+            val current = flow.value[key]
+            if (current?.running == true && current.runId == runId)
+                flow.value = flow.value + (key to current.copy(result = value))
+        }
+    }
+
     companion object {
         /** Установка Alpine. */
         const val LINUX_INSTALL = "linux-install"
@@ -107,10 +151,12 @@ class LongJobs(private val scope: CoroutineScope, private val onDone: (String, D
         /** Получение, проверка и синхронизация общей папки. */
         const val SHARED_VERIFY = "shared-verify"
 
+        const val WORKSPACE_CHILD = "workspace-profile-child"
+
         /** Всё, что запускает процессы гостя: идут по одному. */
         const val WORKSPACE_PROFILE = "workspace-profile"
 
-        val GUEST = setOf(LINUX_INSTALL, LINUX_APK, LLAMA, SHARED_VERIFY, WORKSPACE_PROFILE)
+        val GUEST = setOf(LINUX_INSTALL, LINUX_APK, LLAMA, SHARED_VERIFY, WORKSPACE_PROFILE, WORKSPACE_CHILD)
 
         /** Сколько последних строк вывода неудачи идёт в журнал. */
         private const val MAX_LOGGED = 20

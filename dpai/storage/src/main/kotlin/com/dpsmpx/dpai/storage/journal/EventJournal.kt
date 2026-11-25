@@ -77,6 +77,7 @@ class EventJournal private constructor(
     private var closed = false
 
     /** Номер последней записи (0 — журнал пуст). */
+    @get:Synchronized
     val position: Long get() = offset + records.size
 
     /**
@@ -85,6 +86,7 @@ class EventJournal private constructor(
      * чтобы контур показал «хранилище не в порядке», а не «всё хорошо»
      * (D-87, D-13: неизвестное — не ноль).
      */
+    @get:Synchronized
     val isBroken: Boolean get() = broken
 
     /**
@@ -97,9 +99,15 @@ class EventJournal private constructor(
         closed = true
     }
 
+    @get:Synchronized
     val lastHash: ContentHash get() = records.lastOrNull()?.hash ?: baseHash
 
+    /** Позиция и её хеш читаются одним снимком, в том числе при ротации (Fable:C-08). */
+    @Synchronized
+    fun checkpoint(): Pair<Long, ContentHash> = position to lastHash
+
     /** Номер первой записи активного сегмента: всё раньше — в запечатанных сегментах. */
+    @get:Synchronized
     val activeFrom: Long get() = offset + 1
 
     /** Сколько сегментов запечатано. */
@@ -352,7 +360,10 @@ class EventJournal private constructor(
             val dir = Vfs.parentOf(path)
             val copiesDir = if (keepCopies) Vfs.join(dir, COPIES) else null
             val prefix = path.substringAfterLast('/') + SEGMENT_MARK
-            fun segments(d: String) = vfs.list(d).filter { it.startsWith(prefix) && it.removePrefix(prefix).all(Char::isDigit) }.sorted()
+            fun segments(d: String) = vfs.list(d).filter { it.startsWith(prefix) }.onEach {
+                val number = it.removePrefix(prefix).takeIf { part -> part.isNotEmpty() && part.all(Char::isDigit) }?.toLongOrNull()
+                if (number == null || number <= 0) throw IOException("неверное имя сегмента журнала")
+            }.sortedBy { it.removePrefix(prefix).toLong() }
             val sealed = try {
                 segments(dir).map { Vfs.join(dir, it) }
             } catch (e: IOException) {
@@ -379,19 +390,24 @@ class EventJournal private constructor(
             // Стык: последняя запись последнего запечатанного сегмента — начало цепочки активного.
             var offset = 0L
             var baseHash = GENESIS
-            sealed.lastOrNull()?.let { last ->
+            for (last in sealed) {
+                if (firstOf(last) != offset + 1) return Outcome.failure(DiagCode.JOURNAL_CORRUPTED,
+                    "пропал запечатанный сегмент с записями №${offset + 1}…${firstOf(last) - 1}", segmentName(path, offset + 1))
                 val read = try {
                     vfs.read(last)
                 } catch (e: IOException) {
                     return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "сегмент журнала не прочитан", e, last))
                 }
-                val own = read?.let { scan(it, null) }
+                val own = read?.let { scan(it, offset + 1 to baseHash) }
                 val parsed = if (read == null || own == null || own.badLine != null || own.loaded.isEmpty() || own.validEnd < read.size) {
                     // Испорчен или пуст — из копии (D-95); нет годной копии — как прежде, отказ.
                     val copy = copiesDir?.let { restoreFromCopy(vfs, it, last, null) }
                         ?: return Outcome.failure(DiagCode.JOURNAL_CORRUPTED, if (read == null) "запечатанный сегмент пропал" else "запечатанный сегмент испорчен или пуст", last)
                     repairs += restored(last)
-                    scan(copy, null)
+                    scan(copy, offset + 1 to baseHash).also { checked ->
+                        if (checked.badLine != null || checked.loaded.isEmpty() || checked.validEnd < copy.size)
+                            return Outcome.failure(DiagCode.JOURNAL_CORRUPTED, "копия сегмента не продолжает цепочку журнала", last)
+                    }
                 } else {
                     own
                 }

@@ -133,7 +133,8 @@ class AutomationCatalogTest {
         val p = VerificationProfile(ids.next(IdKinds.PROJECT), mapOf(VerifyLevel.NORMAL to listOf(VerifyStep("тесты", listOf("test")))))
         val entries = VerificationAutomations.describe(p, "/project")
         assertEquals(listOf("verification.normal"), entries.filter { it.available }.map { it.id })
-        assertTrue(entries.all { it.invocation == AutomationInvocation.OPEN_UI })
+        assertEquals(AutomationInvocation.DIRECT, entries.single { it.available }.invocation)
+        assertTrue(entries.filter { !it.available }.none { it.steps.isNotEmpty() })
         assertIs<Outcome.Success<*>>(AutomationCatalog.of(entries))
     }
 }

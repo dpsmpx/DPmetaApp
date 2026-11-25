@@ -28,4 +28,10 @@ class PasteGuardTest {
         assertEquals(2, PasteGuard.lines("a\n"))
         assertEquals(1, PasteGuard.lines("a"))
     }
+    @Test fun clipboardPreviewExposesInvisibleControlsWithoutChangingInput() {
+        val source = "safe\u202e\u200b\u0000\nnext"
+        assertEquals("safe\\u202e\\u200b\\u0000\nnext", PasteGuard.visible(source, 100))
+        assertEquals("safe", PasteGuard.visible(source, 4))
+    }
+
 }

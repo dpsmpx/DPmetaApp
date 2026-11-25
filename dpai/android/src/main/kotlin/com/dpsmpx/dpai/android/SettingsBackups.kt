@@ -72,12 +72,13 @@ object SettingsBackups {
      */
     fun restore(context: Context, uri: Uri, controller: Controller): Outcome<SettingsSnapshot> {
         val text = try {
-            context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+            context.contentResolver.openInputStream(uri)?.use { return@use readSelected(it) }
                 ?: return Outcome.failure(DiagCode.STORAGE_IO_FAILED, "файл копии не открылся", uri.toString())
         } catch (e: Exception) {
             return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "файл копии не прочитан", e, uri.toString()))
         }
-        val s = when (val r = SettingsBackup.read(text)) {
+        val content = when (text) { is Outcome.Failure -> return text; is Outcome.Success -> text.value }
+        val s = when (val r = SettingsBackup.read(content)) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }
@@ -89,6 +90,21 @@ object SettingsBackups {
                 prefs(context).edit { putString("lastDigest", SettingsBackup.digest(s)) }
             }
         }
+    }
+
+    /** Чужой ContentProvider не может заставить сначала выделить память под файл любого размера (Fable:N-10). */
+    internal fun readSelected(input: java.io.InputStream, limit: Int = 16 * 1024 * 1024): Outcome<String> {
+        require(limit > 0)
+        val output = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        while (true) {
+            val n = input.read(buffer, 0, minOf(buffer.size, limit - output.size() + 1))
+            if (n < 0) break
+            if (n == 0) return Outcome.failure(DiagCode.STORAGE_IO_FAILED, "файл копии не читается")
+            if (n > limit - output.size()) return Outcome.failure(DiagCode.VALUE_INVALID, "копия настроек превышает допустимый размер")
+            output.write(buffer, 0, n)
+        }
+        return Outcome.success(output.toString(Charsets.UTF_8.name()))
     }
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

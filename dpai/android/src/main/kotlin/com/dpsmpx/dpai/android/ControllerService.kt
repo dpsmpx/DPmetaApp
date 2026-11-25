@@ -48,17 +48,14 @@ class ControllerService : Service() {
      */
     @Volatile
     private var ticking = false
+    private val lifetime = Any()
+    @Volatile private var active = true
     private var keeper: ScheduledExecutorService? = null
     private var wake: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == STOP) {
-            runCatching { NioVfs(filesDir.toPath()).write(STOPPED, "остановлен из уведомления\n".toByteArray()) }
-            stopSelf()
-            return START_NOT_STICKY
-        }
         val manager = getSystemService(NotificationManager::class.java)
         NotifyGroups.ensure(manager)
         manager.createNotificationChannel(
@@ -80,6 +77,13 @@ class ControllerService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        if (intent?.action == STOP) {
+            runCatching { NioVfs(filesDir.toPath()).write(STOPPED, "остановлен из уведомления\n".toByteArray()) }
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         if (timer == null) {
             val app = applicationContext
             val model = DemoModel.get(app)
@@ -118,7 +122,7 @@ class ControllerService : Service() {
             keeper = Executors.newSingleThreadScheduledExecutor().also { k ->
                 k.scheduleWithFixedDelay({
                     runCatching {
-                        if (ticking || LongJobs.get(app).busy(LongJobs.SHARED_VERIFY, LongJobs.WORKSPACE_PROFILE)) lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
+                        if (ticking || LongJobs.get(app).busyGuest()) synchronized(lifetime) { if (active) lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES)) }
                     }
                 }, 1, 1, TimeUnit.MINUTES)
             }
@@ -131,8 +135,10 @@ class ControllerService : Service() {
                     try {
                         model.resumeManualProfile()
                         // Без targets служба занимается только общими инструментами; демо в фоне не шагает (A-28).
+                        if (!active) return@scheduleWithFixedDelay
                         if (!model.hasLive()) {
-                            if (!SharedVerify.enabled(app) && !RemoteSharedVerify.enabled(app) && !RemoteSharedVerify.working(app) && !LongJobs.get(app).busy(LongJobs.SHARED_VERIFY, LongJobs.WORKSPACE_PROFILE)) {
+                            AutomationWorkflows.tick(app)
+                            if (!SharedVerify.enabled(app) && !RemoteSharedVerify.enabled(app) && !RemoteSharedVerify.working(app) && !LongJobs.get(app).busyGuest() && !AutomationEvents.enabled(app)) {
                                 log.step("служба контроллера: нет targets и фоновых инструментов")
                                 stopSelf()
                                 return@scheduleWithFixedDelay
@@ -143,18 +149,18 @@ class ControllerService : Service() {
                             } catch (e: Exception) {
                                 log.warn("общие инструменты", AppLogs.describe(e))
                             }
-                            val working = LongJobs.get(app).busy(LongJobs.SHARED_VERIFY) || RemoteSharedVerify.working(app)
+                            val working = LongJobs.get(app).busyGuest() || RemoteSharedVerify.working(app)
                             // Один DP-Verify не держит CPU в ожидании PIN/изменений; долгую проверку поддерживает keeper.
-                            if (working) lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES)) else if (lock.isHeld) lock.release()
+                            if (working) synchronized(lifetime) { if (active) lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES)) } else if (lock.isHeld) lock.release()
                             val line = if (working) "DP-Verify: проверка и синхронизация" else "DP-Verify: ожидание следующей попытки"
                             if (line != shown) {
                                 shown = line
-                                getSystemService(NotificationManager::class.java).notify(ID, notification(line))
+                                synchronized(lifetime) { if (active) getSystemService(NotificationManager::class.java).notify(ID, notification(line)) }
                             }
                             failures = 0
                             return@scheduleWithFixedDelay
                         }
-                        lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
+                        synchronized(lifetime) { if (active) lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES)) }
                         ticking = true
                         meter.begin()
                         // Проверка общей папки идёт отдельно: не задерживает такт и ждёт lease инструментов.
@@ -181,6 +187,7 @@ class ControllerService : Service() {
                             }
                             // Копия настроек — после изменения и раз в час (D-51).
                             at = Clock.SYSTEM.monotonicNanos()
+                            AutomationWorkflows.tick(app)
                             SettingsBackups.tick(app, Controller.get(app.filesDir))
                             // Копия приложения без секретов — раз в сутки (DPmetaApp:D-151).
                             runCatching { AppBackups.tick(app, BuildConfig.DPAI_VERSION) }
@@ -210,7 +217,7 @@ class ControllerService : Service() {
                             val line = counts(model)
                             if (line != shown) {
                                 shown = line
-                                getSystemService(NotificationManager::class.java).notify(ID, notification(line))
+                                synchronized(lifetime) { if (active) getSystemService(NotificationManager::class.java).notify(ID, notification(line)) }
                             }
                         } catch (e: Exception) {
                             log.warn("уведомление службы", AppLogs.describe(e))
@@ -264,6 +271,11 @@ class ControllerService : Service() {
         (applicationContext as? DpaiApplication)?.sharedToolsSessionClosed()
         (applicationContext as? DpaiApplication)?.controllerStopped()
         runCatching { AppLogs.get(applicationContext).step("служба контроллера остановлена") }
+        synchronized(lifetime) {
+            active = false
+            wake?.takeIf { it.isHeld }?.release()
+            wake = null
+        }
         ControlServer.stop()
         running = false
         // Без прерывания: идущий такт доходит до конца (ревью 8 октября 2026, A-26) — прерванный посреди
@@ -274,8 +286,6 @@ class ControllerService : Service() {
         keeper?.shutdownNow()
         keeper = null
         ticking = false
-        wake?.takeIf { it.isHeld }?.release()
-        wake = null
         super.onDestroy()
     }
 

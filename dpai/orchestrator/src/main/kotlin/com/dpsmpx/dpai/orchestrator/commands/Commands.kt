@@ -256,11 +256,17 @@ class CommandInbox {
         var n = 0
         while (true) {
             val p = queue.poll() ?: return n
+            var executed = false
             try {
                 val r = execute(p.command)
+                executed = true
                 p.accepted?.let { settled(it, r.status.name) }
                 p.result.complete(r)
             } catch (e: Exception) {
+                // Неизвестный частичный эффект нельзя исполнять заново после старта (Fable:O-14).
+                if (!executed) p.accepted?.let { id ->
+                    try { settled(id, "FAILED") } catch (recording: Exception) { e.addSuppressed(recording) }
+                }
                 p.result.completeExceptionally(e)
             }
             n++

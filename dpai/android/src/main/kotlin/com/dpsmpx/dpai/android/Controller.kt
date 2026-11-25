@@ -399,6 +399,7 @@ class Controller(private val root: File, val version: String?, workspaceCopyRoot
         inAppGuest: com.dpsmpx.dpai.execution.process.ProcessHost? = null,
         /** Сессии контуров других рабочих проектов (D-179). */
         neighbours: com.dpsmpx.dpai.orchestrator.NeighbourLoad = com.dpsmpx.dpai.orchestrator.NeighbourLoad.NONE,
+        automationGate: com.dpsmpx.dpai.automation.AutomationGate = com.dpsmpx.dpai.automation.AutomationGate.NONE,
     ): LiveSystem {
         // Журнал контура — свой у каждого рабочего проекта; первый (прежний) — в `live/` (D-179).
         val dir = NioVfs(File(root, project?.let { projects().journalDir(it.project) } ?: "live").apply { mkdirs() }.toPath())
@@ -417,6 +418,7 @@ class Controller(private val root: File, val version: String?, workspaceCopyRoot
             inAppGuest = inAppGuest,
             externalPause = { manualProfiles.blocked || project?.let { workspaceChanges.blocked(it.project.value) } == true },
             neighbours = neighbours,
+            automationGate = automationGate,
         ).also { if (confirmed) runCatching { dir.delete(QUARANTINE_CONFIRMED) } }
     }
 

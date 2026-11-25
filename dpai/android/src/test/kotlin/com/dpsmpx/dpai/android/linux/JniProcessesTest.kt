@@ -44,6 +44,16 @@ class JniProcessesTest {
 
     private fun InputStream.text(): String = readBytes().toString(Charsets.UTF_8)
 
+    @Test fun invalidArrayRangesFailBeforeReadingOrWritingDescriptors() {
+        val bytes = ByteArray(4)
+        for ((off, len) in listOf(-1 to 1, 0 to -1, 4 to 1, 1 to Int.MAX_VALUE)) {
+            assertEquals(-22, NativeCalls.read(-1, bytes, off, len))
+            assertEquals(-22, NativeCalls.write(-1, bytes, off, len))
+        }
+        assertEquals(0, NativeCalls.read(-1, bytes, 4, 0))
+        assertEquals(0, NativeCalls.write(-1, bytes, 4, 0))
+    }
+
     @Test
     fun pipesCarryInputOutputErrorsAndExitCode() {
         val c = spawn("read x; echo \"вывод:\$x\"; echo ошибка >&2; exit 3")

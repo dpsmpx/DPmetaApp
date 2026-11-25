@@ -58,7 +58,7 @@ data class WindowState(
 
     /** Когда окно точно сброшено по времени: известное время сброса или длина окна от наблюдения. */
     fun clearsAt(window: LimitWindow): Timestamp? = when {
-        level == LimitLevel.OK -> null
+        level == LimitLevel.OK && utilization == null -> null
         resetAt != null -> resetAt
         observedAt != null -> observedAt + window.length
         else -> null
@@ -131,8 +131,13 @@ data class AccountsState(
     /** Моменты переходов задачи между подписками — защита от петли (ТЗ, §22). */
     val switches: Map<TaskId, List<Timestamp>> = emptyMap(),
 ) {
-    fun activeSessions(subscription: SubscriptionId): Int =
-        slots.values.filter { it.subscriptionId == subscription }.sumOf { it.sessions.size }
+    /** Производный индекс неизменяемого снимка: повторный выбор слота не пересоздаёт карту (профиль dev.48). */
+    internal val activeCounts: Map<String, Int> by lazy {
+        val counts = HashMap<String, Int>()
+        for (slot in slots.values) counts.merge(slot.subscriptionId.value, slot.sessions.size, Int::plus)
+        counts
+    }
+    fun activeSessions(subscription: SubscriptionId): Int = activeCounts[subscription.value] ?: 0
 
     fun slotOf(session: SessionId): SlotState? = slots.values.firstOrNull { session in it.sessions }
 

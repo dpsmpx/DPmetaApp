@@ -214,6 +214,7 @@ class Orchestrator(
     private val externalPause: () -> Boolean = { false },
     /** Сессии соседних контуров на общих target (D-179): места делятся между проектами. */
     private val neighbours: NeighbourLoad = NeighbourLoad.NONE,
+    private val automationGate: com.dpsmpx.dpai.automation.AutomationGate = com.dpsmpx.dpai.automation.AutomationGate.NONE,
 ) {
     private val recorder = EventRecorder(ids, clock)
 
@@ -1198,15 +1199,18 @@ class Orchestrator(
      * значит «уже закоммичено».
      */
     private fun afterVerified(task: TaskId, session: SessionId, tree: com.dpsmpx.dpai.git.Worktree?, path: String) {
-        val failed = if (tree != null && git != null) commitWork(task, session, path) else null
+        val hookFailure = automationBefore(com.dpsmpx.dpai.automation.AutomationTrigger.BEFORE_ACCEPT, task, path) ?:
+            if (tree != null && git != null) automationBefore(com.dpsmpx.dpai.automation.AutomationTrigger.BEFORE_COMMIT, task, path) else null
+        val failed = hookFailure ?: if (tree != null && git != null) commitWork(task, session, path) else null
         if (failed != null) {
             // Работа проверена, но не закоммичена (A-52): не DONE и не слияние ветки без неё — решает человек,
             // работа остаётся в дереве задачи.
             for (to in listOf(TaskState.READY, TaskState.BLOCKED)) {
-                commitTasks(tasksLogic.move(tasks, task, to, clock.now(), DiagCode.GIT_COMMAND_FAILED).valueOrNull().orEmpty())
+                commitTasks(tasksLogic.move(tasks, task, to, clock.now(), if (hookFailure != null) DiagCode.VERIFICATION_FAILED else DiagCode.GIT_COMMAND_FAILED).valueOrNull().orEmpty())
             }
             releaseTree(task, session)
-            askBlocked(task, session, "$failed: работа проверена, но не закоммичена — она в дереве задачи")
+            askBlocked(task, session, if (hookFailure != null) "$failed: автоматизация не разрешила завершение задачи; сверьте её результат"
+                else "$failed: работа проверена, но не закоммичена — она в дереве задачи")
             return
         }
         releaseTree(task, session)
@@ -1607,6 +1611,21 @@ class Orchestrator(
         if (gitOk != true) return "git commit не удался"
         recordCommit(task, path)
         return null
+    }
+
+    private fun automationBefore(trigger: com.dpsmpx.dpai.automation.AutomationTrigger, task: TaskId, path: String): String? {
+        if (automationGate === com.dpsmpx.dpai.automation.AutomationGate.NONE) return null
+        val event = trigger.name + ":" + task.value + ":" + tasks.tasks.getValue(task).updatedAt.epochMillis
+        val request = com.dpsmpx.dpai.automation.AutomationGateRequest(trigger, config.project, task, path, event,
+            com.dpsmpx.dpai.core.hashing.Hashing.sha256(event).hex)
+        val result = automationGate.before(request) { level -> verifier.verify(config.profile, level, path, null) }
+        return when (result) {
+            is Outcome.Success -> null
+            is Outcome.Failure -> {
+                problems += result.diagnostics
+                result.errors.joinToString("; ") { it.message }
+            }
+        }
     }
 
     /**

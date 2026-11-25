@@ -527,4 +527,15 @@ class TasksTest {
         ok(tasks.start(state, t, clock.now()))
         assertEquals(null, state.tasks.getValue(t).excludedSlot, "запуск снимает исключение")
     }
+    @Test fun diagnosticReasonCannotBypassVerificationAndRestartForgetsOldProof() {
+        val id = task()
+        val unverified = state.copy(tasks = state.tasks + (id to state.tasks.getValue(id).copy(state = TaskState.COMPLETION_UNVERIFIED)))
+        assertIs<Outcome.Failure>(tasks.move(unverified, id, TaskState.DONE, clock.now(), DiagCode.INTERNAL_ERROR))
+        val verified = state.copy(tasks = state.tasks + (id to state.tasks.getValue(id).copy(state = TaskState.VERIFIED,
+            verification = VerificationRecord("PASSED", "old-proof"))))
+        val reopened = Tasks.applyAll(verified, tasks.move(verified, id, TaskState.READY, clock.now()).valueOrNull()!!)
+        assertEquals(null, reopened.tasks.getValue(id).verification)
+        assertIs<Outcome.Failure>(tasks.move(reopened, id, TaskState.DONE, clock.now(), DiagCode.VERIFICATION_FAILED))
+    }
+
 }

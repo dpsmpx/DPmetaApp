@@ -84,7 +84,7 @@ data class AutomationDefinition(
         "source" to JsonString(source.name), "category" to JsonString(category.name), "level" to JsonNumber.of(level.code),
         "confirmation" to JsonString(level.confirmation), "scopes" to JsonArray(scopes.map(::JsonString)),
         "invocation" to JsonString(invocation.name), "inputSchema" to inputSchema(),
-        "outputSchema" to JsonObject.of("type" to JsonString("object")),
+        "outputSchema" to AutomationJson.schema(),
         "platforms" to JsonArray(TargetPlatform.entries.filter { it in platforms }.map { JsonString(it.name) }),
         "dependencies" to JsonArray(dependencies.map(::JsonString)), "timeoutSeconds" to (timeoutSeconds?.let { JsonNumber.of(it) } ?: JsonNull),
         "remote" to JsonBool(remote), "deterministic" to known(deterministic), "idempotent" to known(idempotent),

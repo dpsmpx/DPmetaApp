@@ -14,6 +14,28 @@ import com.dpsmpx.dpai.core.serialization.JsonValue
 
 /** Только представление OperationResult; статус и ошибки не переопределяются (D-215). */
 object AutomationJson {
+    /** Общий конверт прежнего OperationResult; данные и доказательства описываются самим инструментом. */
+    fun schema(): JsonObject {
+        fun type(name: String) = JsonObject.of("type" to JsonString(name))
+        val fields = linkedMapOf(
+            "operationId" to type("string"), "operation" to type("string"),
+            "status" to JsonObject.of("type" to JsonString("string"), "enum" to JsonArray(
+                com.dpsmpx.dpai.core.operation.OperationStatus.entries.map { JsonString(it.name) })),
+            "timestamp" to type("integer"),
+            "project" to JsonObject.of("type" to JsonArray(listOf(JsonString("string"), JsonString("null")))),
+            "target" to JsonObject.of("type" to JsonArray(listOf(JsonString("string"), JsonString("null")))),
+            "data" to JsonObject.of("type" to JsonArray(listOf(JsonString("object"), JsonString("null")))),
+            "evidence" to JsonObject.of("type" to JsonArray(listOf(JsonString("object"), JsonString("null")))),
+            "diagnostics" to JsonObject.of("type" to JsonString("array"), "items" to JsonObject.of(
+                "type" to JsonString("object"), "properties" to JsonObject.of(
+                    "code" to type("string"), "message" to type("string"),
+                    "subject" to JsonObject.of("type" to JsonArray(listOf(JsonString("string"), JsonString("null"))))),
+                "required" to JsonArray(listOf("code", "message", "subject").map(::JsonString)))),
+        )
+        return JsonObject.of("type" to JsonString("object"), "properties" to JsonObject(fields),
+            "required" to JsonArray(fields.keys.map(::JsonString)))
+    }
+
     /** Ограничение канала не должно разрезать JSON посреди строки и выдавать обрыв за полный результат. */
     fun forApi(result: JsonObject, limit: Int = 30_000): JsonObject {
         require(limit >= 2000)

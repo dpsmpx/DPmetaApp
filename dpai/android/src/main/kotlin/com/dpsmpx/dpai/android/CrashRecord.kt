@@ -8,7 +8,8 @@ import java.io.File
  * устройств (Realme C21Y, D-33) системный журнал выключен, и без этой
  * записи причину падения не узнать. Только локальный файл через `Vfs`
  * (D-24): наружу ничего не уходит. Записываются тип, сообщение и кадры
- * стека — имена классов, не данные пользователя; обработчик системы
+ * стека; свободный текст очищается Redactor. Сообщение исключения может
+ * содержать пользовательские данные, файл остаётся приватным; обработчик системы
  * вызывается после записи как прежде.
  */
 object CrashRecord {
@@ -24,7 +25,7 @@ object CrashRecord {
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             runCatching { vfs.write(FILE, describe(thread.name, error).toByteArray()) }
             // И в журнал приложения — сразу и всегда (D-43): последняя строка файла — падение и этап запуска.
-            runCatching { onFatal?.invoke("${error.javaClass.name}: ${error.message}") }
+            runCatching { onFatal?.invoke(com.dpsmpx.dpai.core.diagnostics.Redactor.STANDARD.redact("${error.javaClass.name}: ${error.message}")) }
             previous?.uncaughtException(thread, error)
         }
     }
@@ -39,5 +40,5 @@ object CrashRecord {
             e = e.cause?.takeIf { it !== e }
             depth++
         }
-    }
+    }.let(com.dpsmpx.dpai.core.diagnostics.Redactor.STANDARD::redact)
 }

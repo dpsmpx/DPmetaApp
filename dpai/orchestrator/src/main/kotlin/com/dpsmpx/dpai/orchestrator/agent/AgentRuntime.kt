@@ -287,11 +287,9 @@ class AgentRuntime(
             store.write(RUN_KEY, current.toJson())
             return AgentReply("supervise", ok = true, run = current.status(journal.position))
         }
-        val env = HashMap(baseEnvironment()).apply {
-            remove(com.dpsmpx.dpai.execution.tools.SharedTools.EXECUTOR_ENV)
-            doc.spec.unsetEnv.forEach { remove(it) }
-            putAll(doc.spec.setEnv)
-        }
+        val env = ProcessEnvironment.build(baseEnvironment(),
+            doc.spec.unsetEnv + com.dpsmpx.dpai.execution.tools.SharedTools.EXECUTOR_ENV, doc.spec.setEnv,
+            System.getProperty("os.name").startsWith("Windows", ignoreCase = true))
         val capture = doc.spec.capture == OutputCapture.AUTH_STATUS
         val captured = StringBuilder()
         // Вывод ждёт блокировки, пока не записано TARGET_PROCESS_STARTED: в журнале ход начинается с него.

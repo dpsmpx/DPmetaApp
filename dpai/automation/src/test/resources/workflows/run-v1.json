@@ -1,0 +1,26 @@
+{
+  "format": "dpai.workflow-run",
+  "version": 1,
+  "workflow": "project.flow",
+  "revision": "0000000000000000000000000000000000000000000000000000000000000000",
+  "event": "sample:1",
+  "run": "f88647932fe167c84498071f90ef7360f84d000d86ee0e12af37550d5c23b6d0",
+  "context": "0000000000000000000000000000000000000000000000000000000000000000",
+  "trigger": "MANUAL",
+  "fingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+  "status": "PASSED",
+  "timestamp": 0,
+  "step": 0,
+  "total": 1,
+  "completed": 1,
+  "results": [
+    {
+      "id": "manual.check",
+      "resultHash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "result": {
+        "status": "SUCCEEDED"
+      }
+    }
+  ],
+  "note": ""
+}

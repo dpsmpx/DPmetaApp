@@ -144,7 +144,12 @@ class DemoModel(
                 val guest = inApp?.let { context.let(com.dpsmpx.dpai.android.linux.LinuxSetup::guestHost) }
                 // Контур на рабочий проект (D-179); список пуст — один контур без проекта, как раньше.
                 for (p in projects.projects.ifEmpty { listOf(null) }) {
-                    contours[p?.project] = controller.live(targets, p, onEvents, onProblem, inApp, guest, neighbours = neighboursOf(p?.project))
+                    contours[p?.project] = controller.live(targets, p, { events ->
+                        onEvents(events)
+                        if (p != null && context != null) AutomationEvents.observe(context, p.project, events)
+                    }, onProblem, inApp, guest, neighbours = neighboursOf(p?.project),
+                        automationGate = if (p == null || context == null) com.dpsmpx.dpai.automation.AutomationGate.NONE
+                            else AutomationWorkflows.gate(context, p))
                 }
                 contoursFor = all
                 perf("контуры построены: ${contours.size}", started)
@@ -630,9 +635,9 @@ class DemoModel(
     fun pcFiles(target: TargetEntry, root: String, writable: Boolean = false) = controller.pcFiles(target, root, writable)
 
     fun pcHost(target: TargetEntry) = controller.pcHost(target)
-    @Volatile private var manualStop = false
+    private val manualStopEpoch = java.util.concurrent.atomic.AtomicLong()
 
-    fun stopManualProfile() { manualStop = true; resumeManualProfile() }
+    fun stopManualProfile() { manualStopEpoch.incrementAndGet(); resumeManualProfile(stopRequested = true) }
 
     private fun manualClient(target: TargetEntry): com.dpsmpx.dpai.execution.agent.AgentClient? {
         val host = context?.takeIf { target.inApp }?.let { com.dpsmpx.dpai.android.linux.LinuxSetup.agentHost(it, controller.version) }
@@ -640,15 +645,17 @@ class DemoModel(
     }
 
     /** Единственный worker живёт вне экрана. После рестарта start не повторяется (D-134). */
-    fun resumeManualProfile() {
+    fun resumeManualProfile(stopRequested: Boolean = false) {
         val app = context ?: return
         val active = controller.manualProfiles.snapshot().active ?: return
         if (!controller.manualProfiles.blocked) return
+        val acceptedAt = java.util.concurrent.atomic.AtomicLong()
         LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST,
+            onAccepted = { acceptedAt.set(manualStopEpoch.get()) },
             onFinished = { (app.applicationContext as? DpaiApplication)?.studioChanged() }) {
             val client = manualClient(active.target)
                 ?: return@start LongJobs.Done("target недоступен; пауза сохраняется", failed = true)
-            watchManual(client)
+            watchManual(client) { stopRequested || manualStopEpoch.get() != acceptedAt.get() }
         }
     }
 
@@ -684,16 +691,33 @@ class DemoModel(
         environmentSnapshot: Boolean = true,
         sourceRefresh: Boolean = false,
         afterFinished: (() -> Unit)? = null,
+        automationHooks: Boolean = true,
+        parent: LongJobs.Permit? = null,
+        automationOwner: String? = null,
         onFinished: ((LongJobs.Done, com.dpsmpx.dpai.ui.ManualRunView) -> Unit)? = null): Boolean {
         val app = context ?: return false
         if (sourceRefresh && (environment || location.task != null || !com.dpsmpx.dpai.ui.LatestPullRequest.isProfile(profile))) return false
         if (environment && (profile.kind != com.dpsmpx.dpai.ui.ManualProfileKind.DEPENDENCIES || beforePrepare == null)) return false
-        return LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST,
+        val jobs = LongJobs.get(app)
+        val key = if (parent == null) LongJobs.WORKSPACE_PROFILE else LongJobs.WORKSPACE_CHILD
+        val ownView = java.util.concurrent.atomic.AtomicReference<com.dpsmpx.dpai.ui.ManualRunView?>(null)
+        val acceptedAt = java.util.concurrent.atomic.AtomicLong()
+        val hooks = automationHooks && profile.kind == com.dpsmpx.dpai.ui.ManualProfileKind.BUILD && location.task == null
+        return jobs.start(key, "Ручной профиль", LongJobs.GUEST, parent = parent,
+            onAccepted = { acceptedAt.set(manualStopEpoch.get()) },
             onFinished = { done ->
                 (app.applicationContext as? DpaiApplication)?.studioChanged()
-                onFinished?.invoke(done, controller.manualProfiles.snapshot())
+                onFinished?.invoke(done, ownView.get() ?: controller.manualProfiles.snapshot())
             }, afterFinished = { afterFinished?.invoke() }) {
-            if (cancelled()) return@start LongJobs.Done("Запуск отменён до подготовки", failed = true)
+            fun stopped() = cancelled() || manualStopEpoch.get() != acceptedAt.get()
+            if (stopped()) return@start LongJobs.Done("Запуск отменён до подготовки", failed = true)
+            val permit = jobs.permit(key)
+            if (hooks) {
+                val before = AutomationWorkflows.dispatch(app, p.project, com.dpsmpx.dpai.automation.AutomationTrigger.BEFORE_BUILD,
+                    permit?.runId.orEmpty() + ":before", com.dpsmpx.dpai.core.hashing.Hashing.sha256(profile.toJson()).hex,
+                    cancelled = ::stopped, parent = permit, approvalOwner = automationOwner)
+                if (before is Outcome.Failure) return@start LongJobs.Done(before.errors.first().message, failed = true)
+            }
             val target = controller.targets().firstOrNull { it.id == location.target }
                 ?: return@start LongJobs.Done("target удалён", failed = true)
             if (expectedTarget != null && target != expectedTarget) return@start LongJobs.Done("подключение target изменилось; откройте проект заново", failed = true)
@@ -746,7 +770,7 @@ class DemoModel(
                 is Outcome.Success -> Unit
             }
             val prepared = lock.withLock {
-                if (cancelled()) return@withLock Outcome.failure(DiagCode.CANCELLED_BY_USER, "запуск отменён до подготовки")
+                if (stopped()) return@withLock Outcome.failure(DiagCode.CANCELLED_BY_USER, "запуск отменён до подготовки")
                 // PR мог только что сохранить новую ветку: BUILD не ждёт фонового такта.
                 current()
                 val fresh = controller.project()
@@ -763,8 +787,7 @@ class DemoModel(
             if (prepared is Outcome.Failure) return@start LongJobs.Done(prepared.errors.first().message, failed = true)
             val ownRun = (prepared as Outcome.Success).value
             onPrepared?.invoke(ownRun)
-            manualStop = false
-            if (cancelled()) {
+            if (stopped()) {
                 controller.manualProfiles.stop(client)
                 return@start LongJobs.Done("Запуск отменён до команды", failed = true)
             }
@@ -774,15 +797,15 @@ class DemoModel(
                     is Outcome.Failure -> { controller.manualProfiles.failBeforeLaunch(client, snap.diagnostics.first().message); return@start LongJobs.Done(snap.diagnostics.first().message, failed = true) }
                     is Outcome.Success -> Unit
                 }
-                if (cancelled()) { controller.manualProfiles.stop(client); return@start LongJobs.Done("План окружения отменён до команды", failed = true) }
+                if (stopped()) { controller.manualProfiles.stop(client); return@start LongJobs.Done("План окружения отменён до команды", failed = true) }
                 controller.manualProfiles.launch(ownRun, client)
-                return@start watchManual(client, cancelled)
+                return@start watchManual(client, ::stopped)
             }
             // Только этот фиксированный профиль сам меняет ветку. Все проверки свободного дерева,
             // черновиков и durable prepare выше сохраняются; обычный BUILD по-прежнему сверяет ветку.
             if (sourceRefresh) {
                 controller.manualProfiles.launch(ownRun, client)
-                return@start watchManual(client, cancelled)
+                return@start watchManual(client, ::stopped)
             }
             // Проверка Git уже под долговечной паузой: такт не сменит дерево между status и start.
             val git = workspaceGit(p, location)
@@ -800,22 +823,32 @@ class DemoModel(
                 return@start LongJobs.Done(gitProblem, failed = true)
             }
             // HEAD дерева — в историю запуска (D-156): какая версия кода собиралась.
-            if (cancelled()) {
+            if (stopped()) {
                 controller.manualProfiles.stop(client)
                 return@start LongJobs.Done("Запуск отменён до команды", failed = true)
             }
             controller.manualProfiles.launch(ownRun, client, status?.head)
-            watchManual(client, cancelled)
+            val result = watchManual(client, ::stopped)
+            ownView.set(controller.manualProfiles.snapshot())
+            if (permit != null) com.dpsmpx.dpai.ui.ManualAutomationResult.evidence(ownRun.id, ownView.get()!!).valueOrNull()?.let {
+                jobs.result(key, permit.runId, it)
+            }
+            if (hooks && !stopped()) {
+                val after = AutomationWorkflows.dispatch(app, p.project, com.dpsmpx.dpai.automation.AutomationTrigger.AFTER_BUILD,
+                    permit?.runId.orEmpty() + ":after", com.dpsmpx.dpai.core.hashing.Hashing.sha256(ownRun.id.value + result.note).hex,
+                    cancelled = ::stopped, parent = permit, approvalOwner = automationOwner)
+                if (after is Outcome.Failure) return@start LongJobs.Done(after.errors.first().message, result.output, failed = true)
+            }
+            result
         }
     }
 
     private suspend fun watchManual(client: com.dpsmpx.dpai.execution.agent.AgentClient, cancelled: () -> Boolean = { false }): LongJobs.Done {
         while (controller.manualProfiles.blocked) {
-            val keep = if (manualStop || cancelled()) controller.manualProfiles.stop(client) else controller.manualProfiles.poll(client)
+            val keep = if (cancelled()) controller.manualProfiles.stop(client) else controller.manualProfiles.poll(client)
             if (!keep) break
             kotlinx.coroutines.delay(1500)
         }
-        manualStop = false
         val final = controller.manualProfiles.snapshot()
         return LongJobs.Done(final.note, final.output.lines().takeLast(100), failed = !final.complete)
     }

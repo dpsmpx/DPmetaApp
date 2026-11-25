@@ -180,6 +180,8 @@ class ControlApi(
     private val search: ((String) -> JsonObject?)? = null,
     /** Решающее из канала (D-91): показать на телефоне то, что человек подтвердит там; оболочка без экрана — ничего. */
     private val confirmOnPhone: (Command) -> Unit = {},
+    /** Только подписанный общий канал; оболочка сохраняет подтверждения исполнителей (D-222). */
+    private val automation: ((JsonObject) -> ControlResponse)? = null,
     private val submit: (Command) -> OperationOutcome,
 ) {
     /** Итог команды для канала: `OperationResult` в JSON или отказ до исполнения. */
@@ -201,6 +203,10 @@ class ControlApi(
     }
 
     private fun route(method: String, path: String, body: String?): ControlResponse {
+        if (method == "POST" && path == "/v1/automation") {
+            val input = parse(body) as? JsonObject ?: return error(400, DiagCode.VALUE_INVALID, "нужен JSON запроса автоматизации")
+            return automation?.invoke(input) ?: error(503, DiagCode.UNSUPPORTED, "адаптер автоматизации не подключён")
+        }
         val o = orchestrator() ?: return error(503, DiagCode.OPERATION_NOT_ALLOWED, "контроллер не запущен: в приложении нет target с каталогом Claude")
         return when {
             method == "GET" && path == "/v1/state" -> ControlResponse(200, ControlSnapshot.of(o))
