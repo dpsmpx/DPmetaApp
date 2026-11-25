@@ -59,7 +59,7 @@ jobs:
         shell: bash
         run: |
           ./gradlew --console=plain :shell:testDebugUnitTest \
-            -Pdpmeta.screenshots -Pdpmeta.screenshots.dir=build/interface-screenshots \
+            -Pdpmeta.screenshots -Pdpmeta.screenshots.dir="$GITHUB_WORKSPACE/build/interface-screenshots" \
             --tests 'com.dpsmpx.dpmeta.shell.AppearanceTest' \
             --tests 'com.dpsmpx.dpmeta.shell.ScreenshotsTest'
       - name: Upload interface screenshots
@@ -68,7 +68,7 @@ jobs:
         with:
           name: DPmetaApp-interface-${{ github.sha }}
           path: build/interface-screenshots/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
       - name: Full repository verification
         id: strict
