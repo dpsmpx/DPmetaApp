@@ -15,10 +15,13 @@ import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpai.core.serialization.json
 import java.io.StringReader
 import javax.xml.parsers.SAXParserFactory
+import javax.xml.parsers.ParserConfigurationException
 import org.xml.sax.Attributes
 import org.xml.sax.InputSource
 import org.xml.sax.SAXException
-import org.xml.sax.helpers.DefaultHandler
+import org.xml.sax.SAXNotRecognizedException
+import org.xml.sax.SAXNotSupportedException
+import org.xml.sax.ext.DefaultHandler2
 
 /** Читает доказательства штатных анализаторов, не подменяя их своим анализом кода (D-223). */
 object DevelopmentReports {
@@ -32,7 +35,7 @@ object DevelopmentReports {
     }
 
     fun junit(text: String, cancelled: () -> Boolean = { false }): Outcome<Tests> {
-        if (text.length > MAX_TEXT || DTD.containsMatchIn(text)) return invalid("XML слишком велик или содержит DTD/ENTITY")
+        if (text.length > MAX_TEXT) return invalid("XML слишком велик")
         val cases = arrayListOf<TestCase>()
         var depth = 0
         var suite = ""
@@ -46,8 +49,10 @@ object DevelopmentReports {
         val parents = ArrayDeque<Pair<String, String?>>()
         val keys = hashSetOf<String>()
         return try {
-            val handler = object : DefaultHandler() {
+            val handler = object : DefaultHandler2() {
                 override fun resolveEntity(publicId: String?, systemId: String?): InputSource = throw SAXException("external entity")
+                override fun resolveEntity(name: String?, publicId: String?, baseURI: String?, systemId: String?): InputSource = throw SAXException("external entity")
+                override fun startDTD(name: String?, publicId: String?, systemId: String?) { throw SAXException("DTD forbidden") }
                 override fun startElement(uri: String?, localName: String?, qName: String, attrs: Attributes) {
                     if (cancelled()) throw SAXException("cancelled")
                     if (++depth > 64 || qName == "testcase" && cases.size >= 5000) throw SAXException("report limit")
@@ -96,13 +101,21 @@ object DevelopmentReports {
                 setFeature("http://xml.org/sax/features/external-general-entities", false)
                 setFeature("http://xml.org/sax/features/external-parameter-entities", false)
             }
-            factory.newSAXParser().parse(InputSource(StringReader(text)), handler)
+            val reader = factory.newSAXParser().xmlReader
+            // Стандартный lexical handler отличает DTD от примера XML в CDATA/комментарии.
+            // Если backend его не поддерживает, разбор не начинается.
+            reader.setProperty("http://xml.org/sax/properties/lexical-handler", handler)
+            reader.contentHandler = handler; reader.errorHandler = handler
+            reader.entityResolver = handler; reader.dtdHandler = handler
+            reader.parse(InputSource(StringReader(text)))
             if (cases.isEmpty() && declared != 0L) invalid("нет проверяемых testcases")
             else Outcome.success(Tests(cases, declared, Hashing.sha256(text).hex,
                 (declaredFailed == null || declaredFailed == cases.count { it.status == "FAILED" }.toLong()) &&
                 (declaredSkipped == null || declaredSkipped == cases.count { it.status == "SKIPPED" }.toLong())))
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             if (cancelled()) Outcome.failure(DiagCode.CANCELLED_BY_USER, "разбор отчёта отменён")
+            else if (e is ParserConfigurationException || e is SAXNotRecognizedException || e is SAXNotSupportedException)
+                Outcome.failure(DiagCode.UNSUPPORTED, "XML-парсер не поддерживает безопасный контракт без DTD/внешних сущностей")
             else invalid("XML отчёта повреждён, неоднозначен или превышает предел")
         }
     }
@@ -190,5 +203,4 @@ object DevelopmentReports {
     private fun clean(value: String) = Redactor.STANDARD.redact(value).take(400)
     private fun <T> invalid(message: String): Outcome<T> = Outcome.failure(DiagCode.VALUE_INVALID, message)
     private const val MAX_TEXT = 2 * 1024 * 1024
-    private val DTD = Regex("<!\\s*(?:DOCTYPE|ENTITY)", RegexOption.IGNORE_CASE)
 }

@@ -32,6 +32,13 @@ class DevelopmentReportsTest {
         assertFalse(unknown.complete)
     }
 
+    @Test fun cdataContainingXmlExamplesIsNotADtdDeclaration() {
+        val report = fixture("junit-cdata.xml")
+        val parsed = DevelopmentReports.junit(report).valueOrNull()!!
+        assertTrue(parsed.complete)
+        assertEquals(1, parsed.cases.size)
+    }
+
     @Test fun rejectsExternalEntitiesMalformedXmlDuplicateCasesAndDeepNesting() {
         val invalid = listOf(
             "<!DOCTYPE testsuite [<!ENTITY secret SYSTEM 'file:///must-not-read'>]><testsuite tests='0'>&secret;</testsuite>",

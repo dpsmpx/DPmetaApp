@@ -1,0 +1,4 @@
+<testsuite tests="1">
+  <testcase name="xml-security"/>
+  <system-out><![CDATA[<!DOCTYPE example>]]></system-out>
+</testsuite>
