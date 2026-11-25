@@ -30,11 +30,11 @@ class SseTest {
     }
     @Test fun accumulatedEventAndEntireResponseAreBoundedWithoutReportingPartialSuccess() {
         val lines = listOf("data: 12345", "data: 67890", "").iterator()
-        kotlin.test.assertFailsWith<java.io.IOException> {
+        kotlin.test.assertFailsWith<ReplyTooLarge> {
             Sse.read({ if (lines.hasNext()) lines.next() else null }, 10, 100) { error("oversized event must not dispatch") }
         }
         var read = 0
-        kotlin.test.assertFailsWith<java.io.IOException> {
+        kotlin.test.assertFailsWith<ReplyTooLarge> {
             Sse.read({ read++; ": keepalive" }, 10, 30) { true }
         }
         assertEquals(3, read)

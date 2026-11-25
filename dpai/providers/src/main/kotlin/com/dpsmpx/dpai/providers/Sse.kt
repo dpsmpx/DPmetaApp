@@ -38,7 +38,7 @@ object Sse {
         while (true) {
             val line = next() ?: break
             received += line.length.toLong() + 1
-            if (received > maxResponseChars) throw IOException("превышен предел ответа SSE")
+            if (received > maxResponseChars) throw ReplyTooLarge(maxResponseChars)
             if (line.isEmpty()) {
                 if (!dispatch()) return
                 continue
@@ -50,12 +50,12 @@ object Sse {
             if (value.startsWith(' ')) value = value.substring(1)
             when (field) {
                 "event" -> {
-                    if (value.length > maxEventChars) throw IOException("превышен предел события SSE")
+                    if (value.length > maxEventChars) throw ReplyTooLarge(maxEventChars)
                     event = value
                 }
                 "data" -> {
                     if (data.length.toLong() + value.length + (if (hasData) 1 else 0) > maxEventChars)
-                        throw IOException("превышен предел события SSE")
+                        throw ReplyTooLarge(maxEventChars)
                     if (hasData) data.append('\n')
                     data.append(value)
                     hasData = true

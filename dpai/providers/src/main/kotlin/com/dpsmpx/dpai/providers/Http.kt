@@ -58,8 +58,8 @@ interface HttpReply : AutoCloseable {
     }
 }
 
-/** Строка ответа длиннее предела транспорта. */
-class ReplyTooLarge(limit: Int) : IOException("строка ответа длиннее $limit байт")
+/** Ответ или его строка длиннее соответствующего предела транспорта/декодера. */
+class ReplyTooLarge(limit: Int) : IOException("ответ длиннее предела $limit")
 
 /**
  * Граница с сетью (D-98). Сбой соединения — `NETWORK_UNREACHABLE`; любой

@@ -536,6 +536,10 @@ class TasksTest {
         val reopened = Tasks.applyAll(verified, tasks.move(verified, id, TaskState.READY, clock.now()).valueOrNull()!!)
         assertEquals(null, reopened.tasks.getValue(id).verification)
         assertIs<Outcome.Failure>(tasks.move(reopened, id, TaskState.DONE, clock.now(), DiagCode.VERIFICATION_FAILED))
+        val previousFailure = VerificationRecord("FAILED", "failure-proof")
+        val failed = verified.copy(tasks = verified.tasks + (id to verified.tasks.getValue(id).copy(verification = previousFailure)))
+        val retry = Tasks.applyAll(failed, tasks.move(failed, id, TaskState.READY, clock.now()).valueOrNull()!!)
+        assertEquals(previousFailure, retry.tasks.getValue(id).verification, "причина провала нужна следующему ходу и истории")
     }
 
 }

@@ -517,7 +517,9 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                     check(TaskLifecycle.table.isAllowed(t.state, e.to, TransitionMode.EXPLICIT)) { "задача ${e.task}: ${t.state} → ${e.to}" }
                     t.copy(
                         state = e.to,
-                        verification = if (e.to in setOf(TaskState.QUEUED, TaskState.READY, TaskState.RUNNING)) null else t.verification,
+                        // Положительное доказательство устаревает; прежний провал остаётся контекстом следующего хода.
+                        verification = if ((e.to == TaskState.QUEUED || e.to == TaskState.READY || e.to == TaskState.RUNNING) &&
+                            (t.verification?.verdict == "PASSED" || t.verification?.verdict == "WAIVED")) null else t.verification,
                         // Снова в работе (повтор, переоткрытие) — из архива: прятать идущее нельзя.
                         archived = t.archived && e.to in TaskLifecycle.table.terminal,
                         updatedAt = e.at,
