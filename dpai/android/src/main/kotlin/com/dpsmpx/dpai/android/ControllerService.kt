@@ -175,6 +175,7 @@ class ControllerService : Service() {
                             // Части такта — в замер (D-158): медленный такт называет, что ждало.
                             var at = Clock.SYSTEM.monotonicNanos()
                             model.step(null).notifications.forEach(notifier::show)
+                            if (!active) return@scheduleWithFixedDelay
                             meter.part("шаг контура", at)
                             // Лимиты слотов с автообновлением — раз в минуту, и без открытой сводки.
                             val auto = UsageAuto.enabled(app)
@@ -187,6 +188,7 @@ class ControllerService : Service() {
                             }
                             // Копия настроек — после изменения и раз в час (D-51).
                             at = Clock.SYSTEM.monotonicNanos()
+                            if (!active) return@scheduleWithFixedDelay
                             AutomationWorkflows.tick(app)
                             SettingsBackups.tick(app, Controller.get(app.filesDir))
                             // Копия приложения без секретов — раз в сутки (DPmetaApp:D-151).

@@ -225,6 +225,7 @@ object RequestPresenter {
         answering += id
         val n = AndroidNotification.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_ai_requests)
+            .setVisibility(AndroidNotification.VISIBILITY_SECRET)
             .setContentTitle("Ответ «$label» отправлен")
             .setContentText("контур применяет решение…")
             .setOnlyAlertOnce(true)

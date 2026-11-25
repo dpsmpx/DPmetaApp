@@ -701,11 +701,29 @@ class Orchestrator(
         for (t in tasks.tasks.values.filter { it.state == TaskState.READY && !it.held && it.excludedSlot != null }.sortedBy { it.id.value }) {
             if (targets.none { elsewhere(t, it.id) }) waiting(t.id, "задача перенесена со слота ${t.excludedSlot}, а другого слота для неё нет — включите или добавьте слот")
         }
-        for (s in sessions.sessions.values.filter { it.state !in WAIT_STATES && !it.terminal }.map { it.id }.sorted()) {
+        val observed = sessions.sessions.values.filter { it.state !in WAIT_STATES && !it.terminal }.map { it.id }.sorted().iterator()
+        while (observed.hasNext()) {
             runCommands()
-            val r = sessions.sessions[s] ?: continue
-            if (r.terminal || r.state in WAIT_STATES) continue
-            poll(s)
+            val changed = arrayListOf<com.dpsmpx.dpai.sessions.SessionRecord>()
+            var reads = 0
+            // Чтения target не создают эффектов. Их наблюдения — одной ограниченной пачкой (D-24, D-121).
+            // Перед реакцией, новой командой человека или следующим блоком все события уже durable.
+            batch {
+                while (observed.hasNext()) {
+                    if (reads > 0 && inbox.size > 0) break
+                    val id = observed.next()
+                    val record = sessions.sessions[id] ?: continue
+                    if (record.terminal || record.state in WAIT_STATES) continue
+                    var barrier = false
+                    poll(id) { after ->
+                        changed += after
+                        barrier = after.state != SessionState.RUNNING || after.review != null
+                    }
+                    reads++
+                    if (barrier || reads >= 8 || (pending?.size ?: 0) >= 256) break
+                }
+            }
+            changed.forEach { react(it.task, it.id, it.state) }
         }
         reviews()
         runCommands()
@@ -1070,7 +1088,7 @@ class Orchestrator(
         return out
     }
 
-    private fun poll(session: SessionId) {
+    private fun poll(session: SessionId, reaction: (com.dpsmpx.dpai.sessions.SessionRecord) -> Unit) {
         val before = sessions.sessions.getValue(session).state
         // Отказ опроса — не «ничего не произошло» (D-87): в нём приходят `RUN_RECONCILIATION_REQUIRED`
         // (пропуск событий не закрыт сверкой), `EVENT_SEQUENCE_CONFLICT` (тот же номер с другим
@@ -1097,10 +1115,9 @@ class Orchestrator(
             unsupportedFlags.getOrPut(target) { linkedSetOf() } += step.unsupportedFlags
             problems += Diagnostic.warning(DiagCode.CLAUDE_FLAG_UNSUPPORTED, "Claude Code на target не знает ${step.unsupportedFlags.joinToString()}: дальше без них", "target $target")
         }
-        batch {
-            commitSessions(step.events)
-            applyFacts(step.facts)
-        }
+        check(pending != null) { "наблюдение сессии записывается до реакции" }
+        commitSessions(step.events)
+        applyFacts(step.facts)
         recordTurnMessages(session, step.turns)
         if (step.background.isNotEmpty()) {
             val task = sessions.sessions.getValue(session).task
@@ -1121,7 +1138,7 @@ class Orchestrator(
         val after = sessions.sessions.getValue(session)
         // Вердикт ревью — по схеме у Claude, JSON в тексте у Codex и Gemini (D-100).
         if (after.review != null) step.turns.lastOrNull()?.let { reviewOutput[session] = it.structured ?: Review.structuredFromText(it.text) }
-        if (after.state != before) react(after.task, session, after.state)
+        if (after.state != before) reaction(after)
     }
 
     private fun react(task: TaskId, session: SessionId, state: SessionState) {

@@ -63,6 +63,10 @@ dpai automation <ProjectId> status --stdin
 dpai automation <ProjectId> stop --stdin
 ```
 
+Канал открывается прежней кнопкой «Targets» → «Канал dpai» →
+«Открыть канал»; контур Claude Code для этого не требуется. После явной
+остановки канала его открывает человек, как раньше.
+
 `--stdin` принимает один объект JSON. Для run — id, revision, parameters
 по `describe`; для workflow-run — id, revision и необязательный event.
 Передайте стабильный event в сохранённом JSON, чтобы повтор запроса при
