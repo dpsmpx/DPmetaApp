@@ -160,7 +160,7 @@ internal class EditorDependencyUi(private val activity: TerminalActivity, privat
     private fun words(text: String) = text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
     private fun show(builder: AlertDialog.Builder): AlertDialog {
         dialog?.dismiss()
-        return builder.create().also { next -> dialog = next; next.setOnDismissListener { if (dialog === next) dialog = null }; next.show() }
+        return builder.create().also { next -> dialog = next; next.setOnDismissListener { if (dialog === next) dialog = null }; next.show().also { Looks.styleDialog(next) } }
     }
     private fun toast(text: String) { Toast.makeText(activity, text, Toast.LENGTH_LONG).show() }
 }

@@ -436,7 +436,7 @@ private const val MAX_DOWNLOAD = 256L shl 20
 
 private val TIME = DateTimeFormatter.ofPattern("dd.MM HH:mm")
 
-private fun time(ms: Long): String = TIME.format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
+private fun time(ms: Long): String = TIME.format(Instant.ofEpochMilli(ms).atZone(com.dpsmpx.dpai.core.clock.DisplayZone.current))
 
 private fun size(b: Long): String = when {
     b < 1024 -> "$b Б"

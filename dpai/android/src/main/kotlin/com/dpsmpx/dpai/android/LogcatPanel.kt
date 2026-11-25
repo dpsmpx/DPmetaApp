@@ -135,7 +135,7 @@ internal fun LogcatPanel(initialPackage: String? = null, onClose: () -> Unit, on
         val text = remember(shown) { shown.map { l -> if (l.header) "${l.time.substringAfter(' ')} ${l.level.letter} ${l.tag}: ${l.message}" else "    ${l.message}" } }
         CopyDiagnostic(text.joinToString("\n"), copyLabel = R.string.diagnostic_copy_output)
         val list = rememberLazyListState()
-        LaunchedEffect(shown.size, paused) { if (paused == null && shown.isNotEmpty()) list.scrollToItem(shown.size - 1) }
+        if (paused == null) OutputFollow(list, shown.size, shown.size - 1)
         LazyColumn(Modifier.fillMaxWidth().weight(1f), state = list) {
             items(shown.size) { i ->
                 val l = shown[i]

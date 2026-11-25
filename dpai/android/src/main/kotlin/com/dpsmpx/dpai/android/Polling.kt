@@ -29,7 +29,7 @@ internal fun rememberVisible(): Boolean {
         lifecycle?.addObserver(observer)
         onDispose { lifecycle?.removeObserver(observer) }
     }
-    return visible
+    return visible && LocalSectionVisible.current
 }
 
 /**

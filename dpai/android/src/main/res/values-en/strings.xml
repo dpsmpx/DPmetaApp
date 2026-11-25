@@ -1,5 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="ui_mode">Interface</string>
+    <string name="ui_simple">Simple</string>
+    <string name="ui_full">Full</string>
+    <string name="ui_mode_hint">All features remain available in both views. Expand advanced options within each screen.</string>
+    <string name="ui_theme">Theme</string>
+    <string name="ui_theme_system">System</string>
+    <string name="ui_theme_white">White</string>
+    <string name="ui_theme_dark">Dark</string>
+    <string name="ui_theme_black">Black</string>
+    <string name="ui_appearance">Appearance</string>
+    <string name="ui_accent">Accent</string>
+    <string name="ui_profile_settings">Configure profile</string>
+    <string name="ui_profile_summary">Steps: %1$d · Apply changes once or save them in the profile.</string>
+    <string name="ui_code">Code</string>
+    <string name="ui_chat">Chat</string>
+    <string name="ui_changes">Changes</string>
+    <string name="ui_build">Build</string>
+    <string name="ui_check">Check</string>
+    <string name="ui_run">Run</string>
+    <string name="ui_tools">Project tools</string>
+    <string name="ui_operation_open">Open result</string>
+    <string name="ui_operation_active">Operation running</string>
+    <string name="ui_next_messages">Latest messages</string>
+    <string name="ui_advanced_component">Other tool sources</string>
+    <string name="ui_context">Project context</string>
+    <string name="ui_environment">Devices and environments</string>
+    <string name="ui_terminal">Terminal</string>
+    <string name="ui_close">Close</string>
+    <string name="ui_reset_display">Reset appearance</string>
+
     <string name="progress_bytes">Bytes transferred: %1$d / %2$d</string>
     <string name="progress_installed">Already installed</string>
     <string name="progress_unpack">Unpacking</string>
@@ -170,4 +200,9 @@
     <string name="chat_full_access_confirm">Verify PIN/biometrics</string>
     <string name="chat_full_access_cancel">Cancel</string>
     <string name="chat_full_access_failed">Full access could not be enabled: the project or target changed, or storage failed.</string>
+    <string name="ui_navigation">Open application menu</string>
+    <string name="ui_signing_keys">Manage signing keys</string>
+    <string name="ui_code_commands">Code commands</string>
+    <string name="ui_expanded">Expanded</string>
+    <string name="ui_collapsed">Collapsed</string>
 </resources>

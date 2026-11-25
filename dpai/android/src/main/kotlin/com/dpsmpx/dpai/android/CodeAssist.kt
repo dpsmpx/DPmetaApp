@@ -254,6 +254,7 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
         }
     }
 
+    var commandsOpen by remember(guestPath) { mutableStateOf(false) }
     if (!compact) Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             if (session.cppProject != null) TextButton(enabled = !busy && state !is CodeService.State.Starting, onClick = {
@@ -278,6 +279,8 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                 }
                 is CodeService.State.Ready -> {
                     TextButton(onClick = { problems = true }) { Text(Assist.summary(diagnostics)) }
+                    TextButton(onClick = { commandsOpen = !commandsOpen }) { Text(androidx.compose.ui.res.stringResource(R.string.ui_code_commands) + if (commandsOpen) " ▾" else " ▸") }
+                    if (commandsOpen || !LocalUiLook.current.simple) {
                     TextButton(enabled = !busy, onClick = {
                         launch("…") {
                             val r = withClient { c, t, cursor -> c.hover(session.uri, LineIndex(t).position(cursor)) }
@@ -359,6 +362,7 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
                     TextButton(onClick = { kotlin.concurrent.thread(name = "dpai-code-service-release") { CodeService.disable(session) } }) { Text("Выкл") }
                     for (action in state.actions) TextButton(enabled = !busy, onClick = { confirm = action }) { Text(action.title) }
                     state.switchTo?.let { other -> TextButton(enabled = !busy, onClick = { switchPython(other) }) { Text("Взять: ${other.title}") } }
+                    }
                 }
             }
         }

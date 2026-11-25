@@ -127,6 +127,14 @@ class TerminalView(context: Context) : View(context) {
      * системе; после ввода курсор сразу виден.
      */
     private var blinkOn = true
+    private var appPalette = Looks.palette(context)
+
+    /** Меняем только цвета по умолчанию; SGR/truecolor программы сохраняются. */
+    fun applyPalette(palette: com.dpsmpx.dpai.ui.AppPalette.Scheme) {
+        appPalette = palette
+        invalidate()
+    }
+
     private var blinkPosted = false
     private val blinker = Runnable {
         blinkPosted = false
@@ -931,7 +939,7 @@ class TerminalView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         val t = tab
         if (t == null) {
-            canvas.drawColor(0xff000000.toInt())
+            canvas.drawColor(appPalette.background.toInt())
             return
         }
         // Под замком сессии — только снимок; рисование — без замка (терминал:A-10).
@@ -1012,6 +1020,8 @@ class TerminalView(context: Context) : View(context) {
             post { onAway?.invoke(away) }
         }
         val f = frame
+        emu.foregroundRgb = appPalette.onSurface.toInt() and 0x00ffffff
+        emu.backgroundRgb = appPalette.background.toInt() and 0x00ffffff
         f.defFg = 0xff000000.toInt() or (if (emu.reverseVideo) emu.backgroundRgb else emu.foregroundRgb)
         f.defBg = 0xff000000.toInt() or (if (emu.reverseVideo) emu.foregroundRgb else emu.backgroundRgb)
         f.first = emu.scrollbackSize - scrollBack

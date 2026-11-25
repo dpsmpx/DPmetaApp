@@ -17,11 +17,13 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,12 +40,19 @@ fun LookCard() {
     val context = LocalContext.current.applicationContext
     val look = Looks.remember()
     fun set(l: UiLook) = Looks.write(context, l)
+    val simpleTitle = stringResource(R.string.ui_simple)
+    val fullTitle = stringResource(R.string.ui_full)
+    val themeNames = mapOf(UiLook.Theme.SYSTEM to stringResource(R.string.ui_theme_system), UiLook.Theme.LIGHT to stringResource(R.string.ui_theme_white),
+        UiLook.Theme.DARK to stringResource(R.string.ui_theme_dark), UiLook.Theme.BLACK to stringResource(R.string.ui_theme_black))
     val dark = MaterialTheme.colorScheme.background.luminanceBelowHalf()
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Оформление", style = MaterialTheme.typography.titleSmall)
-            Choice("Тема", UiLook.Theme.entries, look.theme, { it.title }) { set(look.copy(theme = it)) }
-            Text("Акцент", style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.ui_appearance), style = MaterialTheme.typography.titleSmall)
+            Choice(stringResource(R.string.ui_mode), UiLook.Presentation.entries, look.presentation,
+                { if (it == UiLook.Presentation.SIMPLE) simpleTitle else fullTitle }) { set(look.copy(presentation = it)) }
+            Text(stringResource(R.string.ui_mode_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Choice(stringResource(R.string.ui_theme), UiLook.Theme.entries, look.theme, { themeNames.getValue(it) }) { set(look.copy(theme = it)) }
+            Text(stringResource(R.string.ui_accent), style = MaterialTheme.typography.bodyMedium)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 for (a in UiLook.Accent.entries) {
                     FilterChip(
@@ -64,6 +73,7 @@ fun LookCard() {
                 Text("${look.editorFont}", fontFamily = FontFamily.Monospace, fontSize = look.editorFont.sp)
                 OutlinedButton(enabled = look.editorFont < UiLook.EDITOR_RANGE.last, onClick = { set(look.copy(editorFont = look.editorFont + 1)) }) { Text("A+") }
             }
+            TextButton(onClick = { set(UiLook()) }) { Text(stringResource(R.string.ui_reset_display)) }
         }
     }
 }

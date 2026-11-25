@@ -57,8 +57,26 @@ jobs:
         continue-on-error: true
         shell: bash
         run: tools/check/run.sh full --strict --verbose
+      - name: Verify interface themes and render screens
+        id: interface
+        timeout-minutes: 8
+        continue-on-error: true
+        shell: bash
+        run: |
+          ./gradlew --console=plain :shell:testDebugUnitTest \
+            -Pdpmeta.screenshots -Pdpmeta.screenshots.dir=build/interface-screenshots \
+            --tests 'com.dpsmpx.dpmeta.shell.AppearanceTest' \
+            --tests 'com.dpsmpx.dpmeta.shell.ScreenshotsTest'
+      - name: Upload interface screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DPmetaApp-interface-${{ github.sha }}
+          path: build/interface-screenshots/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Preserve failing JUnit test reports
-        if: steps.strict.outcome == 'failure'
+        if: steps.strict.outcome == 'failure' || steps.interface.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: DPmetaApp-test-results-${{ github.sha }}
@@ -113,6 +131,12 @@ jobs:
         shell: bash
         run: |
           echo 'full --strict failed: APKs (if created) are diagnostic only; merge into main is forbidden.'
+          exit 1
+      - name: Require green interface result
+        if: steps.interface.outcome != 'success'
+        shell: bash
+        run: |
+          echo 'Interface verification failed: APKs are diagnostic only.'
           exit 1
 
   signed-release:

@@ -282,7 +282,7 @@ internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: I
     debugLines: Set<Int> = emptySet(), debugAt: Int? = null, onGutter: ((Int) -> Unit)? = null) {
     val context = LocalContext.current
     val activity = androidx.activity.compose.LocalActivity.current
-    val dark = isSystemInDarkTheme()
+    val dark = appDark()
     var ready by remember { mutableStateOf(false) }
     val change by rememberUpdatedState(onChange)
     val action by rememberUpdatedState(onCommand)

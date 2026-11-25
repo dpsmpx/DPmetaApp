@@ -32,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.text.Words
@@ -45,16 +47,17 @@ import com.dpsmpx.dpai.ui.WorkspacePaths
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.launch
 
 private enum class WorkspacePage(val title: String, val label: Int? = null) { FILES("Файлы"), AI("ИИ"), CHANGES("Изменения"), CHECKS("Проверки"), BUILD("Сборка"), RUN("Запуск"), DEPENDENCIES("", R.string.dependencies_title), AUTOMATIONS("", R.string.automation_title) }
 
 /** Первый общий рабочий экран: представление одного настроенного проекта (D-132). */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSession: (String) -> Unit, onClose: () -> Unit) {
     var view by remember { mutableStateOf<ProjectWorkspaceView?>(null) }
     var loaded by remember { mutableStateOf(false) }
-    Poll(model, periodMs = 1500) { view = withContext(Dispatchers.IO) { model.workspace() }; loaded = true }
+    var manual by remember { mutableStateOf(model.manualProfileView()) }
+    Poll(model, periodMs = 1500) { view = withContext(Dispatchers.IO) { model.workspace() }; manual = model.manualProfileView(); loaded = true }
     val current = view
     androidx.activity.compose.BackHandler(onBack = onClose)
     if (current == null) {
@@ -74,6 +77,19 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
     var taskKey by rememberSaveable(project.project.value) { mutableStateOf(previous?.takeIf { it.size == 3 && it[0] == "workspace" && it[1] == project.project.value }?.get(2)?.ifEmpty { null }) }
     LaunchedEffect(project.project, taskKey) { IdeState.place("workspace\u0001${project.project.value}\u0001${taskKey.orEmpty()}") }
     var page by rememberSaveable(project.project.value) { mutableStateOf(WorkspacePage.FILES.name) }
+    val simple = LocalUiLook.current.simple
+    var operation by rememberSaveable(project.project.value) { mutableStateOf<String?>(null) }
+    fun openPage(name: String) {
+        if (simple && name in com.dpsmpx.dpai.ui.WorkspacePresentation.operations) operation = name
+        else { operation = null; page = name }
+    }
+    LaunchedEffect(simple, page) {
+        if (simple) {
+            val restored = com.dpsmpx.dpai.ui.WorkspacePresentation.restore(page)
+            if (restored.operation != null) { page = restored.primary; operation = restored.operation }
+        } else operation?.let { page = it; operation = null }
+    }
+
     // Переход к ошибке из терминала запуска (D-153, D-155): запрос для этого дерева — на «Файлы», там его выполнит панель вкладок.
     val jump by IdeState.jump.collectAsState()
     var choose by remember { mutableStateOf(false) }
@@ -83,14 +99,14 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
     if (draftsOpen) FileDraftsDialog { draftsOpen = false }
     val selected = current.tasks.firstOrNull { it.id.value == taskKey }
     val location = if (taskKey == null) current.main else selected?.location
-    LaunchedEffect(jump, location?.key) { if (jump != null && jump?.root == location?.key) page = WorkspacePage.FILES.name }
+    LaunchedEffect(jump, location?.key) { if (jump != null && jump?.root == location?.key) openPage(WorkspacePage.FILES.name) }
     // Документ из пульта (DPmetaApp:D-177): основное дерево этого проекта, «Файлы», вкладка — через переход к месту.
     val fileRequest by IdeState.fileRequest.collectAsState()
     LaunchedEffect(fileRequest, project.project.value) {
         val r = fileRequest?.takeIf { it.project == project.project.value } ?: return@LaunchedEffect
         if (!IdeState.fileRequest.compareAndSet(r, null)) return@LaunchedEffect
         taskKey = null
-        page = WorkspacePage.FILES.name
+        openPage(WorkspacePage.FILES.name)
         IdeState.jumpTo(current.main.key, r.path, 1)
     }
     val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
@@ -106,49 +122,22 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
         EnvironmentScreen(onBack = { environment = false }, controller = Controller.get(context.filesDir), model = model)
         return
     }
-    Column(Modifier.fillMaxSize()) {
-        if (!zen) {
-        Row(Modifier.fillMaxWidth()) {
-            TextButton(onClick = onClose) { Text("← Файлы") }
-            Text("Рабочий проект", Modifier.weight(1f).padding(12.dp), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-            TextButton(onClick = { draftsOpen = true }) { Text("Черновики") }
-        }
-        if (!keyboard) {
-        // Несколько рабочих проектов (D-147): работают все, экран показывает выбранный — переключатель.
-        val all = remember(project.project) { model.projects() }
-        val switchScope = androidx.compose.runtime.rememberCoroutineScope()
-        if (all.projects.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
-            for (p in all.projects) {
-                val name = p.root.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\').ifEmpty { p.root }
-                FilterChip(selected = p.project == project.project, onClick = {
-                    if (p.project != project.project) switchScope.launch { withContext(Dispatchers.IO) { model.selectProject(p.project) } }
-                }, label = { Text(name) })
-            }
-        }
-        Column(Modifier.padding(horizontal = 12.dp)) {
-            Text(project.root, style = MaterialTheme.typography.bodySmall)
-            Text("Target: ${current.target?.label ?: "не найден"}", style = MaterialTheme.typography.bodySmall)
-            location?.let {
-                Text("${if (it.task == null) "Ветка интеграции" else "Ветка дерева"}: ${it.branch}", style = MaterialTheme.typography.bodySmall)
-                Text("Дерево: ${it.path}", style = MaterialTheme.typography.bodySmall)
-            }
-            if (current.paused) Text("Проект на паузе: ручной профиль", color = MaterialTheme.colorScheme.error)
-            if (!current.ready) Text("Контроллер не готов для этой конфигурации", color = MaterialTheme.colorScheme.error)
-            if (selected?.owner != null) Text("Редактор: только чтение — дерево занято ИИ", color = MaterialTheme.colorScheme.error)
-            TextButton(onClick = { choose = true }) { Text(if (taskKey == null) "Основное дерево ▾" else "${selected?.title ?: "Задача больше не доступна"} ▾") }
-            DropdownMenu(expanded = choose, onDismissRequest = { choose = false }) {
-                DropdownMenuItem(text = { Text("Основное дерево") }, onClick = { taskKey = null; choose = false })
-                for (t in current.tasks.take(200)) DropdownMenuItem(text = { Text("${t.title} · ${Words.task(t.state)}") }, onClick = { taskKey = t.id.value; choose = false })
-                if (current.tasks.size > 200) DropdownMenuItem(text = { Text("Последние 200 задач; остальные — на доске") }, onClick = {}, enabled = false)
-            }
-        }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
-            for (p in WorkspacePage.entries) FilterChip(selected = page == p.name, onClick = { page = p.name }, label = { Text(p.label?.let { androidx.compose.ui.res.stringResource(it) } ?: p.title) })
-        }
-        }
-        }
-        pageStates.SaveableStateProvider("${location?.key ?: "${project.project.value}:$taskKey"}:$page") {
-            when (page) {
+    val chrome = LocalIdeChrome.current
+    androidx.compose.runtime.DisposableEffect(chrome) {
+        chrome.workspace = true
+        onDispose { chrome.workspace = false }
+    }
+    val menu = LocalAppMenu.current
+    var tools by remember { mutableStateOf(false) }
+    var contextOpen by rememberSaveable(project.project.value) { mutableStateOf(false) }
+    fun title(name: String): Int = when (name) {
+        "FILES" -> R.string.ui_code; "AI" -> R.string.ui_chat; "CHANGES" -> R.string.ui_changes
+        "BUILD" -> R.string.ui_build; "CHECKS" -> R.string.ui_check; "RUN" -> R.string.ui_run
+        "DEPENDENCIES" -> R.string.dependencies_title; else -> R.string.automation_title
+    }
+    @Composable fun androidx.compose.foundation.layout.ColumnScope.pageContent(targetPage: String) {
+        pageStates.SaveableStateProvider("${location?.key ?: "${project.project.value}:$taskKey"}:$targetPage") {
+            when (targetPage) {
                 WorkspacePage.FILES.name -> if (location == null) Text("У задачи ещё нет доступного рабочего дерева", Modifier.padding(12.dp)) else {
                     // Файлы проекта: ИИ-дополнение берёт источник и согласие проекта (D-170).
                     androidx.compose.runtime.CompositionLocalProvider(LocalAiCompletion provides AiCompletionPlace(model, project)) {
@@ -175,23 +164,100 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
                     when (definition.source) {
                         com.dpsmpx.dpai.automation.AutomationSource.PULT -> AutomationBridge.openPult?.invoke(context)
                         com.dpsmpx.dpai.automation.AutomationSource.ENVIRONMENT -> environment = true
-                        com.dpsmpx.dpai.automation.AutomationSource.VERIFICATION -> { page = WorkspacePage.AI.name; if (selected != null) taskSheet = true }
-                        com.dpsmpx.dpai.automation.AutomationSource.MANUAL -> page = when (definition.id) {
+                        com.dpsmpx.dpai.automation.AutomationSource.VERIFICATION -> { openPage(WorkspacePage.AI.name); if (selected != null) taskSheet = true }
+                        com.dpsmpx.dpai.automation.AutomationSource.MANUAL -> openPage(when (definition.id) {
                             "manual.check" -> WorkspacePage.CHECKS.name
                             "manual.build" -> WorkspacePage.BUILD.name
                             "manual.dependencies" -> WorkspacePage.DEPENDENCIES.name
                             else -> WorkspacePage.RUN.name
-                        }
+                        })
                     }
                 }
                 WorkspacePage.DEPENDENCIES.name -> WorkspaceDependenciesPanel(model, current, location)
                 WorkspacePage.CHECKS.name, WorkspacePage.BUILD.name -> {
-                    val kind = if (page == WorkspacePage.CHECKS.name) com.dpsmpx.dpai.ui.ManualProfileKind.CHECK else com.dpsmpx.dpai.ui.ManualProfileKind.BUILD
+                    val kind = if (targetPage == WorkspacePage.CHECKS.name) com.dpsmpx.dpai.ui.ManualProfileKind.CHECK else com.dpsmpx.dpai.ui.ManualProfileKind.BUILD
                     // Место из вывода — во вкладку «Файлов» этого дерева (D-153): запрос ждёт панель дерева, страница переключается.
                     WorkspaceProfilePanel(model, current, location, kind) { path, line ->
-                        location?.let { IdeState.jumpTo(it.key, path, line); page = WorkspacePage.FILES.name }
+                        location?.let { IdeState.jumpTo(it.key, path, line); openPage(WorkspacePage.FILES.name) }
                     }
                 }
+            }
+        }
+    }
+    Column(Modifier.fillMaxSize()) {
+        if (!zen) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                androidx.compose.material3.IconButton(onClick = menu) {
+                    androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_ai_menu), androidx.compose.ui.res.stringResource(R.string.ui_navigation))
+                }
+                Text(project.root.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\'), Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                androidx.compose.foundation.layout.Box {
+                    androidx.compose.material3.IconButton(onClick = { tools = true }, modifier = Modifier.semantics { contentDescription = context.getString(R.string.ui_tools) }) { Text("⋮", style = MaterialTheme.typography.titleLarge) }
+                    DropdownMenu(tools, onDismissRequest = { tools = false }) {
+                        for (name in com.dpsmpx.dpai.ui.WorkspacePresentation.operations) DropdownMenuItem(
+                            text = { Text(androidx.compose.ui.res.stringResource(title(name))) }, onClick = { tools = false; openPage(name) })
+                        current.target?.let { target -> DropdownMenuItem(text = { Text(androidx.compose.ui.res.stringResource(R.string.ui_terminal)) }, onClick = { tools = false; TerminalActivity.start(context, target.id.value) }) }
+                        DropdownMenuItem(text = { Text(androidx.compose.ui.res.stringResource(R.string.ui_environment)) }, onClick = { tools = false; environment = true })
+                        DropdownMenuItem(text = { Text("Черновики") }, onClick = { tools = false; draftsOpen = true })
+                        DropdownMenuItem(text = { Text("← Файлы") }, onClick = { tools = false; onClose() })
+                    }
+                }
+            }
+            if (!keyboard) {
+                TextButton(onClick = { contextOpen = !contextOpen }, modifier = Modifier.semantics { contentDescription = context.getString(R.string.ui_context) }) {
+                    Text("${current.target?.label ?: "Target?"} · ${location?.branch ?: "—"} ▾", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+                if (current.paused) Text("Проект на паузе: ручной профиль", Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error)
+                if (!current.ready) Text("Контроллер не готов для этой конфигурации", Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error)
+                if (selected?.owner != null) Text("Редактор: только чтение — дерево занято ИИ", Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error)
+                if (contextOpen || !simple) {
+                    val all = remember(project.project) { model.projects() }
+                    val switchScope = androidx.compose.runtime.rememberCoroutineScope()
+                    if (all.projects.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
+                        for (p in all.projects) FilterChip(selected = p.project == project.project, onClick = {
+                            if (p.project != project.project) switchScope.launch { withContext(Dispatchers.IO) { model.selectProject(p.project) } }
+                        }, label = { Text(p.root.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\')) })
+                    }
+                    Column(Modifier.padding(horizontal = 12.dp)) {
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            Text("${project.root}\n${location?.path.orEmpty()}", style = MaterialTheme.typography.bodySmall)
+                        }
+                        TextButton(onClick = { choose = true }) { Text(if (taskKey == null) "Основное дерево ▾" else "${selected?.title ?: "Задача больше не доступна"} ▾") }
+                        DropdownMenu(expanded = choose, onDismissRequest = { choose = false }) {
+                            DropdownMenuItem(text = { Text("Основное дерево") }, onClick = { taskKey = null; choose = false })
+                            for (t in current.tasks.take(200)) DropdownMenuItem(text = { Text("${t.title} · ${Words.task(t.state)}") }, onClick = { taskKey = t.id.value; choose = false })
+                            if (current.tasks.size > 200) DropdownMenuItem(text = { Text("Последние 200 задач; остальные — на доске") }, onClick = {}, enabled = false)
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
+                    val pages = if (simple) com.dpsmpx.dpai.ui.WorkspacePresentation.primary else WorkspacePage.entries.map { it.name }
+                    for (name in pages) FilterChip(selected = page == name, onClick = { openPage(name) }, label = { Text(androidx.compose.ui.res.stringResource(title(name))) })
+                }
+                if (simple) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    for (name in listOf("BUILD", "CHECKS", "RUN")) TextButton(onClick = { openPage(name) }) { Text(androidx.compose.ui.res.stringResource(title(name))) }
+                }
+            }
+        }
+        pageContent(page)
+        manual.active?.takeIf { it.project.project == project.project }?.let { active ->
+            androidx.compose.material3.Surface(tonalElevation = 2.dp) {
+                TextButton(onClick = { openPage(if (active.profile.kind == com.dpsmpx.dpai.ui.ManualProfileKind.CHECK) "CHECKS" else "BUILD") }) {
+                    Text("${context.getString(R.string.ui_operation_active)} · ${active.branch} · ${context.getString(R.string.ui_operation_open)}", maxLines = 2)
+                }
+            }
+        }
+    }
+    operation?.takeIf { simple }?.let { name ->
+        androidx.compose.material3.ModalBottomSheet(onDismissRequest = { operation = null },
+            sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            Column(Modifier.fillMaxWidth().fillMaxSize(0.92f)) {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text(androidx.compose.ui.res.stringResource(title(name)), Modifier.weight(1f).padding(12.dp), style = MaterialTheme.typography.titleMedium)
+                    TextButton(onClick = { operation = null }) { Text(androidx.compose.ui.res.stringResource(R.string.ui_close)) }
+                }
+                pageContent(name)
             }
         }
     }

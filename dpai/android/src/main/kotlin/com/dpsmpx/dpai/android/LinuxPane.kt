@@ -270,6 +270,8 @@ private fun AndroidSdkDialog(onCancel: () -> Unit, onInstall: (Boolean, Boolean,
     var ndkUrl by remember { mutableStateOf("") }
     var ndkSha by remember { mutableStateOf("") }
     var problem by remember { mutableStateOf<String?>(null) }
+    val simple = LocalUiLook.current.simple
+    var advanced by remember { mutableStateOf(!simple) }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onCancel,
         title = { Text("Android SDK") },
@@ -277,8 +279,8 @@ private fun AndroidSdkDialog(onCancel: () -> Unit, onInstall: (Boolean, Boolean,
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     "С официальных источников Google: cmdline-tools ${AndroidSdk.CMDLINE_VERSION} (по закреплённой сумме), " +
-                        "android-36 и build-tools 36.1.0 — sdkmanager. Около ${AndroidSdk.spaceBytes(false) shr 20} МБ, с NDK — ${AndroidSdk.spaceBytes(true) shr 30} ГБ. " +
-                        "Под arm64 Google не выпускает aapt2 для Gradle и NDK: по желанию — сборка сообщества по адресу и SHA-256, которые вы вводите.",
+                        "${AndroidSdk.PLATFORM.substringAfter(';')} и ${AndroidSdk.BUILD_TOOLS} — sdkmanager. Около ${AndroidSdk.spaceBytes(false) shr 20} МБ, с NDK — ${AndroidSdk.spaceBytes(true) shr 30} ГБ. " +
+                        "Для ARM64 aapt2 и build-tools используется закреплённая сборка. Свои источники можно указать в дополнительных настройках.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -289,11 +291,14 @@ private fun AndroidSdkDialog(onCancel: () -> Unit, onInstall: (Boolean, Boolean,
                     androidx.compose.material3.Checkbox(ndk, { ndk = it })
                     Text("И NDK", style = MaterialTheme.typography.bodySmall)
                 }
+                TextButton(onClick = { advanced = !advanced }) { Text(androidx.compose.ui.res.stringResource(R.string.ui_advanced_component)) }
+                if (advanced) {
                 OutlinedTextField(aapt2Url, { aapt2Url = it.take(500) }, label = { Text("aapt2 arm64 (сообщество): адрес https") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(aapt2Sha, { aapt2Sha = it.take(64) }, label = { Text("aapt2: SHA-256") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 if (ndk) {
                     OutlinedTextField(ndkUrl, { ndkUrl = it.take(500) }, label = { Text("NDK arm64 (сообщество): адрес https") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(ndkSha, { ndkSha = it.take(64) }, label = { Text("NDK: SHA-256") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
                 }
                 problem?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }

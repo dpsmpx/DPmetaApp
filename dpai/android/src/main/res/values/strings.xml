@@ -1,5 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="ui_mode">Представление</string>
+    <string name="ui_simple">Простое</string>
+    <string name="ui_full">Полное</string>
+    <string name="ui_mode_hint">Все функции доступны в обоих видах. Редкие параметры можно раскрыть в своём экране.</string>
+    <string name="ui_theme">Тема</string>
+    <string name="ui_theme_system">Как в телефоне</string>
+    <string name="ui_theme_white">Белая</string>
+    <string name="ui_theme_dark">Тёмная</string>
+    <string name="ui_theme_black">Чёрная</string>
+    <string name="ui_appearance">Оформление</string>
+    <string name="ui_accent">Акцент</string>
+    <string name="ui_profile_settings">Настроить профиль</string>
+    <string name="ui_profile_summary">Шагов: %1$d · Изменения можно применить разово или сохранить в профиле.</string>
+    <string name="ui_code">Код</string>
+    <string name="ui_chat">Чат</string>
+    <string name="ui_changes">Изменения</string>
+    <string name="ui_build">Собрать</string>
+    <string name="ui_check">Проверить</string>
+    <string name="ui_run">Запустить</string>
+    <string name="ui_tools">Инструменты проекта</string>
+    <string name="ui_operation_open">Открыть результат</string>
+    <string name="ui_operation_active">Операция выполняется</string>
+    <string name="ui_next_messages">К новым сообщениям</string>
+    <string name="ui_advanced_component">Другие источники инструментов</string>
+    <string name="ui_context">Контекст проекта</string>
+    <string name="ui_environment">Устройства и среды</string>
+    <string name="ui_terminal">Терминал</string>
+    <string name="ui_close">Закрыть</string>
+    <string name="ui_reset_display">Восстановить стандартное оформление</string>
+
     <string name="progress_bytes">Передано байт: %1$d / %2$d</string>
     <string name="progress_installed">Уже установлено</string>
     <string name="progress_unpack">Распаковка</string>
@@ -157,4 +187,9 @@
     <string name="chat_full_access_confirm">Подтвердить PIN/биометрией</string>
     <string name="chat_full_access_cancel">Отмена</string>
     <string name="chat_full_access_failed">Не удалось включить режим: проект или target изменился либо запись недоступна.</string>
+    <string name="ui_navigation">Открыть меню приложения</string>
+    <string name="ui_signing_keys">Управление ключами подписи</string>
+    <string name="ui_code_commands">Команды кода</string>
+    <string name="ui_expanded">Развёрнуто</string>
+    <string name="ui_collapsed">Свёрнуто</string>
 </resources>

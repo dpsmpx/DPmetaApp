@@ -19,7 +19,8 @@ import com.dpsmpx.dpmeta.app.ui.Loader
 import com.dpsmpx.dpmeta.app.ui.PultApp
 import com.dpsmpx.dpmeta.app.ui.PultTheme
 import com.dpsmpx.dpmeta.app.ui.PultView
-import com.dpsmpx.dpmeta.formats.RegistryFormat
+import com.dpsmpx.dpmeta.model.ProjectList
+import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.sync.DirectoryReader
 import com.dpsmpx.dpmeta.sync.Sync
@@ -44,7 +45,7 @@ class ScreenshotsTest {
     private val now = Timestamp(Instant.parse("2026-11-13T09:00:00Z").toEpochMilli())
 
     private fun state(): EcosystemState {
-        val reg = (RegistryFormat.parse(Files.readString(corpus.resolve("registry.toml"))) as Outcome.Success).value
+        val reg = ProjectList.parse(JsonParser().parse(Files.readString(corpus.resolve("projects.json"))).valueOrNull()!!).valueOrNull()!!.forSync()
         val r = Sync.run(Sync.plan(reg), DirectoryReader(corpus), ManualClock(now))
         return EcosystemState.derive(reg, r.observations, r.failures, null, now)
     }
@@ -55,7 +56,7 @@ class ScreenshotsTest {
     }
 
     /** Снимок: имя PNG и экран. */
-    private class Shot(val name: String, val content: @Composable () -> Unit)
+    private class Shot(val name: String, val prepare: () -> Unit = {}, val content: @Composable () -> Unit)
 
     private fun pult(goTo: com.dpsmpx.dpai.ui.AppSection?, name: String): Shot {
         val view = PultView(
@@ -83,6 +84,30 @@ class ScreenshotsTest {
         }
     }
 
+    /** Локальное синтетическое дерево: без установки Linux, SSH и исполнения команд. */
+    private fun workspace(full: Boolean): Shot {
+        val app = org.robolectric.RuntimeEnvironment.getApplication()
+        val model = com.dpsmpx.dpai.android.DemoModel.get(app)
+        val controller = com.dpsmpx.dpai.android.Controller.get(app.filesDir)
+        return Shot(if (full) "workspace-full" else "workspace-simple", prepare = {
+            if (controller.project() == null) {
+                val target = controller.addInApp(com.dpsmpx.dpai.core.ids.IdKinds.TARGET.trusted("tgt_" + "0".repeat(26))).valueOrNull()!!
+                val project = com.dpsmpx.dpai.ui.ProjectEntry(
+                    com.dpsmpx.dpai.core.ids.IdKinds.PROJECT.trusted("prj_" + "0".repeat(26)), com.dpsmpx.dpai.core.ids.IdKinds.REPOSITORY.trusted("rep_" + "0".repeat(26)),
+                    target.id, "/root/projects/sample", "/root/worktrees/sample", "feature/sample", emptyList())
+                check(controller.putProject(project) is Outcome.Success)
+                File(com.dpsmpx.dpai.android.GuestPaths.home(app), "projects/sample").apply { mkdirs() }
+                    .resolve("README.md").writeText("# Sample project\n")
+            }
+            val look = com.dpsmpx.dpai.android.Looks.read(app)
+            com.dpsmpx.dpai.android.Looks.write(app, look.copy(presentation = if (full) com.dpsmpx.dpai.ui.UiLook.Presentation.FULL else com.dpsmpx.dpai.ui.UiLook.Presentation.SIMPLE))
+        }) {
+            com.dpsmpx.dpai.android.DpaiTheme {
+                com.dpsmpx.dpai.android.DpaiApp(model, controller, com.dpsmpx.dpai.android.Incoming(tab = "FILES", workspace = true))
+            }
+        }
+    }
+
     /**
      * Все экраны — одним тестом в одном окне: диспетчер Compose запоминает Choreographer
      * первого теста песочницы Robolectric, и в следующих тестах эффекты (переход пульта,
@@ -98,13 +123,16 @@ class ScreenshotsTest {
             pult(com.dpsmpx.dpai.ui.AppSection.HELP, "help"),
             ai(com.dpsmpx.dpai.ui.AiTab.SUMMARY, "ai-summary"),
             ai(com.dpsmpx.dpai.ui.AiTab.TASKS, "ai-tasks"),
-            // IDE с файлом — позже: в песочнице список файлов демо не загружается, а крутилка
+            workspace(false),
+            workspace(true),
+            // Редактор с открытым файлом — позже: в песочнице список файлов демо не загружается, а крутилка
             // загрузки — бесконечная анимация, на каждом кадре Robolectric двигает часы (docs/SCREENSHOTS.md).
         )
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         var current by mutableStateOf(shots.first())
         activity.setContent { key(current.name) { current.content() } }
         for (shot in shots) {
+            shot.prepare()
             current = shot
             settle()
             save(activity, shot.name)

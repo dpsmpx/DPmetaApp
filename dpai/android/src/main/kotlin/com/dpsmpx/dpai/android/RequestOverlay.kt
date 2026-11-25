@@ -126,9 +126,10 @@ object RequestOverlay {
         val wm = context.getSystemService(WindowManager::class.java)
         val dp = context.resources.displayMetrics.density
         val pad = (12 * dp).toInt()
-        val night = (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val recolor = mutableListOf<() -> Unit>()
+        val night = Looks.dark(context)
         // Цвета — роли схемы приложения (AI:A-8, DPmetaApp:D-74): контраст текста к фону — не ниже 4,5 : 1 (AppPaletteTest).
-        val scheme = com.dpsmpx.dpai.ui.AppPalette.scheme(night)
+        var scheme = Looks.palette(context)
         val fg = scheme.onSurface.toInt()
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -140,10 +141,16 @@ object RequestOverlay {
             }
             elevation = 8 * dp
         }
+        recolor += {
+            (root.background as GradientDrawable).apply {
+                setColor(scheme.surfaceContainerHigh.toInt()); setStroke(dp.toInt().coerceAtLeast(1), scheme.outlineVariant.toInt())
+            }
+        }
         fun text(s: String, size: Float, bold: Boolean = false) = TextView(context).apply {
             this.text = s
             textSize = size
             setTextColor(fg)
+            recolor += { setTextColor(scheme.onSurface.toInt()) }
             if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
         // На широком экране окно не тянется во всю ширину (AI:A-24): не шире 560 dp, по центру.
@@ -192,6 +199,7 @@ object RequestOverlay {
             textSize = 22f
             setTextColor(fg)
             gravity = Gravity.CENTER
+            recolor += { setTextColor(scheme.onSurface.toInt()) }
             contentDescription = "Скрыть окно"
             minWidth = (48 * dp).toInt()
             minHeight = (48 * dp).toInt()
@@ -212,12 +220,17 @@ object RequestOverlay {
         })
         // Ошибка — смысловым цветом под тему окна: прежний красный на тёмном фоне давал 2,7 : 1 (AI:A-8, D-74).
         val status = text("", 12f).apply { setTextColor(com.dpsmpx.dpai.ui.AppPalette.semantic(com.dpsmpx.dpai.ui.AppPalette.Role.ERROR, night).toInt()) }
+        recolor += { status.setTextColor(scheme.error.toInt()) }
         val input = if (card.buttons.any { it.needsText }) {
             EditText(context).apply {
                 hint = "ответ"
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 setTextColor(fg)
                 maxLines = 4
+                recolor += {
+                    setTextColor(scheme.onSurface.toInt()); setHintTextColor(scheme.onSurfaceVariant.toInt())
+                    backgroundTintList = android.content.res.ColorStateList.valueOf(scheme.primary.toInt())
+                }
             }.also { root.addView(it) }
         } else {
             null
@@ -239,12 +252,16 @@ object RequestOverlay {
             isAllCaps = false
             minHeight = (48 * dp).toInt()
             val accept = tone == com.dpsmpx.dpai.ui.Tone.ACTIVE && !danger
-            val error = com.dpsmpx.dpai.ui.AppPalette.semantic(com.dpsmpx.dpai.ui.AppPalette.Role.ERROR, night).toInt()
-            setTextColor(if (accept) scheme.onPrimary.toInt() else if (danger) error else scheme.primary.toInt())
-            background = GradientDrawable().apply {
-                cornerRadius = 20 * dp
-                if (accept) setColor(scheme.primary.toInt()) else setStroke((1 * dp).toInt(), if (danger) error else scheme.outline.toInt())
+            val paint: () -> Unit = {
+                val error = scheme.error.toInt()
+                setTextColor(if (accept) scheme.onPrimary.toInt() else if (danger) error else scheme.primary.toInt())
+                background = GradientDrawable().apply {
+                    cornerRadius = 20 * dp
+                    if (accept) setColor(scheme.primary.toInt()) else setStroke(dp.toInt().coerceAtLeast(1), if (danger) error else scheme.outline.toInt())
+                }
             }
+            recolor += paint
+            paint()
         }
         for (b in shownButtons) {
             var armed = false
@@ -327,6 +344,25 @@ object RequestOverlay {
             })
         }
         root.addView(grid)
+        fun refresh() { scheme = Looks.palette(context); recolor.forEach { it() } }
+        val preferences = context.getSharedPreferences(com.dpsmpx.dpai.ui.UiLook.PREFS, Context.MODE_PRIVATE)
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> main.post { refresh() } }
+        val configuration = object : android.content.ComponentCallbacks {
+            override fun onConfigurationChanged(newConfig: android.content.res.Configuration) { refresh() }
+            @Deprecated("Android 14+ не вызывает этот callback; ComponentCallbacks требует реализацию")
+            override fun onLowMemory() = Unit
+        }
+        root.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {
+                preferences.registerOnSharedPreferenceChangeListener(listener)
+                context.registerComponentCallbacks(configuration)
+                refresh()
+            }
+            override fun onViewDetachedFromWindow(v: View) {
+                preferences.unregisterOnSharedPreferenceChangeListener(listener)
+                context.unregisterComponentCallbacks(configuration)
+            }
+        })
         wm.addView(root, params)
         shown = card.id.value to root
     }

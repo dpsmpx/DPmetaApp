@@ -1,0 +1,5 @@
+<resources>
+    <string name="ui_copy">Копировать</string>
+    <string name="ui_copied">Скопировано</string>
+    <string name="ui_copy_failed">Не удалось скопировать</string>
+</resources>
