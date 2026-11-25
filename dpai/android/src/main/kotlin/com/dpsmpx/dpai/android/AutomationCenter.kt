@@ -95,6 +95,20 @@ internal fun AutomationCenter(project: ProjectEntry, onOpen: (AutomationDefiniti
             }
             snapshot?.let { WorkflowSection(project, it, running) { refresh++ } }
         }
+        work?.let { job -> item {
+            Text(stringResource(R.string.automation_last_result), style = MaterialTheme.typography.titleSmall)
+            job.note?.let { DiagnosticText(it) }
+            val result = job.output.firstOrNull()?.let { JsonParser().parse(it).valueOrNull() as? JsonObject }
+            result?.let { r ->
+                (r["status"] as? JsonString)?.value?.let { Text(it, fontFamily = FontFamily.Monospace) }
+                val data = r["data"] as? JsonObject ?: r["evidence"] as? JsonObject
+                (data?.get("note") as? JsonString)?.value?.let { Text(it) }
+                (r["diagnostics"] as? JsonArray)?.items?.forEach { d -> ((d as? JsonObject)?.get("message") as? JsonString)?.value?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error) } }
+                val output = (data?.get("output") as? JsonString)?.value ?: data?.let(CanonicalJson::write)
+                if (data?.get("format") == JsonString("dpai.development-report")) DevelopmentReportView(data)
+                else output?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
+            }
+        } }
         items(snapshot?.catalog?.entries.orEmpty().filter { filter == null || it.source.name == filter }, key = { it.id }) { d ->
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = { expanded = if (expanded == d.id) null else d.id }) { Text(automationTitle(d)) }
@@ -117,20 +131,7 @@ internal fun AutomationCenter(project: ProjectEntry, onOpen: (AutomationDefiniti
                 HorizontalDivider()
             }
         }
-        work?.let { job -> item {
-            Text(stringResource(R.string.automation_last_result), style = MaterialTheme.typography.titleSmall)
-            job.note?.let { DiagnosticText(it) }
-            val result = job.output.firstOrNull()?.let { JsonParser().parse(it).valueOrNull() as? JsonObject }
-            result?.let { r ->
-                (r["status"] as? JsonString)?.value?.let { Text(it, fontFamily = FontFamily.Monospace) }
-                val data = r["data"] as? JsonObject ?: r["evidence"] as? JsonObject
-                (data?.get("note") as? JsonString)?.value?.let { Text(it) }
-                (r["diagnostics"] as? JsonArray)?.items?.forEach { d -> ((d as? JsonObject)?.get("message") as? JsonString)?.value?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error) } }
-                val output = (data?.get("output") as? JsonString)?.value ?: data?.let(CanonicalJson::write)
-                if (data?.get("format") == JsonString("dpai.development-report")) DevelopmentReportView(data)
-                else output?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
-            }
-        } }
+
     }
 }
 
