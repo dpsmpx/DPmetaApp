@@ -75,10 +75,9 @@ fun SettingsDocument(projects: (@Composable () -> Unit)?, initialQuery: String =
         for (s in shown) {
             item(key = s.key) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(s.about, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    DetailSection(s.title, "settings:${s.key}", expandedInitially = query.isNotBlank() || !LocalUiLook.current.simple || s.key == LOOK) {
+                    DetailSection(s.title, "settings:${s.key}", expandedInitially = query.isNotBlank() || !LocalUiLook.current.simple || s.key == LOOK, description = s.about) {
                     when (s.key) {
-                        LOOK -> LookCard()
+                        LOOK -> LookCard(showTitle = false)
                         PROJECTS -> projects?.let { block -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) { block() } } }
                         STORAGE -> StorageSecretsCard()
                         REVOKE -> EmergencyRevokeCard()

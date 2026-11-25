@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.android
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,15 +33,16 @@ internal val LocalSectionVisible = staticCompositionLocalOf { true }
  */
 @Composable
 internal fun DetailSection(title: String, stateKey: String, expandedInitially: Boolean = !LocalUiLook.current.simple,
-    content: @Composable () -> Unit) {
+    description: String? = null, content: @Composable () -> Unit) {
     var expanded by rememberSaveable(stateKey, expandedInitially) { mutableStateOf(expandedInitially) }
     val focus = LocalFocusManager.current
     val parentVisible = LocalSectionVisible.current
-    Column(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val state = androidx.compose.ui.res.stringResource(if (expanded) R.string.ui_expanded else R.string.ui_collapsed)
         TextButton(onClick = { focus.clearFocus(); expanded = !expanded }, modifier = Modifier.semantics { heading(); stateDescription = state }) {
             Text("${if (expanded) "▾" else "▸"} $title", style = MaterialTheme.typography.titleSmall)
         }
+        description?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         Box(if (expanded) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().height(0.dp).clipToBounds().clearAndSetSemantics { }) {
             CompositionLocalProvider(LocalSectionVisible provides (parentVisible && expanded)) { Column { content() } }
         }

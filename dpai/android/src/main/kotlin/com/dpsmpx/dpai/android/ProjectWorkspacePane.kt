@@ -116,6 +116,10 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
     aiRequest?.let { req -> EditorAiSheet(model, current.project, selected, req) { aiRequest = null } }
     val zen = ideZen()
     val context = LocalContext.current
+    val toolsTitle = androidx.compose.ui.res.stringResource(R.string.ui_tools)
+    val contextTitle = androidx.compose.ui.res.stringResource(R.string.ui_context)
+    val activeTitle = androidx.compose.ui.res.stringResource(R.string.ui_operation_active)
+    val resultTitle = androidx.compose.ui.res.stringResource(R.string.ui_operation_open)
     var environment by rememberSaveable(project.project.value) { mutableStateOf(false) }
     if (environment) {
         androidx.activity.compose.BackHandler { environment = false }
@@ -193,7 +197,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
                 Text(project.root.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\'), Modifier.weight(1f),
                     style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 androidx.compose.foundation.layout.Box {
-                    androidx.compose.material3.IconButton(onClick = { tools = true }, modifier = Modifier.semantics { contentDescription = context.getString(R.string.ui_tools) }) { Text("⋮", style = MaterialTheme.typography.titleLarge) }
+                    androidx.compose.material3.IconButton(onClick = { tools = true }, modifier = Modifier.semantics { contentDescription = toolsTitle }) { Text("⋮", style = MaterialTheme.typography.titleLarge) }
                     DropdownMenu(tools, onDismissRequest = { tools = false }) {
                         for (name in com.dpsmpx.dpai.ui.WorkspacePresentation.operations) DropdownMenuItem(
                             text = { Text(androidx.compose.ui.res.stringResource(title(name))) }, onClick = { tools = false; openPage(name) })
@@ -205,11 +209,14 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
                 }
             }
             if (!keyboard) {
-                TextButton(onClick = { contextOpen = !contextOpen }, modifier = Modifier.semantics { contentDescription = context.getString(R.string.ui_context) }) {
+                TextButton(onClick = { contextOpen = !contextOpen }, modifier = Modifier.semantics { contentDescription = contextTitle }) {
                     Text("${current.target?.label ?: "Target?"} · ${location?.branch ?: "—"} ▾", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 }
                 if (current.paused) Text("Проект на паузе: ручной профиль", Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error)
-                if (!current.ready) Text("Контроллер не готов для этой конфигурации", Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error)
+                if (!current.ready) {
+                    Text("Контроллер не готов для этой конфигурации", Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = { environment = true }) { Text(androidx.compose.ui.res.stringResource(R.string.ui_environment)) }
+                }
                 if (selected?.owner != null) Text("Редактор: только чтение — дерево занято ИИ", Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error)
                 if (contextOpen || !simple) {
                     val all = remember(project.project) { model.projects() }
@@ -221,7 +228,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
                     }
                     Column(Modifier.padding(horizontal = 12.dp)) {
                         androidx.compose.foundation.text.selection.SelectionContainer {
-                            Text("${project.root}\n${location?.path.orEmpty()}", style = MaterialTheme.typography.bodySmall)
+                            Text(listOfNotNull(project.root, location?.path).distinct().joinToString("\n"), style = MaterialTheme.typography.bodySmall)
                         }
                         TextButton(onClick = { choose = true }) { Text(if (taskKey == null) "Основное дерево ▾" else "${selected?.title ?: "Задача больше не доступна"} ▾") }
                         DropdownMenu(expanded = choose, onDismissRequest = { choose = false }) {
@@ -244,7 +251,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
         manual.active?.takeIf { it.project.project == project.project }?.let { active ->
             androidx.compose.material3.Surface(tonalElevation = 2.dp) {
                 TextButton(onClick = { openPage(if (active.profile.kind == com.dpsmpx.dpai.ui.ManualProfileKind.CHECK) "CHECKS" else "BUILD") }) {
-                    Text("${context.getString(R.string.ui_operation_active)} · ${active.branch} · ${context.getString(R.string.ui_operation_open)}", maxLines = 2)
+                    Text("${activeTitle} · ${active.branch} · ${resultTitle}", maxLines = 2)
                 }
             }
         }

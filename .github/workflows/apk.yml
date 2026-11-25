@@ -52,16 +52,40 @@ jobs:
           "$RUNNER_TEMP/sdktools/cmdline-tools/bin/sdkmanager" --sdk_root="$ANDROID_HOME" \
             --install 'platforms;android-37.0' 'build-tools;36.1.0' \
             'ndk;28.2.13676358' 'cmake;3.22.1'
+      - name: Full repository verification
+        id: strict
+        continue-on-error: true
+        shell: bash
+        run: tools/check/run.sh full --strict --verbose
       - name: Verify interface themes and render screens
         id: interface
         timeout-minutes: 8
         continue-on-error: true
         shell: bash
         run: |
+          set -euo pipefail
+          interface_out="$GITHUB_WORKSPACE/build/interface-screenshots"
+          mkdir -p "$interface_out/reports"
+          appearance_status=0
           ./gradlew --console=plain :shell:testDebugUnitTest \
-            -Pdpmeta.screenshots -Pdpmeta.screenshots.dir="$GITHUB_WORKSPACE/build/interface-screenshots" \
-            --tests 'com.dpsmpx.dpmeta.shell.AppearanceTest' \
-            --tests 'com.dpsmpx.dpmeta.shell.ScreenshotsTest'
+            -Pdpmeta.screenshots "-Pdpmeta.screenshots.dir=$interface_out" \
+            --tests 'com.dpsmpx.dpmeta.shell.AppearanceTest' || appearance_status=$?
+          for result in shell/build/test-results/testDebugUnitTest/TEST-*AppearanceTest.xml; do
+            if test -f "$result"; then cp "$result" "$interface_out/reports/"; fi
+          done
+          screenshots_status=0
+          ./gradlew --console=plain :shell:testDebugUnitTest \
+            -Pdpmeta.screenshots "-Pdpmeta.screenshots.dir=$interface_out" \
+            --tests 'com.dpsmpx.dpmeta.shell.ScreenshotsTest' || screenshots_status=$?
+          for result in shell/build/test-results/testDebugUnitTest/TEST-*ScreenshotsTest.xml; do
+            if test -f "$result"; then cp "$result" "$interface_out/reports/"; fi
+          done
+          test "$appearance_status" -eq 0
+          test "$screenshots_status" -eq 0
+          test -s "$interface_out/reports/TEST-com.dpsmpx.dpmeta.shell.AppearanceTest.xml"
+          test -s "$interface_out/reports/TEST-com.dpsmpx.dpmeta.shell.ScreenshotsTest.xml"
+          test "$(find "$interface_out" -type f -name '*.png' | wc -l)" -eq 16
+          echo 'Interface verification: both test classes passed, 16 rendered PNG files.'
       - name: Upload interface screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -70,11 +94,6 @@ jobs:
           path: build/interface-screenshots/
           if-no-files-found: error
           retention-days: 14
-      - name: Full repository verification
-        id: strict
-        continue-on-error: true
-        shell: bash
-        run: tools/check/run.sh full --strict --verbose
       - name: Preserve failing JUnit test reports
         if: steps.strict.outcome == 'failure' || steps.interface.outcome == 'failure'
         uses: actions/upload-artifact@v4
@@ -127,13 +146,13 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Require green full-strict result
-        if: steps.strict.outcome != 'success'
+        if: always() && steps.strict.outcome != 'success'
         shell: bash
         run: |
           echo 'full --strict failed: APKs (if created) are diagnostic only; merge into main is forbidden.'
           exit 1
       - name: Require green interface result
-        if: steps.interface.outcome != 'success'
+        if: always() && steps.interface.outcome != 'success'
         shell: bash
         run: |
           echo 'Interface verification failed: APKs are diagnostic only.'

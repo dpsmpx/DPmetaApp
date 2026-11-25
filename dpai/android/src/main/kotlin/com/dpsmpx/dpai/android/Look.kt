@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.drawable.toDrawable
 import androidx.core.content.edit
 import androidx.core.view.WindowCompat
 import com.dpsmpx.dpai.ui.AppPalette
@@ -57,18 +58,32 @@ object Looks {
     }
 
 
+    // Цвета сохраняют отключение, нажатие и клавиатурный фокус нативных контролов.
+    private val nativeStates = arrayOf(
+        intArrayOf(android.R.attr.state_enabled, android.R.attr.state_pressed),
+        intArrayOf(android.R.attr.state_enabled, android.R.attr.state_focused),
+        intArrayOf(android.R.attr.state_enabled, android.R.attr.state_selected),
+        intArrayOf(android.R.attr.state_enabled), intArrayOf(),
+    )
+    private fun nativeInk(p: AppPalette.Scheme, normal: Long) = android.content.res.ColorStateList(nativeStates,
+        intArrayOf(p.onPrimaryContainer.toInt(), p.onPrimaryContainer.toInt(), p.primary.toInt(), normal.toInt(),
+            androidx.core.graphics.ColorUtils.setAlphaComponent(normal.toInt(), 97)))
+    private fun nativeSurface(p: AppPalette.Scheme) = android.content.res.ColorStateList(nativeStates,
+        intArrayOf(p.primaryContainer.toInt(), p.primaryContainer.toInt(), p.surfaceContainerHigh.toInt(),
+            p.surfaceContainerHigh.toInt(), p.surfaceContainerHigh.toInt()))
+
     /** Нативные элементы: значения/выделение и обработчики не пересоздаются. */
     fun styleNative(view: android.view.View, palette: AppPalette.Scheme) {
         if (view is TerminalView) { view.applyPalette(palette); return }
         if (view is android.widget.TextView) {
-            view.setTextColor((if (view.isSelected) palette.primary else palette.onSurface).toInt())
+            view.setTextColor(nativeInk(palette, palette.onSurface))
             view.setHintTextColor(palette.onSurfaceVariant.toInt())
         }
         if (view is android.widget.EditText) {
             view.backgroundTintList = android.content.res.ColorStateList.valueOf(palette.primary.toInt())
         } else if (view.background != null) {
             // Сохраняем форму, ripple и состояния фокуса исходного drawable.
-            view.backgroundTintList = android.content.res.ColorStateList.valueOf(palette.surfaceContainerHigh.toInt())
+            view.backgroundTintList = nativeSurface(palette)
         }
         if (view is android.view.ViewGroup) for (i in 0 until view.childCount) styleNative(view.getChildAt(i), palette)
     }
@@ -79,11 +94,11 @@ object Looks {
     fun styleDialog(dialog: android.app.AlertDialog) {
         val palette = palette(dialog.context)
         dialog.window?.apply {
-            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(palette.surfaceContainerHigh.toInt()))
+            setBackgroundDrawable(palette.surfaceContainerHigh.toInt().toDrawable())
             styleNative(decorView, palette)
         }
         for (which in listOf(android.content.DialogInterface.BUTTON_POSITIVE, android.content.DialogInterface.BUTTON_NEGATIVE, android.content.DialogInterface.BUTTON_NEUTRAL)) {
-            dialog.getButton(which)?.setTextColor(palette.primary.toInt())
+            dialog.getButton(which)?.setTextColor(nativeInk(palette, palette.primary))
         }
     }
 

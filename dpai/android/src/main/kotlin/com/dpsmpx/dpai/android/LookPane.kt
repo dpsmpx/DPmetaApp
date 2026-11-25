@@ -36,7 +36,7 @@ import com.dpsmpx.dpai.ui.UiLook
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun LookCard() {
+fun LookCard(showTitle: Boolean = true) {
     val context = LocalContext.current.applicationContext
     val look = Looks.remember()
     fun set(l: UiLook) = Looks.write(context, l)
@@ -47,7 +47,7 @@ fun LookCard() {
     val dark = MaterialTheme.colorScheme.background.luminanceBelowHalf()
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.ui_appearance), style = MaterialTheme.typography.titleSmall)
+            if (showTitle) Text(stringResource(R.string.ui_appearance), style = MaterialTheme.typography.titleSmall)
             Choice(stringResource(R.string.ui_mode), UiLook.Presentation.entries, look.presentation,
                 { if (it == UiLook.Presentation.SIMPLE) simpleTitle else fullTitle }) { set(look.copy(presentation = it)) }
             Text(stringResource(R.string.ui_mode_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

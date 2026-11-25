@@ -38,7 +38,7 @@ import java.time.Instant
 
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [36], qualifiers = "w360dp-h800dp-xhdpi", application = android.app.Application::class)
+@Config(sdk = [36], qualifiers = "ru-rRU-w360dp-h800dp-xhdpi", application = android.app.Application::class)
 class ScreenshotsTest {
     private val dir = File(System.getProperty("screenshots.dir") ?: error("нет screenshots.dir")).apply { mkdirs() }
     private val corpus = Path.of(System.getProperty("corpus.ecosystem") ?: error("нет corpus.ecosystem"))
@@ -90,6 +90,9 @@ class ScreenshotsTest {
         val model = com.dpsmpx.dpai.android.DemoModel.get(app)
         val controller = com.dpsmpx.dpai.android.Controller.get(app.filesDir)
         return Shot(if (full) "workspace-full" else "workspace-simple", prepare = {
+            // В приложении это делает MainActivity; тест использует безопасную ComponentActivity без служб.
+            val editorState = Class.forName("com.dpsmpx.dpai.android.IdeState")
+            editorState.getMethod("install", android.content.Context::class.java).invoke(editorState.getField("INSTANCE").get(null), app)
             if (controller.project() == null) {
                 val target = controller.addInApp(com.dpsmpx.dpai.core.ids.IdKinds.TARGET.trusted("tgt_" + "0".repeat(26))).valueOrNull()!!
                 val project = com.dpsmpx.dpai.ui.ProjectEntry(
@@ -125,17 +128,26 @@ class ScreenshotsTest {
             ai(com.dpsmpx.dpai.ui.AiTab.TASKS, "ai-tasks"),
             workspace(false),
             workspace(true),
-            // Редактор с открытым файлом — позже: в песочнице список файлов демо не загружается, а крутилка
-            // загрузки — бесконечная анимация, на каждом кадре Robolectric двигает часы (docs/SCREENSHOTS.md).
+            // Редактор с открытым файлом и IME проверяется отдельно на телефоне (docs/SCREENSHOTS.md).
         )
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         var current by mutableStateOf(shots.first())
-        activity.setContent { key(current.name) { current.content() } }
+        var rendered: String? = null
+        org.robolectric.shadows.ShadowChoreographer.setPaused(true)
+        activity.setContent {
+            val shot = current
+            key(shot.name) { androidx.compose.runtime.SideEffect { rendered = shot.name }; shot.content() }
+        }
+        val hashes = mutableSetOf<String>()
         for (shot in shots) {
             shot.prepare()
             current = shot
             settle()
+            kotlin.test.assertEquals(shot.name, rendered, "должна выполниться композиция выбранного экрана")
             save(activity, shot.name)
+            val bytes = File(dir, "${shot.name}.png").readBytes()
+            val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+            kotlin.test.assertTrue(hashes.add(hash), "${shot.name}: вместо нового экрана повторён прежний кадр")
         }
     }
 
@@ -148,14 +160,19 @@ class ScreenshotsTest {
         val looper = shadowOf(Looper.getMainLooper())
         val tick = java.util.concurrent.Semaphore(0)
         repeat(seconds * 20) {
+            androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
             looper.idleFor(java.time.Duration.ofMillis(50))
             tick.tryAcquire(50, java.util.concurrent.TimeUnit.MILLISECONDS)
         }
-        looper.idle()
+        looper.idleFor(java.time.Duration.ofMillis(16))
     }
 
     private fun save(activity: ComponentActivity, name: String) {
         val v = activity.window.decorView
+        v.requestLayout()
+        v.measure(android.view.View.MeasureSpec.makeMeasureSpec(v.width, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(v.height, android.view.View.MeasureSpec.EXACTLY))
+        v.layout(0, 0, v.measuredWidth, v.measuredHeight)
         val bmp = Bitmap.createBitmap(v.width, v.height, Bitmap.Config.ARGB_8888)
         v.draw(Canvas(bmp))
         File(dir, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }

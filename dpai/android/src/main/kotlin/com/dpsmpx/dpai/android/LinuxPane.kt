@@ -288,7 +288,7 @@ private fun AndroidSdkDialog(onCancel: () -> Unit, onInstall: (Boolean, Boolean,
                     Text("Принимаю лицензию Android SDK (${AndroidSdk.LICENSE_URL})", style = MaterialTheme.typography.bodySmall)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.Checkbox(ndk, { ndk = it })
+                    androidx.compose.material3.Checkbox(ndk, { ndk = it; if (it) advanced = true })
                     Text("И NDK", style = MaterialTheme.typography.bodySmall)
                 }
                 TextButton(onClick = { advanced = !advanced }) { Text(androidx.compose.ui.res.stringResource(R.string.ui_advanced_component)) }
