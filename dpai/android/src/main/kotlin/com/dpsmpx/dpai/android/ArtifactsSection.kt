@@ -97,6 +97,7 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
         var found by remember { mutableStateOf<TreeArtifacts.Found?>(null) }
         var note by remember { mutableStateOf<String?>(null) }
         var busy by remember { mutableStateOf<String?>(null) }
+        var transfer by remember { mutableStateOf<Pair<Long, Long>?>(null) }
         var version by remember { mutableIntStateOf(0) }
         var details by remember { mutableStateOf<String?>(null) }
         var pending by remember { mutableStateOf<Pair<ApkReview.Review, ApkAction>?>(null) }
@@ -127,13 +128,13 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                 is Outcome.Success -> {
                     found = r.value
                     listedAt = Clock.SYSTEM.now().epochMillis
-                    if (pc) downloaded = r.value.items.mapNotNull { a -> PcArtifacts.local(app, target.id.value, a.path.substringAfterLast('/'), a.size, a.modified)?.let { a.path to it } }.toMap()
+                    if (pc) downloaded = r.value.items.mapNotNull { a -> PcArtifacts.local(app, target.id.value, location.path, a.path, a.size, a.modified)?.let { a.path to it } }.toMap()
                 }
             }
         }
         fun work(label: String, block: suspend () -> String?) {
             if (busy != null) return
-            busy = label
+            busy = label; transfer = null
             scope.launch {
                 try { note = block() } finally { busy = null; version++ }
             }
@@ -234,7 +235,14 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
         Text("Шаблоны: ${patterns.ifEmpty { TreeArtifacts.DEFAULT }.joinToString(" ")} — меняются в профиле выше.", style = MaterialTheme.typography.bodySmall)
         SigningKeysPanel(projectId, projectId, busy == null, keysVersion, onChanged = { keysVersion++ }, onNote = { note = it })
         keyProblem?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-        busy?.let { Text("$it…", style = MaterialTheme.typography.bodySmall) }
+        busy?.let { label ->
+            Text("$label…", style = MaterialTheme.typography.bodySmall)
+            val progress = transfer
+            if (progress != null && progress.second > 0) {
+                androidx.compose.material3.LinearProgressIndicator(progress = { (progress.first.toDouble() / progress.second).toFloat().coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+                Text(androidx.compose.ui.res.stringResource(R.string.progress_bytes, progress.first, progress.second), style = MaterialTheme.typography.labelSmall)
+            } else androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
         note?.let { DiagnosticText(it, style = MaterialTheme.typography.bodyMedium) }
         val list = found
         if (list != null && list.items.isEmpty()) Text("Артефактов по шаблонам нет — соберите проект или поправьте шаблоны.", style = MaterialTheme.typography.bodySmall)
@@ -247,7 +255,13 @@ internal fun ArtifactsSection(model: DemoModel, view: ProjectWorkspaceView, loca
                 Row(Modifier.horizontalScroll(rememberScrollState())) {
                     if (pc) TextButton(enabled = busy == null, onClick = {
                         work("Скачиваю с SSH-target") {
-                            val r = withContext(Dispatchers.IO) { model.pcFiles(target, location.path).then { t -> t.use { PcArtifacts.download(app, it, a.path, target.id.value) } } }
+                            val r = withContext(Dispatchers.IO) { model.pcFiles(target, location.path).then { t -> t.use { PcArtifacts.download(app, it, a.path, target.id.value, location.path, onProgress = run {
+                                var shown = -1L
+                                { have, total -> if (have == total || shown < 0 || have - shown >= 1_048_576) {
+                                    shown = have
+                                    scope.launch { transfer = have to total }
+                                } }
+                            }) } } }
                             when (r) {
                                 is Outcome.Failure -> r.diagnostics.first().message
                                 is Outcome.Success -> {

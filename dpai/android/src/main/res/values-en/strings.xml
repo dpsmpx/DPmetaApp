@@ -1,5 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="progress_bytes">%1$d of %2$d bytes</string>
+    <string name="progress_installed">Already installed</string>
+    <string name="progress_unpack">Unpacking</string>
+    <string name="progress_configure">Configuring build</string>
+
+    <string name="progress_download">Downloading</string>
+    <string name="progress_verify">Verifying checksum</string>
+    <string name="progress_cache">Using saved download</string>
+    <string name="progress_component_ready">Component ready</string>
+    <string name="progress_waiting">Waiting for another installer</string>
+    <string name="progress_task">Task</string>
+    <string name="progress_packages">Packages</string>
+    <string name="progress_count">%1$d of %2$d</string>
+    <string name="progress_percent">%1$d%%</string>
+    <string name="progress_steps">Steps: %1$d of %2$d</string>
+
     <string name="diagnostic_copy">Copy text</string>
     <string name="diagnostic_copy_output">Copy output</string>
     <string name="diagnostic_copy_result">Copy result</string>

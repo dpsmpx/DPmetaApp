@@ -47,14 +47,14 @@ import kotlinx.coroutines.withContext
  * Снимки окружения и откат (D-194; `DPmetaApp:D-171`, шаг 4): каталог `env-snapshots` в
  * данных приложения, последние [EnvSnapshots.KEEP]; снимок — перед каждой командой apk
  * ([LinuxSetup.apk], [LinuxSetup.runSteps]) и сменой настроек; тот же, что последний, — не
- * пишется. Кеш файлов пакетов — по настройке (по умолчанию включён), лишнее в нём убирается.
+ * пишется. Кеш файлов пакетов — по настройке (по умолчанию включён); завершённые
+ * загрузки хранятся до явной очистки (DPmetaApp:D-193).
  */
 internal object EnvSnapshotStore {
     private const val DIR = "env-snapshots"
     private const val PREFS = "dpai.environment"
     private const val CACHE_KEY = "apkCache"
     private val lock = Any()
-    private const val FRESH_MS = 10L * 60 * 1000
 
     fun cacheOn(context: Context): Boolean = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(CACHE_KEY, true)
 
@@ -70,11 +70,11 @@ internal object EnvSnapshotStore {
         (AlpinePackages.read(vfs(context), LinuxSetup.environment(context).rootfs) as? Outcome.Success)?.value
 
     /**
-     * Снять снимок перед правкой [label]; среды нет или состояние то же — ничего. [prune] —
-     * убрать лишнее из кеша: только из долгой работы гостя, когда apk не идёт параллельно
-     * (иначе ушёл бы файл, который apk только что скачал).
+     * Снять снимок перед правкой [label]; среды нет или состояние то же — ничего.
+     * Старые снимки ограничены, скачанные пакеты сохраняются до ручной очистки
+     * (DPmetaApp:D-193), в том числе для последующего восстановления без сети.
      */
-    fun take(context: Context, label: String, prune: Boolean = true): Outcome<Unit> = synchronized(lock) {
+    fun take(context: Context, label: String): Outcome<Unit> = synchronized(lock) {
             val env = LinuxSetup.environment(context)
             if (env.installed() == null) return@synchronized Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, "Linux не установлен: снимок не создан")
             if (cacheOn(context)) env.enableCache()
@@ -88,15 +88,8 @@ internal object EnvSnapshotStore {
                 v.mkdirs(DIR)
                 v.write("$DIR/${snap.id}.json.draft", EnvSnapshots.encode(snap).toByteArray())
                 v.rename("$DIR/${snap.id}.json.draft", "$DIR/${snap.id}.json")
-                val (keep, drop) = EnvSnapshots.prune(all + snap)
+                val (_, drop) = EnvSnapshots.prune(all + snap)
                 for (d in drop) v.delete("$DIR/${d.id}.json")
-                if (prune) {
-                    // Свежие файлы (моложе 10 минут) не трогаются: их может прямо сейчас ставить apk в терминале или ходе ИИ.
-                    val dir = File(File(context.filesDir, env.rootfs), LinuxEnvironment.CACHE_DIR.removePrefix("/"))
-                    val old = at - FRESH_MS
-                    val cache = env.cachedPackages().filter { File(dir, it).lastModified() in 1 until old }.mapNotNull(EnvSnapshots::cacheFile)
-                    env.dropCached(EnvSnapshots.prunableCache(keep, inv, cache).map { it.file })
-                }
             } catch (e: IOException) {
                 AppLogs.info(context.applicationContext, "окружение", "снимок не записан: ${e.message}")
                 return@synchronized Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STORAGE_IO_FAILED, "снимок не записан: ${e.message}")
@@ -130,8 +123,8 @@ internal object EnvSnapshotStore {
     fun rollback(context: Context, jobs: LongJobs, s: EnvSnapshots.Snapshot) {
         val label = "Откат к снимку ${time(s.at)}"
         jobs.start(LongJobs.LINUX_APK, label, excludes = LongJobs.GUEST) {
-            // Без чистки кеша: иначе файлы, нужные только целевому снимку (если он выпадет из хранимых), ушли бы до отката.
-            take(context, "Перед откатом к снимку ${time(s.at)}", prune = false)
+            // Перед откатом сохраняем текущее состояние; скачанные пакеты не вытесняются.
+            take(context, "Перед откатом к снимку ${time(s.at)}")
             EnvSnapshots.unsafe(s)?.let { return@start LongJobs.Done("$label: $it", failed = true) }
             val env = LinuxSetup.environment(context)
             val out = mutableListOf<String>()

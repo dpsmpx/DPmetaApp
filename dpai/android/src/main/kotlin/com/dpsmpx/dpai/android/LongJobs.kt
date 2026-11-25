@@ -27,6 +27,7 @@ class LongJobs(private val scope: CoroutineScope, private val onDone: (String, D
     data class Done(val note: String, val output: List<String> = emptyList(), val failed: Boolean = false)
 
     private val flow = MutableStateFlow<Map<String, Job>>(emptyMap())
+    private val tickets = mutableMapOf<String, Any>()
     val state: StateFlow<Map<String, Job>> = flow
 
     /** Идёт ли хоть одна из [keys] — у экрана, где кнопки делят один процесс (пакеты, установка). */
@@ -41,6 +42,7 @@ class LongJobs(private val scope: CoroutineScope, private val onDone: (String, D
         afterFinished: ((Done) -> Unit)? = null, work: suspend () -> Done): Boolean {
         synchronized(this) {
             if ((excludes + key).any { flow.value[it]?.running == true }) return false
+            tickets[key] = Any()
             flow.value = flow.value + (key to Job(label, running = true))
         }
         scope.launch {
@@ -55,13 +57,33 @@ class LongJobs(private val scope: CoroutineScope, private val onDone: (String, D
                 // Итог принадлежит этому запуску: следующий ещё не может занять ключ.
                 onFinished?.invoke(done)
             } finally {
-                synchronized(this@LongJobs) { flow.value = flow.value + (key to Job(label, running = false, note = done.note, output = done.output)) }
+                synchronized(this@LongJobs) { tickets.remove(key); flow.value = flow.value + (key to Job(label, running = false, note = done.note, output = done.output)) }
             }
             onDone(label, done)
             // Явное продолжение только после публикации итога и освобождения ключа.
             afterFinished?.invoke(done)
         }
         return true
+    }
+
+    /**
+     * Вывод принадлежит конкретному запуску: поздний reader старого процесса
+     * не может поменять прогресс нового. Не журналируем секреты (D-14).
+     */
+    fun guestReporter(): (String) -> Unit {
+        val target = synchronized(this) {
+            val key = GUEST.firstOrNull { flow.value[it]?.running == true } ?: return {}
+            key to tickets.getValue(key)
+        }
+        return { text ->
+            val safe = com.dpsmpx.dpai.core.diagnostics.Redactor.STANDARD.redact(text).take(4000)
+            synchronized(this) {
+                val current = flow.value[target.first]
+                if (tickets[target.first] === target.second && current?.running == true && current.output.lastOrNull() != safe) {
+                    flow.value = flow.value + (target.first to current.copy(output = (current.output + safe).takeLast(40)))
+                }
+            }
+        }
     }
 
     /** Убрать законченный итог с экрана. */

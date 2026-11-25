@@ -32,6 +32,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -212,6 +213,12 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
                 }
             }
         }) { Text(if (kind == ManualProfileKind.CHECK) "Запустить проверку" else "Запустить сборку") }
+        if (state[LongJobs.WORKSPACE_PROFILE]?.running == true) {
+            val total = run.active?.profile?.steps?.size ?: 0
+            val job = state.getValue(LongJobs.WORKSPACE_PROFILE)
+            val label = if (total > 0) stringResource(R.string.progress_steps, run.results.size, total) else job.label
+            TaskProgressView(label, if (run.active != null) run.output else job.output.joinToString("\n"))
+        }
         // Ход по шагам (D-154): ✓ — код 0, ✗ — ошибка, ▶ — идёт, · — ещё не запускался.
         run.active?.profile?.steps?.takeIf { it.size > 1 }?.forEachIndexed { i, s ->
             val r = run.results.firstOrNull { it.step == i + 1 }

@@ -135,3 +135,20 @@ https://repo.maven.apache.org/maven2/ , с POM и транзитивными з�
   https://dl.google.com/android/repository/repository2-3.xml , сверка SHA-1
   манифеста, как у sdkmanager; ставится после принятия лицензии Google
   человеком, отметка — SHA-1 текста лицензии в `licenses/`.
+
+## Распознавание установленного ARM64 SDK (D-193)
+
+Новых зависимостей нет. 25 ноября 2026 повторно потоково проверен уже
+закреплённый архив AndroidIDE build-tools 34.0.4 aarch64:
+https://github.com/AndroidIDEOfficial/androidide-tools/releases/download/v34.0.4/build-tools-34.0.4-aarch64.tar.xz ,
+SHA-256 `4bbbdeee608ff8d3a2c1534d0a5270305a02b1f200403a536c75ac84c41e52fa`.
+Из проверенного архива получены суммы отдельных файлов, закреплённые в
+`AndroidSdk.ARM64_TOOL_SHA256`. Они позволяют распознать инструменты,
+установленные прежним APK, без повторного скачивания архива:
+
+| Файл | SHA-256 |
+|---|---|
+| zipalign | `cb9486230c1589d065eacfd6c294a628eb1f94c941be0a48862562d75a406d57` |
+| aidl | `929ee21b2d2512069434eeda0765b406f497a8a3752905725c169c3e2e97c951` |
+| aapt | `63b8f27a68c0750f475929e3a355641bc5df691bbb66d72c3710b06ddbb07447` |
+| split-select | `8362d094ba93ffb1473035f9dde7645fe9f0247b9627b9ec202d40d7b5d50499` |

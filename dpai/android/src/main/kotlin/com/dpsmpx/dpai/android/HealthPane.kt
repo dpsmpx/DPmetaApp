@@ -138,7 +138,8 @@ internal fun HealthPane(model: DemoModel, nav: HealthNav, onBack: () -> Unit) {
         // Идущая или законченная операция гостя — итог словами, как на экране Linux.
         for (key in listOf(LongJobs.LINUX_INSTALL, LongJobs.LINUX_APK)) {
             state[key]?.let { job ->
-                DiagnosticText(if (job.running) "${job.label}…" else "${job.label}: ${job.note.orEmpty()}", style = MaterialTheme.typography.bodySmall)
+                if (job.running) TaskProgressView(job.label, job.output.joinToString("\n"))
+                else DiagnosticText("${job.label}: ${job.note.orEmpty()}", style = MaterialTheme.typography.bodySmall)
             }
         }
         val f = facts

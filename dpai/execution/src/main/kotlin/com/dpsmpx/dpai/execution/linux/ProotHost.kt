@@ -56,7 +56,12 @@ data class ProotLayout(
  * задаётся каждому процессу гостя поверх [ProcessSpec.environment] — и
  * командам IDE, и терминалу, и ходам ИИ.
  */
-class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) : ProcessHost {
+class ProotHost(
+    private val host: ProcessHost,
+    private val layout: ProotLayout,
+    /** Общие настройки гостя от оболочки; секреты и переменные Android не наследуются. */
+    private val guestEnvironment: (Map<String, String>) -> Map<String, String> = { it },
+) : ProcessHost {
     override fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit): Outcome<RunningProcess> = host.start(wrap(spec), onOutput)
 
     /** Команда хоста, которая запускает [spec] в госте. */
@@ -97,7 +102,7 @@ class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) 
             add(spec.workDir ?: GUEST_HOME)
             addAll(guestCommand)
         }
-        val environment = (spec.environment ?: GUEST_ENVIRONMENT) + mapOf(
+        val environment = guestEnvironment(spec.environment ?: GUEST_ENVIRONMENT) + mapOf(
             "PROOT_LOADER" to layout.loader,
             "PROOT_TMP_DIR" to layout.tmp,
             "ADB_SERVER_SOCKET" to ADB_SERVER_SOCKET,

@@ -531,7 +531,16 @@ class PultRepository(
             }
         }
         val parallel = object : Parallel {
-            override fun <T> all(jobs: List<() -> T>): List<T> = jobs.map { job -> pool.submit<T> { job() } }.map { it.get() }
+            override fun <T> all(jobs: List<() -> T>): List<T> {
+                val counter = Any()
+                var done = 0
+                if (jobs.isNotEmpty()) progress("Источники: 0 из ${jobs.size}")
+                return jobs.map { job -> pool.submit<T> {
+                    try { job() } finally {
+                        synchronized(counter) { done++; progress("Источники: $done из ${jobs.size}") }
+                    }
+                } }.map { it.get() }
+            }
         }
         // Выбранные пользователем репозитории — клонировать или обновить (D-65, D-176).
         val clones = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList())
@@ -545,6 +554,7 @@ class PultRepository(
         progress("Источники…")
         val result = Sync.run(Sync.plan(reg, carried.map { it.project to it.kind }.toSet()), reader, clock, commits, parallel)
         val state = EcosystemState.derive(reg, result.observations, result.failures + cloned.failures + carried, previous, clock.now())
+        progress("Сохранение…")
         store.writeState(state).let { if (it is Outcome.Failure) return it }
         store.appendHistory(state.points()).let { if (it is Outcome.Failure) return it }
         // PR от запусков маршрутов из пульта (F-58; D-161) — по сессиям в журнале действий.

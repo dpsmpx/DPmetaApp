@@ -170,8 +170,7 @@ fun EnvironmentScreen(onBack: () -> Unit, controller: Controller? = null, model:
                 }
                 for (j in listOfNotNull(work)) {
                     if (j.running) {
-                        Text("${j.label}…", style = MaterialTheme.typography.labelSmall)
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        TaskProgressView(j.label, j.output.joinToString("\n"))
                     } else {
                         j.note?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall) }
                     }

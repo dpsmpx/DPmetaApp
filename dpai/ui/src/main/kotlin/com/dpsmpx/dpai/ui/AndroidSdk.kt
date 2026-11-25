@@ -18,6 +18,13 @@ object AndroidSdk {
     /** Дополнительные статические zipalign/aidl/aapt/split-select для Gradle на ARM64. */
     const val ARM64_TOOLS_URL = "https://github.com/AndroidIDEOfficial/androidide-tools/releases/download/v34.0.4/build-tools-34.0.4-aarch64.tar.xz"
     const val ARM64_TOOLS_SHA256 = "4bbbdeee608ff8d3a2c1534d0a5270305a02b1f200403a536c75ac84c41e52fa"
+    /** Суммы файлов из проверенного ARM64_TOOLS_SHA256: узнаём и установку прежней версии приложения. */
+    val ARM64_TOOL_SHA256 = mapOf(
+        "zipalign" to "cb9486230c1589d065eacfd6c294a628eb1f94c941be0a48862562d75a406d57",
+        "aidl" to "929ee21b2d2512069434eeda0765b406f497a8a3752905725c169c3e2e97c951",
+        "aapt" to "63b8f27a68c0750f475929e3a355641bc5df691bbb66d72c3710b06ddbb07447",
+        "split-select" to "8362d094ba93ffb1473035f9dde7645fe9f0247b9627b9ec202d40d7b5d50499",
+    )
     /** cmdline-tools 20.0: sdkmanager запускается напрямую в JVM без загрузки нового Android CLI. */
     const val CMDLINE_VERSION = "20.0"
     const val CMDLINE_URL = "https://dl.google.com/android/repository/commandlinetools-linux-14742923_latest.zip"
@@ -97,10 +104,12 @@ object AndroidSdk {
         // Адрес и сумма идут в скрипт: проверка — и здесь, конструктор Community открыт (проверка PR #190).
         for (c in listOfNotNull(aapt2, ndkCommunity)) require(URL.matches(c.url) && SHA.matches(c.sha256)) { "сборка сообщества — только через community()" }
         val script = buildString {
+            appendLine(ComponentDownloads.shell)
             appendLine("set -e")
             appendLine("test -x '${AndroidNativeJdk.JAVA}' || { echo 'DPAI_NATIVE_JDK_MISSING: установите Android/Bionic JDK через Android SDK'; exit 1; }")
             appendLine("test -r '${AndroidNativeJdk.COMPAT}' || { echo 'DPAI_NATIVE_JDK_COMPAT_MISSING'; exit 1; }")
             appendLine("LD_PRELOAD='${AndroidNativeJdk.COMPAT}'; export LD_PRELOAD")
+            appendLine("LD_LIBRARY_PATH=\${LD_LIBRARY_PATH-'${AndroidNativeJdk.ICU_LIBRARY_PATH}'}; export LD_LIBRARY_PATH")
             appendLine("JAVA_HOME='${AndroidNativeJdk.JAVA_HOME}'; export JAVA_HOME")
             appendLine("PATH='${AndroidNativeJdk.JAVA_HOME}/bin:${AndroidNativeJdk.PREFIX}/bin':\${PATH}; export PATH")
             appendLine("SDK='$HOME'")
@@ -108,9 +117,10 @@ object AndroidSdk {
             appendLine("ARCH=\$(uname -m)")
             appendLine("STAGE=\$(mktemp -d \"\$SDK/install.XXXXXX\")")
             appendLine("trap 'rm -rf \"\$STAGE\"' EXIT")
-            appendLine("if ! test -x \"\$SDK/cmdline-tools/latest/bin/sdkmanager\"; then")
-            appendLine("  curl --fail --location --proto '=https' --connect-timeout 30 --max-time 1800 '$CMDLINE_URL' -o \"\$STAGE/cmdline.zip\"")
+            appendLine("if ! { test -x \"\$SDK/cmdline-tools/latest/bin/sdkmanager\" && grep -Eq '^Pkg[.]Revision[[:space:]]*=[[:space:]]*${CMDLINE_VERSION.replace(".", "[.]")}[[:space:]]*$' \"\$SDK/cmdline-tools/latest/source.properties\"; }; then")
+            appendLine("  dpai_fetch '$CMDLINE_URL' '$CMDLINE_SHA256' \"\$STAGE/cmdline.zip\" cmdline-tools sha256 1800 DPAI_ANDROID_CHECKSUM")
             appendLine("  printf '%s  %s\\n' '$CMDLINE_SHA256' \"\$STAGE/cmdline.zip\" | sha256sum -c - || { echo 'DPAI_ANDROID_CHECKSUM: cmdline-tools'; exit 1; }")
+            appendLine("  echo 'DPAI_PROGRESS unpack cmdline-tools'")
             appendLine("  unzip -q \"\$STAGE/cmdline.zip\" -d \"\$STAGE/x\"")
             appendLine("  mkdir -p \"\$SDK/cmdline-tools\" && rm -rf \"\$SDK/cmdline-tools/latest\" && mv \"\$STAGE/x/cmdline-tools\" \"\$SDK/cmdline-tools/latest\"")
             appendLine("fi")
@@ -119,30 +129,45 @@ object AndroidSdk {
                 appendLine("echo 'DPAI_ANDROID_LICENSE: не принята — sdkmanager ничего не ставит'; exit 3")
             }
             // Только лицензия выбранных SDK-пакетов: --licenses принял бы и чужие/preview.
-            appendLine("printf 'y\\n' | \"\$SDKM\" --sdk_root=\"\$SDK\" '$platform' '$buildTools'")
-            appendLine("mkdir -p /root/.gradle")
-            appendLine("touch /root/.gradle/gradle.properties")
+            appendLine("if test -s \"\$SDK/platforms/${platform.substringAfter(';')}/android.jar\" && test -f \"\$SDK/platforms/${platform.substringAfter(';')}/source.properties\" && test -f \"\$SDK/build-tools/${buildTools.substringAfter(';')}/source.properties\" && test -s \"\$SDK/build-tools/${buildTools.substringAfter(';')}/lib/apksigner.jar\"; then")
+            appendLine("  echo 'DPAI_PROGRESS installed Android-SDK'")
+            appendLine("else")
+            appendLine("  echo 'DPAI_PROGRESS packages Android-SDK'")
+            appendLine("  printf 'y\\n' | \"\$SDKM\" --sdk_root=\"\$SDK\" '$platform' '$buildTools'")
+            appendLine("fi")
+            appendLine("DPAI_GRADLE=\${GRADLE_USER_HOME:-/root/.gradle}")
+            appendLine("mkdir -p \"\$DPAI_GRADLE\"")
+            appendLine("touch \"\$DPAI_GRADLE/gradle.properties\"")
             // Google поставляет linux-x86_64 AAPT2. На arm64 ставим закреплённую
             // статическую сборку AndroidIDE, если автор не указал иную с SHA-256.
             val arm64Aapt2 = aapt2 ?: Community(ARM64_AAPT2_URL, ARM64_AAPT2_SHA256)
             appendLine("if test \"\$ARCH\" = aarch64; then")
-            appendLine("  curl --fail --location --proto '=https' --connect-timeout 30 --max-time 900 '${arm64Aapt2.url}' -o \"\$STAGE/aapt2\"")
+            appendLine("  if ! { test -x \"\$SDK/dpai/aapt2\" && printf '%s  %s\\n' '${arm64Aapt2.sha256}' \"\$SDK/dpai/aapt2\" | sha256sum -c - >/dev/null 2>&1; }; then")
+            appendLine("  dpai_fetch '${arm64Aapt2.url}' '${arm64Aapt2.sha256}' \"\$STAGE/aapt2\" aapt2-arm64 sha256 900 DPAI_ANDROID_CHECKSUM")
             appendLine("  printf '%s  %s\\n' '${arm64Aapt2.sha256}' \"\$STAGE/aapt2\" | sha256sum -c - || { echo 'DPAI_ANDROID_CHECKSUM: aapt2'; exit 1; }")
             appendLine("  mkdir -p \"\$SDK/dpai\" && install -m 755 \"\$STAGE/aapt2\" \"\$SDK/dpai/aapt2\"")
+            appendLine("  else echo 'DPAI_PROGRESS installed aapt2-arm64'; fi")
             appendLine("  \"\$SDK/dpai/aapt2\" version || { echo 'DPAI_ANDROID_AAPT2: не запускается на этом процессоре'; exit 1; }")
-            appendLine("  grep -v '^android.aapt2FromMavenOverride=' /root/.gradle/gradle.properties > \"\$STAGE/gp\" || true")
-            appendLine("  printf 'android.aapt2FromMavenOverride=%s\\n' \"\$SDK/dpai/aapt2\" >> \"\$STAGE/gp\" && mv \"\$STAGE/gp\" /root/.gradle/gradle.properties")
+            appendLine("  grep -v '^android.aapt2FromMavenOverride=' \"\$DPAI_GRADLE/gradle.properties\" > \"\$STAGE/gp\" || true")
+            appendLine("  printf 'android.aapt2FromMavenOverride=%s\\n' \"\$SDK/dpai/aapt2\" >> \"\$STAGE/gp\" && mv \"\$STAGE/gp\" \"\$DPAI_GRADLE/gradle.properties\"")
             // ARM64 aapt2 в optimize возвращает успех без выходного архива: release терял манифест.
-            appendLine("  grep -v '^android.enableResourceOptimizations=' /root/.gradle/gradle.properties > \"\$STAGE/gp\" || true")
-            appendLine("  printf 'android.enableResourceOptimizations=false\\n' >> \"\$STAGE/gp\" && mv \"\$STAGE/gp\" /root/.gradle/gradle.properties")
+            appendLine("  grep -v '^android.enableResourceOptimizations=' \"\$DPAI_GRADLE/gradle.properties\" > \"\$STAGE/gp\" || true")
+            appendLine("  printf 'android.enableResourceOptimizations=false\\n' >> \"\$STAGE/gp\" && mv \"\$STAGE/gp\" \"\$DPAI_GRADLE/gradle.properties\"")
             // AGP также вызывает native zipalign и иногда aidl. Официальные
             // linux-x86_64 инструменты из SDK на телефоне не выполняются.
-            appendLine("  curl --fail --location --proto '=https' --connect-timeout 30 --max-time 1200 '$ARM64_TOOLS_URL' -o \"\$STAGE/arm-tools.tar.xz\"")
+            appendLine("  DPAI_TOOLS_OK=1")
+            for ((tool, digest) in ARM64_TOOL_SHA256) {
+                appendLine("  { test -x \"\$SDK/build-tools/${buildTools.substringAfter(';')}/$tool\" && printf '%s  %s\\n' '$digest' \"\$SDK/build-tools/${buildTools.substringAfter(';')}/$tool\" | sha256sum -c - >/dev/null 2>&1; } || DPAI_TOOLS_OK=0")
+            }
+            appendLine("  if test \"\$DPAI_TOOLS_OK\" != 1; then")
+            appendLine("  dpai_fetch '$ARM64_TOOLS_URL' '$ARM64_TOOLS_SHA256' \"\$STAGE/arm-tools.tar.xz\" build-tools-arm64 sha256 1200 DPAI_ANDROID_CHECKSUM")
             appendLine("  printf '%s  %s\\n' '$ARM64_TOOLS_SHA256' \"\$STAGE/arm-tools.tar.xz\" | sha256sum -c - || { echo 'DPAI_ANDROID_CHECKSUM: arm-tools'; exit 1; }")
+            appendLine("  echo 'DPAI_PROGRESS unpack build-tools-arm64'")
             appendLine("  for DPAI_TOOL in zipalign aidl aapt split-select; do")
             appendLine("    tar -xJf \"\$STAGE/arm-tools.tar.xz\" -C \"\$STAGE\" \"build-tools/34.0.4/\$DPAI_TOOL\" || exit 1")
             appendLine("    install -m 755 \"\$STAGE/build-tools/34.0.4/\$DPAI_TOOL\" \"\$SDK/build-tools/${buildTools.substringAfter(';')}/\$DPAI_TOOL\" || exit 1")
             appendLine("  done")
+            appendLine("  else echo 'DPAI_PROGRESS installed build-tools-arm64'; fi")
             appendLine("  DPAI_ZIP_HELP=\$(\"\$SDK/build-tools/${buildTools.substringAfter(';')}/zipalign\" -h 2>&1 || :)")
             appendLine("  printf '%s\\n' \"\$DPAI_ZIP_HELP\" | grep -qi zipalign || { echo 'DPAI_ANDROID_ZIPALIGN: не запускается на ARM64'; exit 1; }")
             appendLine("fi")
@@ -151,7 +176,7 @@ object AndroidSdk {
                 appendLine("  printf 'y\\n' | \"\$SDKM\" --sdk_root=\"\$SDK\" '$NDK'")
                 if (ndkCommunity != null) {
                     appendLine("else")
-                    appendLine("  curl --fail --location --proto '=https' --connect-timeout 30 --max-time 3600 '${ndkCommunity.url}' -o \"\$STAGE/ndk.pkg\"")
+                    appendLine("  dpai_fetch '${ndkCommunity.url}' '${ndkCommunity.sha256}' \"\$STAGE/ndk.pkg\" NDK sha256 3600 DPAI_ANDROID_CHECKSUM")
                     appendLine("  printf '%s  %s\\n' '${ndkCommunity.sha256}' \"\$STAGE/ndk.pkg\" | sha256sum -c - || { echo 'DPAI_ANDROID_CHECKSUM: ndk'; exit 1; }")
                     appendLine("  mkdir -p \"\$STAGE/n\" && case '${ndkCommunity.url}' in *.zip) unzip -q \"\$STAGE/ndk.pkg\" -d \"\$STAGE/n\" ;; *) tar -xf \"\$STAGE/ndk.pkg\" -C \"\$STAGE/n\" ;; esac")
                     appendLine("  set -- \"\$STAGE\"/n/*; test -d \"\$1\" || { echo 'DPAI_ANDROID_NDK: в архиве нет каталога'; exit 1; }")
@@ -172,6 +197,7 @@ object AndroidSdk {
         return listOf("/bin/sh", "-c", buildString {
             appendLine("set -eu")
             appendLine("if test -r '${AndroidNativeJdk.COMPAT}'; then LD_PRELOAD='${AndroidNativeJdk.COMPAT}'; export LD_PRELOAD; fi")
+            appendLine("LD_LIBRARY_PATH=\${LD_LIBRARY_PATH-'${AndroidNativeJdk.ICU_LIBRARY_PATH}'}; export LD_LIBRARY_PATH")
             appendLine("JAVA_HOME='${AndroidNativeJdk.JAVA_HOME}'; export JAVA_HOME")
             appendLine("PATH='${AndroidNativeJdk.JAVA_HOME}/bin:${AndroidNativeJdk.PREFIX}/bin':\${PATH}; export PATH")
             appendLine("SDK=\${ANDROID_HOME:-'$HOME'}")
@@ -211,6 +237,7 @@ object AndroidSdk {
         }
         if (result["JAVA_HOME"] == AndroidNativeJdk.JAVA_HOME) {
             if ("LD_PRELOAD" !in result && exists(AndroidNativeJdk.COMPAT)) result += "LD_PRELOAD" to AndroidNativeJdk.COMPAT
+            if ("LD_LIBRARY_PATH" !in result) result += "LD_LIBRARY_PATH" to AndroidNativeJdk.ICU_LIBRARY_PATH
             if ("DPAI_ARM64_SYSROOT" !in result && exists("${AndroidNativeJdk.SYSROOT}/usr/lib/aarch64-linux-android/30/crtbegin_so.o"))
                 result += "DPAI_ARM64_SYSROOT" to AndroidNativeJdk.SYSROOT
         }

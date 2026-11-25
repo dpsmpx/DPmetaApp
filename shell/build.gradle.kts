@@ -87,6 +87,12 @@ android {
 
     // R8 (D-156): release — сжатие кода и ресурсов и оптимизация, без обфускации
     // (proguard-rules.pro); debug для apk_debug — без R8, как был.
+    if (!providers.environmentVariable("DPAI_ARM64_SYSROOT").orNull.isNullOrBlank()) {
+        // На телефоне JNI уже собран локальным clang; NDK для упаковки не нужен.
+        packaging.jniLibs.keepDebugSymbols.add("**/*.so")
+        buildTypes.configureEach { ndk.debugSymbolLevel = "NONE" }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -132,7 +138,7 @@ abstract class SharedVerifyAssets : DefaultTask() {
         controller.get().asFile.copyTo(target, overwrite = true)
     }
 }
-val sharedVerifyAssets by tasks.registering(SharedVerifyAssets::class) {
+val sharedVerifyAssets = tasks.register<SharedVerifyAssets>("sharedVerifyAssets") {
     controller.set(rootProject.layout.projectDirectory.file("tools/shared_verify/runtime.py"))
     output.set(layout.buildDirectory.dir("generated/shared-verify-assets"))
 }

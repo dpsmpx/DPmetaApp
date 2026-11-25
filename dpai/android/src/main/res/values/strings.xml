@@ -1,5 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="progress_bytes">%1$d из %2$d байт</string>
+    <string name="progress_installed">Уже установлено</string>
+    <string name="progress_unpack">Распаковка</string>
+    <string name="progress_configure">Настройка сборки</string>
+
+    <string name="progress_download">Скачивание</string>
+    <string name="progress_verify">Проверка суммы</string>
+    <string name="progress_cache">Из сохранённого кэша</string>
+    <string name="progress_component_ready">Компонент готов</string>
+    <string name="progress_waiting">Ожидание другой установки</string>
+    <string name="progress_task">Задача</string>
+    <string name="progress_packages">Пакеты</string>
+    <string name="progress_count">%1$d из %2$d</string>
+    <string name="progress_percent">%1$d%%</string>
+    <string name="progress_steps">Шаги: %1$d из %2$d</string>
+
     <string name="diagnostic_copy">Копировать текст</string>
     <string name="diagnostic_copy_output">Копировать вывод</string>
     <string name="diagnostic_copy_result">Копировать результат</string>

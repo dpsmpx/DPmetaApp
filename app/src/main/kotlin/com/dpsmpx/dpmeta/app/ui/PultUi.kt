@@ -842,7 +842,15 @@ private fun Header(title: String, view: PultView, onSync: () -> Unit, onCancel: 
             }
             }
             // Полоса — того же места и без синхронизации: заголовок не прыгает.
-            if (view.busy) LinearProgressIndicator(Modifier.fillMaxWidth()) else Spacer(Modifier.height(4.dp))
+            if (view.busy) {
+                // Счётчики клонов и источников приходят после их завершения; иначе объём неизвестен.
+                val counts = remember(view.progress) { Regex("([0-9]+) из ([0-9]+)").find(view.progress.orEmpty())?.groupValues }
+                val done = counts?.get(1)?.toIntOrNull()
+                val total = counts?.get(2)?.toIntOrNull()
+                if (done != null && total != null && total > 0 && done in 0..total) {
+                    LinearProgressIndicator(progress = { done.toFloat() / total }, modifier = Modifier.fillMaxWidth())
+                } else LinearProgressIndicator(Modifier.fillMaxWidth())
+            } else Spacer(Modifier.height(4.dp))
         }
     }
 }

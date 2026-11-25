@@ -200,8 +200,7 @@ fun LinuxScreen(onBack: () -> Unit, controller: Controller? = null, model: DemoM
         // Ход — полосой (AI:A-14); итог операции — строкой, пока его не убрали.
         for (j in listOfNotNull(install, work)) {
             if (j.running) {
-                Text("${j.label}…", style = MaterialTheme.typography.labelSmall)
-                androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+                TaskProgressView(j.label, j.output.joinToString("\n"))
             } else {
                 j.note?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall) }
             }

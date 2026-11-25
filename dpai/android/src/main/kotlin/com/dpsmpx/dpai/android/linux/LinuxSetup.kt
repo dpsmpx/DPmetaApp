@@ -206,7 +206,18 @@ object LinuxSetup {
         return Outcome.success(Unit)
     }
 
-    private fun host(context: Context): ProotHost = ProotHost(NativeProcessHost(JniProcesses(), Clock.SYSTEM), layout(context))
+    private fun host(context: Context, report: Boolean = false): ProotHost {
+        val native = NativeProcessHost(JniProcesses(), Clock.SYSTEM)
+        val reporter: (String) -> Unit = if (report) com.dpsmpx.dpai.android.LongJobs.get(context).guestReporter() else { _ -> }
+        val source = if (!report) native else object : com.dpsmpx.dpai.execution.process.ProcessHost {
+            override fun start(spec: ProcessSpec, onOutput: (com.dpsmpx.dpai.execution.process.OutputLine) -> Unit): Outcome<com.dpsmpx.dpai.execution.process.RunningProcess> =
+                native.start(spec) { line ->
+                    reporter(line.text)
+                    onOutput(line)
+                }
+        }
+        return ProotHost(source, layout(context)) { cacheEnvironment(context, it) }
+    }
 
     /** Последняя починка без нажатия (D-158): набор пакетов и время — не чаще [REPAIR_EVERY_MS]. */
     @Volatile
@@ -266,7 +277,7 @@ object LinuxSetup {
         refreshDns(context)
         // Повреждённые прежде пакеты валят итог любой команды (D-158): сначала — их починка.
         if (action != LinuxEnvironment.Apk.REPAIR) (repairBroken(context, force = true) as? Outcome.Failure)?.let { return it }
-        return host(context).run(spec, 15.minutes, maxStdoutChars = 200_000).also { com.dpsmpx.dpai.android.StorageMap.refresh(context) }
+        return host(context, report = true).run(spec, 15.minutes, maxStdoutChars = 200_000).also { com.dpsmpx.dpai.android.StorageMap.refresh(context) }
     }
 
     /**
@@ -299,7 +310,7 @@ object LinuxSetup {
         val err = mutableListOf<String>()
         var cut = false
         for (spec in steps) {
-            val r = when (val one = host(context).run(spec, 20.minutes, maxStdoutChars = 200_000)) {
+            val r = when (val one = host(context, report = true).run(spec, 20.minutes, maxStdoutChars = 200_000)) {
                 is Outcome.Failure -> return one
                 is Outcome.Success -> one.value
             }
@@ -408,9 +419,14 @@ object LinuxSetup {
         })
     }
 
+    private fun cacheEnvironment(context: Context, base: Map<String, String>): Map<String, String> {
+        val rootfs = File(context.filesDir, environment(context).rootfs)
+        return com.dpsmpx.dpai.ui.BuildCaches.environment(base) { File(rootfs, it.removePrefix("/")).isDirectory }
+    }
+
     private fun guestEnvironment(context: Context, base: Map<String, String>): Map<String, String> {
         val rootfs = File(context.filesDir, environment(context).rootfs)
-        return com.dpsmpx.dpai.ui.AndroidSdk.discoveredEnv(base) { File(rootfs, it.removePrefix("/")).isFile }
+        return com.dpsmpx.dpai.ui.AndroidSdk.discoveredEnv(cacheEnvironment(context, base)) { File(rootfs, it.removePrefix("/")).isFile }
     }
 
     /** Завершить оболочку: процесс-лидер сеанса получает HUP, proot с `--kill-on-exit` уносит гостя с собой. */
