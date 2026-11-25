@@ -84,6 +84,20 @@ class AppearanceTest {
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(250))
             assertEquals(revision.value, composed, "композиция должна обновиться после смены оформления")
             val native = Looks.palette(app)
+            // Проверяем настоящий internal-адаптер Android, не расширяя продуктовый API ради теста.
+            val languages = Class.forName("com.dpsmpx.dpai.android.EditorLanguages")
+            val singleton = languages.getField("INSTANCE").get(null)
+            check(languages.getMethod("prepare", android.content.Context::class.java).invoke(singleton, app) is com.dpsmpx.dpai.core.result.Outcome.Success<*>)
+            val scheme = languages.getMethod("scheme", Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType,
+                com.dpsmpx.dpai.ui.AppPalette.Scheme::class.java).invoke(singleton, Looks.dark(app), true, native)
+            // Повторная привязка Sora сбрасывает свои цвета: палитра приложения должна сохраниться.
+            val baseScheme = Class.forName("io.github.rosemoe.sora.widget.schemes.EditorColorScheme")
+            baseScheme.getMethod("applyDefault").invoke(scheme)
+            for ((role, expected) in listOf("WHOLE_BACKGROUND" to native.background, "LINE_NUMBER_BACKGROUND" to native.background,
+                "TEXT_NORMAL" to native.onSurface, "SELECTION_INSERT" to native.primary)) {
+                val id = baseScheme.getField(role).getInt(null)
+                assertEquals(expected.toInt(), baseScheme.getMethod("getColor", Int::class.javaPrimitiveType).invoke(scheme, id))
+            }
             if (theme == UiLook.Theme.BLACK) assertEquals(0xff000000.toInt(), native.background.toInt())
             if (theme == UiLook.Theme.LIGHT) assertEquals(0xffffffff.toInt(), native.background.toInt())
             assertNotEquals(native.background, native.onBackground)

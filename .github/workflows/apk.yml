@@ -52,11 +52,6 @@ jobs:
           "$RUNNER_TEMP/sdktools/cmdline-tools/bin/sdkmanager" --sdk_root="$ANDROID_HOME" \
             --install 'platforms;android-37.0' 'build-tools;36.1.0' \
             'ndk;28.2.13676358' 'cmake;3.22.1'
-      - name: Full repository verification
-        id: strict
-        continue-on-error: true
-        shell: bash
-        run: tools/check/run.sh full --strict --verbose
       - name: Verify interface themes and render screens
         id: interface
         timeout-minutes: 8
@@ -75,6 +70,11 @@ jobs:
           path: build/interface-screenshots/
           if-no-files-found: warn
           retention-days: 14
+      - name: Full repository verification
+        id: strict
+        continue-on-error: true
+        shell: bash
+        run: tools/check/run.sh full --strict --verbose
       - name: Preserve failing JUnit test reports
         if: steps.strict.outcome == 'failure' || steps.interface.outcome == 'failure'
         uses: actions/upload-artifact@v4

@@ -77,7 +77,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         // «Не гасить экран» — настройкой в «⋯» (терминал:A-24), по умолчанию — да.
         if (TerminalView.keepScreenOn(this)) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Отступы системных панелей и клавиатуры — свои: экран терминала сжимается над клавиатурой.
-        // Терминал всегда тёмный: значки панелей — светлые и при светлой теме телефона (терминал:A-20).
+        // До первой отрисовки применяется выбранная тема; applyLook также обновляет значки системных панелей.
         enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
         setContentView(layout().also { themedRoot = it })
         getSharedPreferences(com.dpsmpx.dpai.ui.UiLook.PREFS, MODE_PRIVATE).registerOnSharedPreferenceChangeListener(lookListener)
