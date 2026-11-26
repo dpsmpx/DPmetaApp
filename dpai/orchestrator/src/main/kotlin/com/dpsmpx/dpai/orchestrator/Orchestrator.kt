@@ -158,6 +158,8 @@ data class ProjectConfig(
     val sources: (TaskId) -> List<ContextSource> = { emptyList() },
     /** Деревья — на другом target, чем ход Claude: ход работает с ними по MCP (D-50). `null` — на том же target. */
     val remote: RemoteWorkspace? = null,
+    val contextProfile: () -> Outcome<com.dpsmpx.dpai.contexts.ContextProfile> = { Outcome.success(com.dpsmpx.dpai.contexts.ContextProfile()) },
+    val contextSources: (com.dpsmpx.dpai.tasks.TaskRecord, String?) -> Outcome<List<ContextSource>> = { _, _ -> Outcome.success(emptyList()) },
 )
 
 /**
@@ -1009,10 +1011,11 @@ class Orchestrator(
      */
     private fun contextFailed(task: TaskId, session: SessionId, failure: Outcome.Failure) {
         problems += Diagnostic.of(DiagCode.INTERNAL_ERROR, "контекст задачи $task не собран", causes = failure.errors)
-        if (failure.errors.none { it.code == DiagCode.CONTEXT_BUDGET_EXCEEDED }) return failLaunch(task, session, DiagCode.VALUE_INVALID)
-        failLaunch(task, session, DiagCode.CONTEXT_BUDGET_EXCEEDED, countAttempt = false)
-        commitTasks(tasksLogic.move(tasks, task, TaskState.BLOCKED, clock.now(), DiagCode.CONTEXT_BUDGET_EXCEEDED).valueOrNull().orEmpty())
-        askBlocked(task, null, "правила или требования задачи не влезают в бюджет контекста")
+        val reason = failure.errors.firstOrNull { it.code in setOf(DiagCode.CONTEXT_BUDGET_EXCEEDED, DiagCode.OPERATION_NOT_ALLOWED,
+            DiagCode.STATE_CONFLICT, DiagCode.STORAGE_CORRUPTED) }?.code ?: return failLaunch(task, session, DiagCode.VALUE_INVALID)
+        failLaunch(task, session, reason, countAttempt = false)
+        commitTasks(tasksLogic.move(tasks, task, TaskState.BLOCKED, clock.now(), reason).valueOrNull().orEmpty())
+        askBlocked(task, null, failure.errors.joinToString("; ") { it.message })
     }
 
     /**
@@ -1073,14 +1076,24 @@ class Orchestrator(
 
     /** Контекст хода (`docs/CONTEXT_MODEL.md`, §2; `docs/EFFICIENCY.md`, §3): источники проекта, handoff, итог проверки. */
     private fun context(task: TaskId, objective: String, policy: ContextPolicy, workingSet: Boolean = true): Outcome<ContextBundle> {
+        val profile = when (val r = config.contextProfile()) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
+        if (profile.restricted) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "нативный исполнитель не обеспечивает область ограниченного профиля; используйте API-чат")
+        val record = tasks.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "задача контекста удалена")
+        val path = treePath(task)
+        val head = path?.let { git?.status(it)?.valueOrNull()?.head }
+        val material = when (val r = config.contextSources(record, path)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
+        if (path?.let { git?.status(it)?.valueOrNull()?.head } != head)
+            return Outcome.failure(DiagCode.STATE_CONFLICT, "HEAD изменился во время подготовки контекста")
+        val stamp = ContextSource("context:binding", SourceLevel.PROJECT, config.project, Sensitivity.INTERNAL, Origin.REPOSITORY,
+            "Профиль: ${profile.mode}, ревизия ${profile.revision}. HEAD: ${head ?: "UNKNOWN"}; root: ${path ?: "UNKNOWN"}. Снимок файлов не атомарен.")
         val previous = contextOf[task] ?: storedContext(task)
         val handoff = handoffs.latest(task)
         // Свежая сессия после прошлых (другой слот, перенос, контрольная точка — D-66): переписка и фоновые процессы.
         val fresh = workingSet && sessions.sessions.values.count { it.task == task } > 1
         val carried = if (fresh) listOfNotNull(transcriptSource(task), backgroundSource(task)) else emptyList()
-        val sources = config.sources(task) + listOfNotNull(environment(), handoff?.asSource(workingSet), toolOf[task], codeMapSource(task)) + carried
+        val sources = config.sources(task) + material + stamp + listOfNotNull(environment(), handoff?.asSource(workingSet), toolOf[task], codeMapSource(task)) + carried
         val out = ContextAssembler.assemble(
-            previous?.id ?: ids.next(IdKinds.CONTEXT), task, config.project, objective, handoff?.nextAction, sources, clock.now(), previous, policy,
+            previous?.id ?: ids.next(IdKinds.CONTEXT), task, config.project, objective, handoff?.nextAction, sources, clock.now(), previous, profile.policy(policy),
         )
         val bundle = out.valueOrNull() ?: return out
         if (contextOf[task] !== bundle) saveTaskDocument("context", task, bundle.toJson())
@@ -2930,6 +2943,14 @@ class Orchestrator(
         return Outcome.success({ client.run(com.dpsmpx.dpai.git.GitOp.DIFF_FILES, path,
             listOf(head) + paths.map { "./$it" }, maxStdoutChars = 16_001, allowTruncated = true,
             timeoutOverride = kotlin.time.Duration.parse("20s")) })
+    }
+
+    /** Только штатный LOG без пользовательских argv и внешних обработчиков. */
+    fun workspaceLogProbe(path: String): Outcome<() -> Outcome<com.dpsmpx.dpai.execution.process.Completed>> {
+        when (val allowed = workspaceGitProbe(path)) { is Outcome.Failure -> return allowed; is Outcome.Success -> Unit }
+        val client = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "клиент Git не готов")
+        return Outcome.success({ client.run(com.dpsmpx.dpai.git.GitOp.LOG, path, maxStdoutChars = 12_000,
+            allowTruncated = true, timeoutOverride = kotlin.time.Duration.parse("20s")) })
     }
 
     /**

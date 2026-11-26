@@ -218,9 +218,28 @@ object ContextAssembler {
         if (previous != null && (previous.id != id || previous.task != task || previous.project != project)) {
             return Outcome.failure(DiagCode.VALUE_INVALID, "прежняя версия — другого контекста, задачи или проекта", "context $id")
         }
+        val selected = when (val r = ContextSelector.select(project, candidates, policy, "context $id")) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r
+        }
+        val notes = selected.diagnostics
+        val ordered = selected.value.included
+        val omittedOrdered = selected.value.omitted
+        val candidate = ContextBundle(id, (previous?.version ?: 0) + 1, task, project, objective, nextAction, ordered, previous?.hash, now, omittedOrdered)
+        if (previous != null && previous.contentHash() == candidate.contentHash()) return Outcome.success(previous, notes)
+        return Outcome.success(candidate, notes)
+    }
+}
+
+/** Общий отбор для задач и API-чатов, без вымышленного TaskId (D-224). */
+data class ContextSelection(val included: List<IncludedSource>, val omitted: List<OmittedSource>)
+
+object ContextSelector {
+    fun select(project: ProjectId, candidates: List<ContextSource>, policy: ContextPolicy,
+        subject: String = "context"): Outcome<ContextSelection> {
         val notes = mutableListOf<Diagnostic>()
         val dup = candidates.groupBy { it.key }.filterValues { it.size > 1 }.keys
-        if (dup.isNotEmpty()) return Outcome.failure(DiagCode.VALUE_INVALID, "источники с одинаковым ключом: ${dup.sorted().joinToString()}", "context $id")
+        if (dup.isNotEmpty()) return Outcome.failure(DiagCode.VALUE_INVALID, "источники с одинаковым ключом: ${dup.sorted().joinToString()}", subject)
         var chars = policy.maxChars
         var tokens = policy.maxTokens ?: Long.MAX_VALUE
         val rank = policy.priority.withIndex().associate { (i, l) -> l to i }
@@ -257,17 +276,14 @@ object ContextAssembler {
         }
         if (missing.isNotEmpty()) {
             return Outcome.Failure(
-                notes + Diagnostic.error(DiagCode.CONTEXT_BUDGET_EXCEEDED, "критичное не влезает в бюджет контекста: ${missing.joinToString()}", "context $id"),
+                notes + Diagnostic.error(DiagCode.CONTEXT_BUDGET_EXCEEDED, "критичное не влезает в бюджет контекста: ${missing.joinToString()}", subject),
             )
         }
         if (policy.allowSecret && included.any { it.sensitivity == Sensitivity.SECRET }) {
-            notes += Diagnostic.warning(DiagCode.CONTEXT_SECRET_INCLUDED, "секретные источники включены по разрешению политики", "context $id")
+            notes += Diagnostic.warning(DiagCode.CONTEXT_SECRET_INCLUDED, "секретные источники включены по разрешению политики", subject)
         }
-        val ordered = included.sortedWith(compareBy({ it.level.ordinal }, { it.key }))
-        val omittedOrdered = omitted.sortedWith(compareBy({ it.level.ordinal }, { it.key }))
-        val candidate = ContextBundle(id, (previous?.version ?: 0) + 1, task, project, objective, nextAction, ordered, previous?.hash, now, omittedOrdered)
-        if (previous != null && previous.contentHash() == candidate.contentHash()) return Outcome.success(previous, notes)
-        return Outcome.success(candidate, notes)
+        return Outcome.success(ContextSelection(included.sortedWith(compareBy({ it.level.ordinal }, { it.key })),
+            omitted.sortedWith(compareBy({ it.level.ordinal }, { it.key }))), notes)
     }
 }
 

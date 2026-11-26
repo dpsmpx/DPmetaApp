@@ -31,6 +31,8 @@ data class ChatRequest(
     val system: String? = null,
     val maxOutputTokens: Int? = null,
     val effort: String? = null,
+    val inputBudget: ContextInputBudget? = null,
+    val beforeSend: (() -> Outcome<Unit>)? = null,
 )
 
 /** Инструмент для модели (D-118): имя, когда его звать, схема входа (JSON Schema). */

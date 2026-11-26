@@ -41,6 +41,18 @@ object AutomationJson {
         require(limit >= 2000)
         if (CanonicalJson.write(result).length <= limit) return result
         val hash = JsonString("sha256:" + Hashing.sha256(result).hex)
+        // Пакет контекста нельзя разрезать внутри обязательных правил или выдавать ссылку за доставленный текст.
+        fun protect(value: JsonValue): JsonValue = when (value) {
+            is JsonObject -> if (value["format"] == JsonString("dpai.context-packet")) JsonObject.of(
+                "contextDelivery" to JsonString("UNAVAILABLE"), "packetHash" to JsonString(Hashing.sha256(value).hex),
+                "resultAvailable" to JsonBool(false), "note" to JsonString("пакет не доставлен из-за предела канала; запросите меньшую выборку или откройте полный пакет в IDE"))
+                else JsonObject(value.fields.mapValues { protect(it.value) })
+            is JsonArray -> JsonArray(value.items.map(::protect))
+            else -> value
+        }
+        val protected = protect(result) as JsonObject
+        val protectedEnvelope = JsonObject(protected.fields + mapOf("payloadTruncated" to JsonBool(true), "payloadHash" to hash))
+        if (protected != result && CanonicalJson.write(protectedEnvelope).length <= limit) return protectedEnvelope
         var chars = 2000
         var count = 32
         while (chars >= 64) {
@@ -55,7 +67,7 @@ object AutomationJson {
                 else -> value
             }
             val fixed = result.fields.filterKeys { it in setOf("operationId", "operation", "status", "timestamp", "project", "target") }
-            val smaller = JsonObject((shrink(result) as JsonObject).fields + fixed + mapOf("payloadTruncated" to JsonBool(true), "payloadHash" to hash))
+            val smaller = JsonObject((shrink(protected) as JsonObject).fields + fixed + mapOf("payloadTruncated" to JsonBool(true), "payloadHash" to hash))
             if (CanonicalJson.write(smaller).length <= limit) return smaller
             chars /= 2; count = (count / 2).coerceAtLeast(1)
         }

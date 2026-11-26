@@ -95,7 +95,7 @@ FileTree, прежние Git/историю/BuildProblems и действующ�
 | `notifications` | категории, дедупликация, агрегация, cooldown, deep links, запросы человеку (D-44) | `core` | 12 |
 | `connectors` | GitHub и другие внешние сервисы | `core`, `security` | 15 |
 | `files` | файлы пользователя (D-99): поиск по именам и тексту обходом дерева (D-149); дерево файлов без символьных ссылок, копия папки с двусторонней синхронизацией по базе, текст для правки, вложения в чат | `core`, `storage` | — |
-| `providers` | `AIProvider` (ТЗ, §52): провайдеры моделей по ключу — Anthropic, OpenAI-совместимые, Gemini; сеть со списком адресов `ProviderHosts`; переписка и проектные инструменты API, stateless OpenAI Responses, совместимый Chat Completions и Gemini (D-98, D-214); модели GGUF с Hugging Face — список и скачивание с докачкой и сверкой суммы в приёмник вызывающего, хосты `HuggingFaceHosts` (D-110, D-119) | `core`, `accounts` | — |
+| `providers` | `AIProvider` (ТЗ, §52): провайдеры моделей по ключу — Anthropic, OpenAI-совместимые, Gemini; сеть со списком адресов `ProviderHosts`; переписка и проектные инструменты API, stateless OpenAI Responses, совместимый Chat Completions и Gemini (D-98, D-214); модели GGUF с Hugging Face — список и скачивание с докачкой и сверкой суммы в приёмник вызывающего, хосты `HuggingFaceHosts` (D-110, D-119); бюджет сетевого раунда и привязка проектной переписки к источникам (D-224) | `core`, `accounts`, `contexts` | — |
 | `localai` | LocalAIService (ТЗ, §77, §78; D-105): подсказки модели на этом устройстве или в частной сети — сводка, порядок контекста, классы строк журнала, отклонения, сводка уведомлений, категория задачи; ответ — JSON по схеме, выбор — из данного; ядро и планировщик от неё не зависят | `core`, `providers` | — |
 | `lsp` | клиент языковых служб редактора (D-137): кадры и JSON-RPC протокола LSP поверх потоков, документы с версиями, диагностика, дополнение, переходы, переименование, форматирование, правки текста в UTF-16; команда clangd; процессов не запускает, execution — только для живого теста с настоящим clangd | `core`, `execution` | — |
 | `sync` | облачная синхронизация (ТЗ, §4.1; D-107): копия состояния контура, зашифрованная на устройстве (PBKDF2-HMAC-SHA256, AES-256-GCM), архив с оглавлением и разрешёнными корнями, восстановление при запуске с сохранением прежних данных, клиент Git Data API к `api.github.com` для приватного репозитория; ядро без облака работает | `core`, `storage`, `providers` | — |
@@ -283,7 +283,14 @@ target:     start ─► Detacher ─► supervise ─► процесс; выв
 план назначений), `TaskCodec`; проекция журнала — `orchestrator.tasks`.
 
 Модуль `contexts` (этап 8; `docs/CONTEXT_MODEL.md`, §7):
-`ContextAssembler`, `PromptRenderer`, `Handoff`, `Compaction`.
+`ContextAssembler`, `ContextSelector`, `PromptRenderer`, `Handoff`, `Compaction`.
+D-224 добавляет `ContextProfile`, `ContextBinding`, `ContextPacket` и
+ограниченный `ContextTextCache`. Адаптеры `ContextWorkspace`, `ContextTree`,
+`ContextStore`, `ContextTools` — в `ui`, Android только соединяет их с
+проектом и рисует настройки. Ребро `providers → contexts` нужно для
+единой оценки токенов, бюджета фактического HTTP-тела и валидации ссылок
+переписки; зависимости на Android, FileTree или исполнение у providers
+не появляются. Полный контракт — DPmetaApp:docs/CONTEXT_ENGINEERING.md.
 
 Модуль `git` (этап 9): `Worktrees` (реестр, владелец, события),
 `OverlapPolicy` (ТЗ, §31), `GitCommands` (безопасные команды, одобрения

@@ -257,4 +257,45 @@
     <string name="development_read">Чтение входных данных…</string>
     <string name="development_analyze">Обработка доказательств…</string>
     <string name="development_count_flaky">Нестабильных по отчёту: %1$s</string>
+
+    <!-- Context Engineering, D-224 -->
+    <string name="context_settings">Контекст проекта: %1$s</string>
+    <string name="context_intro">Профиль определяет область чтения и автоматическую выборку. Это не полный доступ чата. Секреты и служебные файлы исключены. Изменение отзывает старый профиль; работающий нативный ход сначала нужно остановить. Пакет и его пропуски можно посмотреть через инструмент «Контекст задачи».</string>
+    <string name="context_minimal">Только перечисленные файлы и применимые правила родителей. Команды и нативный CLI недоступны, поскольку не изолируют эту область.</string>
+    <string name="context_scoped">Перечисленные файлы и каталоги с потомками. Команды и внешние анализаторы, не ограниченные областью, недоступны.</string>
+    <string name="context_project">Чтение всего проекта, автоматическая выборка по задаче. Большие файлы запрашиваются отдельно.</string>
+    <string name="context_full">Чтение всего проекта и контекст по запросу; весь репозиторий автоматически не отправляется. Грант операций API-чата включается отдельно.</string>
+    <string name="context_custom">Свои корни, закреплённые файлы, правила и бюджеты. Точка означает весь проект; без неё действуют ограничения исполнителей.</string>
+    <string name="context_roots">Доступные пути, по одному на строку</string>
+    <string name="context_pinned">Всегда предлагать в контекст: пути файлов</string>
+    <string name="context_rules">Дополнительные обязательные правила: пути файлов</string>
+    <string name="context_chars">Бюджет символов: 1000–1000000</string>
+    <string name="context_tokens">Бюджет токенов (оценка): 500–250000</string>
+    <string name="context_history">Прошлых реплик: 0–100</string>
+    <string name="context_expansion">Разрешить расширение внутри области</string>
+    <string name="context_save">Сохранить профиль контекста</string>
+    <string name="context_reset">Сбросить повреждённую привязку к PROJECT_WIDE</string>
+    <string name="context_saved">Профиль сохранён. Новые ходы используют новую ревизию.</string>
+    <string name="context_invalid">Проверьте бюджеты, уникальные относительные пути и закреплённые файлы. MINIMAL/SCOPED требуют путей вместо точки.</string>
+    <string name="context_scan">Контекст: подбор файлов · %1$d</string>
+    <string name="context_read">Контекст: проверка хешей · %1$d</string>
+    <string name="context_assemble">Контекст: сборка пакета · %1$d</string>
+    <string name="context_task">Контекст задачи</string>
+    <string name="context_symbol">Контекст символа</string>
+    <string name="context_interfaces">Связанные определения LSP</string>
+    <string name="context_constraints">Правила и ограничения архитектуры</string>
+    <string name="context_changes">История изменений Git</string>
+    <string name="context_evidence">Доказательства прошлых проверок</string>
+    <string name="context_expand">Расширить контекст в разрешённой области</string>
+    <string name="context_objective">Цель задачи</string>
+    <string name="context_paths">Пути как JSON-массив</string>
+    <string name="context_acceptance">Критерии приёмки</string>
+    <string name="context_related">Связанные задачи</string>
+    <string name="context_reason">Зачем требуется расширение</string>
+    <string name="context_reload">Перечитать профиль</string>
+    <string name="context_mode_minimal">Минимум</string>
+    <string name="context_mode_scoped">В области</string>
+    <string name="context_mode_project">Весь проект</string>
+    <string name="context_mode_full">Полный контекст</string>
+    <string name="context_mode_custom">Свой</string>
 </resources>

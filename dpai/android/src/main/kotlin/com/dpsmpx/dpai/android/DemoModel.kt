@@ -149,7 +149,17 @@ class DemoModel(
                         if (p != null && context != null) AutomationEvents.observe(context, p.project, events)
                     }, onProblem, inApp, guest, neighbours = neighboursOf(p?.project),
                         automationGate = if (p == null || context == null) com.dpsmpx.dpai.automation.AutomationGate.NONE
-                            else AutomationWorkflows.gate(context, p))
+                            else AutomationWorkflows.gate(context, p),
+                        contextProfile = {
+                            val target = targets.firstOrNull { it.id == p?.target }
+                            if (p == null || context == null || target == null) Outcome.success(com.dpsmpx.dpai.contexts.ContextProfile())
+                            else when (val r = ProjectContexts.store(context, p, target).load()) { is Outcome.Failure -> r; is Outcome.Success -> Outcome.success(r.value.profile) }
+                        },
+                        contextSources = { task, path ->
+                            val target = targets.firstOrNull { it.id == p?.target }
+                            if (p == null || context == null || target == null) Outcome.success(emptyList())
+                            else ProjectContexts.native(context, p, target, task, path)
+                        })
                 }
                 contoursFor = all
                 perf("контуры построены: ${contours.size}", started)
@@ -889,6 +899,26 @@ class DemoModel(
             is Outcome.Success -> workspaceAccess(p, location, false) {
                 Outcome.success(com.dpsmpx.dpai.ui.DevelopmentTools.GitEvidence(status, diff.value.stdout.joinToString("\n"), diff.value.truncated || paths.size > 50))
             }
+        }
+    }
+
+    fun contextGitHistory(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation): Outcome<com.dpsmpx.dpai.core.serialization.JsonObject> {
+        if (!lock.tryLock()) return Outcome.failure(DiagCode.WORKTREE_OWNED, "контроллер занят; повторите чтение истории")
+        val probe = try {
+            val current = controller.project() ?: return Outcome.failure(DiagCode.STATE_CONFLICT, "проект отключён")
+            when (val allowed = workspaceLocked(current).allow(p, location, false)) {
+                is Outcome.Failure -> return allowed
+                is Outcome.Success -> (built as LiveSystem).orchestrator.workspaceLogProbe(location.path)
+            }
+        } finally { lock.unlock() }
+        val result = when (probe) { is Outcome.Failure -> return probe; is Outcome.Success -> probe.value() }
+        return when (result) {
+            is Outcome.Failure -> result
+            is Outcome.Success -> workspaceAccess(p, location, false) { Outcome.success(com.dpsmpx.dpai.core.serialization.JsonObject.of(
+                "basis" to com.dpsmpx.dpai.core.serialization.JsonString("GIT_LOG"),
+                "text" to com.dpsmpx.dpai.core.serialization.JsonString(com.dpsmpx.dpai.core.diagnostics.Redactor.STANDARD.redact(result.value.stdout.joinToString("\n"))),
+                "truncated" to com.dpsmpx.dpai.core.serialization.JsonBool(result.value.truncated),
+                "freshVerification" to com.dpsmpx.dpai.core.serialization.JsonBool(false))) }
         }
     }
 

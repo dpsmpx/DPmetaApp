@@ -119,6 +119,8 @@ class LiveSystem(
     /** Сессии контуров других рабочих проектов на тех же target (D-179). */
     private val neighbours: com.dpsmpx.dpai.orchestrator.NeighbourLoad = com.dpsmpx.dpai.orchestrator.NeighbourLoad.NONE,
     private val automationGate: com.dpsmpx.dpai.automation.AutomationGate = com.dpsmpx.dpai.automation.AutomationGate.NONE,
+    private val contextProfile: () -> Outcome<com.dpsmpx.dpai.contexts.ContextProfile> = { Outcome.success(com.dpsmpx.dpai.contexts.ContextProfile()) },
+    private val contextSources: (com.dpsmpx.dpai.tasks.TaskRecord, String?) -> Outcome<List<com.dpsmpx.dpai.contexts.ContextSource>> = { _, _ -> Outcome.success(emptyList()) },
 ) : ControlView, AutoCloseable {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
@@ -248,7 +250,7 @@ class LiveSystem(
         // регистрируются событиями, чтобы журнал знал их после перезапуска.
         val projectTarget = projectEntry
         val config = if (project != null) {
-            ProjectConfig(project.project, project.repository(), project.worktreeRoot, project.profile(), integrationBranch = project.integrationBranch, remote = remote)
+            ProjectConfig(project.project, project.repository(), project.worktreeRoot, project.profile(), integrationBranch = project.integrationBranch, remote = remote, contextProfile = contextProfile, contextSources = contextSources)
         } else {
             ProjectConfig(HOME_PROJECT, null, null, null)
         }

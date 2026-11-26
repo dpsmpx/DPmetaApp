@@ -18,7 +18,7 @@ class ChatLogTest {
         assertIs<Outcome.Failure>(ChatBook.fromJson(JsonParser().parse(fixture.replace("\"version\":2", "\"version\":1")).valueOrNull()!!))
         val current = conversation.copy(project = project)
         assertEquals(project, ChatBook.fromJson(ChatBook.toJson(listOf(current))).valueOrNull()!!.single().project)
-        val text = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(ChatBook.toJson(listOf(conversation))).replace("\"version\":2", "\"version\":1")
+        val text = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(ChatBook.toJson(listOf(conversation))).replace("\"version\":${ChatBook.VERSION}", "\"version\":1")
         assertEquals(null, ChatBook.fromJson(JsonParser().parse(text).valueOrNull()!!).valueOrNull()!!.single().project)
     }
     private val id = IdKinds.CORRELATION.parse("cor_01J9ZQ3K8M7N6P5R4S3T2V1W0X").valueOrNull()!!
@@ -81,6 +81,37 @@ class ChatLogTest {
         assertEquals(ChatBook.MAX_CONVERSATIONS, back.size)
         val huge = conversation.copy(entries = listOf(ChatEntry(ChatRole.USER, "я".repeat(ChatBook.MAX_TEXT + 10))))
         assertEquals(ChatBook.MAX_TEXT, ChatBook.fromJson(ChatBook.toJson(listOf(huge))).valueOrNull()!!.single().entries.single().text.length)
+    }
+
+    @Test fun v3KeepsSourceStampsButNeverResendsOldScopeOrChangedFileAnswers() {
+        val scope = "a".repeat(64)
+        val hash = "b".repeat(64)
+        val stamped = conversation.copy(entries = listOf(
+            ChatEntry(ChatRole.USER, "исходная цель", contextScope = scope),
+            ChatEntry(ChatRole.ASSISTANT, "актуальный ответ", contextScope = scope, contextSources = mapOf("src/A.kt" to hash)),
+            ChatEntry(ChatRole.ASSISTANT, "старая область", contextScope = "c".repeat(64)),
+            ChatEntry(ChatRole.ASSISTANT, "непроверенная старая история"),
+            ChatEntry(ChatRole.USER, "продолжай")))
+        val back = ChatBook.fromJson(ChatBook.toJson(listOf(stamped))).valueOrNull()!!.single()
+        assertEquals(stamped, back)
+        val messages = back.projectContext(scope, mapOf("src/A.kt" to hash), false, 20, 10_000, 5000).valueOrNull()!!
+        assertEquals(listOf("исходная цель", "актуальный ответ", "продолжай"), messages.messages.map { it.text })
+        val changed = back.projectContext(scope, mapOf("src/A.kt" to "d".repeat(64)), false, 20, 10_000, 5000).valueOrNull()!!
+        assertEquals(listOf("исходная цель", "продолжай"), changed.messages.map { it.text })
+        assertEquals(5, back.entries.size, "видимая история сохранена")
+        val oldVersion = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(ChatBook.toJson(listOf(stamped))).replace("\"version\":3", "\"version\":2")
+        assertIs<Outcome.Failure>(ChatBook.fromJson(JsonParser().parse(oldVersion).valueOrNull()!!))
+    }
+
+    @Test fun projectHistoryKeepsCurrentRequestAndExplainsBudgetOmissions() {
+        val scope = "a".repeat(64)
+        val c = conversation.copy(entries = listOf(ChatEntry(ChatRole.USER, "первая цель", contextScope = scope)) +
+            List(20) { ChatEntry(ChatRole.ASSISTANT, "прошлый ответ $it", contextScope = scope) } + ChatEntry(ChatRole.USER, "текущий запрос"))
+        val result = c.projectContext(scope, emptyMap(), false, 2, 1000, 500).valueOrNull()!!
+        assertEquals(listOf("первая цель", "прошлый ответ 19", "текущий запрос"), result.messages.map { it.text })
+        assertEquals(19, result.omitted)
+        assertEquals(listOf("текущий запрос"), c.projectContext(scope, emptyMap(), false, 0, 1000, 500).valueOrNull()!!.messages.map { it.text })
+        assertEquals(DiagCode.CONTEXT_BUDGET_EXCEEDED, c.projectContext(scope, emptyMap(), false, 2, 2, 500).errors.single().code)
     }
 
     @Test

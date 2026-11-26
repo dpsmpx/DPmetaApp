@@ -6,5 +6,6 @@ plugins {
 dependencies {
     api(project(":core"))
     api(project(":accounts"))
+    api(project(":contexts"))
     testImplementation(project(":testkit"))
 }

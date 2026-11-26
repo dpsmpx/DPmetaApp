@@ -270,4 +270,45 @@
     <string name="development_read">Reading input…</string>
     <string name="development_analyze">Processing evidence…</string>
     <string name="development_count_flaky">Reported flaky: %1$s</string>
+
+    <!-- Context Engineering, D-224 -->
+    <string name="context_settings">Project context: %1$s</string>
+    <string name="context_intro">The profile controls readable scope and automatic selection. It is separate from chat action grants. Secrets and service files are excluded. Changes revoke the old profile; stop active native tasks first. Use Task context to preview the packet and omissions.</string>
+    <string name="context_minimal">Only listed files and applicable ancestor rules. Commands and native CLI are unavailable because they cannot isolate this scope.</string>
+    <string name="context_scoped">Listed files and directories with descendants. Commands and external analyzers that cannot enforce the scope are unavailable.</string>
+    <string name="context_project">Project-wide reads with task-based automatic selection. Request large files separately.</string>
+    <string name="context_full">Project-wide reads and on-demand context; the entire repository is never sent automatically. Chat action grants are enabled separately.</string>
+    <string name="context_custom">Custom roots, pinned files, rules and budgets. A dot means the entire project; otherwise executor restrictions apply.</string>
+    <string name="context_roots">Readable paths, one per line</string>
+    <string name="context_pinned">Always propose these file paths</string>
+    <string name="context_rules">Additional required rule file paths</string>
+    <string name="context_chars">Character budget: 1000–1000000</string>
+    <string name="context_tokens">Estimated token budget: 500–250000</string>
+    <string name="context_history">Previous messages: 0–100</string>
+    <string name="context_expansion">Allow expansion within scope</string>
+    <string name="context_save">Save context profile</string>
+    <string name="context_reset">Reset damaged binding to PROJECT_WIDE</string>
+    <string name="context_saved">Profile saved. New turns use the new revision.</string>
+    <string name="context_invalid">Check budgets, unique relative paths and pinned files. MINIMAL/SCOPED require paths instead of a dot.</string>
+    <string name="context_scan">Context: selecting files · %1$d</string>
+    <string name="context_read">Context: checking hashes · %1$d</string>
+    <string name="context_assemble">Context: assembling packet · %1$d</string>
+    <string name="context_task">Task context</string>
+    <string name="context_symbol">Symbol context</string>
+    <string name="context_interfaces">Related LSP definitions</string>
+    <string name="context_constraints">Architecture rules and constraints</string>
+    <string name="context_changes">Git change history</string>
+    <string name="context_evidence">Previous test evidence</string>
+    <string name="context_expand">Expand context within scope</string>
+    <string name="context_objective">Task objective</string>
+    <string name="context_paths">Paths as a JSON array</string>
+    <string name="context_acceptance">Acceptance criteria</string>
+    <string name="context_related">Related tasks</string>
+    <string name="context_reason">Why expansion is needed</string>
+    <string name="context_reload">Reload profile</string>
+    <string name="context_mode_minimal">Minimal</string>
+    <string name="context_mode_scoped">Scoped</string>
+    <string name="context_mode_project">Project wide</string>
+    <string name="context_mode_full">Full context</string>
+    <string name="context_mode_custom">Custom</string>
 </resources>

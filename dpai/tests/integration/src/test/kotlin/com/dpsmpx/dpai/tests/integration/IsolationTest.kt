@@ -51,7 +51,8 @@ class IsolationTest {
     private val target: ExecutionTargetId = ids.next(IdKinds.TARGET)
     private val host = MockAgentHost(clock, IdGenerator(clock, RandomSource.seeded(402)))
 
-    private fun project(name: String, secret: String, configDir: String): Pair<Orchestrator, EventJournal> {
+    private fun project(name: String, secret: String, configDir: String,
+        contextProfile: com.dpsmpx.dpai.contexts.ContextProfile = com.dpsmpx.dpai.contexts.ContextProfile()): Pair<Orchestrator, EventJournal> {
         val logic = Accounts()
         var acc = AccountsState.EMPTY
         val sub = ids.next(IdKinds.SUBSCRIPTION)
@@ -67,11 +68,23 @@ class IsolationTest {
         val profile = VerificationProfile(projectId, mapOf(VerifyLevel.NORMAL to listOf(VerifyStep("ок", listOf("ok")))))
         val o = Orchestrator(
             clock, ids, RandomSource.seeded(name.length.toLong()), journal, runner,
-            ProjectConfig(projectId, null, dir.toString(), profile, sources = { sources }),
+            ProjectConfig(projectId, null, dir.toString(), profile, sources = { sources }, contextProfile = { Outcome.success(contextProfile) }),
             listOf(TargetSlot(target, emptySet(), 2)), null,
             Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock), acc,
         )
         return o to journal
+    }
+
+    @Test fun restrictedContextBlocksNativeLaunchWithoutAttemptsOrRetryLoop() {
+        val profile = com.dpsmpx.dpai.contexts.ContextProfile(com.dpsmpx.dpai.contexts.ContextMode.SCOPED, listOf("src"))
+        val (o, _) = project("scope", "local", "/home/dev/.claude-scope", profile)
+        val task = o.addTask("ограниченная задача", "исправить src").valueOrNull()!!
+        repeat(6) { o.tick() }
+        val record = o.tasks.tasks.getValue(task)
+        assertEquals(TaskState.BLOCKED, record.state)
+        assertEquals(0, record.retries)
+        assertTrue(host.runIds().isEmpty(), "нативный CLI не запускался")
+        assertTrue(o.problems.any { d -> d.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED })
     }
 
     @Test

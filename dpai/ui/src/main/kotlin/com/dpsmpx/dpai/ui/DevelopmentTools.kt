@@ -216,7 +216,7 @@ object DevelopmentTools {
     }
 
     fun safePath(path: String): Boolean = path.length <= 1000 && FileNames.pathValid(path) && !ApiProjectFiles.hidden(path)
-    private fun reportPath(path: String): Boolean = path.length <= 1000 && FileNames.pathValid(path) &&
+    fun reportPath(path: String): Boolean = path.length <= 1000 && FileNames.pathValid(path) &&
         !ApiProjectFiles.hidden(path.split('/').joinToString("/") { if (it.equals("build", true)) "report-output" else it })
     private fun <T> unsupported(): Outcome<T> = Outcome.failure(DiagCode.UNSUPPORTED, "источник инструмента не подключён")
     private fun <T> invalid(): Outcome<T> = Outcome.failure(DiagCode.VALUE_INVALID, "неверные параметры инструмента разработки")

@@ -93,6 +93,7 @@ internal fun AutomationCenter(project: ProjectEntry, onOpen: (AutomationDefiniti
                 FilterChip(selected = filter == null, onClick = { filter = null }, label = { Text(stringResource(R.string.automation_all)) })
                 for (s in AutomationSource.entries) FilterChip(selected = filter == s.name, onClick = { filter = s.name }, label = { Text(sourceTitle(s)) })
             }
+            ContextSettingsSection(project, running) { refresh++ }
             snapshot?.let { WorkflowSection(project, it, running) { refresh++ } }
         }
         work?.let { job -> item {
@@ -146,7 +147,7 @@ private fun AutomationDetails(d: AutomationDefinition, running: Boolean, onRun: 
     if (d.dependencies.isNotEmpty()) Text(stringResource(R.string.automation_dependencies, d.dependencies.joinToString()), style = MaterialTheme.typography.bodySmall)
     d.timeoutSeconds?.let { Text(stringResource(R.string.automation_timeout, it), style = MaterialTheme.typography.bodySmall) }
     for (p in d.parameters) {
-        val title = if (d.source == AutomationSource.DEVELOPMENT) stringResource(developmentParameter(p.name)) + if (p.required) " *" else "" else p.title
+        val title = if (d.source == AutomationSource.DEVELOPMENT) stringResource(if (d.id.startsWith("context.")) contextParameter(p.name) else developmentParameter(p.name)) + if (p.required) " *" else "" else p.title
         if (p.text) {
             OutlinedTextField(values[p.name].orEmpty(), { values = values + (p.name to it.take(p.maxLength)) },
                 enabled = !running, label = { Text(title) }, modifier = Modifier.fillMaxWidth())
@@ -182,10 +183,22 @@ private fun automationTitle(d: AutomationDefinition): String = when (d.id) {
     "environment.probe" -> stringResource(R.string.env_tools_probe)
     "environment.command" -> stringResource(R.string.env_linux_command)
     "environment.android_sdk" -> stringResource(R.string.env_sdk_install)
-    else -> when (d.source) {
+    else -> if (d.id.startsWith("context.")) stringResource(contextTitle(d.id)) else when (d.source) {
         AutomationSource.DEVELOPMENT -> stringResource(developmentTitle(d.id))
         AutomationSource.VERIFICATION -> stringResource(R.string.automation_verification_level, d.title)
         AutomationSource.ENVIRONMENT -> stringResource(R.string.automation_package_operation, d.title)
         else -> d.title
     }
+}
+
+private fun contextTitle(id: String): Int = when (id) {
+    "context.task" -> R.string.context_task; "context.symbol" -> R.string.context_symbol
+    "context.interfaces" -> R.string.context_interfaces; "context.constraints" -> R.string.context_constraints
+    "context.history" -> R.string.context_changes; "context.evidence" -> R.string.context_evidence
+    else -> R.string.context_expand
+}
+private fun contextParameter(name: String): Int = when (name) {
+    "objective" -> R.string.context_objective; "paths" -> R.string.context_paths; "acceptance" -> R.string.context_acceptance
+    "related" -> R.string.context_related; "reason" -> R.string.context_reason
+    else -> developmentParameter(name)
 }

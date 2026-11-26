@@ -17,6 +17,31 @@ class ProjectToolsProviderTest {
     private fun openAi(message: String, reason: String, usage: String = "") = """{"choices":[{"message":$message,"finish_reason":"$reason"}]$usage}"""
     private fun call(id: String, name: String, args: String = "{}") = """{"id":"$id","type":"function","function":{"name":"$name","arguments":"$args"}}"""
 
+    @Test fun everyProviderRefusesAnOversizedContextBeforeNetworkOrTools() {
+        val profiles = listOf(profile(ProviderKind.OPENAI_COMPATIBLE, "https://api.openai.com/v1"),
+            profile(ProviderKind.OPENAI_COMPATIBLE, "https://api.deepseek.com/v1"), profile(ProviderKind.GEMINI, "https://generativelanguage.googleapis.com/v1beta"),
+            profile(ProviderKind.ANTHROPIC, "https://api.anthropic.com/v1"))
+        for (profile in profiles) {
+            val transport = FakeTransport { error("budget must fail before network") }
+            val provider = Providers.of(profile, Secret(sampleKey("api")), transport) as ToolChat
+            val result = provider.chatWithTools(request.copy(inputBudget = ContextInputBudget(100, 50)), tools, Cancel(), {}) { error("tool must not run") }
+            assertEquals(com.dpsmpx.dpai.core.diagnostics.DiagCode.CONTEXT_BUDGET_EXCEEDED, result.errors.single().code)
+            assertEquals(0, transport.calls.size)
+        }
+    }
+
+    @Test fun scopeRevocationStopsTheNextToolRoundWithoutSendingItsOutput() {
+        val t = FakeTransport { FakeReply(200, openAi("""{"role":"assistant","tool_calls":[${call("a", "read_file")}]}""", "tool_calls")) }
+        val provider = Providers.of(profile(ProviderKind.OPENAI_COMPATIBLE, "https://api.deepseek.com/v1"), null, t) as ToolChat
+        var revoked = false
+        val request = request.copy(beforeSend = {
+            if (revoked) Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, "profile revoked") else Outcome.success(Unit)
+        })
+        val result = provider.chatWithTools(request, tools, Cancel(), {}) { revoked = true; ToolResult("must not leave device after revocation") }
+        assertEquals(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, result.errors.single().code)
+        assertEquals(1, t.calls.size)
+    }
+
     @Test fun officialOpenAiUsesStatelessResponsesAndPreservesReasoningItems() {
         var round = 0
         val first = """{"status":"completed","output":[{"type":"reasoning","id":"r1","summary":[],"encrypted_content":"opaque"},{"type":"function_call","id":"fc1","call_id":"c1","name":"read_file","arguments":"{}"}],"usage":{"input_tokens":3,"output_tokens":1}}"""
