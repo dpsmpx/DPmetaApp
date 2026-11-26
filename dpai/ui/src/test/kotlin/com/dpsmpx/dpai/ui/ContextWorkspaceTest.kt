@@ -136,4 +136,17 @@ class ContextWorkspaceTest {
         assertTrue(ContextAccess.tool(ContextProfile(), "manual.check"))
     }
 
+    @Test fun legacyWorkflowRevisionsSurviveUntilExplicitContextConfigurationAndAllAdaptersAgree() {
+        val definitions = DevelopmentTools.describe("/project", com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX, true)
+        val legacy = ContextSettings(ContextProfile(), null, false)
+        assertEquals(definitions, ContextAccess.bind(definitions, legacy), "прежние сценарии не требуют пересоздания после обновления")
+        val configured = ContextSettings(ContextProfile(), "stored", true)
+        val editor = ContextAccess.bind(definitions, configured)
+        val nativeGate = ContextAccess.bind(definitions, configured)
+        assertEquals(editor.map { it.revision }, nativeGate.map { it.revision })
+        assertNotEquals(definitions.first().revision, editor.first().revision, "явная смена политики отзывает прежний снимок")
+        val scoped = ContextAccess.bind(definitions, configured.copy(profile = ContextProfile(ContextMode.SCOPED, listOf("src"))))
+        assertFalse(scoped.first { it.id == "development.symbol" }.available)
+    }
+
 }

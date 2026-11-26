@@ -268,16 +268,8 @@ internal object ApiProjectRuntime {
                 is Outcome.Failure -> return@workspaceAccess r
                 is Outcome.Success -> r.value
             }
-            for (i in entries.indices) {
-                val entry = entries[i]
-                entries[i] = entry.copy(sourceHash = Hashing.sha256(entry.sourceHash + ":" + contextProfile.revision).hex,
-                    available = entry.available && entry.id !in disabled && !restrictedTool(entry.id),
-                    steps = if (contextProfile.restricted && restrictedTool(entry.id)) emptyList() else entry.steps,
-                    parameters = if (contextProfile.restricted && restrictedTool(entry.id)) emptyList() else entry.parameters,
-                    reason = if (entry.id in disabled) "инструмент выключен пользователем" else if (restrictedTool(entry.id))
-                        "исполнитель не обеспечивает ограниченную область контекста; используйте файловые инструменты или измените профиль вручную" else entry.reason)
-            }
-            when (val r = com.dpsmpx.dpai.ui.AutomationContext.bind(entries, project, target)) {
+            val bound = com.dpsmpx.dpai.ui.ContextAccess.bind(entries, settings, disabled)
+            when (val r = com.dpsmpx.dpai.ui.AutomationContext.bind(bound, project, target)) {
                 is Outcome.Failure -> r
                 is Outcome.Success -> Outcome.success(Snapshot(r.value, profiles, choices, issues, contextRevision, disabled))
             }
@@ -286,6 +278,7 @@ internal object ApiProjectRuntime {
         fun invokeAutomation(id: String, revision: String, parameters: JsonObject, cancel: Cancel, actor: ActorKind = ActorKind.AGENT,
             confirmProfiles: Boolean = false, workflow: Boolean = false): Outcome<JsonObject> {
             val snapshot = when (val r = catalog()) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
+            if (id !in com.dpsmpx.dpai.ui.ContextTools.ids) incompleteEvidence = true
             var evidence: JsonObject? = null
             val result = snapshot.catalog.invoke(id, revision, parameters, Provenance(Actor(actor, "Automation"), projectId = project.project,
                 repositoryId = project.repository, executionTargetId = project.target), IdGenerator(Clock.SYSTEM, RandomSource.secure()), Clock.SYSTEM,
@@ -578,6 +571,7 @@ internal object ApiProjectRuntime {
                     }
                 }
                 "run_workflow" -> {
+                    incompleteEvidence = true
                     val id = (call.input["id"] as? JsonString)?.value
                     val revision = (call.input["revision"] as? JsonString)?.value
                     if (call.input.fields.keys != setOf("id", "revision") || id == null || revision == null)

@@ -36,10 +36,9 @@ internal object AutomationWorkflows {
         val revision = com.dpsmpx.dpai.ui.AutomationContext.revision(project, target)
         fun catalog(): Outcome<com.dpsmpx.dpai.automation.AutomationCatalog> {
             val disabled = when (val r = s.disabled()) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
-            return com.dpsmpx.dpai.ui.AutomationContext.bind(
-                com.dpsmpx.dpai.automation.VerificationAutomations.describe(project.profile(), project.root).map {
-                    if (it.id in disabled) it.copy(available = false, reason = "инструмент выключен пользователем") else it
-                }, project, target)
+            val settings = when (val r = ProjectContexts.store(context, project, target).load()) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
+            return com.dpsmpx.dpai.ui.AutomationContext.bind(com.dpsmpx.dpai.ui.ContextAccess.bind(
+                com.dpsmpx.dpai.automation.VerificationAutomations.describe(project.profile(), project.root), settings, disabled), project, target)
         }
         for (w in wanted) {
             if (w.context != revision) return@AutomationGate Outcome.failure(DiagCode.STATE_CONFLICT, "сценарий устарел: " + w.id)
