@@ -81,6 +81,18 @@ class ContextWorkspaceTest {
         assertIs<Outcome.Failure>(reports.write("module/build/results.xml", byteArrayOf()))
     }
 
+    @Test fun settingsCorpusAcceptsV1AndRejectsUnknownVersionWithoutWidening() {
+        val vfs = NioVfs(dir.resolve("private"))
+        val documents = com.dpsmpx.dpai.storage.document.DocumentStore(vfs, "settings")
+        val store = ContextStore(vfs, "target:root")
+        for (name in listOf("project-v1", "invalid-version")) {
+            val raw = javaClass.getResource("/context-settings/$name.json")!!.readText()
+            val obj = com.dpsmpx.dpai.core.serialization.JsonParser().parse(raw).valueOrNull() as JsonObject
+            assertTrue(documents.write("profile", obj).isSuccess)
+            assertEquals(name == "project-v1", store.load().isSuccess, name)
+        }
+    }
+
     @Test fun settingsUseCasBindingAndNeverRecoverAnOlderPermissionImplicitly() {
         val vfs = NioVfs(dir.resolve("private"))
         val store = ContextStore(vfs, "target:root")

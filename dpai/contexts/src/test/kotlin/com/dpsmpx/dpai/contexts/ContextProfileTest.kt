@@ -29,6 +29,14 @@ class ContextProfileTest {
         }
     }
 
+    @Test fun packetV1CorpusFixesTheStructuredWireContract() {
+        val raw = javaClass.getResource("/context-packet/minimal-v1.json")!!.readText()
+        val expected = com.dpsmpx.dpai.core.serialization.JsonParser().parse(raw).valueOrNull()
+        val p = ContextProfile()
+        val source = ContextSource("request:objective", SourceLevel.TASK, project, Sensitivity.INTERNAL, Origin.USER, "цель")
+        assertEquals(expected, ContextPacket.build(binding(p), p, listOf(source), emptyList()).valueOrNull()!!.json())
+    }
+
     @Test fun profilesSeparateExactFilesDirectoriesAndGlobalReads() {
         val minimal = ContextProfile(ContextMode.MINIMAL, listOf("src/A.kt"))
         val scoped = ContextProfile(ContextMode.SCOPED, listOf("src"))

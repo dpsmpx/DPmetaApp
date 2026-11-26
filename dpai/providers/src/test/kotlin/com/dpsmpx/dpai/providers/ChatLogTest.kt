@@ -83,6 +83,15 @@ class ChatLogTest {
         assertEquals(ChatBook.MAX_TEXT, ChatBook.fromJson(ChatBook.toJson(listOf(huge))).valueOrNull()!!.single().entries.single().text.length)
     }
 
+    @Test fun contextV3CorpusKeepsProvenanceAndRejectsExternalPaths() {
+        fun read(name: String) = ChatBook.fromJson(JsonParser().parse(javaClass.getResource("/api-chats/$name.json")!!.readText()).valueOrNull()!!)
+        val entry = read("project-context-v3").valueOrNull()!!.single().entries.single()
+        assertEquals("a".repeat(64), entry.contextScope)
+        assertEquals(mapOf("src/A.kt" to "b".repeat(64), "AGENTS.md" to null), entry.contextSources)
+        assertEquals("c".repeat(40), entry.contextCommit)
+        assertIs<Outcome.Failure>(read("invalid-context-path-v3"))
+    }
+
     @Test fun v3KeepsSourceStampsButNeverResendsOldScopeOrChangedFileAnswers() {
         val scope = "a".repeat(64)
         val hash = "b".repeat(64)
