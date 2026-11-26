@@ -178,7 +178,18 @@ internal object ApiProjectRuntime {
                 (it.contextScope == contextScope || !settings.explicit && it.contextScope == null) }?.text
             objective = if (firstGoal != null && firstGoal != text && contextProfile.historyMessages > 0)
                 "Исходная цель человека:\n$firstGoal\nТекущий запрос:\n$text" else text
-            val packet = when (val r = contextPacket(objective, emptyList())) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
+            val baseSystem = system()
+            val toolArray = JsonArray(tools.map { JsonObject.of("name" to JsonString(it.name), "description" to JsonString(it.description), "schema" to it.inputSchema) })
+            val toolText = CanonicalJson.write(toolArray)
+            val requiredMessages = listOfNotNull(firstGoal?.takeIf { it != text && contextProfile.historyMessages > 0 }, text)
+            val service = CanonicalJson.write(JsonObject.of("system" to JsonString(baseSystem), "tools" to toolArray,
+                "messages" to JsonArray(requiredMessages.map(::JsonString))))
+            val packetChars = contextProfile.maxChars - service.length - 2000
+            val packetTokens = contextProfile.maxTokens - com.dpsmpx.dpai.contexts.TokenEstimate.of(service) - 1000
+            if (packetChars < 1000 || packetTokens < 500) return Outcome.failure(DiagCode.CONTEXT_BUDGET_EXCEEDED,
+                "обязательные инструкции, схемы и запрос человека превышают бюджет контекста")
+            val budget = com.dpsmpx.dpai.contexts.ContextPolicy(maxChars = packetChars, maxTokens = packetTokens)
+            val packet = when (val r = contextPacket(objective, emptyList(), budget = budget)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
             observed.putAll(packet.stamps)
             val oldPaths = conversation.entries.filter { it.contextScope == contextScope }.takeLast(contextProfile.historyMessages + 1)
                 .flatMap { it.contextSources.keys }.distinct().filter { contextProfile.canRead(it) && com.dpsmpx.dpai.ui.DevelopmentTools.safePath(it) }.take(256)
@@ -189,11 +200,11 @@ internal object ApiProjectRuntime {
                 workspace.hashes(listOf(path)).valueOrNull()?.let(hashes::putAll)
             }
             hashes.putAll(observed)
-            val system = system() + "\n" + packet.render()
-            val toolText = CanonicalJson.write(JsonArray(tools.map { JsonObject.of("name" to JsonString(it.name), "description" to JsonString(it.description), "schema" to it.inputSchema) }))
+            val system = baseSystem + "\n" + packet.render()
+            val wireSystem = CanonicalJson.write(JsonString(system))
             val history = when (val r = conversation.projectContext(contextScope, hashes, !settings.explicit, contextProfile.historyMessages,
-                contextProfile.maxChars - system.length - toolText.length - 2000,
-                contextProfile.maxTokens - com.dpsmpx.dpai.contexts.TokenEstimate.of(system + toolText) - 1000, contextCommit)) {
+                contextProfile.maxChars - wireSystem.length - toolText.length - 2000,
+                contextProfile.maxTokens - com.dpsmpx.dpai.contexts.TokenEstimate.of(wireSystem + toolText) - 1000, contextCommit)) {
                 is Outcome.Failure -> return r; is Outcome.Success -> r.value
             }
             val prompt = system + "\nИстория: исключено реплик (область, устаревание, бюджет или промежуточные данные): ${history.omitted}. При необходимости спроси человека о пропущенном."
@@ -201,7 +212,7 @@ internal object ApiProjectRuntime {
             packet.selection.included.forEach { sent[it.key] = it.hash.hex }
             return Outcome.success(history.messages to prompt)
         }
-        private fun contextPacket(text: String, paths: List<String>, reason: String? = null, acceptance: String? = null, related: String? = null, fromModel: Boolean = false): Outcome<com.dpsmpx.dpai.contexts.ContextPacket> {
+        private fun contextPacket(text: String, paths: List<String>, reason: String? = null, acceptance: String? = null, related: String? = null, fromModel: Boolean = false, budget: com.dpsmpx.dpai.contexts.ContextPolicy? = null): Outcome<com.dpsmpx.dpai.contexts.ContextPacket> {
             val head = model.developmentGit(project, location, false).valueOrNull()?.status?.head
             val history = if (contextProfile.restricted) "История общих команд недоступна в ограниченной области; укажите разрешённый файл отчёта." else
                 model.manualHistory(project).valueOrNull()?.takeLast(4)?.let { CanonicalJson.write(com.dpsmpx.dpai.ui.DevelopmentDiagnostics.history(it)) }
@@ -209,7 +220,7 @@ internal object ApiProjectRuntime {
             val packet = when (val r = workspace.packet(text, paths, reason,
                 acceptance ?: "Критерии приёмки явно не указаны; исходный запрос человека сохранён целиком.",
                 related ?: "Связанные задачи не указаны.", history, head,
-                if (fromModel) com.dpsmpx.dpai.security.Origin.MODEL else com.dpsmpx.dpai.security.Origin.USER)) { is Outcome.Failure -> return r; is Outcome.Success -> r }
+                if (fromModel) com.dpsmpx.dpai.security.Origin.MODEL else com.dpsmpx.dpai.security.Origin.USER, budget)) { is Outcome.Failure -> return r; is Outcome.Success -> r }
             val hashes = when (val r = workspace.hashes(packet.value.stamps.keys)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
             val currentHead = model.developmentGit(project, location, false).valueOrNull()?.status?.head
             if (!packet.value.fresh(binding, hashes, currentHead)) return Outcome.failure(DiagCode.STATE_CONFLICT, "файлы изменились при сборке пакета контекста")
@@ -354,10 +365,9 @@ internal object ApiProjectRuntime {
                     val body = packet.json()
                     val sources = (body["sources"] as JsonArray).items.map { raw ->
                         val source = raw as JsonObject
-                        val key = (source["key"] as JsonString).value
                         val hash = (source["sha256"] as JsonString).value
-                        val reused = trackingSent && sent[key] == hash
-                        if (reused) JsonObject(source.fields - "text" + ("reusedInThisRequest" to JsonBool(true))) else source
+                        val sameAs = if (trackingSent) sent.entries.firstOrNull { it.value == hash }?.key else null
+                        if (sameAs != null) JsonObject(source.fields - "text" + mapOf("reusedInThisRequest" to JsonBool(true), "sameAs" to JsonString(sameAs))) else source
                     }
                     val delivered = JsonObject(body.fields + mapOf("sources" to JsonArray(sources), "fingerprint" to JsonString(packet.fingerprint)))
                     if (trackingSent && CanonicalJson.write(delivered).length > 26_000)

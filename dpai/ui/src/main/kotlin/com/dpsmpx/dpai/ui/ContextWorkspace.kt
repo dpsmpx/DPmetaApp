@@ -54,7 +54,7 @@ class ContextWorkspace(private val source: FileTree, val profile: ContextProfile
     fun packet(objective: String, paths: List<String> = emptyList(), reason: String? = null,
         acceptance: String = "Критерии не указаны; уточнить до изменения поведения.",
         related: String = "Связанные задачи не указаны.", evidence: String = "Свежие проверки и известные ошибки не представлены.",
-        commit: String? = null, requestOrigin: Origin = Origin.USER): Outcome<ContextPacket> {
+        commit: String? = null, requestOrigin: Origin = Origin.USER, budget: com.dpsmpx.dpai.contexts.ContextPolicy? = null): Outcome<ContextPacket> {
         if (objective.isBlank() || objective.length > 200_000 || paths.size > 20 || paths.distinct().size != paths.size ||
             paths.any { !profile.canRead(it) || !DevelopmentTools.safePath(it) }) return invalid()
         if (reason != null && (!profile.allowExpansion || reason.isBlank() || reason.length > 1000))
@@ -86,7 +86,9 @@ class ContextWorkspace(private val source: FileTree, val profile: ContextProfile
             if (stop()) return interrupted()
             val rule = path in rules
             if (!DevelopmentTools.safePath(path) || !profile.canRead(path)) return invalid()
-            val key = "file:" + if (path.length <= 290) path else Hashing.sha256(path).hex
+            // Порядок важности внутри CODE: закреплённое → явно запрошенное → ранжированные кандидаты.
+            val key = "file:" + (if (rule) "" else selected.indexOf(path).toString().padStart(3, '0') + ":") +
+                if (path.length <= 285) path else Hashing.sha256(path).hex
             if (path !in scanned.files) {
                 // Отсутствие проверяем по родителю: неполный обход не превращает неизвестное в отсутствие.
                 val entries = tree.list(FileNames.parent(path))
@@ -113,7 +115,7 @@ class ContextWorkspace(private val source: FileTree, val profile: ContextProfile
             add(key, if (rule) SourceLevel.PROJECT else SourceLevel.CODE, text)
         }
         progress("assemble", refs.size)
-        return ContextPacket.build(binding, profile, sources, refs, incomplete, commit)
+        return ContextPacket.build(binding, profile, sources, refs, incomplete, commit, budget)
     }
 
     fun hashes(paths: Collection<String>): Outcome<Map<String, String?>> {

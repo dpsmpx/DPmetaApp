@@ -105,4 +105,15 @@ class ContextProfileTest {
         assertEquals(null, cache.get(b, h), "вытеснен пределом символов")
     }
 
+    @Test fun serviceReservationReducesOptionalSelectionWithoutChangingProfileIdentity() {
+        val profile = ContextProfile(maxChars = 16000, maxTokens = 8000)
+        val packet = ContextPacket.build(binding(profile), profile, listOf(source("rules", "правило", SourceLevel.PROJECT),
+            source("large", "x".repeat(7000))), emptyList(), budget = ContextPolicy(maxChars = 6000, maxTokens = 3000)).valueOrNull()!!
+        assertEquals(profile.revision, packet.binding.profile)
+        assertTrue(packet.selection.omitted.any { it.key == "large" })
+        val wire = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(json(packet.render()))
+        assertTrue(wire.length <= 6000); assertTrue(TokenEstimate.of(wire) <= 3000)
+        assertTrue(packet.selection.included.any { it.key == "rules" })
+    }
+
 }

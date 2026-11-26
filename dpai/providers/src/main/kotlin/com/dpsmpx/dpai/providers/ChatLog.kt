@@ -59,20 +59,22 @@ data class Conversation(val id: CorrelationId, val profile: AccountId, val title
         }
         val latest = candidates.lastOrNull()?.takeIf { it.value.role == ChatRole.USER }
             ?: return Outcome.failure(DiagCode.VALUE_INVALID, "нет текущего запроса человека")
-        var chars = maxChars - latest.value.text.length
-        var tokens = maxTokens - com.dpsmpx.dpai.contexts.TokenEstimate.of(latest.value.text)
+        fun wire(e: ChatEntry) = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(JsonString(e.text))
+        var chars = maxChars - wire(latest.value).length
+        var tokens = maxTokens - com.dpsmpx.dpai.contexts.TokenEstimate.of(wire(latest.value))
         if (chars < 0 || tokens < 0) return Outcome.failure(DiagCode.CONTEXT_BUDGET_EXCEEDED, "текущий запрос человека превышает бюджет контекста")
         val chosen = linkedSetOf(latest)
         // Первая цель + недавнее; старые промежуточные ответы остаются в журнале, не в каждом запросе.
         val first = candidates.firstOrNull { it.value.role == ChatRole.USER }
-        if (maxMessages > 0 && first != null && first != latest && (first.value.text.length > chars ||
-            com.dpsmpx.dpai.contexts.TokenEstimate.of(first.value.text) > tokens))
+        if (maxMessages > 0 && first != null && first != latest && (wire(first.value).length > chars ||
+            com.dpsmpx.dpai.contexts.TokenEstimate.of(wire(first.value)) > tokens))
             return Outcome.failure(DiagCode.CONTEXT_BUDGET_EXCEEDED, "исходная цель вместе с текущим запросом не помещается в бюджет")
         val ranked = listOfNotNull(first?.takeIf { maxMessages > 0 }) + candidates.dropLast(1).takeLast(maxMessages).asReversed()
         for (e in ranked.distinct()) {
             if (e in chosen || chosen.size >= maxMessages + 1) continue
-            val cost = com.dpsmpx.dpai.contexts.TokenEstimate.of(e.value.text)
-            if (e.value.text.length <= chars && cost <= tokens) { chosen += e; chars -= e.value.text.length; tokens -= cost }
+            val text = wire(e.value)
+            val cost = com.dpsmpx.dpai.contexts.TokenEstimate.of(text)
+            if (text.length <= chars && cost <= tokens) { chosen += e; chars -= text.length; tokens -= cost }
         }
         val messages = chosen.sortedBy { it.index }.map { ChatMessage(it.value.role, it.value.text) }
         return Outcome.success(ProjectChatContext(messages, entries.size - messages.size))

@@ -49,11 +49,22 @@ class ContextWorkspaceTest {
     @Test fun fullAccessDoesNotDumpRepositoryAndExpansionCannotWidenHumanScope() {
         repeat(10) { file("unrelated/File$it.kt", "unrelated body $it") }
         val full = workspace(ContextProfile(ContextMode.FULL_ACCESS)).packet("unknown objective").valueOrNull()!!
-        assertTrue(full.selection.included.none { it.key.startsWith("file:unrelated/") })
+        assertTrue(full.references.none { it.path.startsWith("unrelated/") })
         val p = ContextProfile(ContextMode.SCOPED, listOf("src"), allowExpansion = false)
         file("src/A.kt", "class A")
         assertIs<Outcome.Failure>(workspace(p).packet("A", listOf("src/A.kt"), reason = "нужно определение"))
         assertIs<Outcome.Failure>(workspace(p.copy(allowExpansion = true)).packet("A", listOf("unrelated/File1.kt"), reason = "нужно"))
+    }
+
+    @Test fun explicitFileWinsOverLexicallyEarlierAutomaticCandidatesUnderWireBudget() {
+        file("a/Shared.kt", "A".repeat(3000))
+        file("z/Shared.kt", "Z".repeat(3000))
+        val packet = workspace().packet("Shared", listOf("z/Shared.kt"),
+            budget = com.dpsmpx.dpai.contexts.ContextPolicy(maxChars = 7500, maxTokens = 4000)).valueOrNull()!!
+        val requested = packet.references.single { it.path == "z/Shared.kt" }.key
+        val automatic = packet.references.single { it.path == "a/Shared.kt" }.key
+        assertTrue(packet.selection.included.any { it.key == requested }, "явный запрос важнее алфавита пути")
+        assertTrue(packet.selection.omitted.any { it.key == automatic })
     }
 
     @Test fun unchangedMtimeCannotMakeChangedBytesFreshAndUnreadRulesFailClosed() {

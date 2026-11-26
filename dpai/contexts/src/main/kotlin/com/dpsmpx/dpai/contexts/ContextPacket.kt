@@ -71,27 +71,29 @@ data class ContextPacket(val binding: ContextBinding, val selection: ContextSele
 
     companion object {
         fun build(binding: ContextBinding, profile: ContextProfile, sources: List<ContextSource>, references: List<ContextReference>,
-            incomplete: List<String> = emptyList(), commit: String? = null): Outcome<ContextPacket> {
+            incomplete: List<String> = emptyList(), commit: String? = null, budget: ContextPolicy? = null): Outcome<ContextPacket> {
             if (binding.profile != profile.revision || references.map { it.path }.distinct().size != references.size || references.any { !profile.canRead(it.path) })
                 return Outcome.failure(DiagCode.STATE_CONFLICT, "привязка профиля или ссылки контекста не согласованы")
-            var policy = profile.policy()
+            val policy = profile.policy(budget)
+            val excluded = linkedSetOf<String>()
+            val limitChars = policy.maxChars
+            val limitTokens = policy.maxTokens ?: profile.maxTokens
             // Резервируем фактический манифест, включая JSON-экранирование и ссылки.
             repeat(sources.size + 2) {
-                val selected = when (val r = ContextSelector.select(binding.project, sources, policy)) {
+                val selected = when (val r = ContextSelector.select(binding.project, sources.filter { it.key !in excluded }, policy)) {
                     is Outcome.Failure -> return r
                     is Outcome.Success -> r
                 }
-                val packet = ContextPacket(binding, selected.value, references.sortedBy { it.path }, incomplete.distinct().sorted(), commit)
-                val prompt = packet.render()
-                val extraChars = (prompt.length - profile.maxChars).coerceAtLeast(0)
-                val extraTokens = (TokenEstimate.of(prompt) - profile.maxTokens).coerceAtLeast(0)
+                val forced = sources.filter { it.key in excluded }.map { OmittedSource(it.key, it.level, TokenEstimate.of(it.content)) }
+                val selection = selected.value.copy(omitted = (selected.value.omitted + forced).sortedWith(compareBy({ it.level.ordinal }, { it.key })))
+                val packet = ContextPacket(binding, selection, references.sortedBy { it.path }, incomplete.distinct().sorted(), commit)
+                val prompt = CanonicalJson.write(json(packet.render()))
+                val extraChars = (prompt.length - limitChars).coerceAtLeast(0)
+                val extraTokens = (TokenEstimate.of(prompt) - limitTokens).coerceAtLeast(0)
                 if (extraChars == 0 && extraTokens == 0L) return Outcome.success(packet, selected.diagnostics)
                 val optional = selected.value.included.filter { it.level !in policy.critical }
                 if (optional.isEmpty()) return Outcome.failure(DiagCode.CONTEXT_BUDGET_EXCEEDED, "обязательные источники вместе с манифестом превышают бюджет")
-                val chars = policy.maxChars - maxOf(extraChars, optional.last().content.length)
-                val tokens = (policy.maxTokens ?: profile.maxTokens) - maxOf(extraTokens, TokenEstimate.of(optional.last().content))
-                if (chars < 1000 || tokens < 500) return Outcome.failure(DiagCode.CONTEXT_BUDGET_EXCEEDED, "манифест и критичные источники превышают бюджет")
-                policy = policy.copy(maxChars = chars, maxTokens = tokens)
+                excluded += optional.last().key
             }
             return Outcome.failure(DiagCode.CONTEXT_BUDGET_EXCEEDED, "пакет не помещается в бюджет")
         }
