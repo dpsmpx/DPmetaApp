@@ -70,6 +70,18 @@ class ContextWorkspaceTest {
         assertIs<Outcome.Failure>(w.packet("A"))
     }
 
+    @Test fun freshnessKeepsExistingTwoMiBFilePagingCapability() {
+        val text = "class LargeFile {}\n".repeat(20_000)
+        file("src/LargeFile.kt", text)
+        val w = workspace()
+        val page = ApiTextPage.read(w.tree, "src/LargeFile.kt", 0).valueOrNull()!!
+        assertEquals(json(false), page["complete"])
+        val expected = Hashing.sha256(text).hex
+        assertEquals(json(expected), page["sha256"])
+        assertEquals(expected, w.hashes(listOf("src/LargeFile.kt")).valueOrNull()!!["src/LargeFile.kt"],
+            "предел автовыборки 256 КиБ не блокирует прежнее чтение больших файлов")
+    }
+
     @Test fun reportsKeepExistingBuildOutputCapabilityWithoutOpeningSecrets() {
         file("module/build/results.xml", "<testsuite/>")
         file("module/build/.env", "secret")

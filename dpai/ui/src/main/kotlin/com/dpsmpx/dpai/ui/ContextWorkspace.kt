@@ -118,9 +118,11 @@ class ContextWorkspace(private val source: FileTree, val profile: ContextProfile
 
     fun hashes(paths: Collection<String>): Outcome<Map<String, String?>> {
         val out = linkedMapOf<String, String?>()
+        val begun = clock.monotonicNanos()
         for (path in paths) {
-            if (cancelled()) return interrupted()
-            val bytes = tree.read(path, 256 * 1024)
+            if (cancelled() || clock.monotonicNanos() - begun >= 60_000_000_000L) return interrupted()
+            // Автовыборка уже, чем штатное постраничное чтение: его прежний предел 2 МиБ сохраняется.
+            val bytes = tree.read(path, TextFile.MAX_EDIT_BYTES)
             if (bytes is Outcome.Success) out[path] = Hashing.sha256(bytes.value).hex else {
                 val entries = tree.list(FileNames.parent(path))
                 if (entries is Outcome.Success && entries.value.none { it.name == FileNames.name(path) }) out[path] = null

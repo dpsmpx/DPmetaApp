@@ -155,7 +155,7 @@ internal object ApiProjectRuntime {
                     else Outcome.failure(DiagCode.STATE_CONFLICT, "профиль контекста изменён; начните новый ход")
             }
         }
-        fun authorizeContext(): Outcome<Unit> = current()
+        fun authorizeContext(): Outcome<Unit> = if (trackingSent) validateEvidence() else current()
         private fun restrictedTool(id: String) = !com.dpsmpx.dpai.ui.ContextAccess.tool(contextProfile, id)
         fun validateEvidence(): Outcome<Unit> {
             (current() as? Outcome.Failure)?.let { return it }
@@ -183,7 +183,11 @@ internal object ApiProjectRuntime {
             val oldPaths = conversation.entries.filter { it.contextScope == contextScope }.takeLast(contextProfile.historyMessages + 1)
                 .flatMap { it.contextSources.keys }.distinct().filter { contextProfile.canRead(it) && com.dpsmpx.dpai.ui.DevelopmentTools.safePath(it) }.take(256)
             val hashes = linkedMapOf<String, String?>()
-            for (path in oldPaths) workspace.hashes(listOf(path)).valueOrNull()?.let(hashes::putAll)
+            val historyStarted = Clock.SYSTEM.monotonicNanos()
+            for (path in oldPaths) {
+                if (Clock.SYSTEM.monotonicNanos() - historyStarted > 10_000_000_000L || cancel.cancelled) break
+                workspace.hashes(listOf(path)).valueOrNull()?.let(hashes::putAll)
+            }
             hashes.putAll(observed)
             val system = system() + "\n" + packet.render()
             val toolText = CanonicalJson.write(JsonArray(tools.map { JsonObject.of("name" to JsonString(it.name), "description" to JsonString(it.description), "schema" to it.inputSchema) }))
@@ -547,6 +551,7 @@ internal object ApiProjectRuntime {
             if (contextProfile.restricted && call.name in setOf("run_profile", "run_workflow", "list_workflows"))
                 return ToolResult("команды и сценарии не обеспечивают ограничение файловой области", true)
             if (call.name in setOf("write_file", "replace_text", "delete_file")) {
+                (authorizeContext() as? Outcome.Failure)?.let { return ToolResult(it.errors.joinToString("; ") { d -> d.message }, true) }
                 val inputHash = Hashing.sha256(call.input).hex
                 val checked = AutomationWorkflows.dispatch(context, project.project,
                     com.dpsmpx.dpai.automation.AutomationTrigger.BEFORE_ACCEPT,
@@ -643,7 +648,7 @@ internal object ApiProjectRuntime {
             val captured = java.util.concurrent.atomic.AtomicReference<Pair<LongJobs.Done, ManualRunView>?>(null)
             if (!model.startManualProfile(project, location, chosen, choices = if (saveChoices) values else null, cancelled = { cancel.cancelled || profileCancel.cancelled }, expectedTarget = targetSnapshot,
                     onPrepared = { prepared.set(it.id) }, environment = environment, beforePrepare = {
-                        when (val access = current()) {
+                        when (val access = authorizeContext()) {
                             is Outcome.Failure -> access
                             is Outcome.Success -> if (contextProfile.restricted) Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "команда не обеспечивает область контекста")
                                 else authorize?.invoke() ?: Outcome.success(Unit)
