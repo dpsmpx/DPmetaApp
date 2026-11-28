@@ -14,7 +14,7 @@ plugins {
 }
 
 // Отдельный режим для Linux студии: sysroot r28c с заголовками и библиотеками API 30.
-val deviceSysroot = providers.environmentVariable("DPAI_ARM64_SYSROOT").orNull
+val deviceSysroot = providers.environmentVariable("DPAI_ARM64_SYSROOT").orNull?.takeIf { it.isNotBlank() }
 
 android {
     namespace = "com.dpsmpx.dpai.android"
@@ -39,7 +39,11 @@ android {
 
     // Процессы и псевдотерминал Linux-среды — свой код на C через JNI (D-75, шаг 3; D-17: NDK — только здесь).
     // Версия NDK — та, что AGP берёт по умолчанию: NDK r28 выравнивает библиотеки под страницы 16 КБ.
-    ndkVersion = "28.2.13676358"
+    if (deviceSysroot == null) ndkVersion = "28.2.13676358" else {
+        // JNI собирается нашим Android sysroot, NDK на телефоне не установлен.
+        // Сохраняем готовые .so, не запускаем strip из отсутствующего x86_64 NDK.
+        packaging.jniLibs.keepDebugSymbols.add("**/*.so")
+    }
     if (deviceSysroot == null) externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")

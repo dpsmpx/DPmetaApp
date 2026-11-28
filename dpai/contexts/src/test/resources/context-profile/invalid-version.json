@@ -1,0 +1,17 @@
+{
+  "format": "dpai.context-profile",
+  "version": 2,
+  "mode": "PROJECT_WIDE",
+  "roots": [
+    "."
+  ],
+  "pinned": [],
+  "constraints": [
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
+  "maxChars": 64000,
+  "maxTokens": 16000,
+  "allowExpansion": true,
+  "historyMessages": 20
+}

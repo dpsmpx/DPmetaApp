@@ -79,7 +79,7 @@ class EnvUpdatesJob : JobService() {
             val app = context.applicationContext
             val env = LinuxSetup.environment(app)
             if (env.installed() == null) return null
-            if (notify && LongJobs.GUEST.any { LongJobs.get(app).state.value[it]?.running == true }) return null
+            if (notify && LongJobs.get(app).busyGuest()) return null
             val vfs = NioVfs(app.filesDir.toPath())
             val inv = (AlpinePackages.read(vfs, env.rootfs) as? Outcome.Success)?.value ?: return null
             val packages = when (LinuxSetup.apkReadOnly(app, LinuxEnvironment.Apk.UPDATE)) {

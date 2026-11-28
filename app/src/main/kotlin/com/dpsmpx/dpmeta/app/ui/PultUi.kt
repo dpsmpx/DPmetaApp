@@ -1,6 +1,8 @@
 package com.dpsmpx.dpmeta.app.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -78,6 +80,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
@@ -142,6 +145,9 @@ object Tokens {
  * акцент из «Оформления» (файл `UiLook.PREFS`, общий с «AI»); «Обои телефона» —
  * цвета обоев (Android 12+). Тема, размер текста и плотность — оттуда же.
  */
+private val LocalPultLook = androidx.compose.runtime.staticCompositionLocalOf { com.dpsmpx.dpai.ui.UiLook() }
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun PultTheme(content: @Composable () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
@@ -153,16 +159,12 @@ fun PultTheme(content: @Composable () -> Unit) {
         prefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
-    val dark = when (look.theme) {
-        com.dpsmpx.dpai.ui.UiLook.Theme.SYSTEM -> isSystemInDarkTheme()
-        com.dpsmpx.dpai.ui.UiLook.Theme.LIGHT -> false
-        com.dpsmpx.dpai.ui.UiLook.Theme.DARK -> true
-    }
-    val scheme = if (look.accent == com.dpsmpx.dpai.ui.UiLook.Accent.WALLPAPER && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-        if (dark) androidx.compose.material3.dynamicDarkColorScheme(context) else androidx.compose.material3.dynamicLightColorScheme(context)
-    } else {
-        schemeOf(com.dpsmpx.dpai.ui.UiLook.scheme(look.accent, dark), dark)
-    }
+    val dark = look.dark(isSystemInDarkTheme())
+    val adaptive = if (look.accent == com.dpsmpx.dpai.ui.UiLook.Accent.WALLPAPER && android.os.Build.VERSION.SDK_INT >= 31) {
+        val dynamic = if (dark) androidx.compose.material3.dynamicDarkColorScheme(context) else androidx.compose.material3.dynamicLightColorScheme(context)
+        dynamic.primary.toArgb().toLong() and 0xffffffffL
+    } else null
+    val scheme = schemeOf(look.palette(dark, adaptive), dark)
     val view = androidx.compose.ui.platform.LocalView.current
     if (!view.isInEditMode) {
         androidx.compose.runtime.SideEffect {
@@ -178,7 +180,14 @@ fun PultTheme(content: @Composable () -> Unit) {
     val d = androidx.compose.ui.platform.LocalDensity.current
     // Плотность сжимает dp, размер текста — только sp (как у «AI»).
     val density = androidx.compose.ui.unit.Density(d.density * look.density.factor, d.fontScale * look.text.factor / look.density.factor)
-    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides density) {
+    val original = androidx.compose.ui.platform.LocalViewConfiguration.current
+    val minimum = (48f / look.density.factor).dp
+    val config = remember(original, minimum) { object : androidx.compose.ui.platform.ViewConfiguration by original {
+        override val minimumTouchTargetSize = androidx.compose.ui.unit.DpSize(minimum, minimum)
+    } }
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides density,
+        LocalPultLook provides look, androidx.compose.ui.platform.LocalViewConfiguration provides config,
+        androidx.compose.material3.LocalMinimumInteractiveComponentSize provides minimum) {
         MaterialTheme(colorScheme = scheme, content = content)
     }
 }
@@ -574,7 +583,7 @@ fun PultApp(
     val aiNotices by com.dpsmpx.dpmeta.app.data.PultAlerts.aiEvents.collectAsState()
     LaunchedEffect(Unit) { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.dpsmpx.dpmeta.app.data.PultAlerts.refreshAi(context) } }
     val shownFeed = remember(view.feed, aiNotices) { (view.feed + com.dpsmpx.dpmeta.app.screens.AiNotices.feed(aiNotices)).sortedByDescending { it.at.epochMillis } }
-    var tab by rememberSaveable { mutableStateOf(if (view.hasToken) Section.SUMMARY else Section.MORE) }
+    var tab by rememberSaveable { mutableStateOf(if (view.hasToken) Section.SUMMARY else Section.DEV) }
     var devTab by rememberSaveable { mutableStateOf(DevTab.PROJECTS) }
     var pullFilter by rememberSaveable { mutableStateOf(Screens.PullFilter.WAITING) }
     var pullProject by rememberSaveable { mutableStateOf<String?>(null) }
@@ -842,7 +851,15 @@ private fun Header(title: String, view: PultView, onSync: () -> Unit, onCancel: 
             }
             }
             // Полоса — того же места и без синхронизации: заголовок не прыгает.
-            if (view.busy) LinearProgressIndicator(Modifier.fillMaxWidth()) else Spacer(Modifier.height(4.dp))
+            if (view.busy) {
+                // Счётчики клонов и источников приходят после их завершения; иначе объём неизвестен.
+                val counts = remember(view.progress) { Regex("([0-9]+) из ([0-9]+)").find(view.progress.orEmpty())?.groupValues }
+                val done = counts?.get(1)?.toIntOrNull()
+                val total = counts?.get(2)?.toIntOrNull()
+                if (done != null && total != null && total > 0 && done in 0..total) {
+                    LinearProgressIndicator(progress = { done.toFloat() / total }, modifier = Modifier.fillMaxWidth())
+                } else LinearProgressIndicator(Modifier.fillMaxWidth())
+            } else Spacer(Modifier.height(4.dp))
         }
     }
 }
@@ -1016,7 +1033,7 @@ private fun Projects(groups: List<Screens.Group>, selected: String? = null, onOp
                         }
                         Text(
                             r.working,
-                            color = if (r.working == "работает") Color(com.dpsmpx.dpai.ui.AppPalette.semantic(com.dpsmpx.dpai.ui.AppPalette.Role.DONE, isSystemInDarkTheme())) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (r.working == "работает") Color(com.dpsmpx.dpai.ui.AppPalette.semantic(com.dpsmpx.dpai.ui.AppPalette.Role.DONE, LocalPultLook.current.dark(isSystemInDarkTheme()))) else MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Text(Screens.projectLine(r), style = MaterialTheme.typography.bodySmall)
@@ -1541,6 +1558,20 @@ private fun WaitingList(list: List<Screens.Waiting>, me: String?, loader: Loader
     }
 }
 
+/** Параметры остаются в композиции: токены и несохранённые формы не попадают в Bundle. */
+@Composable
+private fun SettingsDetails(title: String, content: @Composable () -> Unit) {
+    val simple = LocalPultLook.current.simple
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    var expanded by rememberSaveable(title, simple) { mutableStateOf(!simple) }
+    Column(Modifier.fillMaxWidth()) {
+        TextButton(onClick = { focus.clearFocus(); expanded = !expanded }) { Text("${if (expanded) "▾" else "▸"} $title") }
+        androidx.compose.foundation.layout.Box(if (expanded) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().height(0.dp).clipToBounds().clearAndSetSemantics { }) {
+            Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) { content() }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 // Листается (UX-15): при шрифте 200 % и в альбомной ориентации «Клоны…» не уходят за край.
@@ -1586,6 +1617,7 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
     }
     Spacer(Modifier.height(Tokens.gap))
     // Полный итог синхронизации — здесь (UX-6): на сводке только снэкбар.
+    SettingsDetails("Действия и команды") {
     Text("Действия", style = MaterialTheme.typography.titleMedium)
     Text("Всё, что пульт сделал в репозиториях, и отказы — в журнале.", style = MaterialTheme.typography.bodySmall)
     TextButton(onClick = onJournal) { Text("Журнал действий ▸") }
@@ -1595,7 +1627,8 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
     Text("Команды проектов", style = MaterialTheme.typography.titleMedium)
     Text("Проверки и отчёты проектов — в Linux-среде приложения, в клонах. Только команды из списка; своих здесь не набрать.", style = MaterialTheme.typography.bodySmall)
     TextButton(onClick = onCommands) { Text("Команды ▸") }
-    NotificationSettings(view.feed, onFeed)
+    }
+    SettingsDetails("Уведомления") { NotificationSettings(view.feed, onFeed) }
     Text("Синхронизация", style = MaterialTheme.typography.titleMedium)
     // Постоянная строка последней синхронизации (UX-10); временные итоги — снэкбаром.
     view.state?.let { st -> Text("Последняя: ${Screens.time(st.asOf)} · ${Screens.summary(st).syncHealth}", style = MaterialTheme.typography.bodySmall) }
@@ -1612,6 +1645,7 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
     TextButton(onClick = onClones, enabled = view.hasToken && !view.busy) { Text("Клоны…") }
     // Выгрузка истории метрик (F-44) — здесь: экрана «Статистика» с графиками больше нет (D-112).
     if (onExport != null) {
+      SettingsDetails("История метрик") {
         Text("История метрик", style = MaterialTheme.typography.titleMedium)
         var period by rememberSaveable { mutableStateOf(Stats.Period.MONTH) }
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -1625,6 +1659,7 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
             }
         }
     }
+      }
     // Пояс показа — один на приложение (ТЗ, §6.3; UX-22): время пульта и «AI» — в нём.
     Text("Время", style = MaterialTheme.typography.titleMedium)
     var zones by remember { mutableStateOf(false) }
@@ -1652,6 +1687,7 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
         }
     }
     view.backgroundLine?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+    SettingsDetails("О программе и лицензии") {
     // «О программе» (UX-23, D-54; F-50): версии, коммит, подпись, лицензии компонентов.
     if (view.about.isNotEmpty()) {
         Text("О программе", style = MaterialTheme.typography.titleMedium)
@@ -1667,6 +1703,7 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
                 }
             }
         }
+    }
     }
 }
 
@@ -1829,14 +1866,14 @@ fun ProjectsDialog(prompt: ProjectsPrompt, onDone: (List<String>?) -> Unit) {
 /** Отказ: причина словом, код и сообщение — по «Подробнее» (ТЗ, §6.9; UX-13). */
 @Composable
 private fun FailureText(what: String, f: Screens.Failure) = Column {
-    Text("$what: ${f.text}", color = MaterialTheme.colorScheme.error)
+    DiagnosticBlock("$what: ${f.text}", color = MaterialTheme.colorScheme.error)
     Details(f.details)
 }
 
 /** Строка итога синхронизации и действий; у отказа — «Подробнее». */
 @Composable
 private fun StatusText(view: PultView) = Column {
-    Text(view.status, style = MaterialTheme.typography.bodySmall)
+    DiagnosticBlock(view.status)
     if (view.statusDetails.isNotEmpty()) Details(view.statusDetails)
 }
 
@@ -1844,7 +1881,7 @@ private fun StatusText(view: PultView) = Column {
 private fun Details(details: String) {
     var shown by rememberSaveable(details) { mutableStateOf(false) }
     TextButton(onClick = { shown = !shown }) { Text(if (shown) "Скрыть" else "Подробнее") }
-    if (shown) Text(details, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+    if (shown) DiagnosticBlock(details)
 }
 
 /**
@@ -2206,7 +2243,7 @@ private fun ProfileName(name: String, color: String?) {
     val c = com.dpsmpx.dpai.ui.ProfileColors.of(color)
     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         if (c != null) {
-            val dark = isSystemInDarkTheme()
+            val dark = LocalPultLook.current.dark(isSystemInDarkTheme())
             androidx.compose.foundation.layout.Box(
                 // Кружок — не элемент для TalkBack: имя рядом его называет.
                 Modifier.size(10.dp).background(Color(c.of(dark)), androidx.compose.foundation.shape.CircleShape)
@@ -2862,7 +2899,7 @@ private fun EditScreen(project: String, path: String, loader: Loader, onBack: ()
                                     Text(
                                         h, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                                         color = when {
-                                            h.startsWith("+ ") -> Color(com.dpsmpx.dpai.ui.AppPalette.semantic(com.dpsmpx.dpai.ui.AppPalette.Role.DONE, isSystemInDarkTheme()))
+                                            h.startsWith("+ ") -> Color(com.dpsmpx.dpai.ui.AppPalette.semantic(com.dpsmpx.dpai.ui.AppPalette.Role.DONE, LocalPultLook.current.dark(isSystemInDarkTheme())))
                                             h.startsWith("- ") -> MaterialTheme.colorScheme.error
                                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                                         },

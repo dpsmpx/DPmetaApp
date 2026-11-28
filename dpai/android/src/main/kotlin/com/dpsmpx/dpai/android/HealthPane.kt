@@ -110,7 +110,7 @@ internal fun HealthPane(model: DemoModel, nav: HealthNav, onBack: () -> Unit) {
     val context = LocalContext.current
     val jobs = remember { LongJobs.get(context) }
     val state by jobs.state.collectAsState()
-    val guestBusy = LongJobs.GUEST.any { state[it]?.running == true }
+    val guestBusy = jobs.busyGuest(state)
     var facts by remember { mutableStateOf<HealthFacts?>(null) }
     var round by remember { mutableIntStateOf(0) }
     var identity by rememberSaveable { mutableStateOf(false) }
@@ -138,7 +138,8 @@ internal fun HealthPane(model: DemoModel, nav: HealthNav, onBack: () -> Unit) {
         // Идущая или законченная операция гостя — итог словами, как на экране Linux.
         for (key in listOf(LongJobs.LINUX_INSTALL, LongJobs.LINUX_APK)) {
             state[key]?.let { job ->
-                DiagnosticText(if (job.running) "${job.label}…" else "${job.label}: ${job.note.orEmpty()}", style = MaterialTheme.typography.bodySmall)
+                if (job.running) TaskProgressView(job.label, job.output.joinToString("\n"))
+                else DiagnosticText("${job.label}: ${job.note.orEmpty()}", style = MaterialTheme.typography.bodySmall)
             }
         }
         val f = facts

@@ -4,6 +4,7 @@ import android.content.Context
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.ui.CodeSyntax
+import io.github.rosemoe.sora.widget.schemes.EditorColorScheme
 import io.github.rosemoe.sora.lang.EmptyLanguage
 import io.github.rosemoe.sora.lang.Language
 import io.github.rosemoe.sora.langs.textmate.TextMateColorScheme
@@ -20,7 +21,7 @@ import org.eclipse.tm4e.core.registry.IThemeSource
 /** Локальные данные; независимые палитры не меняют подсветку соседнего поля/просмотра (D-138). */
 internal object EditorLanguages {
     private class Palette(val grammars: GrammarRegistry, val themes: ThemeRegistry) {
-        val scheme: TextMateColorScheme by lazy { TextMateColorScheme.create(themes) }
+        val scheme: StudioScheme by lazy { StudioScheme(themes) }
     }
     private val palettes = linkedMapOf<String, Palette>()
     @Volatile private var ready = false
@@ -55,5 +56,53 @@ internal object EditorLanguages {
             useTab(tabs)
         }
     }
-    fun scheme(dark: Boolean, highlighted: Boolean = true): TextMateColorScheme = palette(dark, highlighted).scheme
+    /** Цвета токенов — из грамматики; поверхности и действия — из общей темы студии. */
+    fun scheme(dark: Boolean, highlighted: Boolean, chrome: com.dpsmpx.dpai.ui.AppPalette.Scheme): TextMateColorScheme =
+        palette(dark, highlighted).scheme.apply { this.chrome = chrome }
+
+    /** Sora повторно вызывает applyDefault при attach: общая тема должна пережить этот сброс. */
+    private class StudioScheme(themes: ThemeRegistry) : TextMateColorScheme(themes, themes.currentThemeModel) {
+        var chrome: com.dpsmpx.dpai.ui.AppPalette.Scheme? = null
+            set(value) { field = value; applyChrome() }
+        override fun applyDefault() { super.applyDefault(); applyChrome() }
+        private fun applyChrome() {
+            // Базовый конструктор вызывает virtual applyDefault до инициализации полей Kotlin.
+            val p = chrome ?: return
+            fun color(id: Int, argb: Long) = setColor(id, argb.toInt())
+            color(EditorColorScheme.WHOLE_BACKGROUND, p.background)
+            color(EditorColorScheme.MINIMAP_BACKGROUND, p.background)
+            color(EditorColorScheme.TEXT_NORMAL, p.onSurface)
+            color(EditorColorScheme.LINE_NUMBER_BACKGROUND, p.background)
+            color(EditorColorScheme.LINE_NUMBER, p.onSurfaceVariant)
+            color(EditorColorScheme.LINE_NUMBER_CURRENT, p.primary)
+            color(EditorColorScheme.LINE_DIVIDER, p.outlineVariant)
+            color(EditorColorScheme.CURRENT_LINE, p.surfaceContainerHigh)
+            color(EditorColorScheme.SELECTION_INSERT, p.primary)
+            color(EditorColorScheme.SELECTION_HANDLE, p.primary)
+            color(EditorColorScheme.SELECTED_TEXT_BACKGROUND, p.primaryContainer)
+            color(EditorColorScheme.TEXT_SELECTED, p.onPrimaryContainer)
+            color(EditorColorScheme.HOVER_BACKGROUND, p.surfaceContainerHigh)
+            color(EditorColorScheme.HOVER_TEXT_NORMAL, p.onSurface)
+            color(EditorColorScheme.HOVER_BORDER, p.outline)
+            color(EditorColorScheme.SIGNATURE_BACKGROUND, p.surfaceContainerHigh)
+            color(EditorColorScheme.SIGNATURE_TEXT_NORMAL, p.onSurface)
+            color(EditorColorScheme.SIGNATURE_TEXT_HIGHLIGHTED_PARAMETER, p.primary)
+            color(EditorColorScheme.SIGNATURE_BORDER, p.outline)
+            color(EditorColorScheme.HOVER_TEXT_HIGHLIGHTED, p.primary)
+            color(EditorColorScheme.TEXT_ACTION_WINDOW_BACKGROUND, p.surfaceContainerHigh)
+            color(EditorColorScheme.TEXT_ACTION_WINDOW_ICON_COLOR, p.onSurface)
+            color(EditorColorScheme.LINE_NUMBER_PANEL, p.surfaceContainerHigh)
+            color(EditorColorScheme.LINE_NUMBER_PANEL_TEXT, p.onSurface)
+            color(EditorColorScheme.SCROLL_BAR_TRACK, p.background)
+            color(EditorColorScheme.SCROLL_BAR_THUMB, p.outline)
+            color(EditorColorScheme.SCROLL_BAR_THUMB_PRESSED, p.primary)
+            color(EditorColorScheme.COMPLETION_WND_BACKGROUND, p.surfaceContainerHigh)
+            color(EditorColorScheme.COMPLETION_WND_TEXT_PRIMARY, p.onSurface)
+            color(EditorColorScheme.COMPLETION_WND_TEXT_SECONDARY, p.onSurfaceVariant)
+            color(EditorColorScheme.DIAGNOSTIC_TOOLTIP_BACKGROUND, p.surfaceContainerHigh)
+            color(EditorColorScheme.DIAGNOSTIC_TOOLTIP_BRIEF_MSG, p.onSurface)
+            color(EditorColorScheme.DIAGNOSTIC_TOOLTIP_DETAILED_MSG, p.onSurfaceVariant)
+            color(EditorColorScheme.DIAGNOSTIC_TOOLTIP_ACTION, p.primary)
+        }
+    }
 }

@@ -98,13 +98,15 @@ class ShellChannel internal constructor(
     private val session: Session,
     private val channel: Channel,
     private val ptySize: (Int, Int) -> Unit,
-    input: java.io.InputStream,
+    private val input: java.io.InputStream,
     private val output: java.io.OutputStream,
     onOutput: (ByteArray, Int) -> Unit,
     onClosed: (Int?) -> Unit,
 ) {
     /** Действия записи по порядку; [STOP] — конец потока записи. */
-    private val queue = LinkedBlockingQueue<() -> Unit>()
+    private val queue = LinkedBlockingQueue<() -> Unit>(64)
+    private val closing = java.util.concurrent.atomic.AtomicBoolean()
+    private val queuedBytes = java.util.concurrent.atomic.AtomicInteger()
     private val done = CountDownLatch(1)
 
     init {
@@ -122,7 +124,7 @@ class ShellChannel internal constructor(
                 // Код выхода сервер присылает рядом с концом вывода.
                 waitClosed(channel)
                 val code = channel.exitStatus.takeIf { channel.isClosed && it >= 0 }
-                queue.put(STOP)
+                close()
                 session.disconnect()
                 // Сначала итог вызывающему, потом «закрыт»: awaitClosed возвращается уже с кодом выхода.
                 try {
@@ -147,27 +149,46 @@ class ShellChannel internal constructor(
         }, "dpai-term-write").apply { isDaemon = true }.start()
     }
 
-    val isOpen: Boolean get() = done.count > 0
+    val isOpen: Boolean get() = !closing.get() && done.count > 0
 
     fun write(bytes: ByteArray) {
         if (!isOpen) return
+        val size = bytes.size
+        // В память не копируется бесконечная очередь вставок за зависшей сетью (Fable:O-15).
+        if (size > 1_048_576) {
+            close()
+            throw IOException("слишком большой ввод терминала; соединение закрыто")
+        }
+        if (queuedBytes.addAndGet(size) > 1_048_576) {
+            queuedBytes.addAndGet(-size)
+            close()
+            throw IOException("очередь ввода терминала переполнена; соединение закрыто")
+        }
         val copy = bytes.copyOf()
-        queue.put {
-            output.write(copy)
-            output.flush()
+        if (!queue.offer {
+            try { output.write(copy); output.flush() } finally { queuedBytes.addAndGet(-size) }
+        }) {
+            queuedBytes.addAndGet(-size)
+            close()
+            throw IOException("очередь ввода терминала переполнена; соединение закрыто")
         }
     }
 
     fun resize(cols: Int, rows: Int) {
         if (!isOpen) return
-        queue.put { ptySize(cols, rows) }
+        // Устаревший размер можно пропустить; следующий resize принесёт фактический.
+        queue.offer { ptySize(cols, rows) }
     }
 
     fun close() {
-        queue.put {
-            channel.disconnect()
-            session.disconnect()
-        }
+        if (!closing.compareAndSet(false, true)) return
+        // Закрытие не стоит за output.write, который может ждать окно SSH бесконечно.
+        channel.disconnect()
+        session.disconnect()
+        runCatching { input.close() }
+        runCatching { output.close() }
+        queue.clear()
+        queue.offer(STOP)
     }
 
     /** Дождаться закрытия (тесты, выход из приложения). */

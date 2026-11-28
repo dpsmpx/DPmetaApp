@@ -27,8 +27,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
@@ -55,6 +53,8 @@ fun SettingsDocument(projects: (@Composable () -> Unit)?, initialQuery: String =
     val scope = rememberCoroutineScope()
     val sections = remember(projects != null) { sections(projects != null) }
     val shown = sections.filter { it.matches(query) }
+    val look = Looks.remember()
+    androidx.compose.runtime.CompositionLocalProvider(LocalUiLook provides look) {
     LazyColumn(state = list, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
         item(key = "search") {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -75,10 +75,9 @@ fun SettingsDocument(projects: (@Composable () -> Unit)?, initialQuery: String =
         for (s in shown) {
             item(key = s.key) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(s.title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-                    Text(s.about, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    DetailSection(s.title, "settings:${s.key}", expandedInitially = query.isNotBlank() || !LocalUiLook.current.simple || s.key == LOOK, description = s.about) {
                     when (s.key) {
-                        LOOK -> LookCard()
+                        LOOK -> LookCard(showTitle = false)
                         PROJECTS -> projects?.let { block -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) { block() } } }
                         STORAGE -> StorageSecretsCard()
                         REVOKE -> EmergencyRevokeCard()
@@ -110,10 +109,12 @@ fun SettingsDocument(projects: (@Composable () -> Unit)?, initialQuery: String =
                             Entry("Все настройки AI", "окно «AI»: targets и остальные экраны") { onAiSettings(null) }
                         }
                     }
+                    }
                 }
             }
         }
         item(key = "top") { TextButton(onClick = { scope.launch { list.animateScrollToItem(0) } }) { Text("К оглавлению") } }
+    }
     }
 }
 
@@ -138,7 +139,7 @@ private const val AI_LOG = "ai-log"
 
 private fun sections(pult: Boolean): List<Section> = listOfNotNull(
     Section(LOOK, "Оформление", "Тема, акцент, размер текста, плотность и шрифт редактора — сразу во всём приложении.",
-        "тема тёмная светлая цвет акцент обои размер текст шрифт плотность редактор оформление"),
+        "тема тёмная черная чёрная белая светлая цвет акцент обои размер текст шрифт плотность редактор оформление простой полный вид интерфейс"),
     if (pult) {
         Section(PROJECTS, "Проекты и GitHub", "Токен GitHub, синхронизация, клоны, уведомления и правила, история метрик, время, журнал действий, команды.",
             "github токен синхронизация обновить клоны репозитории история метрики csv json выгрузка часовой пояс время журнал действия спросить claude команды о программе версия уведомления правила тихие часы приватность лента импорт экспорт regex")

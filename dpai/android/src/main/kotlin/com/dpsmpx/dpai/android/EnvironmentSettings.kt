@@ -89,7 +89,7 @@ internal fun EnvironmentSettingsSection(release: String?, repositories: List<Str
 
     fun save(next: List<OwnVariables.Var>, done: () -> Unit = {}) {
         scope.launch {
-            when (val r = withContext(Dispatchers.IO) { EnvSnapshotStore.take(context, "Свои переменные", prune = false); OwnVariablesStore.save(context, next) }) {
+            when (val r = withContext(Dispatchers.IO) { EnvSnapshotStore.take(context, "Свои переменные"); OwnVariablesStore.save(context, next) }) {
                 is Outcome.Failure -> note = r.errors.first().message
                 is Outcome.Success -> { note = null; done(); version++ }
             }

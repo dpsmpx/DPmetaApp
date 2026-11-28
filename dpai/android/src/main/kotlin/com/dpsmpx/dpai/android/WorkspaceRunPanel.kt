@@ -45,6 +45,7 @@ import kotlinx.coroutines.withContext
 @Composable
 internal fun WorkspaceRunPanel(model: DemoModel, view: ProjectWorkspaceView, location: WorkspaceLocation?) {
     val context = LocalContext.current
+    val resources = androidx.compose.ui.platform.LocalResources.current
     val scope = rememberCoroutineScope()
     val projectKey = view.project.project.value
     var command by rememberSaveable(projectKey) { mutableStateOf("") }
@@ -59,9 +60,6 @@ internal fun WorkspaceRunPanel(model: DemoModel, view: ProjectWorkspaceView, loc
     var run by remember { mutableStateOf(model.manualProfileView()) }
     val jobs = LongJobs.get(context)
     val jobState by jobs.state.collectAsState()
-    // Свой запуск сборки узнаётся по итогу, которого не было до нажатия, и по своей задаче LongJobs.
-    var finishedBefore by rememberSaveable(projectKey) { mutableStateOf<String?>(null) }
-    var jobStarted by remember { mutableStateOf<LongJobs.Job?>(null) }
     Poll(model, periodMs = 1000) { run = model.manualProfileView() }
     LaunchedEffect(view.project) {
         when (val r = withContext(Dispatchers.IO) { model.runProfile(view.project) }) {
@@ -91,34 +89,23 @@ internal fun WorkspaceRunPanel(model: DemoModel, view: ProjectWorkspaceView, loc
         }
     }
 
-    // «Сначала собрать»: ждать итога своего запуска сборки; прошли все шаги — открыть программу.
-    LaunchedEffect(awaiting, run, jobState[LongJobs.WORKSPACE_PROFILE]) {
+    // Только билет своей сборки: вложенная проверка не разрешает запуск программы.
+    LaunchedEffect(awaiting, jobState[LongJobs.WORKSPACE_PROFILE]) {
         if (!awaiting) return@LaunchedEffect
-        // Свежий снимок: опрос раз в секунду мог отстать от итога задачи.
-        val now = model.manualProfileView()
-        now.active?.let { if (buildId == null) buildId = it.id.value }
-        val ours = now.finished?.value?.takeIf { it != finishedBefore && (buildId == null || it == buildId) }
         val job = jobState[LongJobs.WORKSPACE_PROFILE]
-        val ended = jobStarted != null && job !== jobStarted && job?.running == false
-        val loc = location
-        when {
-            now.active == null && ours != null -> {
-                awaiting = false
-                buildId = null
-                if (now.complete && loc != null) {
-                    val profile = RunProfile.form(command, dir, buildFirst).valueOrNull()
-                    if (profile != null) open(profile, loc) else note = "Сборка прошла, но команда запуска неверна"
-                } else {
-                    note = "Сборка не прошла — программа не запущена. Итог и ошибки — на странице «Сборка»."
-                }
-            }
-            // Сборка не началась (контур занят, нет агента, грязное дерево): задача кончилась, а своего запуска нет.
-            ended && now.active == null && ours == null -> {
-                awaiting = false
-                buildId = null
-                note = "Сборка не началась: ${job.note.orEmpty()}"
-            }
+        if (job == null || job.runId != buildId) {
+            awaiting = false; buildId = null
+            note = resources.getString(R.string.workflow_build_unknown)
+            return@LaunchedEffect
         }
+        if (job.running) return@LaunchedEffect
+        awaiting = false; buildId = null
+        val complete = (job.result?.get("complete") as? com.dpsmpx.dpai.core.serialization.JsonBool)?.value == true
+        val loc = location
+        if (!job.failed && complete && loc != null) {
+            val profile = RunProfile.form(command, dir, buildFirst).valueOrNull()
+            if (profile != null) open(profile, loc) else note = resources.getString(R.string.workflow_run_invalid)
+        } else note = resources.getString(R.string.workflow_build_failed, job.note.orEmpty())
     }
 
     val editable = loaded && !busy && !awaiting
@@ -160,13 +147,11 @@ internal fun WorkspaceRunPanel(model: DemoModel, view: ProjectWorkspaceView, loc
                         build is Outcome.Failure -> note = build.errors.first().message
                         saved == null -> note = "Нет профиля «Сборка»: сохраните его на странице «Сборка» или снимите «Сначала собрать»"
                         else -> {
-                            finishedBefore = model.manualProfileView().finished?.value
                             if (model.startManualProfile(view.project, loc, saved)) {
                                 // Задача уже «идёт» сразу после start (LongJobs): её экземпляр — признак своей сборки.
-                                jobStarted = jobs.state.value[LongJobs.WORKSPACE_PROFILE]
+                                buildId = jobs.state.value[LongJobs.WORKSPACE_PROFILE]?.runId
                                 ControllerService.resume(context)
-                                buildId = null
-                                awaiting = true
+                                awaiting = buildId != null
                                 note = "Сборка идёт (${saved.steps.size} шаг.) — программа откроется после неё"
                             } else {
                                 note = "Сначала завершите другую операцию Linux/DP-Verify"

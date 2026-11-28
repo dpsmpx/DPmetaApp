@@ -13,8 +13,22 @@ data class UiLook(
     val text: TextSize = TextSize.M,
     val density: Density = Density.NORMAL,
     val editorFont: Int = EDITOR_DEFAULT,
+    val presentation: Presentation = Presentation.SIMPLE,
 ) {
-    enum class Theme(val key: String, val title: String) { SYSTEM("system", "Как в телефоне"), LIGHT("light", "Светлая"), DARK("dark", "Тёмная") }
+    enum class Theme(val key: String, val title: String) { SYSTEM("system", "Как в телефоне"), LIGHT("light", "Белая"), DARK("dark", "Тёмная"), BLACK("black", "Чёрная") }
+    enum class Presentation(val key: String) { SIMPLE("simple"), FULL("full") }
+
+    fun dark(systemDark: Boolean): Boolean = when (theme) {
+        Theme.SYSTEM -> systemDark
+        Theme.LIGHT -> false
+        Theme.DARK, Theme.BLACK -> true
+    }
+
+    /** Один выбор для Compose, редактора, терминала и оверлея (DPmetaApp:D-194). */
+    fun palette(systemDark: Boolean, adaptiveAccent: Long? = null): AppPalette.Scheme =
+        scheme(accent, dark(systemDark), theme == Theme.BLACK, adaptiveAccent)
+
+    val simple: Boolean get() = presentation == Presentation.SIMPLE
 
     /** Акцент: цвет на светлой и тёмной теме; [WALLPAPER] — цвета обоев (Android 12+, иначе — бирюзовый). */
     enum class Accent(val key: String, val title: String, val light: Long, val dark: Long) {
@@ -37,7 +51,7 @@ data class UiLook(
     }
 
     fun toMap(): Map<String, String> = mapOf(
-        THEME to theme.key, ACCENT to accent.key, TEXT to text.key, DENSITY to density.key, EDITOR_FONT to editorFont.toString(),
+        THEME to theme.key, ACCENT to accent.key, TEXT to text.key, DENSITY to density.key, EDITOR_FONT to editorFont.toString(), PRESENTATION to presentation.key,
     )
 
     companion object {
@@ -48,6 +62,7 @@ data class UiLook(
         const val TEXT = "text"
         const val DENSITY = "density"
         const val EDITOR_FONT = "editor_font"
+        const val PRESENTATION = "presentation"
         const val EDITOR_DEFAULT = 14
         val EDITOR_RANGE = 10..24
 
@@ -58,6 +73,7 @@ data class UiLook(
             text = TextSize.entries.firstOrNull { it.key == m[TEXT] } ?: TextSize.M,
             density = Density.entries.firstOrNull { it.key == m[DENSITY] } ?: Density.NORMAL,
             editorFont = (m[EDITOR_FONT] as? String)?.toIntOrNull()?.coerceIn(EDITOR_RANGE) ?: EDITOR_DEFAULT,
+            presentation = Presentation.entries.firstOrNull { it.key == m[PRESENTATION] } ?: Presentation.SIMPLE,
         )
 
         /** Нейтральные цвета прототипа: фон, поверхность, вторая поверхность, границы, текст. */
@@ -66,19 +82,23 @@ data class UiLook(
             val text: Long, val text2: Long, val err: Long, val onAccent: Long,
         )
 
-        private val LIGHT = Neutral(0xFFF6F7F9, 0xFFFFFFFF, 0xFFEEF0F3, 0xFFE1E4E8, 0xFFC9CED6, 0xFF15181D, 0xFF545B66, 0xFFC4262E, 0xFFFFFFFF)
+        private val LIGHT = Neutral(0xFFFFFFFF, 0xFFFFFFFF, 0xFFF1F3F5, 0xFFE1E4E8, 0xFFC9CED6, 0xFF15181D, 0xFF545B66, 0xFFC4262E, 0xFFFFFFFF)
         private val DARK = Neutral(0xFF0E1014, 0xFF15181E, 0xFF1C2028, 0xFF262B34, 0xFF3A414D, 0xFFE7EAEE, 0xFFA3ABB6, 0xFFF85149, 0xFF0E1014)
+        private val BLACK = Neutral(0xFF000000, 0xFF000000, 0xFF151515, 0xFF282828, 0xFF555555, 0xFFF2F2F2, 0xFFB5B5B5, 0xFFF85149, 0xFF000000)
 
         /**
          * Схема Material 3 из нейтральных цветов и акцента. Карточки и поля — на
          * поверхности, страница — на фоне; ИИ — смысловой цвет `AppPalette`.
          */
-        fun scheme(accent: Accent, dark: Boolean): AppPalette.Scheme {
-            val n = if (dark) DARK else LIGHT
-            val a = if (dark) accent.dark else accent.light
+        fun scheme(accent: Accent, dark: Boolean, black: Boolean = false, adaptiveAccent: Long? = null): AppPalette.Scheme {
+            val n = if (black) BLACK else if (dark) DARK else LIGHT
+            val source = adaptiveAccent.takeIf { accent == Accent.WALLPAPER } ?: if (dark) accent.dark else accent.light
+            // Обои дают только акцент: база белой/чёрной темы остаётся нейтральной.
+            val a = readableAccent(source, n.bg, n.surface, n.surface2)
+            val onAccent = if (AppPalette.contrast(0xFFFFFFFF, a) >= AppPalette.contrast(0xFF000000, a)) 0xFFFFFFFF else 0xFF000000
             val ai = AppPalette.semantic(AppPalette.Role.AI, dark)
             return AppPalette.Scheme(
-                primary = a, onPrimary = n.onAccent, primaryContainer = mix(a, n.surface, 0.16), onPrimaryContainer = n.text,
+                primary = a, onPrimary = onAccent, primaryContainer = mix(a, n.surface, 0.16), onPrimaryContainer = n.text,
                 secondary = n.text2, onSecondary = n.surface, secondaryContainer = n.surface2, onSecondaryContainer = n.text,
                 tertiary = ai, onTertiary = n.onAccent, tertiaryContainer = mix(ai, n.surface, 0.16), onTertiaryContainer = n.text,
                 background = n.bg, onBackground = n.text, surface = n.bg, onSurface = n.text,
@@ -88,6 +108,16 @@ data class UiLook(
                 surfaceContainerHigh = n.surface2, surfaceContainerHighest = n.surface,
                 inverseSurface = n.text, inverseOnSurface = n.bg, inversePrimary = if (dark) accent.light else accent.dark,
             )
+        }
+
+        private fun readableAccent(source: Long, background: Long, surface: Long, high: Long): Long {
+            if (AppPalette.contrast(source, background) >= 4.5 && AppPalette.contrast(source, surface) >= 4.5 && AppPalette.contrast(source, high) >= 4.5) return source
+            val end = if (AppPalette.contrast(0xFFFFFFFF, background) > AppPalette.contrast(0xFF000000, background)) 0xFFFFFFFF else 0xFF000000
+            for (step in 1..20) {
+                val candidate = mix(end, source, step / 20.0)
+                if (AppPalette.contrast(candidate, background) >= 4.5 && AppPalette.contrast(candidate, surface) >= 4.5 && AppPalette.contrast(candidate, high) >= 4.5) return candidate
+            }
+            return end
         }
 
         /** Смесь: доля [part] цвета [top] поверх непрозрачного [base]. */

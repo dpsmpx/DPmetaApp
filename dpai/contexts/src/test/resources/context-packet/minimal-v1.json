@@ -1,0 +1,47 @@
+{
+  "format": "dpai.context-packet",
+  "version": 1,
+  "binding": {
+    "project": "prj_01J9ZQ3K8M7N6P5R4S3T2V1W0X",
+    "location": "target:root",
+    "owner": "chat:human",
+    "profile": "e48fd306fc7c98d70acd7619ac9ba4d0eee5e4e3f26adeac3a8801826847bd19"
+  },
+  "commit": null,
+  "sections": {
+    "objective": "request:objective",
+    "acceptance": "request:acceptance",
+    "relatedTasks": "request:related",
+    "constraints": [],
+    "architectureInvariants": "Применимые правила источников constraints; непредставленные инварианты неизвестны.",
+    "interfaces": {
+      "status": "NOT_RESOLVED",
+      "tool": "get_related_interfaces"
+    },
+    "decisions": {
+      "status": "UNKNOWN",
+      "paths": []
+    },
+    "knownErrors": {
+      "status": "NOT_INDEPENDENTLY_VERIFIED",
+      "source": "evidence:summary"
+    },
+    "previousVerification": {
+      "source": "evidence:summary",
+      "fresh": false
+    }
+  },
+  "sources": [
+    {
+      "key": "request:objective",
+      "level": "TASK",
+      "origin": "USER",
+      "sha256": "9f3f0146d91203feb3323e2dd8b0145d6486145df3a23f52116bb3ef30e89e6a",
+      "text": "цель"
+    }
+  ],
+  "omitted": [],
+  "references": [],
+  "incompleteReasons": [],
+  "atomicSnapshot": false
+}

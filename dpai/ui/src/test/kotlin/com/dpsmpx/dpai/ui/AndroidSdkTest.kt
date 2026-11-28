@@ -21,6 +21,7 @@ class AndroidSdkTest {
         val explicit = listOf("JAVA_HOME" to AndroidNativeJdk.JAVA_HOME, "PATH" to "/custom/bin")
         val env = AndroidSdk.env(setOf(ManualNeed.ANDROID_SDK), explicit).toMap()
         assertEquals(AndroidNativeJdk.COMPAT, env["LD_PRELOAD"])
+        assertEquals(AndroidNativeJdk.ICU_LIBRARY_PATH, env["LD_LIBRARY_PATH"])
         assertEquals(AndroidNativeJdk.SYSROOT, env["DPAI_ARM64_SYSROOT"])
         assertEquals("/custom/bin", env["PATH"])
         assertEquals(AndroidNativeJdk.JAVA_HOME, env["JAVA_HOME"])
@@ -57,7 +58,11 @@ class AndroidSdkTest {
         val script = AndroidSdk.install(licenses = true, ndk = true, aapt2 = aapt2, ndkCommunity = ndk).last()
         assertTrue("android.aapt2FromMavenOverride" in script)
         assertTrue("'${AndroidSdk.NDK}'" in script, "x86_64 — официальный NDK")
-        assertEquals(4, Regex("sha256sum -c").findAll(script).count(), "cmdline-tools, aapt2, arm-tools и NDK — каждый по сумме")
+        // Поведение всех четырёх архивов проверяет AndroidSdkArchiveTest; число
+        // проверок больше числа загрузок: уже установленное тоже проверяется.
+        for (pin in listOf(AndroidSdk.CMDLINE_SHA256, AndroidSdk.ARM64_TOOLS_SHA256, sha) + AndroidSdk.ARM64_TOOL_SHA256.values) {
+            assertTrue(pin in script, "закреплённая сумма должна дойти до установщика: $pin")
+        }
         assertFalse(AndroidSdk.ARM64_AAPT2_URL in script, "проверенный пользовательский aapt2 заменяет встроенный")
         assertEquals(null, (AndroidSdk.community("", "", "aapt2") as Outcome.Success).value)
         assertTrue(AndroidSdk.community("http://example.org/a", sha, "aapt2") is Outcome.Failure, "только https")

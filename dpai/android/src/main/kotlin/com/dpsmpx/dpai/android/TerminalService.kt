@@ -25,15 +25,15 @@ class TerminalService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val n = TerminalHub.tabs.size
-        if (n == 0) {
-            stopSelf()
-            return START_NOT_STICKY
-        }
         val notification = notification(this, n)
         // Повторный запуск из фона система может не пустить: тогда служба уходит, а не падает по кругу.
         try {
             if (Build.VERSION.SDK_INT >= 34) startForeground(ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) else startForeground(ID, notification)
         } catch (_: IllegalStateException) {
+            stopSelf()
+        }
+        if (n == 0) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
         return START_NOT_STICKY

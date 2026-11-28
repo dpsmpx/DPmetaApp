@@ -20,7 +20,7 @@ object ManualAutomations {
     fun describe(profiles: Map<ManualProfileKind, ManualProfile?>, run: RunProfile?, root: String,
         platform: TargetPlatform, selections: Map<ManualProfileKind, Map<String, String>> = emptyMap()): List<AutomationDefinition> = ManualProfileKind.entries.map { kind ->
         val profile = profiles[kind]
-        val direct = kind in setOf(ManualProfileKind.CHECK, ManualProfileKind.BUILD)
+        val direct = true
         val title = when (kind) { ManualProfileKind.CHECK -> "Проверки"; ManualProfileKind.BUILD -> "Сборка"; ManualProfileKind.DEPENDENCIES -> "Зависимости" }
         AutomationDefinition("manual.${kind.name.lowercase()}", title, "Штатный профиль проекта. В Linux приложения Gradle/JVM проверяются живым запуском Java до команд; другие инструменты проверяйте через environment.probe.",
             AutomationSource.MANUAL, when (kind) { ManualProfileKind.CHECK -> AutomationCategory.CHECK; ManualProfileKind.BUILD -> AutomationCategory.BUILD; ManualProfileKind.DEPENDENCIES -> AutomationCategory.ENVIRONMENT },

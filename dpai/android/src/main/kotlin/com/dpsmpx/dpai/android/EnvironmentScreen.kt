@@ -53,7 +53,7 @@ fun EnvironmentScreen(onBack: () -> Unit, controller: Controller? = null, model:
     val jobs = remember { LongJobs.get(context) }
     val state by jobs.state.collectAsState()
     val work = state[LongJobs.LINUX_APK]
-    val running = LongJobs.GUEST.any { state[it]?.running == true }
+    val running = jobs.busyGuest(state)
     var inv by remember { mutableStateOf<AlpinePackages.Inventory?>(null) }
     var problems by remember { mutableStateOf<List<AlpinePackages.Problem>>(emptyList()) }
     var note by remember { mutableStateOf<String?>(null) }
@@ -170,8 +170,7 @@ fun EnvironmentScreen(onBack: () -> Unit, controller: Controller? = null, model:
                 }
                 for (j in listOfNotNull(work)) {
                     if (j.running) {
-                        Text("${j.label}…", style = MaterialTheme.typography.labelSmall)
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        TaskProgressView(j.label, j.output.joinToString("\n"))
                     } else {
                         j.note?.let { DiagnosticText(it, style = MaterialTheme.typography.labelSmall) }
                     }

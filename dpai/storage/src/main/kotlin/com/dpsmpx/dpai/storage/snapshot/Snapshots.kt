@@ -85,7 +85,7 @@ class StateRecovery<S>(private val projection: Projection<S>) {
     data class Recovered<S>(val state: S, val position: Long, val fromSnapshot: Boolean)
 
     fun snapshotOf(journal: EventJournal, state: S): Snapshot =
-        Snapshot(projection.name, journal.position, journal.lastHash, projection.encode(state))
+        journal.checkpoint().let { (position, hash) -> Snapshot(projection.name, position, hash, projection.encode(state)) }
 
     /** Состояние из всей истории — потоком, по сегменту в памяти (D-37). */
     fun replayAll(journal: EventJournal, initial: S = projection.initial()): S {

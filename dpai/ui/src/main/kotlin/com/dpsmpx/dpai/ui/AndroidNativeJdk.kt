@@ -17,6 +17,8 @@ object AndroidNativeJdk {
     const val JAVA_HOME = "$PREFIX/lib/jvm/java-21-openjdk"
     const val JAVA = "$JAVA_HOME/bin/java"
     const val JAVAC = "$JAVA_HOME/bin/javac"
+    /** ICU Bionic лежит в APEX; не добавляем Bionic libc/crypto в поиск библиотек musl. */
+    const val ICU_LIBRARY_PATH = "/apex/com.android.i18n/lib64"
     const val COMPAT_ASSET = "/opt/dpai/libdpai-jvm-compat.so"
     const val COMPAT = "$PREFIX/lib/libdpai-jvm-compat.so"
     /** Sysroot API 30 для сборки JNI самой студией (DPAI_ARM64_SYSROOT в dpai/android/build.gradle.kts). */
@@ -33,6 +35,7 @@ object AndroidNativeJdk {
         "PATH" to "$JAVA_HOME/bin:$PREFIX/bin:/root/tools/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         // Без неё HotSpot на устройствах с маркировкой указателей падает SIGABRT (sdkmanager, Gradle).
         "LD_PRELOAD" to COMPAT,
+        "LD_LIBRARY_PATH" to ICU_LIBRARY_PATH,
         "DPAI_ARM64_SYSROOT" to SYSROOT,
     )
 
@@ -42,7 +45,7 @@ object AndroidNativeJdk {
      * pinned checksum, symlinks and permissions have been processed.
      * No external Termux installation, root, SSH or user-supplied executable needed.
      */
-    fun install(): List<String> = listOf(ProotHost.REAL_USER_MARKER, "/bin/sh", "-c", """
+    fun install(): List<String> = listOf(ProotHost.REAL_USER_MARKER, "/bin/sh", "-c", ComponentDownloads.shell + "\n" + """
         set -eu
         PREFIX='$PREFIX'
         HOME_NATIVE='$HOME'
@@ -52,9 +55,10 @@ object AndroidNativeJdk {
         if ! test -x "${'$'}PREFIX/bin/bash"; then
           STAGE=${'$'}(mktemp -d "${'$'}{PREFIX}.dpai-stage.XXXXXX")
           trap 'rm -rf "${'$'}STAGE"' EXIT
-          curl --fail --location --retry 2 --proto '=https' --connect-timeout 30 --max-time 1800 '$BOOTSTRAP_URL' -o "${'$'}STAGE/bootstrap.zip"
+          dpai_fetch '$BOOTSTRAP_URL' '$BOOTSTRAP_SHA256' "${'$'}STAGE/bootstrap.zip" Termux-bootstrap sha256 1800 DPAI_NATIVE_JDK_BOOTSTRAP_SHA256
           printf '%s  %s\n' '$BOOTSTRAP_SHA256' "${'$'}STAGE/bootstrap.zip" | sha256sum -c - || { echo 'DPAI_NATIVE_JDK_BOOTSTRAP_SHA256'; exit 1; }
           mkdir -p "${'$'}STAGE/prefix"
+          echo 'DPAI_PROGRESS unpack Termux-bootstrap'
           unzip -q "${'$'}STAGE/bootstrap.zip" -d "${'$'}STAGE/prefix"
           test -s "${'$'}STAGE/prefix/SYMLINKS.txt" || { echo 'DPAI_NATIVE_JDK_NO_SYMLINKS'; exit 1; }
           while IFS= read -r record || test -n "${'$'}record"; do
@@ -92,11 +96,26 @@ object AndroidNativeJdk {
         fi
         mkdir -p "${'$'}HOME_NATIVE" "${'$'}PREFIX/tmp"
         export PREFIX HOME="${'$'}HOME_NATIVE" TMPDIR="${'$'}PREFIX/tmp"
+        LD_LIBRARY_PATH="${'$'}{LD_LIBRARY_PATH-$ICU_LIBRARY_PATH}"; export LD_LIBRARY_PATH
         PATH="${'$'}PREFIX/bin:/system/bin:/usr/bin:/bin"; export PATH
         DPAI_UID=${'$'}(id -u)
         test "${'$'}DPAI_UID" != 0 || { echo 'DPAI_NATIVE_JDK_FAKE_ROOT: Termux apt refuses emulated root; check PRoot real-user marker'; exit 1; }
         echo "DPAI_NATIVE_JDK_REAL_UID=${'$'}DPAI_UID"
+        # apt сохраняет проверенные .deb в постоянном доме, а не во временном
+        # каталоге bootstrap. Файл человека с этим именем не перезаписывается.
+        mkdir -p /root/.cache/dpai/apt/archives/partial "${'$'}PREFIX/etc/apt/apt.conf.d"
+        for DPAI_DEB in "${'$'}{PREFIX%/files/usr}"/cache/apt/archives/*.deb; do
+          test -f "${'$'}DPAI_DEB" || continue
+          test -e "/root/.cache/dpai/apt/archives/${'$'}{DPAI_DEB##*/}" || cp "${'$'}DPAI_DEB" /root/.cache/dpai/apt/archives/
+        done
+        if ! test -e "${'$'}PREFIX/etc/apt/apt.conf.d/90dpai-cache" && ! test -L "${'$'}PREFIX/etc/apt/apt.conf.d/90dpai-cache"; then
+          DPAI_APT_CFG=${'$'}(mktemp "${'$'}PREFIX/etc/apt/apt.conf.d/.dpai-cache.XXXXXX")
+          printf '%s\n' 'APT::Keep-Downloaded-Packages "true";' 'Binary::apt::APT::Keep-Downloaded-Packages "true";' 'Binary::apt-get::APT::Keep-Downloaded-Packages "true";' 'Dir::Cache::archives "/root/.cache/dpai/apt/archives";' > "${'$'}DPAI_APT_CFG"
+          mv -n "${'$'}DPAI_APT_CFG" "${'$'}PREFIX/etc/apt/apt.conf.d/90dpai-cache"
+          rm -f "${'$'}DPAI_APT_CFG"
+        fi
         if ! test -x "${'$'}JAVA"; then
+          echo 'DPAI_PROGRESS packages Termux-JDK'
           # The official Termux pkg wrapper rotates/checks its mirrors before
           # installing. Use it if present in the verified official bootstrap.
           if test -x "${'$'}PREFIX/bin/pkg"; then
@@ -138,6 +157,7 @@ object AndroidNativeJdk {
         fi
         test -r '$COMPAT_ASSET' || { echo 'DPAI_NATIVE_JDK_COMPAT_MISSING'; exit 1; }
         /usr/bin/install -m 755 '$COMPAT_ASSET' '$COMPAT'
+        echo 'DPAI_PROGRESS verify native-JDK'
         LD_PRELOAD='$COMPAT' "${'$'}JAVA" -Xmx128m -version || { echo 'DPAI_NATIVE_JDK_JAVA_FAILED'; exit 1; }
         LD_PRELOAD='$COMPAT' '$JAVAC' -version || { echo 'DPAI_NATIVE_JDK_JAVAC_FAILED'; exit 1; }
         # Versions alone do not prove that javac can compile or that the JVM can

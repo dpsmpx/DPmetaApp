@@ -72,6 +72,7 @@ class EfficiencyHarness(
     sessionsPerTarget: Int = 2,
     /** Аккаунты сверх слота Claude (D-100): подписки Codex и Gemini, пределы — до первого такта. */
     accountsHook: (AccountsHook) -> AccountsState = { it.state },
+    automationGate: com.dpsmpx.dpai.automation.AutomationGate = com.dpsmpx.dpai.automation.AutomationGate.NONE,
     // Последним: вызовы с замыкающей лямбдой оборачивают исполнителя.
     wrap: (ClaudeRunner) -> ClaudeRunner = { it },
 ) {
@@ -122,7 +123,7 @@ class EfficiencyHarness(
             clock, ids, RandomSource.seeded(303), journal, Recorder(wrap(runner), starts),
             ProjectConfig(project, repo, dir.resolve("trees").toString(), profile, sources = { sources(project) }),
             listOf(TargetSlot(target, emptySet(), sessionsPerTarget)), GitService(host, GitCommands(ApprovalLedger()), clock), Verifier(steps, clock), accounts,
-            efficiency = efficiency,
+            efficiency = efficiency, automationGate = automationGate,
         )
     }
 

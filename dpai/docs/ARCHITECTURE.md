@@ -62,6 +62,12 @@
 Своих worker, очереди или документов исполнения каталог не создаёт.
 OPEN_UI возвращает человека к прежнему экрану, а не обходит одобрения.
 
+D-223 добавляет источник DEVELOPMENT: `ui/DevelopmentTools` соединяет
+FileTree, прежние Git/историю/BuildProblems и действующую LSP. SAX и
+строгий JSON читают результаты зрелых анализаторов; нового процесса,
+хранилища задач и разрешения на запись нет. Семантика не подменяется
+текстовым поиском. Контракт — DPmetaApp:docs/UNIVERSAL_DEVELOPMENT_TOOLS.md.
+
 Граница модуля — граница ответственности. Таблица ниже — единственный
 источник допустимых направлений зависимостей (D-21):
 `tools/verify/check_modules.py` сверяет с ней `settings.gradle.kts` и
@@ -69,6 +75,11 @@ OPEN_UI возвращает человека к прежнему экрану, 
 но не лишнюю). Новый модуль или новое направление — правка этой таблицы
 в том же изменении. Пустой модуль допустим: он закрепляет границу до
 появления кода; этап в последнем столбце — когда появляется код.
+
+D-225 добавляет общий допуск AiAdmission в accounts. Providers оборачивает
+полный API-ответ, orchestrator/AdmittedRunner — прежний ClaudeRunner на
+target; новых worker и направлений зависимостей нет. Приватный резерв
+нативного хода сохраняется до подтверждённого выхода агента.
 
 <!-- check_modules: begin -->
 | Модуль | Отвечает за | Может зависеть от | Этап |
@@ -84,12 +95,12 @@ OPEN_UI возвращает человека к прежнему экрану, 
 | `tasks` | задачи, очередь, приоритеты, DAG, политики, планировщик | `core`, `security`, `accounts`, `execution` | 7 |
 | `sessions` | реестр сессий, жизненный цикл, heartbeat, поток событий | `core`, `accounts`, `execution` | 6 |
 | `verification` | профили FAST/NORMAL/FULL, доказательства, адаптер DP-Verify | `core`, `execution`, `git` | 10 |
-| `automation` | общий каталог нынешних инструментов, схемы входов, проверка ревизии и OperationResult без своего worker (D-215) | `core`, `verification` | — |
+| `automation` | каталог, схемы, ревизии, последовательные сценарии, долговечные результаты и доставка событий; прежние исполнители, без своего worker (D-215, D-222) | `core`, `verification`, `storage` | — |
 | `monitoring` | сводки, временная шкала, свежесть, устаревание, ресурсы, самодиагностика | `core`, `accounts`, `execution`, `sessions`, `tasks` | 11 |
 | `notifications` | категории, дедупликация, агрегация, cooldown, deep links, запросы человеку (D-44) | `core` | 12 |
 | `connectors` | GitHub и другие внешние сервисы | `core`, `security` | 15 |
 | `files` | файлы пользователя (D-99): поиск по именам и тексту обходом дерева (D-149); дерево файлов без символьных ссылок, копия папки с двусторонней синхронизацией по базе, текст для правки, вложения в чат | `core`, `storage` | — |
-| `providers` | `AIProvider` (ТЗ, §52): провайдеры моделей по ключу — Anthropic, OpenAI-совместимые, Gemini; сеть со списком адресов `ProviderHosts`; переписка и проектные инструменты API, stateless OpenAI Responses, совместимый Chat Completions и Gemini (D-98, D-214); модели GGUF с Hugging Face — список и скачивание с докачкой и сверкой суммы в приёмник вызывающего, хосты `HuggingFaceHosts` (D-110, D-119) | `core`, `accounts` | — |
+| `providers` | `AIProvider` (ТЗ, §52): провайдеры моделей по ключу — Anthropic, OpenAI-совместимые, Gemini; сеть со списком адресов `ProviderHosts`; переписка и проектные инструменты API, stateless OpenAI Responses, совместимый Chat Completions и Gemini (D-98, D-214); модели GGUF с Hugging Face — список и скачивание с докачкой и сверкой суммы в приёмник вызывающего, хосты `HuggingFaceHosts` (D-110, D-119); бюджет сетевого раунда и привязка проектной переписки к источникам (D-224) | `core`, `accounts`, `contexts` | — |
 | `localai` | LocalAIService (ТЗ, §77, §78; D-105): подсказки модели на этом устройстве или в частной сети — сводка, порядок контекста, классы строк журнала, отклонения, сводка уведомлений, категория задачи; ответ — JSON по схеме, выбор — из данного; ядро и планировщик от неё не зависят | `core`, `providers` | — |
 | `lsp` | клиент языковых служб редактора (D-137): кадры и JSON-RPC протокола LSP поверх потоков, документы с версиями, диагностика, дополнение, переходы, переименование, форматирование, правки текста в UTF-16; команда clangd; процессов не запускает, execution — только для живого теста с настоящим clangd | `core`, `execution` | — |
 | `sync` | облачная синхронизация (ТЗ, §4.1; D-107): копия состояния контура, зашифрованная на устройстве (PBKDF2-HMAC-SHA256, AES-256-GCM), архив с оглавлением и разрешёнными корнями, восстановление при запуске с сохранением прежних данных, клиент Git Data API к `api.github.com` для приватного репозитория; ядро без облака работает | `core`, `storage`, `providers` | — |
@@ -277,7 +288,14 @@ target:     start ─► Detacher ─► supervise ─► процесс; выв
 план назначений), `TaskCodec`; проекция журнала — `orchestrator.tasks`.
 
 Модуль `contexts` (этап 8; `docs/CONTEXT_MODEL.md`, §7):
-`ContextAssembler`, `PromptRenderer`, `Handoff`, `Compaction`.
+`ContextAssembler`, `ContextSelector`, `PromptRenderer`, `Handoff`, `Compaction`.
+D-224 добавляет `ContextProfile`, `ContextBinding`, `ContextPacket` и
+ограниченный `ContextTextCache`. Адаптеры `ContextWorkspace`, `ContextTree`,
+`ContextStore`, `ContextTools` — в `ui`, Android только соединяет их с
+проектом и рисует настройки. Ребро `providers → contexts` нужно для
+единой оценки токенов, бюджета фактического HTTP-тела и валидации ссылок
+переписки; зависимости на Android, FileTree или исполнение у providers
+не появляются. Полный контракт — DPmetaApp:docs/CONTEXT_ENGINEERING.md.
 
 Модуль `git` (этап 9): `Worktrees` (реестр, владелец, события),
 `OverlapPolicy` (ТЗ, §31), `GitCommands` (безопасные команды, одобрения

@@ -29,6 +29,18 @@ dependencyResolutionManagement {
                 includeGroupByRegex("""com\.google\.(android|testing)\..*""")
             }
         }
+        // Большой образ для JVM-снимков: отдельный канал Maven Central,
+        // чтобы HTTP 429 основного узла не блокировал проверку интерфейса.
+        // Версии и SHA-256 по-прежнему задаёт реестр проверки Gradle.
+        exclusiveContent {
+            forRepository {
+                maven {
+                    name = "RobolectricImage"
+                    url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+                }
+            }
+            filter { includeModule("org.robolectric", "android-all-instrumented") }
+        }
         mavenCentral()
     }
     versionCatalogs {

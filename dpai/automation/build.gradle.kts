@@ -6,5 +6,6 @@ plugins {
 dependencies {
     api(project(":core"))
     api(project(":verification"))
+    implementation(project(":storage"))
     testImplementation(project(":testkit"))
 }

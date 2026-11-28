@@ -1,0 +1,5 @@
+<resources>
+    <string name="ui_copy">Copy</string>
+    <string name="ui_copied">Copied</string>
+    <string name="ui_copy_failed">Could not copy</string>
+</resources>

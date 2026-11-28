@@ -151,6 +151,7 @@ fun ModelsPane(controller: Controller, model: DemoModel, onSession: (ExecutorCha
             TextButton(onClick = { showProfiles = !showProfiles }) { Text(if (showProfiles) "Скрыть исполнителей и настройки ▾" else "Исполнители и настройки ▸") }
         }
         if (showProfiles) item {
+            ModelRoutingSection(profiles, model)
             // «Добавить профиль» — заметной кнопкой, а не текстом под пояснением (AI:A-26).
             androidx.compose.material3.FilledTonalButton(onClick = { creating = true }, modifier = Modifier.padding(top = 4.dp)) { Text("Добавить профиль") }
         }
@@ -622,7 +623,7 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, profiles: List<ApiProfile>
     }
     val list = rememberLazyListState()
     val count = c.entries.size + if (live != null) 1 else 0
-    LaunchedEffect(count, live?.text?.length) { if (count > 0) list.scrollToItem(count - 1) }
+
     if (showFullAccess && fullAccessName != null) AlertDialog(
         onDismissRequest = { if (!authenticating) showFullAccess = false },
         containerColor = MaterialTheme.colorScheme.errorContainer,
@@ -700,6 +701,7 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, profiles: List<ApiProfile>
                 }
             } }) { Text(androidx.compose.ui.res.stringResource(R.string.api_work_open_project)) }
         }
+        OutputFollow(list, count to live?.text?.length, count - 1)
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (c.entries.isEmpty() && live == null) item { Text("Напишите вопрос — ответит ${p?.model ?: "модель"}.", style = MaterialTheme.typography.bodySmall) }
             // Ответы только дописываются в конец: ключ — номер (AI:A-25).

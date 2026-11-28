@@ -75,6 +75,7 @@ internal fun SigningKeysPanel(project: String, projectName: String, enabled: Boo
             if (choice == SigningKeys.Choice.NONE) Text(SignAfterBuild.NO_KEY, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
         problem?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        DetailSection(androidx.compose.ui.res.stringResource(R.string.ui_signing_keys), "signing:$project") {
         androidx.compose.runtime.key(project, version) {
             KeyLevelRow("Ключ проекта «$projectName»", project, own, ownFailed, ownStored, enabled && loaded, onChanged, onNote)
             KeyLevelRow("Глобальный ключ (все проекты)", null, global, globalFailed, globalStored, enabled && loaded, onChanged, onNote)
@@ -82,6 +83,7 @@ internal fun SigningKeysPanel(project: String, projectName: String, enabled: Boo
         var release by remember(project, version) { mutableStateOf(false) }
         TextButton(onClick = { release = true }) { Text("Ключ выпуска на ПК…") }
         if (release) ReleaseKeyDialog(onClose = { release = false }, onNote = onNote)
+        }
     }
 }
 

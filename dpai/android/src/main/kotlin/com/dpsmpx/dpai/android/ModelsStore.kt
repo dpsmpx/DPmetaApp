@@ -183,8 +183,10 @@ object ModelsStore {
     @Synchronized
     fun saveProfile(p: ApiProfile, key: Secret?): String? {
         val d = docs ?: return "хранилище не готово"
+        if (p.capabilities?.let { it.binding != com.dpsmpx.dpai.accounts.ModelCapabilities.binding(p) } == true) return "сведения о возможностях относятся к другой модели или адресу"
         if (key != null && !key.isEmpty && !ApiKeys.put(app, p.id, key)) return "ключ не сохранён: Keystore отказал"
-        val next = profileFlow.value.filter { it.id != p.id } + p
+        val retained = com.dpsmpx.dpai.accounts.ApiProfiles.retainCapabilities(profileFlow.value.firstOrNull { it.id == p.id }, p)
+        val next = profileFlow.value.filter { it.id != p.id } + retained
         return when (val w = d.write(PROFILES, ApiProfileBook.toJson(next))) {
             is Outcome.Failure -> "профиль не сохранён: ${w.errors.first().message}"
             is Outcome.Success -> null.also { profileFlow.value = next }
@@ -413,6 +415,9 @@ object ModelsStore {
                 sb.append(piece)
                 runningFlow.update { m -> m[conversationId]?.let { m + (conversationId to it.copy(text = sb.toString())) } ?: m }
             }
+            var contextScope: String? = null
+            var contextSources = emptyMap<String, String?>()
+            var contextCommit: String? = null
             val r = runCatching {
                 val project = withUser.project
                 if (project == null) selectedProvider.chat(ChatRequest(profile.model, withUser.context(), null, profile.maxOutputTokens), cancel, onText)
@@ -421,18 +426,29 @@ object ModelsStore {
                     is Outcome.Success -> {
                         val tools = selectedProvider as? com.dpsmpx.dpai.providers.ToolChat
                         if (tools == null) Outcome.failure(DiagCode.UNSUPPORTED, "провайдер не поддерживает проектные инструменты")
-                        else opened.value.use { session -> tools.chatWithTools(ChatRequest(profile.model, withUser.context(), session.system(), profile.maxOutputTokens), session.tools, cancel, onText) { call ->
+                        else opened.value.use { session ->
+                            val prepared = when (val r = session.prepare(withUser, text, cancel)) { is Outcome.Failure -> return@use r; is Outcome.Success -> r.value }
+                            synchronized(this@ModelsStore) {
+                                val latest = chatFlow.value.firstOrNull { it.id == conversationId }
+                                if (latest?.entries?.lastOrNull()?.role == ChatRole.USER) upsert(latest.copy(entries = latest.entries.dropLast(1) + latest.entries.last().copy(contextScope = session.contextScope, contextCommit = session.evidenceCommit)))
+                            }
+                            val answer = tools.chatWithTools(ChatRequest(profile.model, prepared.first, prepared.second, profile.maxOutputTokens, inputBudget = com.dpsmpx.dpai.providers.ContextInputBudget(session.contextProfile.maxChars, session.contextProfile.maxTokens), beforeSend = session::authorizeContext), session.tools, cancel, onText) { call ->
                             val result = session.run(call, cancel)
                             val path = ((call.input["path"] as? com.dpsmpx.dpai.core.serialization.JsonString)?.value ?: "").take(200)
                             val action = app.getString(if (result.isError) R.string.api_work_action_failed else R.string.api_work_action_ok, call.name, path)
                             runningFlow.update { m -> m[conversationId]?.let { m + (conversationId to it.copy(actions = (it.actions + action).takeLast(64))) } ?: m }
                             result
-                        } }
+                            }
+                            contextScope = session.evidenceScope
+                            contextSources = session.evidenceSources
+                            contextCommit = session.evidenceCommit
+                            when (val valid = session.validateEvidence()) { is Outcome.Failure -> valid; is Outcome.Success -> answer }
+                        }
                     }
                 }
             }.getOrElse { e -> Outcome.failure(DiagCode.INTERNAL_ERROR, "сбой: ${e.javaClass.simpleName}", profile.kind.key) }
             val entry = when (r) {
-                is Outcome.Success -> reply(profile, r.value)
+                is Outcome.Success -> reply(profile, r.value).copy(contextScope = contextScope, contextSources = contextSources, contextCommit = contextCommit)
                 is Outcome.Failure -> {
                     val e = r.errors.firstOrNull() ?: r.diagnostics.first()
                     if (e.code == DiagCode.CANCELLED_BY_USER) {

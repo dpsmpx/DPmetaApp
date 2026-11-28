@@ -49,13 +49,14 @@ object KotlinRuntime {
         """.trimIndent()
     }
     fun installCompiler(root: String, file: String, force: Boolean = true): List<String> = ProjectRuntime.args(root, file, ProjectRuntime.context + "\n" + javaEnvironment + "\n" +
+        ComponentDownloads.shell + "\n" +
         (if (force) "" else "if test -x \"\$DPAI_STUDIO_HOME/kotlin/$VERSION/kotlinc/bin/kotlinc\"; then \"\$DPAI_STUDIO_HOME/kotlin/$VERSION/kotlinc/bin/kotlinc\" -version && exit 0; fi\n") + """
         DPAI_SDK="${'$'}DPAI_STUDIO_HOME/kotlin"
         mkdir -p "${'$'}DPAI_SDK" || exit
         DPAI_STAGE=${'$'}(mktemp -d "${'$'}DPAI_SDK/install.XXXXXX") || exit
         DPAI_DEST="${'$'}DPAI_SDK/$VERSION"
         trap 'if test -d "${'$'}DPAI_STAGE/previous" && ! test -d "${'$'}DPAI_DEST"; then printf "DPAI_KOTLIN_BACKUP: %s\n" "${'$'}DPAI_STAGE/previous"; else rm -rf "${'$'}DPAI_STAGE"; fi' EXIT
-        curl --fail --location --proto '=https' --connect-timeout 30 --max-time 900 '$URL' -o "${'$'}DPAI_STAGE/compiler.zip" || exit
+        dpai_fetch '$URL' '$SHA256' "${'$'}DPAI_STAGE/compiler.zip" Kotlin-compiler sha256 900 DPAI_KOTLIN_CHECKSUM || exit
         printf '%s  %s\n' '$SHA256' "${'$'}DPAI_STAGE/compiler.zip" | sha256sum -c - || { printf 'DPAI_KOTLIN_CHECKSUM: failed\n'; exit 1; }
         mkdir "${'$'}DPAI_STAGE/payload" || exit
         unzip -q "${'$'}DPAI_STAGE/compiler.zip" -d "${'$'}DPAI_STAGE/payload" || exit

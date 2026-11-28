@@ -1,6 +1,7 @@
 package com.dpsmpx.dpai.providers
 
 import com.dpsmpx.dpai.accounts.ApiProfile
+import com.dpsmpx.dpai.accounts.AiAdmission
 import com.dpsmpx.dpai.accounts.ProviderKind
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Redactor
@@ -31,6 +32,8 @@ data class ChatRequest(
     val system: String? = null,
     val maxOutputTokens: Int? = null,
     val effort: String? = null,
+    val inputBudget: ContextInputBudget? = null,
+    val beforeSend: (() -> Outcome<Unit>)? = null,
 )
 
 /** Инструмент для модели (D-118): имя, когда его звать, схема входа (JSON Schema). */
@@ -86,11 +89,11 @@ interface AIProvider {
 
 object Providers {
     /** Провайдер профиля; [key] — `null`, если ключа нет (свой сервер без ключа — можно, Anthropic и Gemini — нет). */
-    fun of(profile: ApiProfile, key: Secret?, transport: Transport = UrlTransport()): AIProvider = when (profile.kind) {
+    fun of(profile: ApiProfile, key: Secret?, transport: Transport = UrlTransport(), admission: AiAdmission = AiAdmission.global): AIProvider = AdmittedProvider(profile, when (profile.kind) {
         ProviderKind.ANTHROPIC -> AnthropicProvider(profile, key, transport)
         ProviderKind.OPENAI_COMPATIBLE -> OpenAiCompatibleProvider(profile, key, transport)
         ProviderKind.GEMINI -> GeminiProvider(profile, key, transport)
-    }
+    }, admission)
 
     /** Нужен ли провайдеру ключ: свой OpenAI-совместимый сервер (Ollama, llama.cpp) работает и без него. */
     fun keyRequired(kind: ProviderKind): Boolean = kind != ProviderKind.OPENAI_COMPATIBLE

@@ -66,7 +66,7 @@ object ProfileMarks {
 @Composable
 fun ProfileDot(color: ProfileColors.Color?, size: Int = 10) {
     if (color == null) return
-    val dark = isSystemInDarkTheme()
+    val dark = appDark()
     Box(Modifier.size(size.dp).background(Color(color.of(dark)), CircleShape).clearAndSetSemantics { })
 }
 

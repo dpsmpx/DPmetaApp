@@ -98,12 +98,14 @@ internal object IdeState {
 }
 
 internal class IdeChrome {
+    var workspace by mutableStateOf(false)
     private var editors by mutableStateOf<Set<Any>>(emptySet())
     val active: Boolean get() = editors.isNotEmpty()
     fun enter(owner: Any) { editors = editors + owner }
     fun leave(owner: Any) { editors = editors - owner }
 }
 internal val LocalIdeChrome = staticCompositionLocalOf { IdeChrome() }
+internal val LocalAppMenu = staticCompositionLocalOf<() -> Unit> { {} }
 @Composable internal fun ideZen(): Boolean {
     val state by IdeState.state.collectAsState()
     return LocalIdeChrome.current.active && state.options.zen

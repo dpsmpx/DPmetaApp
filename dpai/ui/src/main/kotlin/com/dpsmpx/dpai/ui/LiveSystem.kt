@@ -13,6 +13,11 @@ import com.dpsmpx.dpai.core.ids.ProviderSessionId
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.hashing.Hashing
+import com.dpsmpx.dpai.core.serialization.JsonObject
+import com.dpsmpx.dpai.core.serialization.JsonString
+import com.dpsmpx.dpai.core.serialization.JsonNumber
+import com.dpsmpx.dpai.core.serialization.JsonBool
 import com.dpsmpx.dpai.core.state.SessionState
 import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.execution.agent.FollowingEventSource
@@ -118,6 +123,9 @@ class LiveSystem(
     private val externalPause: () -> Boolean = { false },
     /** Сессии контуров других рабочих проектов на тех же target (D-179). */
     private val neighbours: com.dpsmpx.dpai.orchestrator.NeighbourLoad = com.dpsmpx.dpai.orchestrator.NeighbourLoad.NONE,
+    private val automationGate: com.dpsmpx.dpai.automation.AutomationGate = com.dpsmpx.dpai.automation.AutomationGate.NONE,
+    private val contextProfile: () -> Outcome<com.dpsmpx.dpai.contexts.ContextProfile> = { Outcome.success(com.dpsmpx.dpai.contexts.ContextProfile()) },
+    private val contextSources: (com.dpsmpx.dpai.tasks.TaskRecord, String?) -> Outcome<List<com.dpsmpx.dpai.contexts.ContextSource>> = { _, _ -> Outcome.success(emptyList()) },
 ) : ControlView, AutoCloseable {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
@@ -239,7 +247,15 @@ class LiveSystem(
         for (e in usable) {
             val agent = manager.client(e.id).valueOrNull()!!
             val events = FollowingEventSource(agent, clock).also { streams += it }
-            runners[e.id] = ClaudeCodeCliRunner(agent, { ProviderSessionId.newUuid(random) }, eventSource = events)
+            val admitted = com.dpsmpx.dpai.orchestrator.AdmittedRunner(
+                ClaudeCodeCliRunner(agent, { ProviderSessionId.newUuid(random) }, eventSource = events), agent, e.id,
+                location = Hashing.sha256(JsonObject.of(
+                    "target" to JsonString(e.id.value), "inApp" to JsonBool(e.inApp),
+                    "host" to JsonString(e.host), "port" to JsonNumber.of(e.port),
+                    "user" to JsonString(e.user), "agent" to JsonString(e.agent), "platform" to JsonString(e.platform.name),
+                )).hex,
+            )
+            runners[e.id] = admitted
         }
         lateinit var o: Orchestrator
         val router = RoutingRunner({ o.sessions.sessions[it]?.target }, { runners[it] })
@@ -247,7 +263,7 @@ class LiveSystem(
         // регистрируются событиями, чтобы журнал знал их после перезапуска.
         val projectTarget = projectEntry
         val config = if (project != null) {
-            ProjectConfig(project.project, project.repository(), project.worktreeRoot, project.profile(), integrationBranch = project.integrationBranch, remote = remote)
+            ProjectConfig(project.project, project.repository(), project.worktreeRoot, project.profile(), integrationBranch = project.integrationBranch, remote = remote, contextProfile = contextProfile, contextSources = contextSources)
         } else {
             ProjectConfig(HOME_PROJECT, null, null, null)
         }
@@ -272,7 +288,7 @@ class LiveSystem(
             // Места target (D-180): заданные у target, общие для рабочих проектов (D-179).
             working.map { TargetSlot(it.id, emptySet(), maxSessions = it.sessions.coerceIn(TargetForm.SESSIONS), label = it.label) }, git, verifier,
             snapshots = snapshots, snapshotEvery = SEGMENT.toLong(), documents = DocumentStore(vfs, "docs"),
-            onEvents = onEvents, onProblem = onProblem, externalPause = externalPause, neighbours = neighbours,
+            onEvents = onEvents, onProblem = onProblem, externalPause = externalPause, neighbours = neighbours, automationGate = automationGate,
         )
         orchestrator = o
         // Слот target — после первой пробы входа: подписка выбирается по аккаунту (см. [placeSlot]).
@@ -450,6 +466,15 @@ class LiveSystem(
         }
     }
 
+    /** Сверяем только собственные сессии и после ответа target, без SSH в конструкторе (D-63). */
+    private fun reconcileAiReservations(target: ExecutionTargetId) {
+        val runner = runners[target] as? com.dpsmpx.dpai.orchestrator.AdmittedRunner ?: return
+        for (pending in com.dpsmpx.dpai.accounts.AiAdmission.global.snapshot().pending.filter { it.target == target && it.model.native }) {
+            val session = IdKinds.SESSION.parse(pending.owner).valueOrNull() ?: continue
+            if (session in orchestrator.sessions.sessions) problems += runner.reconcile(session).errors
+        }
+    }
+
     override fun step() {
         if (externalPause()) return
         if (!probesStarted) {
@@ -466,6 +491,7 @@ class LiveSystem(
                 is Outcome.Success -> r.value?.let { status ->
                     probes.remove(target)
                     probeFailedAt.remove(target)
+                    reconcileAiReservations(target)
                     // Target ответил: прежние сетевые отказы (SSH до добавления ключа и т. п.) — уже не правда, на «Внимание» их не держать.
                     problems.removeAll { it.category == com.dpsmpx.dpai.core.diagnostics.Category.NETWORK }
                     val slot = slotOf[target]

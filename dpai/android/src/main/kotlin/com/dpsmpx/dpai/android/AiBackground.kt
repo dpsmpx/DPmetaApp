@@ -48,7 +48,8 @@ object AiBackground {
         if (ControllerService.running) return
         thread(name = "dpai-background", isDaemon = true) {
             val live = runCatching { Controller.get(context.filesDir).targets().any { it.configDir != null } }.getOrDefault(false)
-            if ((live || SharedVerify.enabled(context)) && !ControllerService.running) ControllerService.start(context)
+            val automation = runCatching { AutomationEvents.enabled(context) }.getOrDefault(false)
+            if ((live || SharedVerify.enabled(context) || automation) && !ControllerService.running) ControllerService.start(context)
         }
     }
 }

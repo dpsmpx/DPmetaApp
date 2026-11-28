@@ -185,17 +185,23 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
         }
     }
 
-    fun bind(buffer: CodeEditorBuffer, path: String, ready: Boolean, dark: Boolean, wrap: Boolean, size: Int, width: Int, tabs: Boolean, restored: Pair<Int, Int>?, highlighted: Boolean) {
+    private var chromePalette: com.dpsmpx.dpai.ui.AppPalette.Scheme? = null
+
+    fun bind(buffer: CodeEditorBuffer, path: String, ready: Boolean, dark: Boolean, wrap: Boolean, size: Int, width: Int, tabs: Boolean, restored: Pair<Int, Int>?, highlighted: Boolean, chrome: com.dpsmpx.dpai.ui.AppPalette.Scheme) {
         val initial = model !== buffer
         if (initial) { model = buffer; observed = null }
         isWordwrap = wrap
         tabWidth = width
         if (lastSize != size) { setTextSize(size.toFloat()); lastSize = size }
         val key = "$path:$ready:$dark:$width:$tabs:$highlighted"
-        if (ready && languageKey != key) {
-            colorScheme = EditorLanguages.scheme(dark, highlighted)
+        val languageChanged = ready && languageKey != key
+        if (languageChanged) {
             setEditorLanguage(EditorLanguages.language(path, width, tabs, dark, highlighted))
             languageKey = key
+        }
+        if (ready && (languageChanged || chromePalette != chrome)) {
+            colorScheme = EditorLanguages.scheme(dark, highlighted, chrome)
+            chromePalette = chrome
         }
         sync()
         if (initial && restored != null) postInLifecycle {
@@ -282,7 +288,8 @@ internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: I
     debugLines: Set<Int> = emptySet(), debugAt: Int? = null, onGutter: ((Int) -> Unit)? = null) {
     val context = LocalContext.current
     val activity = androidx.activity.compose.LocalActivity.current
-    val dark = isSystemInDarkTheme()
+    val dark = appDark()
+    val chrome = Looks.palette(context, LocalUiLook.current)
     var ready by remember { mutableStateOf(false) }
     val change by rememberUpdatedState(onChange)
     val action by rememberUpdatedState(onCommand)
@@ -315,7 +322,7 @@ internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: I
             editor.modeEditing = editingMode
             editor.setOnClickListener { if (!enabled) editor.postInLifecycle { activate?.invoke() } }
             if (editor.isEditable != enabled) editor.isEditable = enabled
-            editor.bind(buffer, path, ready, dark, wrap, size, width, tabs, restored, highlighted)
+            editor.bind(buffer, path, ready, dark, wrap, size, width, tabs, restored, highlighted, chrome)
             if (entering || resuming) editor.postInLifecycle {
                 editor.resumeKeyboard = false
                 editor.requestFocus()

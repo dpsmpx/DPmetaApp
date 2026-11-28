@@ -112,6 +112,7 @@ class GeminiProvider(profile: ApiProfile, key: Secret?, transport: Transport) : 
             val body = linkedMapOf<String, JsonValue>("contents" to JsonArray(history), "tools" to JsonArray(listOf(JsonObject.of("functionDeclarations" to JsonArray(tools.map(ToolLoop::schema))))))
             request.system?.let { body["systemInstruction"] = JsonObject.of("parts" to JsonArray(listOf(JsonObject.of("text" to jstr(it))))) }
             request.maxOutputTokens?.let { body["generationConfig"] = JsonObject.of("maxOutputTokens" to JsonNumber.of(it)) }
+            (request.checkContext(JsonObject(body)) as? Outcome.Failure)?.let { return@turn it }
             val reply = when (val r = json(HttpCall("POST", url("/models/$model:generateContent"), headers, CanonicalJson.write(JsonObject(body)).toByteArray(Charsets.UTF_8), secret()), cancel)) {
                 is Outcome.Failure -> return@turn r
                 is Outcome.Success -> r.value

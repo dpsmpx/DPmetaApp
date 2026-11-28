@@ -65,7 +65,7 @@ object AppBackups {
             DocsSpec("controller", { store(File(it.filesDir, "controller"), "docs") }) { it == "targets" || it == "projects" || it == "project" },
             // Идущий профиль и его итог — состояние, а не настройка.
             DocsSpec("manual-profiles", { store(File(it.filesDir, "manual-profiles"), "docs") }) { it != "active" && it != "result" },
-            DocsSpec("models", { store(it.getDir("models", Context.MODE_PRIVATE), "docs") }) { it == "api-profiles" || it == "routines" },
+            DocsSpec("models", { store(it.getDir("models", Context.MODE_PRIVATE), "docs") }) { it == "api-profiles" || it == "routines" || it == "model-routing" },
         ),
         files = listOf(FileSpec("controller.known_hosts", { File(it.filesDir, "controller") }, "known_hosts")),
     )

@@ -99,6 +99,7 @@ class OpenAiCompatibleProvider(profile: ApiProfile, key: Secret?, transport: Tra
             val body = linkedMapOf<String, JsonValue>("model" to jstr(request.model), "stream" to JsonBool(false), "messages" to JsonArray(flattened),
                 "tools" to JsonArray(tools.map { JsonObject.of("type" to jstr("function"), "function" to ToolLoop.schema(it)) }))
             request.maxOutputTokens?.let { body[if (profile.host == OPENAI_HOST) "max_completion_tokens" else "max_tokens"] = JsonNumber.of(it) }
+            (request.checkContext(JsonObject(body)) as? Outcome.Failure)?.let { return@turn it }
             val reply = when (val r = json(HttpCall("POST", url("/chat/completions"), headers, CanonicalJson.write(JsonObject(body)).toByteArray(Charsets.UTF_8), secret()), cancel)) {
                 is Outcome.Failure -> return@turn r
                 is Outcome.Success -> r.value
@@ -134,6 +135,7 @@ class OpenAiCompatibleProvider(profile: ApiProfile, key: Secret?, transport: Tra
                 "tools" to JsonArray(tools.map { t -> JsonObject(ToolLoop.schema(t).fields + mapOf("type" to jstr("function"), "strict" to JsonBool(false))) }))
             request.system?.let { body["instructions"] = jstr(it) }
             request.maxOutputTokens?.let { body["max_output_tokens"] = JsonNumber.of(it) }
+            (request.checkContext(JsonObject(body)) as? Outcome.Failure)?.let { return@turn it }
             val reply = when (val r = json(HttpCall("POST", url("/responses"), headers, CanonicalJson.write(JsonObject(body)).toByteArray(Charsets.UTF_8), secret()), cancel)) {
                 is Outcome.Failure -> return@turn r
                 is Outcome.Success -> r.value

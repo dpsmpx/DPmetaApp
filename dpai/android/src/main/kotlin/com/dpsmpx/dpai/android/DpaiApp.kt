@@ -225,7 +225,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         }
     }
     BackHandler(enabled = selectedId != null) { selectedId = null }
-    BackHandler(enabled = selectedId == null && settings) { settings = false }
+    BackHandler(enabled = selectedId == null && settings) { if (settingsSub != null) settingsSub = null else settings = false }
     // Ссылка из уведомления (ТЗ, §76): сессия — её экран; задача — экран её последней сессии, иначе доска;
     // запрос — вкладка «Запросы». Разбор строгий (DeepLink.parse): чужое ничего не открывает.
     var confirmUri by remember { mutableStateOf<String?>(null) }
@@ -259,7 +259,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     wizard?.takeIf { !quickStart }?.let { f ->
         val jobs = remember { LongJobs.get(context) }
         val jobState by jobs.state.collectAsState()
-        val busy = LongJobs.GUEST.any { jobState[it]?.running == true }
+        val busy = jobs.busyGuest(jobState)
         // Шаги мастера обновляются по мере работы: после установки — новый сбор фактов.
         LaunchedEffect(busy) {
             if (!busy) withContext(Dispatchers.IO) { runCatching { HealthProbe.collect(context, model) }.getOrNull() }?.let { wizard = it }
@@ -371,7 +371,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     val drawer = androidx.compose.material3.rememberDrawerState(androidx.compose.material3.DrawerValue.Closed)
     BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
     val app = context.applicationContext as? DpaiApplication
-    androidx.compose.runtime.CompositionLocalProvider(LocalUndo provides undo, LocalIdeChrome provides ideChrome) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalUndo provides undo, LocalIdeChrome provides ideChrome, LocalAppMenu provides { scope.launch { drawer.open() } }) {
       // Левая панель — та же, что у пульта (DPmetaApp:D-112): Сводка, Проекты, IDE, AI, Настройки.
       androidx.compose.material3.ModalNavigationDrawer(
         drawerState = drawer,
@@ -417,7 +417,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 }
             },
             topBar = top@ {
-                if (ideFullscreen) return@top
+                if (ideFullscreen || (ideChrome.workspace && tab == AiTab.FILES.ordinal && !settings && selectedId == null)) return@top
                 // Узкая строка (D-61): больше места чату; в окне сессии — кружок состояния и имя (нажатие — переименовать).
                 androidx.compose.material3.Surface(tonalElevation = 3.dp) {
                     Row(
@@ -442,7 +442,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                             }
                             TextButton(onClick = { sessionEvents = !sessionEvents }) { Text(if (sessionEvents) "Чат" else "События") }
                         } else if (settings) {
-                            TextButton(onClick = { settings = false }, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
+                            TextButton(onClick = { if (settingsSub != null) settingsSub = null else settings = false }, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
                             Text(AI_SETTINGS_TITLE, Modifier.weight(1f).padding(start = 8.dp), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         } else {
                             // Левая панель приложения (DPmetaApp:D-112) — вместо «← Пульт» и нижней панели вкладок.
@@ -477,7 +477,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
             Column(
                 Modifier.padding(padding).consumeWindowInsets(padding).imePadding()
                     .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-                    .fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = if (ideFullscreen) androidx.compose.ui.unit.Dp.Infinity else if (twoPane) TWO_PANE_MAX else CONTENT_MAX).fillMaxWidth(),
+                    .fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = if (ideFullscreen) androidx.compose.ui.unit.Dp.Infinity else if (twoPane) TWO_PANE_MAX else if (tab == AiTab.FILES.ordinal && !settings && selectedId == null) androidx.compose.ui.unit.Dp.Infinity else CONTENT_MAX).fillMaxWidth(),
             ) {
                 if (!ideFullscreen) {
                 corrupted?.let { what ->
@@ -635,7 +635,7 @@ private fun AiSectionTabs(current: AiTab, waiting: Int, demo: Boolean, modifier:
  */
 @Composable
 internal fun toneColor(t: Tone): Color {
-    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val dark = appDark()
     fun of(role: com.dpsmpx.dpai.ui.AppPalette.Role) = Color(com.dpsmpx.dpai.ui.AppPalette.semantic(role, dark))
     return when (t) {
         Tone.NEUTRAL -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -722,9 +722,7 @@ private fun SessionPane(screen: SessionScreen?, model: DemoModel, events: Boolea
     // Чат сессии (D-59): все сообщения задачи в одной ленте, ввод внизу, управление ходом; имя и состояние — в заголовке (D-61).
     val list = androidx.compose.foundation.lazy.rememberLazyListState()
     val shown = if (events) screen.timeline.size else screen.chat.size
-    LaunchedEffect(screen.session, shown, events) {
-        if (shown > 0) list.animateScrollToItem(shown)
-    }
+
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
     val inputMax = maxHeight - 56.dp
     Column(Modifier.fillMaxSize()) {
@@ -735,6 +733,7 @@ private fun SessionPane(screen: SessionScreen?, model: DemoModel, events: Boolea
                 for (r in waiting) RequestItem(model, r)
             }
         }
+        OutputFollow(list, Triple(screen.session, shown, events), shown)
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             // Расход и строка состояния — мелко в начале ленты, а не над ней (D-61).
             item {

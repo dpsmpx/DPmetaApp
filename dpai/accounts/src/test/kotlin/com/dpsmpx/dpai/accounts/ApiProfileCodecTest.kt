@@ -67,7 +67,7 @@ class ApiProfileCodecTest {
             good.replace("\"anthropic\"", "\"bedrock\""),
             good.replace("https://api.anthropic.com/v1", "https://evil.example/v1"),
             good.replace("acc_", "tgt_"),
-            good.replace("\"version\":1", "\"version\":9"),
+            good.replace("\"version\":${ApiProfileBook.VERSION}", "\"version\":${ApiProfileBook.VERSION + 1}"),
             good.replace("\"profiles\":[", "\"profiles\":[1,"),
         )) {
             assertIs<Outcome.Failure>(ApiProfileBook.fromJson(JsonParser().parse(bad).valueOrNull()!!), bad)

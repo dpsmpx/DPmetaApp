@@ -1,0 +1,25 @@
+{
+  "format": "dpai.api-chats",
+  "version": 3,
+  "conversations": [
+    {
+      "id": "cor_01J9ZQ3K8M7N6P5R4S3T2V1W0X",
+      "profile": "acc_01J9ZQ3K8M7N6P5R4S3T2V1W0X",
+      "title": "Проверка происхождения",
+      "project": "prj_01J9ZQ3K8M7N6P5R4S3T2V1W0X",
+      "entries": [
+        {
+          "role": "assistant",
+          "text": "Сохранённый ответ",
+          "status": "ok",
+          "contextScope": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "contextSources": {
+            "src/A.kt": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "AGENTS.md": null
+          },
+          "contextCommit": "cccccccccccccccccccccccccccccccccccccccc"
+        }
+      ]
+    }
+  ]
+}

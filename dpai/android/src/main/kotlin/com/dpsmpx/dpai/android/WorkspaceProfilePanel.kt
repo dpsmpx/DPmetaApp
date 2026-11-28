@@ -32,6 +32,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -92,6 +93,7 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
         choices = withContext(Dispatchers.IO) { model.manualChoices(view.project, kind) }
         loaded = true
     }
+    val setupRequired = remember(view.project, kind, loaded) { loaded && rows.all { it.command.isBlank() } }
     val editable = loaded && !run.blocked && !busy
     fun form(): Outcome<ManualProfile> {
         val globs = when (val g = com.dpsmpx.dpai.files.TreeArtifacts.patterns(artifactsText)) {
@@ -102,22 +104,6 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
     }
     Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
         Text(if (kind == ManualProfileKind.CHECK) "Ручная проверка" else "Ручная сборка", style = MaterialTheme.typography.titleSmall)
-        Text("Шаги выполняются по порядку в выбранном дереве, без shell; следующий — только после кода 0 предыдущего. Для скрипта укажите интерпретатор явно. Секреты в команду не добавляйте.", style = MaterialTheme.typography.bodySmall)
-        Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-            Text("Шаблон:", style = MaterialTheme.typography.bodySmall)
-            for (t in ManualProfile.templates(kind)) TextButton(enabled = editable, onClick = {
-                rows.clear()
-                rows.addAll(t.steps.map { (n, c, s) -> StepRow(n, c, s) })
-                if (t.title == "APK Android") needsText = com.dpsmpx.dpai.ui.ManualNeed.ANDROID_SDK.code
-                if (t.title == "DPmetaApp") {
-                    needsText = com.dpsmpx.dpai.ui.ManualNeed.ANDROID_SDK.code
-                    artifactsText = "shell/build/outputs/apk/release/*.apk"
-                    envText = "DPAI_RELEASE_DEBUG_KEY=1"
-                    note = "Самосборка DPmetaApp: APK с отладочной подписью. Для обновления установленной студии переподпишите своим прежним ключом."
-                }
-                else note = "Шаблон «${t.title}» подставлен — проверьте команды и сохраните"
-            }) { Text(t.title) }
-        }
         if (kind == ManualProfileKind.BUILD && location?.task == null && location != null) {
             Text("Последний PR: автоматически выбирается самый новый открытый PR origin, включая черновики. Совместимые локальные изменения и новые файлы сохраняются и входят в сборку; при пересечении Git укажет файлы. Свои коммиты не перезаписываются; вход gh — на target проекта.", style = MaterialTheme.typography.bodySmall)
             Row(Modifier.horizontalScroll(rememberScrollState())) {
@@ -137,6 +123,24 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
                     }
                 }) { Text("Собрать последний PR") }
             }
+        }
+        Text(androidx.compose.ui.res.stringResource(R.string.ui_profile_summary, rows.count { it.command.isNotBlank() }), style = MaterialTheme.typography.bodySmall)
+        DetailSection(androidx.compose.ui.res.stringResource(R.string.ui_profile_settings), "profile:${view.project.project.value}:${kind.name}", expandedInitially = !LocalUiLook.current.simple || setupRequired) {
+        Text("Шаги выполняются по порядку в выбранном дереве, без shell; следующий — только после кода 0 предыдущего. Для скрипта укажите интерпретатор явно. Секреты в команду не добавляйте.", style = MaterialTheme.typography.bodySmall)
+        Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+            Text("Шаблон:", style = MaterialTheme.typography.bodySmall)
+            for (t in ManualProfile.templates(kind)) TextButton(enabled = editable, onClick = {
+                rows.clear()
+                rows.addAll(t.steps.map { (n, c, s) -> StepRow(n, c, s) })
+                if (t.title == "APK Android") needsText = com.dpsmpx.dpai.ui.ManualNeed.ANDROID_SDK.code
+                if (t.title == "DPmetaApp") {
+                    needsText = com.dpsmpx.dpai.ui.ManualNeed.ANDROID_SDK.code
+                    artifactsText = "shell/build/outputs/apk/release/*.apk"
+                    envText = "DPAI_RELEASE_DEBUG_KEY=1"
+                    note = "Самосборка DPmetaApp: APK с отладочной подписью. Для обновления установленной студии переподпишите своим прежним ключом."
+                }
+                else note = "Шаблон «${t.title}» подставлен — проверьте команды и сохраните"
+            }) { Text(t.title) }
         }
         rows.forEachIndexed { i, row ->
             Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
@@ -179,16 +183,6 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
             style = MaterialTheme.typography.bodySmall)
         Text("В sh -c и PowerShell подстановки не экранируются: используйте только доверенные значения. Пути и имена передавайте через окружение, обращения к переменным заключайте в кавычки.",
             style = MaterialTheme.typography.bodySmall)
-        // Выбор вариантов к запуску (D-183): первый — по умолчанию, последний выбор помнится.
-        val declared = remember(paramsText) { (com.dpsmpx.dpai.ui.ManualVars.parseParams(paramsText) as? Outcome.Success)?.value.orEmpty() }
-        for (prm in declared) {
-            val current = choices[prm.name]?.takeIf { it in prm.choices } ?: prm.choices.first()
-            Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-                Text("${prm.title}:", style = MaterialTheme.typography.bodySmall)
-                for (c in prm.choices) androidx.compose.material3.FilterChip(selected = c == current, onClick = { choices = choices + (prm.name to c) },
-                    label = { Text(c) }, modifier = Modifier.padding(start = 4.dp))
-            }
-        }
         TextButton(enabled = editable, onClick = {
             busy = true
             scope.launch {
@@ -200,6 +194,17 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
                 busy = false
             }
         }) { Text("Сохранить профиль") }
+        }
+        // Выбор вариантов к запуску (D-183): первый — по умолчанию, последний выбор помнится.
+        val declared = remember(paramsText) { (com.dpsmpx.dpai.ui.ManualVars.parseParams(paramsText) as? Outcome.Success)?.value.orEmpty() }
+        for (prm in declared) {
+            val current = choices[prm.name]?.takeIf { it in prm.choices } ?: prm.choices.first()
+            Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                Text("${prm.title}:", style = MaterialTheme.typography.bodySmall)
+                for (c in prm.choices) androidx.compose.material3.FilterChip(selected = c == current, onClick = { choices = choices + (prm.name to c) },
+                    label = { Text(c) }, modifier = Modifier.padding(start = 4.dp))
+            }
+        }
         TextButton(enabled = loaded && !busy && !run.blocked && location != null && view.ready && state[LongJobs.WORKSPACE_PROFILE]?.running != true, onClick = {
             when (val p = form()) {
                 is Outcome.Failure -> note = p.errors.first().message
@@ -212,6 +217,12 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
                 }
             }
         }) { Text(if (kind == ManualProfileKind.CHECK) "Запустить проверку" else "Запустить сборку") }
+        if (state[LongJobs.WORKSPACE_PROFILE]?.running == true) {
+            val total = run.active?.profile?.steps?.size ?: 0
+            val job = state.getValue(LongJobs.WORKSPACE_PROFILE)
+            val label = if (total > 0) stringResource(R.string.progress_steps, run.results.size, total) else job.label
+            TaskProgressView(label, if (run.active != null) run.output else job.output.joinToString("\n"))
+        }
         // Ход по шагам (D-154): ✓ — код 0, ✗ — ошибка, ▶ — идёт, · — ещё не запускался.
         run.active?.profile?.steps?.takeIf { it.size > 1 }?.forEachIndexed { i, s ->
             val r = run.results.firstOrNull { it.step == i + 1 }
@@ -223,8 +234,8 @@ internal fun WorkspaceProfilePanel(model: DemoModel, view: ProjectWorkspaceView,
             }
             DiagnosticText("$mark ${i + 1}. ${s.name}" + (r?.takeIf { !it.ok }?.let { " — ${it.reason}" }.orEmpty()), style = MaterialTheme.typography.bodyMedium)
         }
-        note?.let { DiagnosticText(it) }
-        state[LongJobs.WORKSPACE_PROFILE]?.let { job -> if (!job.running) job.note?.let { DiagnosticText(it) } }
+        note?.takeIf { it != run.note }?.let { DiagnosticText(it) }
+        state[LongJobs.WORKSPACE_PROFILE]?.let { job -> if (!job.running) job.note?.takeIf { it != note && it != run.note }?.let { DiagnosticText(it) } }
         if (run.blocked) {
             Text("Весь контур проекта на паузе", color = MaterialTheme.colorScheme.error)
             run.active?.let { DiagnosticText("${it.target.label}: ${it.path}\n${it.branch}", style = MaterialTheme.typography.bodySmall) }

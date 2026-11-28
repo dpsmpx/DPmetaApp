@@ -22,10 +22,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.core.graphics.drawable.toDrawable
 import androidx.core.content.edit
 import androidx.core.view.WindowCompat
 import com.dpsmpx.dpai.ui.AppPalette
@@ -41,6 +44,63 @@ object Looks {
     fun read(context: Context): UiLook = UiLook.fromMap(prefs(context).all)
 
     fun write(context: Context, look: UiLook) = prefs(context).edit { look.toMap().forEach { (k, v) -> putString(k, v) } }
+
+    fun dark(context: Context, look: UiLook = read(context)): Boolean = look.dark(
+        context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK == android.content.res.Configuration.UI_MODE_NIGHT_YES)
+
+    /** Нативные окна используют те же нейтральные поверхности и выбранный акцент. */
+    fun palette(context: Context, look: UiLook = read(context)): AppPalette.Scheme {
+        val dark = dark(context, look)
+        val adaptive = if (look.accent == UiLook.Accent.WALLPAPER && Build.VERSION.SDK_INT >= 31) {
+            (if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)).primary.toArgb().toLong() and 0xffffffffL
+        } else null
+        return look.palette(dark, adaptive)
+    }
+
+
+    // Цвета сохраняют отключение, нажатие и клавиатурный фокус нативных контролов.
+    private val nativeStates = arrayOf(
+        intArrayOf(android.R.attr.state_enabled, android.R.attr.state_pressed),
+        intArrayOf(android.R.attr.state_enabled, android.R.attr.state_focused),
+        intArrayOf(android.R.attr.state_enabled, android.R.attr.state_selected),
+        intArrayOf(android.R.attr.state_enabled), intArrayOf(),
+    )
+    private fun nativeInk(p: AppPalette.Scheme, normal: Long) = android.content.res.ColorStateList(nativeStates,
+        intArrayOf(p.onPrimaryContainer.toInt(), p.onPrimaryContainer.toInt(), p.primary.toInt(), normal.toInt(),
+            androidx.core.graphics.ColorUtils.setAlphaComponent(normal.toInt(), 97)))
+    private fun nativeSurface(p: AppPalette.Scheme) = android.content.res.ColorStateList(nativeStates,
+        intArrayOf(p.primaryContainer.toInt(), p.primaryContainer.toInt(), p.surfaceContainerHigh.toInt(),
+            p.surfaceContainerHigh.toInt(), p.surfaceContainerHigh.toInt()))
+
+    /** Нативные элементы: значения/выделение и обработчики не пересоздаются. */
+    fun styleNative(view: android.view.View, palette: AppPalette.Scheme) {
+        if (view is TerminalView) { view.applyPalette(palette); return }
+        if (view is android.widget.TextView) {
+            view.setTextColor(nativeInk(palette, palette.onSurface))
+            view.setHintTextColor(palette.onSurfaceVariant.toInt())
+        }
+        if (view is android.widget.EditText) {
+            view.backgroundTintList = android.content.res.ColorStateList.valueOf(palette.primary.toInt())
+        } else if (view.background != null) {
+            // Сохраняем форму, ripple и состояния фокуса исходного drawable.
+            view.backgroundTintList = nativeSurface(palette)
+        }
+        if (view is android.view.ViewGroup) for (i in 0 until view.childCount) styleNative(view.getChildAt(i), palette)
+    }
+
+    fun nativeContext(context: Context): Context = android.view.ContextThemeWrapper(context,
+        if (dark(context)) android.R.style.Theme_Material else android.R.style.Theme_Material_Light)
+
+    fun styleDialog(dialog: android.app.AlertDialog) {
+        val palette = palette(dialog.context)
+        dialog.window?.apply {
+            setBackgroundDrawable(palette.surfaceContainerHigh.toInt().toDrawable())
+            styleNative(decorView, palette)
+        }
+        for (which in listOf(android.content.DialogInterface.BUTTON_POSITIVE, android.content.DialogInterface.BUTTON_NEGATIVE, android.content.DialogInterface.BUTTON_NEUTRAL)) {
+            dialog.getButton(which)?.setTextColor(nativeInk(palette, palette.primary))
+        }
+    }
 
     /** Текущее оформление; меняется сразу во всех открытых окнах приложения. */
     @Composable
@@ -62,20 +122,13 @@ object Looks {
  * акцент из «Оформления»; «Обои телефона» — цвета обоев (Android 12+, D-74); тема,
  * размер текста и плотность — оттуда же. Смысловые цвета — `toneColor` (`AppPalette`).
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun DpaiTheme(content: @Composable () -> Unit) {
     val look = Looks.remember()
-    val dark = when (look.theme) {
-        UiLook.Theme.SYSTEM -> isSystemInDarkTheme()
-        UiLook.Theme.LIGHT -> false
-        UiLook.Theme.DARK -> true
-    }
+    val dark = look.dark(isSystemInDarkTheme())
     val context = LocalContext.current
-    val scheme = if (look.accent == UiLook.Accent.WALLPAPER && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-    } else {
-        schemeOf(UiLook.scheme(look.accent, dark), dark)
-    }
+    val scheme = schemeOf(Looks.palette(context, look), dark)
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
@@ -91,7 +144,14 @@ fun DpaiTheme(content: @Composable () -> Unit) {
     val d = LocalDensity.current
     // Плотность сжимает dp, а размер текста — только sp: деление возвращает тексту выбранный размер.
     val density = Density(d.density * look.density.factor, d.fontScale * look.text.factor / look.density.factor)
-    CompositionLocalProvider(LocalDensity provides density, LocalUiLook provides look) {
+    val original = androidx.compose.ui.platform.LocalViewConfiguration.current
+    val minimum = (48f / look.density.factor).dp
+    val config = remember(original, minimum) { object : androidx.compose.ui.platform.ViewConfiguration by original {
+        override val minimumTouchTargetSize = androidx.compose.ui.unit.DpSize(minimum, minimum)
+    } }
+    CompositionLocalProvider(LocalDensity provides density, LocalUiLook provides look,
+        androidx.compose.ui.platform.LocalViewConfiguration provides config,
+        androidx.compose.material3.LocalMinimumInteractiveComponentSize provides minimum) {
         MaterialTheme(colorScheme = scheme, content = content)
     }
 }
@@ -131,3 +191,6 @@ private tailrec fun Context.activity(): Activity? = when (this) {
     is ContextWrapper -> baseContext.activity()
     else -> null
 }
+
+/** Смысловые цвета и нативный редактор следуют выбранной теме, включая чёрную. */
+@Composable internal fun appDark(): Boolean = LocalUiLook.current.dark(isSystemInDarkTheme())

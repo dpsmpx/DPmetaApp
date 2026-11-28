@@ -53,8 +53,8 @@ class EventJournalSegmentsTest {
         assertTrue("№1…3" in first.errors.single().message, first.errors.single().message)
         // Пропал сегмент в середине: чтение истории называет разрыв, а не пропускает его.
         again.delete("data/journal.log.seg-000000000004")
-        val e = kotlin.test.assertFailsWith<com.dpsmpx.dpai.storage.journal.JournalSegmentUnreadable> { open(again).records(1) }
-        assertTrue("№4…6" in e.message.orEmpty(), e.message)
+        val e = assertIs<Outcome.Failure>(EventJournal.open(again, path, segmentSize = 3))
+        assertTrue("№4…6" in e.errors.single().message, e.errors.single().message)
         // Пропал последний запечатанный: активный файл цел, но не стыкуется — не порча хвоста, и карантин его не режет.
         last.delete("data/journal.log.seg-000000000007")
         val gap = EventJournal.open(last, path, quarantineCorruption = true, segmentSize = 3)
@@ -83,13 +83,14 @@ class EventJournalSegmentsTest {
         assertEquals(2, first.diagnostics.count { it.code == DiagCode.JOURNAL_SEGMENT_RESTORED }, first.diagnostics.toString())
         assertEquals(events, first.value.records().map { it.event }, "история цела")
 
-        // Средний испорчен: замечен при чтении истории — и тоже из копии, с сообщением.
+        // Средний испорчен: замечен уже при открытии — из копии, с диагностикой до чтения истории.
         vfs.write("data/journal.log.seg-000000000004", "мусор\n".toByteArray())
-        val again = assertIs<Outcome.Success<EventJournal>>(reopen()).value
+        val reopened = assertIs<Outcome.Success<EventJournal>>(reopen())
+        val again = reopened.value
         val repairs = mutableListOf<com.dpsmpx.dpai.core.diagnostics.Diagnostic>()
         again.onRepair = { repairs += it }
         assertEquals(events, again.records().map { it.event })
-        assertEquals(DiagCode.JOURNAL_SEGMENT_RESTORED, repairs.single().code)
+        assertEquals(DiagCode.JOURNAL_SEGMENT_RESTORED, (reopened.diagnostics + repairs).single().code)
 
         // Копия не годна — отказ, как без неё.
         vfs.delete("data/journal.log.seg-000000000007")
@@ -134,4 +135,22 @@ class EventJournalSegmentsTest {
             assertEquals((1L..again.position).toList(), again.records().map { it.position }, "сбой на операции $k: номера подряд")
         }
     }
+    @Test fun malformedSegmentNamesAreDiagnosticsNotUncaughtNumberErrors() {
+        for (suffix in listOf("", "9".repeat(25), "000000000000")) {
+            val vfs = SimulatedVfs()
+            vfs.write("$path.seg-$suffix", byteArrayOf())
+            assertIs<Outcome.Failure>(EventJournal.open(vfs, path))
+        }
+    }
+
+    @Test fun foreignSealedChainIsRejectedBeforeAnyStateIsReplayed() {
+        val a = SimulatedVfs(); val b = SimulatedVfs(); val fa = EventFactory(); val fb = EventFactory()
+        val ja = open(a, 2); val jb = open(b, 2)
+        repeat(7) { ja.append(fa.next()); fb.next(); jb.append(fb.next()) }
+        // Внутри сегмент другой истории цел, но его prev не продолжает нашу цепочку.
+        val middle = "$path.seg-000000000003"
+        a.write(middle, b.read(middle)!!)
+        assertIs<Outcome.Failure>(EventJournal.open(a, path, segmentSize = 2, quarantineCorruption = true))
+    }
+
 }

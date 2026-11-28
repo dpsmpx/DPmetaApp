@@ -129,7 +129,7 @@ private fun mark(o: ManualOutcome): String = when (o) {
 
 private val TIME = DateTimeFormatter.ofPattern("dd.MM HH:mm")
 
-private fun time(e: ManualHistoryEntry): String = TIME.format(Instant.ofEpochMilli(e.finishedAt.epochMillis).atZone(ZoneId.systemDefault()))
+private fun time(e: ManualHistoryEntry): String = TIME.format(Instant.ofEpochMilli(e.finishedAt.epochMillis).atZone(com.dpsmpx.dpai.core.clock.DisplayZone.current))
 
 private fun span(d: kotlin.time.Duration): String {
     val s = d.inWholeSeconds

@@ -87,6 +87,12 @@ android {
 
     // R8 (D-156): release — сжатие кода и ресурсов и оптимизация, без обфускации
     // (proguard-rules.pro); debug для apk_debug — без R8, как был.
+    if (!providers.environmentVariable("DPAI_ARM64_SYSROOT").orNull.isNullOrBlank()) {
+        // На телефоне JNI уже собран локальным clang; NDK для упаковки не нужен.
+        packaging.jniLibs.keepDebugSymbols.add("**/*.so")
+        buildTypes.configureEach { ndk.debugSymbolLevel = "NONE" }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -132,7 +138,7 @@ abstract class SharedVerifyAssets : DefaultTask() {
         controller.get().asFile.copyTo(target, overwrite = true)
     }
 }
-val sharedVerifyAssets by tasks.registering(SharedVerifyAssets::class) {
+val sharedVerifyAssets = tasks.register<SharedVerifyAssets>("sharedVerifyAssets") {
     controller.set(rootProject.layout.projectDirectory.file("tools/shared_verify/runtime.py"))
     output.set(layout.buildDirectory.dir("generated/shared-verify-assets"))
 }
@@ -171,16 +177,22 @@ dependencies {
 }
 
 if (screenshots) {
+    // Отдельная подготовка позволяет повторить сетевую загрузку до запуска тестов.
+    // Sync получает только артефакт, уже сверенный Gradle; Robolectric остаётся offline.
+    val imageDirectory = layout.buildDirectory.dir("robolectric-image")
+    val prepareImage = tasks.register<Sync>("prepareRobolectricImage") {
+        from(robolectricImage)
+        into(imageDirectory)
+    }
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
-        val image: FileCollection = robolectricImage.incoming.artifacts.artifactFiles
-        inputs.files(image)
+        inputs.files(prepareImage)
         // Robolectric ничего не скачивает сам: образ уже сверен Gradle.
         systemProperty("robolectric.offline", "true")
         systemProperty("robolectric.enabledSdks", testSdk)
         // Образ Android 16 заводит общую память через внутренности FileDescriptor JDK — только в JVM тестов.
         jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
-        jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Drobolectric.dependency.dir=" + image.singleFile.parentFile.path) })
+        systemProperty("robolectric.dependency.dir", imageDirectory.get().asFile.absolutePath)
         val corpus = rootProject.layout.projectDirectory.dir("tests/corpus/ecosystem")
         inputs.dir(corpus).withPropertyName("corpus")
         systemProperty("corpus.ecosystem", corpus.asFile.absolutePath)

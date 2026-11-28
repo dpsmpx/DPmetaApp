@@ -50,6 +50,7 @@ data class ApiProfile(
     val model: String,
     val maxOutputTokens: Int?,
     val customHostAllowed: Boolean,
+    val capabilities: ModelCapabilities? = null,
 ) {
     /** Хост [baseUrl] в нижнем регистре, IPv6 — без скобок (как сверяет список адресов); адрес проверен при создании. */
     val host: String get() = URI(baseUrl).host.lowercase().removeSurrounding("[", "]")
@@ -89,6 +90,10 @@ object ApiProfiles {
 
     /** Модель: латиница, цифры и `._:/@-` — так пишут имена OpenAI, OpenRouter, Gemini и Ollama. */
     private val MODEL = Regex("[A-Za-z0-9._:/@+-]*")
+
+    /** Старые формы сохраняют сведения только для той же модели и адреса. */
+    fun retainCapabilities(previous: ApiProfile?, next: ApiProfile): ApiProfile = if (next.capabilities != null) next else
+        next.copy(capabilities = previous?.capabilities?.takeIf { it.binding == ModelCapabilities.binding(next) })
 
     fun form(
         id: AccountId,
@@ -142,7 +147,7 @@ object ApiProfiles {
 /** Профили приложения — документ `dpai.api-profiles` (`docs/DATA_MODEL.md`); ключей в нём нет. */
 object ApiProfileBook {
     const val FORMAT = "dpai.api-profiles"
-    const val VERSION = 1
+    const val VERSION = 2
     const val MAX_PROFILES = 64
 
     fun toJson(profiles: List<ApiProfile>): JsonObject = JsonObject(
@@ -158,7 +163,10 @@ object ApiProfileBook {
                             "baseUrl" to JsonString(p.baseUrl),
                             "model" to JsonString(p.model),
                             "customHost" to JsonBool(p.customHostAllowed),
-                        ).also { m -> p.maxOutputTokens?.let { m["maxOutputTokens"] = JsonNumber.of(it) } },
+                        ).also { m ->
+                            p.maxOutputTokens?.let { m["maxOutputTokens"] = JsonNumber.of(it) }
+                            p.capabilities?.let { m["capabilities"] = it.json() }
+                        },
                     )
                 },
             ),
@@ -173,7 +181,7 @@ object ApiProfileBook {
     fun fromJson(value: JsonValue): Outcome<List<ApiProfile>> {
         val d = DiagnosticCollector()
         val f = JsonFields.root(value, d) ?: return Outcome.Failure(d.all)
-        FormatHeader.read(f, FORMAT, 1..VERSION, d) ?: return Outcome.Failure(d.all)
+        val version = FormatHeader.read(f, FORMAT, 1..VERSION, d) ?: return Outcome.Failure(d.all)
         val items = f.array("profiles")?.items.orEmpty()
         f.finish()
         if (items.size > MAX_PROFILES) d.error(DiagCode.VALUE_INVALID, "профилей больше $MAX_PROFILES", "$.profiles")
@@ -188,6 +196,12 @@ object ApiProfileBook {
             val model = p.string("model")
             val custom = p.boolean("customHost")
             val max = p.optLong("maxOutputTokens")
+            val capabilities = if (version >= 2) p.raw("capabilities", required = false)?.let { raw ->
+                when (val read = ModelCapabilities.read(raw)) {
+                    is Outcome.Success -> read.value
+                    is Outcome.Failure -> null.also { read.errors.forEach { d.error(it.code, it.message, "$at.capabilities") } }
+                }
+            } else null
             p.finish()
             if (id == null || name == null || kind == null || baseUrl == null || model == null || custom == null) {
                 d.error(DiagCode.VALUE_INVALID, "профиль неполон, id не аккаунта или провайдер неизвестен", at)
@@ -199,7 +213,9 @@ object ApiProfileBook {
             }
             val maxInt = max?.let { if (it in 1..ApiProfiles.MAX_OUTPUT_TOKENS.toLong()) it.toInt() else -1 }
             when (val r = ApiProfiles.form(id, name, kind, baseUrl, model, maxInt, custom)) {
-                is Outcome.Success -> r.value
+                is Outcome.Success -> if (capabilities == null || capabilities.binding == ModelCapabilities.binding(r.value)) {
+                    r.value.copy(capabilities = capabilities)
+                } else null.also { d.error(DiagCode.STATE_CONFLICT, "сведения относятся к другой модели или адресу", "$at.capabilities.binding") }
                 is Outcome.Failure -> null.also { r.errors.forEach { e -> d.error(e.code, e.message, at) } }
             }
         }

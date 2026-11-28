@@ -144,7 +144,22 @@ class DemoModel(
                 val guest = inApp?.let { context.let(com.dpsmpx.dpai.android.linux.LinuxSetup::guestHost) }
                 // Контур на рабочий проект (D-179); список пуст — один контур без проекта, как раньше.
                 for (p in projects.projects.ifEmpty { listOf(null) }) {
-                    contours[p?.project] = controller.live(targets, p, onEvents, onProblem, inApp, guest, neighbours = neighboursOf(p?.project))
+                    contours[p?.project] = controller.live(targets, p, { events ->
+                        onEvents(events)
+                        if (p != null && context != null) AutomationEvents.observe(context, p.project, events)
+                    }, onProblem, inApp, guest, neighbours = neighboursOf(p?.project),
+                        automationGate = if (p == null || context == null) com.dpsmpx.dpai.automation.AutomationGate.NONE
+                            else AutomationWorkflows.gate(context, p),
+                        contextProfile = {
+                            val target = targets.firstOrNull { it.id == p?.target }
+                            if (p == null || context == null || target == null) Outcome.success(com.dpsmpx.dpai.contexts.ContextProfile())
+                            else when (val r = ProjectContexts.store(context, p, target).load()) { is Outcome.Failure -> r; is Outcome.Success -> Outcome.success(r.value.profile) }
+                        },
+                        contextSources = { task, path ->
+                            val target = targets.firstOrNull { it.id == p?.target }
+                            if (p == null || context == null || target == null) Outcome.success(emptyList())
+                            else ProjectContexts.native(context, p, target, task, path)
+                        })
                 }
                 contoursFor = all
                 perf("контуры построены: ${contours.size}", started)
@@ -218,6 +233,13 @@ class DemoModel(
     @Volatile private var workCached: List<com.dpsmpx.dpai.ui.ProjectWork>? = null
 
     @Volatile private var executorChatCache: List<ExecutorChat> = emptyList()
+
+    /** Смена общей политики не запускает такт и не теряет очередь; старые контуры сначала читаются. */
+    internal fun configureAiMode(expected: String, policy: com.dpsmpx.dpai.accounts.AiModePolicy?): Outcome<Unit> = lock.withLock {
+        current()
+        val quiet = contours.values.all { view -> !view.orchestrator.storageBroken && view.orchestrator.sessions.sessions.values.none { !it.terminal } }
+        com.dpsmpx.dpai.accounts.AiAdmission.global.configure(expected, policy, quiet)
+    }
 
     /** Сессии всех рабочих проектов, включая фоновые; ожидание занятого такта ограничено. */
     fun executorChats(): List<ExecutorChat> {
@@ -630,9 +652,9 @@ class DemoModel(
     fun pcFiles(target: TargetEntry, root: String, writable: Boolean = false) = controller.pcFiles(target, root, writable)
 
     fun pcHost(target: TargetEntry) = controller.pcHost(target)
-    @Volatile private var manualStop = false
+    private val manualStopEpoch = java.util.concurrent.atomic.AtomicLong()
 
-    fun stopManualProfile() { manualStop = true; resumeManualProfile() }
+    fun stopManualProfile() { manualStopEpoch.incrementAndGet(); resumeManualProfile(stopRequested = true) }
 
     private fun manualClient(target: TargetEntry): com.dpsmpx.dpai.execution.agent.AgentClient? {
         val host = context?.takeIf { target.inApp }?.let { com.dpsmpx.dpai.android.linux.LinuxSetup.agentHost(it, controller.version) }
@@ -640,15 +662,17 @@ class DemoModel(
     }
 
     /** Единственный worker живёт вне экрана. После рестарта start не повторяется (D-134). */
-    fun resumeManualProfile() {
+    fun resumeManualProfile(stopRequested: Boolean = false) {
         val app = context ?: return
         val active = controller.manualProfiles.snapshot().active ?: return
         if (!controller.manualProfiles.blocked) return
+        val acceptedAt = java.util.concurrent.atomic.AtomicLong()
         LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST,
+            onAccepted = { acceptedAt.set(manualStopEpoch.get()) },
             onFinished = { (app.applicationContext as? DpaiApplication)?.studioChanged() }) {
             val client = manualClient(active.target)
                 ?: return@start LongJobs.Done("target недоступен; пауза сохраняется", failed = true)
-            watchManual(client)
+            watchManual(client) { stopRequested || manualStopEpoch.get() != acceptedAt.get() }
         }
     }
 
@@ -684,16 +708,33 @@ class DemoModel(
         environmentSnapshot: Boolean = true,
         sourceRefresh: Boolean = false,
         afterFinished: (() -> Unit)? = null,
+        automationHooks: Boolean = true,
+        parent: LongJobs.Permit? = null,
+        automationOwner: String? = null,
         onFinished: ((LongJobs.Done, com.dpsmpx.dpai.ui.ManualRunView) -> Unit)? = null): Boolean {
         val app = context ?: return false
         if (sourceRefresh && (environment || location.task != null || !com.dpsmpx.dpai.ui.LatestPullRequest.isProfile(profile))) return false
         if (environment && (profile.kind != com.dpsmpx.dpai.ui.ManualProfileKind.DEPENDENCIES || beforePrepare == null)) return false
-        return LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST,
+        val jobs = LongJobs.get(app)
+        val key = if (parent == null) LongJobs.WORKSPACE_PROFILE else LongJobs.WORKSPACE_CHILD
+        val ownView = java.util.concurrent.atomic.AtomicReference<com.dpsmpx.dpai.ui.ManualRunView?>(null)
+        val acceptedAt = java.util.concurrent.atomic.AtomicLong()
+        val hooks = automationHooks && profile.kind == com.dpsmpx.dpai.ui.ManualProfileKind.BUILD && location.task == null
+        return jobs.start(key, "Ручной профиль", LongJobs.GUEST, parent = parent,
+            onAccepted = { acceptedAt.set(manualStopEpoch.get()) },
             onFinished = { done ->
                 (app.applicationContext as? DpaiApplication)?.studioChanged()
-                onFinished?.invoke(done, controller.manualProfiles.snapshot())
+                onFinished?.invoke(done, ownView.get() ?: controller.manualProfiles.snapshot())
             }, afterFinished = { afterFinished?.invoke() }) {
-            if (cancelled()) return@start LongJobs.Done("Запуск отменён до подготовки", failed = true)
+            fun stopped() = cancelled() || manualStopEpoch.get() != acceptedAt.get()
+            if (stopped()) return@start LongJobs.Done("Запуск отменён до подготовки", failed = true)
+            val permit = jobs.permit(key)
+            if (hooks) {
+                val before = AutomationWorkflows.dispatch(app, p.project, com.dpsmpx.dpai.automation.AutomationTrigger.BEFORE_BUILD,
+                    permit?.runId.orEmpty() + ":before", com.dpsmpx.dpai.core.hashing.Hashing.sha256(profile.toJson()).hex,
+                    cancelled = ::stopped, parent = permit, approvalOwner = automationOwner)
+                if (before is Outcome.Failure) return@start LongJobs.Done(before.errors.first().message, failed = true)
+            }
             val target = controller.targets().firstOrNull { it.id == location.target }
                 ?: return@start LongJobs.Done("target удалён", failed = true)
             if (expectedTarget != null && target != expectedTarget) return@start LongJobs.Done("подключение target изменилось; откройте проект заново", failed = true)
@@ -746,7 +787,7 @@ class DemoModel(
                 is Outcome.Success -> Unit
             }
             val prepared = lock.withLock {
-                if (cancelled()) return@withLock Outcome.failure(DiagCode.CANCELLED_BY_USER, "запуск отменён до подготовки")
+                if (stopped()) return@withLock Outcome.failure(DiagCode.CANCELLED_BY_USER, "запуск отменён до подготовки")
                 // PR мог только что сохранить новую ветку: BUILD не ждёт фонового такта.
                 current()
                 val fresh = controller.project()
@@ -763,8 +804,7 @@ class DemoModel(
             if (prepared is Outcome.Failure) return@start LongJobs.Done(prepared.errors.first().message, failed = true)
             val ownRun = (prepared as Outcome.Success).value
             onPrepared?.invoke(ownRun)
-            manualStop = false
-            if (cancelled()) {
+            if (stopped()) {
                 controller.manualProfiles.stop(client)
                 return@start LongJobs.Done("Запуск отменён до команды", failed = true)
             }
@@ -774,15 +814,15 @@ class DemoModel(
                     is Outcome.Failure -> { controller.manualProfiles.failBeforeLaunch(client, snap.diagnostics.first().message); return@start LongJobs.Done(snap.diagnostics.first().message, failed = true) }
                     is Outcome.Success -> Unit
                 }
-                if (cancelled()) { controller.manualProfiles.stop(client); return@start LongJobs.Done("План окружения отменён до команды", failed = true) }
+                if (stopped()) { controller.manualProfiles.stop(client); return@start LongJobs.Done("План окружения отменён до команды", failed = true) }
                 controller.manualProfiles.launch(ownRun, client)
-                return@start watchManual(client, cancelled)
+                return@start watchManual(client, ::stopped)
             }
             // Только этот фиксированный профиль сам меняет ветку. Все проверки свободного дерева,
             // черновиков и durable prepare выше сохраняются; обычный BUILD по-прежнему сверяет ветку.
             if (sourceRefresh) {
                 controller.manualProfiles.launch(ownRun, client)
-                return@start watchManual(client, cancelled)
+                return@start watchManual(client, ::stopped)
             }
             // Проверка Git уже под долговечной паузой: такт не сменит дерево между status и start.
             val git = workspaceGit(p, location)
@@ -800,39 +840,92 @@ class DemoModel(
                 return@start LongJobs.Done(gitProblem, failed = true)
             }
             // HEAD дерева — в историю запуска (D-156): какая версия кода собиралась.
-            if (cancelled()) {
+            if (stopped()) {
                 controller.manualProfiles.stop(client)
                 return@start LongJobs.Done("Запуск отменён до команды", failed = true)
             }
             controller.manualProfiles.launch(ownRun, client, status?.head)
-            watchManual(client, cancelled)
+            val result = watchManual(client, ::stopped)
+            ownView.set(controller.manualProfiles.snapshot())
+            if (permit != null) com.dpsmpx.dpai.ui.ManualAutomationResult.evidence(ownRun.id, ownView.get()!!).valueOrNull()?.let {
+                jobs.result(key, permit.runId, it)
+            }
+            if (hooks && !stopped()) {
+                val after = AutomationWorkflows.dispatch(app, p.project, com.dpsmpx.dpai.automation.AutomationTrigger.AFTER_BUILD,
+                    permit?.runId.orEmpty() + ":after", com.dpsmpx.dpai.core.hashing.Hashing.sha256(ownRun.id.value + result.note).hex,
+                    cancelled = ::stopped, parent = permit, approvalOwner = automationOwner)
+                if (after is Outcome.Failure) return@start LongJobs.Done(after.errors.first().message, result.output, failed = true)
+            }
+            result
         }
     }
 
     private suspend fun watchManual(client: com.dpsmpx.dpai.execution.agent.AgentClient, cancelled: () -> Boolean = { false }): LongJobs.Done {
         while (controller.manualProfiles.blocked) {
-            val keep = if (manualStop || cancelled()) controller.manualProfiles.stop(client) else controller.manualProfiles.poll(client)
+            val keep = if (cancelled()) controller.manualProfiles.stop(client) else controller.manualProfiles.poll(client)
             if (!keep) break
             kotlinx.coroutines.delay(1500)
         }
-        manualStop = false
         val final = controller.manualProfiles.snapshot()
         return LongJobs.Done(final.note, final.output.lines().takeLast(100), failed = !final.complete)
     }
 
     /** Только захват ссылки — под замком; сам Git работает вне него (D-133). */
-    fun workspaceGit(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation): Outcome<com.dpsmpx.dpai.git.GitStatus> {
+    fun workspaceGit(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, timeout: Duration? = null): Outcome<com.dpsmpx.dpai.git.GitStatus> {
         if (!lock.tryLock()) return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.WORKTREE_OWNED, "контроллер занят; повторите обновление Git")
         val read = try {
             val current = controller.project() ?: return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, "проект отключён")
             when (val allowed = workspaceLocked(current).allow(p, location, false)) {
                 is Outcome.Failure -> return allowed
-                is Outcome.Success -> (built as LiveSystem).orchestrator.workspaceGitProbe(location.path)
+                is Outcome.Success -> (built as LiveSystem).orchestrator.workspaceGitProbe(location.path, timeout)
             }
         } finally { lock.unlock() }
         return when (read) {
             is Outcome.Failure -> read
             is Outcome.Success -> read.value()
+        }
+    }
+
+    /** D-223: только разрешённые файлы; черновик и история задач не изменяются. */
+    fun developmentGit(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, patch: Boolean): Outcome<com.dpsmpx.dpai.ui.DevelopmentTools.GitEvidence> {
+        val status = when (val r = workspaceGit(p, location, Duration.parse("20s"))) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
+        val paths = (status.changed + status.conflicted).distinct().filter(com.dpsmpx.dpai.ui.DevelopmentTools::safePath)
+        if (!patch || paths.isEmpty()) return Outcome.success(com.dpsmpx.dpai.ui.DevelopmentTools.GitEvidence(status))
+        val head = status.head ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у дерева ещё нет HEAD для diff")
+        if (!lock.tryLock()) return Outcome.failure(DiagCode.WORKTREE_OWNED, "контроллер занят; повторите анализ")
+        val probe = try {
+            val current = controller.project() ?: return Outcome.failure(DiagCode.STATE_CONFLICT, "проект отключён")
+            when (val allowed = workspaceLocked(current).allow(p, location, false)) {
+                is Outcome.Failure -> return allowed
+                is Outcome.Success -> (built as LiveSystem).orchestrator.workspaceDiffProbe(location.path, head, paths.take(50))
+            }
+        } finally { lock.unlock() }
+        val diff = when (probe) { is Outcome.Failure -> return probe; is Outcome.Success -> probe.value() }
+        return when (diff) {
+            is Outcome.Failure -> diff
+            is Outcome.Success -> workspaceAccess(p, location, false) {
+                Outcome.success(com.dpsmpx.dpai.ui.DevelopmentTools.GitEvidence(status, diff.value.stdout.joinToString("\n"), diff.value.truncated || paths.size > 50))
+            }
+        }
+    }
+
+    fun contextGitHistory(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation): Outcome<com.dpsmpx.dpai.core.serialization.JsonObject> {
+        if (!lock.tryLock()) return Outcome.failure(DiagCode.WORKTREE_OWNED, "контроллер занят; повторите чтение истории")
+        val probe = try {
+            val current = controller.project() ?: return Outcome.failure(DiagCode.STATE_CONFLICT, "проект отключён")
+            when (val allowed = workspaceLocked(current).allow(p, location, false)) {
+                is Outcome.Failure -> return allowed
+                is Outcome.Success -> (built as LiveSystem).orchestrator.workspaceLogProbe(location.path)
+            }
+        } finally { lock.unlock() }
+        val result = when (probe) { is Outcome.Failure -> return probe; is Outcome.Success -> probe.value() }
+        return when (result) {
+            is Outcome.Failure -> result
+            is Outcome.Success -> workspaceAccess(p, location, false) { Outcome.success(com.dpsmpx.dpai.core.serialization.JsonObject.of(
+                "basis" to com.dpsmpx.dpai.core.serialization.JsonString("GIT_LOG"),
+                "text" to com.dpsmpx.dpai.core.serialization.JsonString(com.dpsmpx.dpai.core.diagnostics.Redactor.STANDARD.redact(result.value.stdout.joinToString("\n"))),
+                "truncated" to com.dpsmpx.dpai.core.serialization.JsonBool(result.value.truncated),
+                "freshVerification" to com.dpsmpx.dpai.core.serialization.JsonBool(false))) }
         }
     }
 

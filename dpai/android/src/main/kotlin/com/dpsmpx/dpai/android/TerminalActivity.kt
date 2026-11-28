@@ -34,6 +34,7 @@ import kotlin.concurrent.thread
  * стрелки). Открывается с карточки target: оболочка или `claude` слота.
  */
 class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
+    private var clipboardDialog: AlertDialog? = null
     private lateinit var view: TerminalView
     private lateinit var tabsRow: LinearLayout
     private lateinit var statusRow: LinearLayout
@@ -47,6 +48,21 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     private lateinit var keysRow: View
     private var ctrl = false
     private var alt = false
+    private var themedRoot: View? = null
+    private val lookListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> runOnUiThread { applyLook() } }
+
+    private fun applyLook() {
+        val palette = Looks.palette(this)
+        view.applyPalette(palette)
+        themedRoot?.let { Looks.styleNative(it, palette) }
+        status.setTextColor(palette.onSurfaceVariant.toInt())
+        markMods()
+        androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !Looks.dark(this@TerminalActivity)
+            isAppearanceLightNavigationBars = !Looks.dark(this@TerminalActivity)
+        }
+    }
+
 
     /** Строка поиска по истории (терминал:A-4) и «↓ к концу»; где поиск остановился — сквозной номер строки. */
     private lateinit var searchRow: LinearLayout
@@ -62,9 +78,11 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         // «Не гасить экран» — настройкой в «⋯» (терминал:A-24), по умолчанию — да.
         if (TerminalView.keepScreenOn(this)) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Отступы системных панелей и клавиатуры — свои: экран терминала сжимается над клавиатурой.
-        // Терминал всегда тёмный: значки панелей — светлые и при светлой теме телефона (терминал:A-20).
+        // До первой отрисовки применяется выбранная тема; applyLook также обновляет значки системных панелей.
         enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
-        setContentView(layout())
+        setContentView(layout().also { themedRoot = it })
+        getSharedPreferences(com.dpsmpx.dpai.ui.UiLook.PREFS, MODE_PRIVATE).registerOnSharedPreferenceChangeListener(lookListener)
+        applyLook()
         dependencyUi = EditorDependencyUi(this, ::renderTabs)
         applyKeyboard()
         // Метка устройства, targets и незавершённые сессии tmux — с диска заранее, не в главном потоке (D-111).
@@ -94,7 +112,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     override fun onResume() {
         super.onResume()
         RequestOverlay.appVisible = true
-        view.post { renderTabs() }
+        view.post { renderTabs(); applyLook() }
     }
 
     override fun onPause() {
@@ -103,6 +121,9 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     }
 
     override fun onDestroy() {
+        clipboardDialog?.dismiss()
+        clipboardDialog = null
+        getSharedPreferences(com.dpsmpx.dpai.ui.UiLook.PREFS, MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(lookListener)
         dependencyUi?.close()
         super.onDestroy()
     }
@@ -296,6 +317,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         // У диалога своё окно: FLAG_SECURE активности его не закрывает (D-86).
         dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         dialog.show()
+        Looks.styleDialog(dialog)
     }
 
     // ---- TerminalHub.Observer: вызовы из потоков сети ----
@@ -322,6 +344,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                 Toast.makeText(this, "Программа на «${tab.label}» прислала для буфера обмена ${text.length} знаков — слишком много, не записано", Toast.LENGTH_LONG).show()
                 return@runOnUiThread
             }
+            if (clipboardDialog?.isShowing == true) return@runOnUiThread
             fun write() {
                 try {
                     // Экран терминала несёт секреты (D-86): с пометкой «чувствительное» (терминал:A-11).
@@ -338,7 +361,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             val always = android.widget.CheckBox(this).apply { this.text = "Разрешать этой вкладке до закрытия" }
             val dialog = AlertDialog.Builder(this)
                 .setTitle("Запись в буфер обмена")
-                .setMessage("Программа на «${tab.label}» просит записать в буфер обмена:\n\n${text.take(PREVIEW)}")
+                .setMessage("Программа на «${tab.label}» просит записать в буфер обмена:\n\n${getString(R.string.terminal_clipboard_details, text.length, com.dpsmpx.dpai.terminal.PasteGuard.lines(text))}\n${if (text.length > PREVIEW) getString(R.string.terminal_clipboard_truncated) + "\n" else ""}${com.dpsmpx.dpai.terminal.PasteGuard.visible(text, PREVIEW)}")
                 .setView(android.widget.FrameLayout(this).apply { setPadding(dp(20), 0, dp(20), 0); addView(always) })
                 .setPositiveButton("Записать") { _, _ ->
                     if (always.isChecked) tab.clipboardAllowed = true
@@ -348,7 +371,10 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                 .create()
             // У диалога своё окно, и FLAG_SECURE активности его не закрывает (D-86, как `Ui.secure` DPpass).
             dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+            clipboardDialog = dialog
+            dialog.setOnDismissListener { if (clipboardDialog === dialog) clipboardDialog = null }
             dialog.show()
+            Looks.styleDialog(dialog)
         }
     }
 
@@ -395,11 +421,12 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         // У диалога своё окно: FLAG_SECURE активности его не закрывает (D-86).
         dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         dialog.show()
+        Looks.styleDialog(dialog)
     }
 
     private fun chip(text: String, onClick: () -> Unit): TextView = TextView(this).apply {
         this.text = text
-        setTextColor(Color.LTGRAY)
+        setTextColor(Looks.palette(this@TerminalActivity).onSurface.toInt())
         typeface = Typeface.MONOSPACE
         textSize = 15f
         gravity = Gravity.CENTER
@@ -516,7 +543,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     }
 
     private fun popup(anchor: View, items: List<Pair<String, () -> Unit>>) {
-        val popup = android.widget.PopupMenu(this, anchor)
+        val popup = android.widget.PopupMenu(Looks.nativeContext(this), anchor)
         items.forEachIndexed { i, (title, _) -> popup.menu.add(android.view.Menu.NONE, i, i, title) }
         popup.setOnMenuItemClickListener { item -> items.getOrNull(item.itemId)?.second?.invoke(); true }
         popup.show()
@@ -548,6 +575,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         // У диалога своё окно: FLAG_SECURE активности его не закрывает (D-86).
         dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         dialog.show()
+        Looks.styleDialog(dialog)
     }
 
     /** Новое имя ярлыка: от 1 до 40 знаков; уведомление службы — с ним же. */
@@ -573,6 +601,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             .create()
         dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         dialog.show()
+        Looks.styleDialog(dialog)
     }
 
     /** «⋯» ряда (терминал:A-3): то, что не поместилось, — Вставить, клавиатура, знаки, листание. */
@@ -607,7 +636,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             "PGUP" to { view.key(Key.PAGE_UP) },
             "PGDN" to { view.key(Key.PAGE_DOWN) },
         ) + listOf("-", "/", "\\", "|", "~").map { s -> s to { view.input(s) } }
-        val popup = android.widget.PopupMenu(this, anchor)
+        val popup = android.widget.PopupMenu(Looks.nativeContext(this), anchor)
         items.forEachIndexed { i, (title, _) -> popup.menu.add(android.view.Menu.NONE, i, i, title) }
         popup.setOnMenuItemClickListener { item -> items.getOrNull(item.itemId)?.second?.invoke(); true }
         popup.show()
@@ -627,7 +656,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         // Клавиатуру подключили или отключили — без пересоздания экрана (configChanges keyboard|keyboardHidden).
-        if (::keysRow.isInitialized) applyKeyboard()
+        if (::keysRow.isInitialized) { applyKeyboard(); applyLook() }
     }
 
     private fun scrollRow(row: LinearLayout) = HorizontalScrollView(this).apply {
@@ -755,8 +784,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     }
 
     private fun markMods() {
-        ctrlKey.setTextColor(if (ctrl) ACTIVE else Color.LTGRAY)
-        altKey.setTextColor(if (alt) ACTIVE else Color.LTGRAY)
+        ctrlKey.setTextColor(if (ctrl) Looks.palette(this).primary.toInt() else Looks.palette(this).onSurface.toInt())
+        altKey.setTextColor(if (alt) Looks.palette(this).primary.toInt() else Looks.palette(this).onSurface.toInt())
         // Залипание — не только цветом (терминал:A-12): подчёркнуто и сказано TalkBack.
         for ((v, on) in listOf(ctrlKey to ctrl, altKey to alt)) {
             v.paintFlags = if (on) v.paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG else v.paintFlags and android.graphics.Paint.UNDERLINE_TEXT_FLAG.inv()
@@ -795,6 +824,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         // У диалога своё окно, и FLAG_SECURE активности его не закрывает (D-86): в буфере бывают секреты.
         dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         dialog.show()
+        Looks.styleDialog(dialog)
     }
 
     /** «Закрыть все» — с подтверждением (терминал:A-1): одно касание в шторке не обрывает все сеансы. */
@@ -812,6 +842,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         // У диалога своё окно: FLAG_SECURE активности его не закрывает (D-86).
         dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         dialog.show()
+        Looks.styleDialog(dialog)
     }
 
     private fun renderTabs() {
@@ -830,7 +861,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             val bell = t.attention && t !== current
             // Текущая вкладка — и подчёркиванием, и для TalkBack, а не только цветом (терминал:A-12).
             tabsRow.addView(chip("$state ${t.label}$title${if (bell) " •" else ""}") { show(t) }.apply {
-                setTextColor(if (t === current) Color.WHITE else Color.GRAY)
+                isSelected = t === current
+                setTextColor(if (t === current) Looks.palette(this@TerminalActivity).primary.toInt() else Looks.palette(this@TerminalActivity).onSurfaceVariant.toInt())
                 if (t === current) paintFlags = paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
                 stateDescription = listOfNotNull(
                     if (t === current) "выбрана" else null,

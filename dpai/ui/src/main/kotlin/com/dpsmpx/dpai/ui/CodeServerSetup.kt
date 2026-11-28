@@ -30,9 +30,7 @@ object CodeServerSetup {
     fun kotlinSystem(projectRoot: String): String = "$KOTLIN_SYSTEM/${Hashing.sha256(projectRoot).hex}"
     const val ANDROID_SDK: String = "$HOME/android-sdk"
 
-    private const val CURL = "curl -sS --fail --location --proto '=https' --connect-timeout 30 --max-time 1800"
-
-    private fun sh(name: String, script: String, vararg args: String): List<String> = listOf("/bin/sh", "-c", script.trimIndent(), name) + args
+    private fun sh(name: String, script: String, vararg args: String): List<String> = listOf("/bin/sh", "-c", ComponentDownloads.shell + "\n" + script.trimIndent(), name) + args
 
     /** Скачать pyright закреплённой версии, сверить SHA-256 и положить в [PYRIGHT_HOME]. */
     fun pyrightInstall(): List<String> = sh(
@@ -43,7 +41,7 @@ object CodeServerSetup {
         mkdir -p "${'$'}ROOT" || exit
         STAGE=${'$'}(mktemp -d "${'$'}ROOT/install.XXXXXX") || exit
         trap 'rm -rf "${'$'}STAGE"' EXIT
-        $CURL "$2" -o "${'$'}STAGE/pyright.tgz" || exit
+        dpai_fetch "$2" "$3" "${'$'}STAGE/pyright.tgz" Pyright sha256 1800 DPAI_PYRIGHT_CHECKSUM || exit
         printf '%s  %s\n' "$3" "${'$'}STAGE/pyright.tgz" | sha256sum -c - >/dev/null || { printf 'DPAI_PYRIGHT_CHECKSUM: failed\n'; exit 1; }
         mkdir "${'$'}STAGE/out" && tar -xzf "${'$'}STAGE/pyright.tgz" -C "${'$'}STAGE/out" || exit
         test -f "${'$'}STAGE/out/package/langserver.index.js" || { printf 'DPAI_PYRIGHT_LAYOUT: unexpected\n'; exit 1; }
@@ -83,9 +81,9 @@ object CodeServerSetup {
                 }
                 trap cleanup EXIT
                 trap 'exit 1' HUP INT TERM
-                $CURL "$3" -o "${'$'}STAGE/server.tgz" || exit
+                dpai_fetch "$3" "$7" "${'$'}STAGE/server.tgz" Kotlin-LSP sha256 1800 DPAI_KOTLIN_LSP_CHECKSUM || exit
                 printf '%s  %s\n' "$7" "${'$'}STAGE/server.tgz" | sha256sum -c - >/dev/null || { printf 'DPAI_KOTLIN_LSP_CHECKSUM: failed\n'; exit 1; }
-                $CURL "$4" -o "${'$'}STAGE/rocksdb.jar" || exit
+                dpai_fetch "$4" "$5" "${'$'}STAGE/rocksdb.jar" RocksDB sha256 1800 DPAI_ROCKSDB_CHECKSUM || exit
                 printf '%s  %s\n' "$5" "${'$'}STAGE/rocksdb.jar" | sha256sum -c - >/dev/null || { printf 'DPAI_ROCKSDB_CHECKSUM: failed\n'; exit 1; }
                 mkdir "${'$'}STAGE/out" && tar -xzf "${'$'}STAGE/server.tgz" -C "${'$'}STAGE/out" || exit
                 SERVER=${'$'}(find "${'$'}STAGE/out" -mindepth 1 -maxdepth 1 -type d | head -n 1)
@@ -224,7 +222,7 @@ object CodeServerSetup {
         SDK="$1"; mkdir -p "${'$'}SDK/platforms" "${'$'}SDK/licenses" || exit
         STAGE=${'$'}(mktemp -d "${'$'}SDK/install.XXXXXX") || exit
         trap 'rm -rf "${'$'}STAGE"' EXIT
-        $CURL "$2" -o "${'$'}STAGE/platform.zip" || exit
+        dpai_fetch "$2" "$3" "${'$'}STAGE/platform.zip" Android-platform sha1 1800 DPAI_ANDROID_SDK_CHECKSUM || exit
         printf '%s  %s\n' "$3" "${'$'}STAGE/platform.zip" | sha1sum -c - >/dev/null || { printf 'DPAI_ANDROID_SDK_CHECKSUM: failed\n'; exit 1; }
         mkdir "${'$'}STAGE/out" && unzip -q "${'$'}STAGE/platform.zip" -d "${'$'}STAGE/out" || exit
         PLATFORM=${'$'}(find "${'$'}STAGE/out" -mindepth 1 -maxdepth 1 -type d | head -n 1)

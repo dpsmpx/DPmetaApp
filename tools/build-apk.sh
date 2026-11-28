@@ -59,6 +59,10 @@ fi
 # Сохранены package name, versioning и ключ подписи; отдельный Termux не участвует.
 set -- --console=plain "-Pdpmeta.targetSdk=$TARGET_SDK"
 if [ -n "${DPAI_ARM64_SYSROOT:-}" ]; then
+  # Нативный клиент Gradle не может менять окружение уже работающего daemon.
+  # У этого проекта JDK 21 задан явно: не пробуем несовместимый Alpine JDK.
+  set -- "$@" --no-daemon -Porg.gradle.java.installations.auto-detect=false
+  if [ -n "${JAVA_HOME:-}" ]; then set -- "$@" "-Porg.gradle.java.installations.paths=$JAVA_HOME"; fi
   # ARM64 aapt2: optimize возвращает успех без выходного архива. R8 остаётся включён.
   if [ "$MODE" = release ]; then set -- "$@" -Pandroid.enableResourceOptimizations=false; fi
   test -x "$SDK/dpai/aapt2" || { echo '✗ не установлен ARM64 aapt2'; exit 1; }
@@ -69,6 +73,7 @@ OUT="$OUT_DIR/build/outputs/apk/$MODE"
 ls "$OUT/"*.apk
 
 if [ "$MODE" = release ]; then
+  echo 'DPAI_PROGRESS verify APK'
   SIGNER="$(ls -d "$SDK"/build-tools/*/apksigner 2>/dev/null | tail -n 1)"
   [ -n "$SIGNER" ] || { echo "✗ нет apksigner в $SDK/build-tools: подпись release не проверить"; exit 1; }
   PROPS="${GRADLE_USER_HOME:-$HOME/.gradle}/gradle.properties"

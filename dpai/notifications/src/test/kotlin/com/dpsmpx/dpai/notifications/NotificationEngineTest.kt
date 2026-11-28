@@ -116,4 +116,13 @@ class NotificationEngineTest {
         assertIs<Outcome.Failure>(DeepLink.parse("https://example.org"))
         assertIs<Outcome.Failure>(DeepLink.parse("dpai://galaxy/x"))
     }
+    @Test fun clockRollbackCannotSuppressFutureNotificationsOrKeepAGroupForever() {
+        val engine = NotificationEngine(NotificationPolicy(maxPostsPerMinute = 1))
+        val now = com.dpsmpx.dpai.core.clock.Timestamp(1_000_000)
+        val old = com.dpsmpx.dpai.core.clock.Timestamp(1)
+        val first = req("same").copy(at = now)
+        assertIs<NotificationDecision.Post>(engine.submit(first))
+        assertIs<NotificationDecision.Post>(engine.submit(first.copy(at = old)))
+    }
+
 }

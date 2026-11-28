@@ -24,7 +24,8 @@ class CodeServerSetupTest {
     private data class Run(val code: Int, val out: String)
 
     private fun run(command: List<String>, path: String? = null): Run {
-        val env = path?.let { mapOf("PATH" to it + ":" + System.getenv("PATH")) }
+        val env = path?.let { mapOf("PATH" to it + ":" + System.getenv("PATH"),
+            "DPAI_DOWNLOAD_CACHE" to File(it).parentFile.resolve("downloads").path) }
         val done = (LocalProcessHost().run(ProcessSpec(command, environment = env), 60.seconds) as Outcome.Success).value
         return Run(done.exitCode, (done.stdout + done.stderr).joinToString("\n"))
     }

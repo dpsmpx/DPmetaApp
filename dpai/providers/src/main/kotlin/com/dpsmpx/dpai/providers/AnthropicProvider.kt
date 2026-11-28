@@ -185,6 +185,7 @@ class AnthropicProvider(profile: ApiProfile, key: Secret?, transport: Transport)
             body["cache_control"] = JsonObject.of("type" to jstr("ephemeral"))
         }
         body["messages"] = messages
+        (request.checkContext(JsonObject(body)) as? Outcome.Failure)?.let { return it }
         val call = HttpCall("POST", url("/messages"), headers(true), CanonicalJson.write(JsonObject(body)).toByteArray(Charsets.UTF_8), secret())
         val blocks = sortedMapOf<Long, Block>()
         val text = StringBuilder()

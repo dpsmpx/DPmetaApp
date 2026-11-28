@@ -376,12 +376,7 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
 
     /** Смены состояний слотов, которые следуют из фактов; путь — только по таблице `AccountLifecycle`. */
     /** Активные сессии каждой подписки — за один проход по слотам. */
-    private fun activeBySubscription(state: AccountsState): Map<String, Int> {
-        // Внутренний индекс по неизменяемому значению ID: без упаковки inline ID на каждом слоте.
-        val m = HashMap<String, Int>()
-        for (slot in state.slots.values) m.merge(slot.subscriptionId.value, slot.sessions.size, Int::plus)
-        return m
-    }
+    private fun activeBySubscription(state: AccountsState): Map<String, Int> = state.activeCounts
 
     fun normalize(state: AccountsState, now: Timestamp): List<AccountEvent> {
         return normalize(state, now, activeBySubscription(state))

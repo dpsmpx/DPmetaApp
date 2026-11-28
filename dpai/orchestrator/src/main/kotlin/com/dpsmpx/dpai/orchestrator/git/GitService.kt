@@ -29,9 +29,9 @@ import kotlin.time.Duration.Companion.minutes
 class GitService(private val host: ProcessHost, private val commands: GitCommands, private val clock: Clock, private val timeout: Duration = 5.minutes) {
     /** Операция над деревом по пути; ненулевой код Git — `GIT_COMMAND_FAILED` с хвостом stderr. */
     fun run(op: GitOp, path: String, args: List<String> = emptyList(), approval: Approval? = null, maxStdoutChars: Int = 1024 * 1024,
-        allowTruncated: Boolean = false): Outcome<Completed> =
+        allowTruncated: Boolean = false, timeoutOverride: Duration? = null): Outcome<Completed> =
         commands.argv(op, path, args, clock.now(), approval).then { argv ->
-            host.run(ProcessSpec(argv, stdin = if (op == GitOp.COMMIT) args.single() else null), timeout, maxStdoutChars = maxStdoutChars).then { done ->
+            host.run(ProcessSpec(argv, stdin = if (op == GitOp.COMMIT) args.single() else null), timeoutOverride ?: timeout, maxStdoutChars = maxStdoutChars).then { done ->
                 if (done.truncated && !op.writes && !allowTruncated) {
                     // Частичный diff/log не доказывает, что ревью увидело все изменения (O-05).
                     Outcome.failure(DiagCode.GIT_OUTPUT_INVALID, "вывод Git больше предела; полный результат неизвестен", path)
@@ -62,7 +62,7 @@ class GitService(private val host: ProcessHost, private val commands: GitCommand
     fun status(path: String): Outcome<GitStatus> = status(path, 1024 * 1024)
 
     /** Усечённый статус не доказывает отсутствие изменений/конфликтов (D-133). */
-    fun status(path: String, maxChars: Int): Outcome<GitStatus> = run(GitOp.STATUS, path, maxStdoutChars = maxChars).then {
+    fun status(path: String, maxChars: Int, timeoutOverride: Duration? = null): Outcome<GitStatus> = run(GitOp.STATUS, path, maxStdoutChars = maxChars, timeoutOverride = timeoutOverride).then {
         if (it.truncated) Outcome.failure(DiagCode.GIT_OUTPUT_INVALID, "вывод Git больше предела; полный статус неизвестен", path)
         else if (maxChars != Int.MAX_VALUE && (it.stdout.none { line -> line.startsWith("# branch.oid ") } || it.stdout.none { line -> line.startsWith("# branch.head ") })) {
             Outcome.failure(DiagCode.GIT_OUTPUT_INVALID, "Git не вернул ветку и HEAD; состояние неизвестно", path)

@@ -158,6 +158,8 @@ data class ProjectConfig(
     val sources: (TaskId) -> List<ContextSource> = { emptyList() },
     /** Деревья — на другом target, чем ход Claude: ход работает с ними по MCP (D-50). `null` — на том же target. */
     val remote: RemoteWorkspace? = null,
+    val contextProfile: () -> Outcome<com.dpsmpx.dpai.contexts.ContextProfile> = { Outcome.success(com.dpsmpx.dpai.contexts.ContextProfile()) },
+    val contextSources: (com.dpsmpx.dpai.tasks.TaskRecord, String?) -> Outcome<List<ContextSource>> = { _, _ -> Outcome.success(emptyList()) },
 )
 
 /**
@@ -214,6 +216,7 @@ class Orchestrator(
     private val externalPause: () -> Boolean = { false },
     /** Сессии соседних контуров на общих target (D-179): места делятся между проектами. */
     private val neighbours: NeighbourLoad = NeighbourLoad.NONE,
+    private val automationGate: com.dpsmpx.dpai.automation.AutomationGate = com.dpsmpx.dpai.automation.AutomationGate.NONE,
 ) {
     private val recorder = EventRecorder(ids, clock)
 
@@ -700,11 +703,29 @@ class Orchestrator(
         for (t in tasks.tasks.values.filter { it.state == TaskState.READY && !it.held && it.excludedSlot != null }.sortedBy { it.id.value }) {
             if (targets.none { elsewhere(t, it.id) }) waiting(t.id, "задача перенесена со слота ${t.excludedSlot}, а другого слота для неё нет — включите или добавьте слот")
         }
-        for (s in sessions.sessions.values.filter { it.state !in WAIT_STATES && !it.terminal }.map { it.id }.sorted()) {
+        val observed = sessions.sessions.values.filter { it.state !in WAIT_STATES && !it.terminal }.map { it.id }.sorted().iterator()
+        while (observed.hasNext()) {
             runCommands()
-            val r = sessions.sessions[s] ?: continue
-            if (r.terminal || r.state in WAIT_STATES) continue
-            poll(s)
+            val changed = arrayListOf<com.dpsmpx.dpai.sessions.SessionRecord>()
+            var reads = 0
+            // Чтения target не создают эффектов. Их наблюдения — одной ограниченной пачкой (D-24, D-121).
+            // Перед реакцией, новой командой человека или следующим блоком все события уже durable.
+            batch {
+                while (observed.hasNext()) {
+                    if (reads > 0 && inbox.size > 0) break
+                    val id = observed.next()
+                    val record = sessions.sessions[id] ?: continue
+                    if (record.terminal || record.state in WAIT_STATES) continue
+                    var barrier = false
+                    poll(id) { after ->
+                        changed += after
+                        barrier = after.state != SessionState.RUNNING || after.review != null
+                    }
+                    reads++
+                    if (barrier || reads >= 8 || (pending?.size ?: 0) >= 256) break
+                }
+            }
+            changed.forEach { react(it.task, it.id, it.state) }
         }
         reviews()
         runCommands()
@@ -804,7 +825,21 @@ class Orchestrator(
         return open.sortedWith(compareBy<ExecutionTargetId>({ !ownSlot(it) }, { it != planned }, { it.value }))
     }
 
+    private fun modelAdmissionWaiting(task: TaskId): Boolean {
+        val gate = com.dpsmpx.dpai.accounts.AiAdmission.global
+        val reason = gate.failure()?.let { "настройка ИИ не прочитана: $it" } ?: gate.snapshot().policy?.let { p ->
+            when {
+                gate.active() != 0 -> "ждёт завершения или сверки общего ИИ-вызова"
+                p.allowed.none { it.native } -> "в общем режиме ИИ разрешены только API-модели; задача CLI остаётся в очереди"
+                else -> null
+            }
+        }
+        if (reason != null) waiting(task, reason, DiagCode.OPERATION_NOT_ALLOWED)
+        return reason != null
+    }
+
     private fun launch(task: TaskId, planned: ExecutionTargetId) {
+        if (modelAdmissionWaiting(task)) return
         val t = tasks.tasks.getValue(task)
         val session = ids.next(IdKinds.SESSION)
         // План выбирает target по месту, не по пределам: его подписка могла упереться в предел пяти часов
@@ -990,10 +1025,11 @@ class Orchestrator(
      */
     private fun contextFailed(task: TaskId, session: SessionId, failure: Outcome.Failure) {
         problems += Diagnostic.of(DiagCode.INTERNAL_ERROR, "контекст задачи $task не собран", causes = failure.errors)
-        if (failure.errors.none { it.code == DiagCode.CONTEXT_BUDGET_EXCEEDED }) return failLaunch(task, session, DiagCode.VALUE_INVALID)
-        failLaunch(task, session, DiagCode.CONTEXT_BUDGET_EXCEEDED, countAttempt = false)
-        commitTasks(tasksLogic.move(tasks, task, TaskState.BLOCKED, clock.now(), DiagCode.CONTEXT_BUDGET_EXCEEDED).valueOrNull().orEmpty())
-        askBlocked(task, null, "правила или требования задачи не влезают в бюджет контекста")
+        val reason = failure.errors.firstOrNull { it.code in setOf(DiagCode.CONTEXT_BUDGET_EXCEEDED, DiagCode.OPERATION_NOT_ALLOWED,
+            DiagCode.STATE_CONFLICT, DiagCode.STORAGE_CORRUPTED) }?.code ?: return failLaunch(task, session, DiagCode.VALUE_INVALID)
+        failLaunch(task, session, reason, countAttempt = false)
+        commitTasks(tasksLogic.move(tasks, task, TaskState.BLOCKED, clock.now(), reason).valueOrNull().orEmpty())
+        askBlocked(task, null, failure.errors.joinToString("; ") { it.message })
     }
 
     /**
@@ -1054,14 +1090,24 @@ class Orchestrator(
 
     /** Контекст хода (`docs/CONTEXT_MODEL.md`, §2; `docs/EFFICIENCY.md`, §3): источники проекта, handoff, итог проверки. */
     private fun context(task: TaskId, objective: String, policy: ContextPolicy, workingSet: Boolean = true): Outcome<ContextBundle> {
+        val profile = when (val r = config.contextProfile()) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
+        if (profile.restricted) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "нативный исполнитель не обеспечивает область ограниченного профиля; используйте API-чат")
+        val record = tasks.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "задача контекста удалена")
+        val path = treePath(task)
+        val head = path?.let { git?.status(it)?.valueOrNull()?.head }
+        val material = when (val r = config.contextSources(record, path)) { is Outcome.Failure -> return r; is Outcome.Success -> r.value }
+        if (path?.let { git?.status(it)?.valueOrNull()?.head } != head)
+            return Outcome.failure(DiagCode.STATE_CONFLICT, "HEAD изменился во время подготовки контекста")
+        val stamp = ContextSource("context:binding", SourceLevel.PROJECT, config.project, Sensitivity.INTERNAL, Origin.REPOSITORY,
+            "Профиль: ${profile.mode}, ревизия ${profile.revision}. HEAD: ${head ?: "UNKNOWN"}; root: ${path ?: "UNKNOWN"}. Снимок файлов не атомарен.")
         val previous = contextOf[task] ?: storedContext(task)
         val handoff = handoffs.latest(task)
         // Свежая сессия после прошлых (другой слот, перенос, контрольная точка — D-66): переписка и фоновые процессы.
         val fresh = workingSet && sessions.sessions.values.count { it.task == task } > 1
         val carried = if (fresh) listOfNotNull(transcriptSource(task), backgroundSource(task)) else emptyList()
-        val sources = config.sources(task) + listOfNotNull(environment(), handoff?.asSource(workingSet), toolOf[task], codeMapSource(task)) + carried
+        val sources = config.sources(task) + material + stamp + listOfNotNull(environment(), handoff?.asSource(workingSet), toolOf[task], codeMapSource(task)) + carried
         val out = ContextAssembler.assemble(
-            previous?.id ?: ids.next(IdKinds.CONTEXT), task, config.project, objective, handoff?.nextAction, sources, clock.now(), previous, policy,
+            previous?.id ?: ids.next(IdKinds.CONTEXT), task, config.project, objective, handoff?.nextAction, sources, clock.now(), previous, profile.policy(policy),
         )
         val bundle = out.valueOrNull() ?: return out
         if (contextOf[task] !== bundle) saveTaskDocument("context", task, bundle.toJson())
@@ -1069,7 +1115,7 @@ class Orchestrator(
         return out
     }
 
-    private fun poll(session: SessionId) {
+    private fun poll(session: SessionId, reaction: (com.dpsmpx.dpai.sessions.SessionRecord) -> Unit) {
         val before = sessions.sessions.getValue(session).state
         // Отказ опроса — не «ничего не произошло» (D-87): в нём приходят `RUN_RECONCILIATION_REQUIRED`
         // (пропуск событий не закрыт сверкой), `EVENT_SEQUENCE_CONFLICT` (тот же номер с другим
@@ -1096,10 +1142,9 @@ class Orchestrator(
             unsupportedFlags.getOrPut(target) { linkedSetOf() } += step.unsupportedFlags
             problems += Diagnostic.warning(DiagCode.CLAUDE_FLAG_UNSUPPORTED, "Claude Code на target не знает ${step.unsupportedFlags.joinToString()}: дальше без них", "target $target")
         }
-        batch {
-            commitSessions(step.events)
-            applyFacts(step.facts)
-        }
+        check(pending != null) { "наблюдение сессии записывается до реакции" }
+        commitSessions(step.events)
+        applyFacts(step.facts)
         recordTurnMessages(session, step.turns)
         if (step.background.isNotEmpty()) {
             val task = sessions.sessions.getValue(session).task
@@ -1120,7 +1165,7 @@ class Orchestrator(
         val after = sessions.sessions.getValue(session)
         // Вердикт ревью — по схеме у Claude, JSON в тексте у Codex и Gemini (D-100).
         if (after.review != null) step.turns.lastOrNull()?.let { reviewOutput[session] = it.structured ?: Review.structuredFromText(it.text) }
-        if (after.state != before) react(after.task, session, after.state)
+        if (after.state != before) reaction(after)
     }
 
     private fun react(task: TaskId, session: SessionId, state: SessionState) {
@@ -1198,15 +1243,18 @@ class Orchestrator(
      * значит «уже закоммичено».
      */
     private fun afterVerified(task: TaskId, session: SessionId, tree: com.dpsmpx.dpai.git.Worktree?, path: String) {
-        val failed = if (tree != null && git != null) commitWork(task, session, path) else null
+        val hookFailure = automationBefore(com.dpsmpx.dpai.automation.AutomationTrigger.BEFORE_ACCEPT, task, path) ?:
+            if (tree != null && git != null) automationBefore(com.dpsmpx.dpai.automation.AutomationTrigger.BEFORE_COMMIT, task, path) else null
+        val failed = hookFailure ?: if (tree != null && git != null) commitWork(task, session, path) else null
         if (failed != null) {
             // Работа проверена, но не закоммичена (A-52): не DONE и не слияние ветки без неё — решает человек,
             // работа остаётся в дереве задачи.
             for (to in listOf(TaskState.READY, TaskState.BLOCKED)) {
-                commitTasks(tasksLogic.move(tasks, task, to, clock.now(), DiagCode.GIT_COMMAND_FAILED).valueOrNull().orEmpty())
+                commitTasks(tasksLogic.move(tasks, task, to, clock.now(), if (hookFailure != null) DiagCode.VERIFICATION_FAILED else DiagCode.GIT_COMMAND_FAILED).valueOrNull().orEmpty())
             }
             releaseTree(task, session)
-            askBlocked(task, session, "$failed: работа проверена, но не закоммичена — она в дереве задачи")
+            askBlocked(task, session, if (hookFailure != null) "$failed: автоматизация не разрешила завершение задачи; сверьте её результат"
+                else "$failed: работа проверена, но не закоммичена — она в дереве задачи")
             return
         }
         releaseTree(task, session)
@@ -1338,6 +1386,7 @@ class Orchestrator(
      * задача ждёт с причиной; изменения не получены — ревью без итога.
      */
     private fun launchReview(task: TaskId, role: ReviewRole, attempt: Int) {
+        if (modelAdmissionWaiting(task)) return
         val t = tasks.tasks.getValue(task)
         val work = lastWork(task) ?: return recordReviewFailure(task, role, attempt, null, "у задачи нет рабочей сессии — неизвестно, где её дерево")
         val target = work.target
@@ -1607,6 +1656,21 @@ class Orchestrator(
         if (gitOk != true) return "git commit не удался"
         recordCommit(task, path)
         return null
+    }
+
+    private fun automationBefore(trigger: com.dpsmpx.dpai.automation.AutomationTrigger, task: TaskId, path: String): String? {
+        if (automationGate === com.dpsmpx.dpai.automation.AutomationGate.NONE) return null
+        val event = trigger.name + ":" + task.value + ":" + tasks.tasks.getValue(task).updatedAt.epochMillis
+        val request = com.dpsmpx.dpai.automation.AutomationGateRequest(trigger, config.project, task, path, event,
+            com.dpsmpx.dpai.core.hashing.Hashing.sha256(event).hex)
+        val result = automationGate.before(request) { level -> verifier.verify(config.profile, level, path, null) }
+        return when (result) {
+            is Outcome.Success -> null
+            is Outcome.Failure -> {
+                problems += result.diagnostics
+                result.errors.joinToString("; ") { it.message }
+            }
+        }
     }
 
     /**
@@ -2870,20 +2934,38 @@ class Orchestrator(
     fun taskWorktree(task: TaskId): com.dpsmpx.dpai.git.Worktree? = treeOf[task]?.let { worktrees.worktrees[it] }?.takeIf { !it.removed }
 
     /** Зафиксировать разрешённое чтение под замком, вызвать после освобождения (D-133). */
-    fun workspaceGitProbe(path: String): Outcome<() -> Outcome<com.dpsmpx.dpai.git.GitStatus>> {
+    fun workspaceGitProbe(path: String, timeout: kotlin.time.Duration? = null): Outcome<() -> Outcome<com.dpsmpx.dpai.git.GitStatus>> {
         val repo = config.repository ?: return Outcome.failure(DiagCode.UNSUPPORTED, "репозиторий не настроен")
         val g = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "клиент Git не готов")
         if (path != repo.root && worktrees.worktrees.values.none { !it.removed && it.repository == repo.id && it.path == path }) {
             return Outcome.failure(DiagCode.STATE_CONFLICT, "путь больше не принадлежит рабочему проекту")
         }
         return Outcome.success({
-            when (val status = g.status(path, 256 * 1024)) {
+            when (val status = g.status(path, 256 * 1024, timeout)) {
                 is Outcome.Failure -> status
                 is Outcome.Success -> if (status.value.head?.matches(Regex("[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")) == false) {
                     Outcome.failure(DiagCode.GIT_OUTPUT_INVALID, "Git вернул некорректный HEAD")
                 } else status
             }
         })
+    }
+
+    /** Отобранные оболочкой пути, без внешнего diff/textconv; исполнение после освобождения замка. */
+    fun workspaceDiffProbe(path: String, head: String, paths: List<String>): Outcome<() -> Outcome<com.dpsmpx.dpai.execution.process.Completed>> {
+        when (val allowed = workspaceGitProbe(path)) { is Outcome.Failure -> return allowed; is Outcome.Success -> Unit }
+        val client = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "клиент Git не готов")
+        if (paths.isEmpty() || paths.size > 50) return Outcome.failure(DiagCode.VALUE_INVALID, "diff требует 1–50 путей")
+        return Outcome.success({ client.run(com.dpsmpx.dpai.git.GitOp.DIFF_FILES, path,
+            listOf(head) + paths.map { "./$it" }, maxStdoutChars = 16_001, allowTruncated = true,
+            timeoutOverride = kotlin.time.Duration.parse("20s")) })
+    }
+
+    /** Только штатный LOG без пользовательских argv и внешних обработчиков. */
+    fun workspaceLogProbe(path: String): Outcome<() -> Outcome<com.dpsmpx.dpai.execution.process.Completed>> {
+        when (val allowed = workspaceGitProbe(path)) { is Outcome.Failure -> return allowed; is Outcome.Success -> Unit }
+        val client = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "клиент Git не готов")
+        return Outcome.success({ client.run(com.dpsmpx.dpai.git.GitOp.LOG, path, maxStdoutChars = 12_000,
+            allowTruncated = true, timeoutOverride = kotlin.time.Duration.parse("20s")) })
     }
 
     /**

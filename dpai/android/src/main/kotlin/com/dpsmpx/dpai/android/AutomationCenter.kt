@@ -46,7 +46,6 @@ import kotlinx.coroutines.withContext
 /** Первый центр автоматизаций основного дерева; исполнение не принадлежит Compose (D-215). */
 @Composable
 internal fun AutomationCenter(project: ProjectEntry, onOpen: (AutomationDefinition) -> Unit) {
-    EnvironmentApprovalUi(AutomationUiCalls.key(project.project))
     val context = LocalContext.current.applicationContext
     val jobs = remember { LongJobs.get(context) }
     val states by jobs.state.collectAsState()
@@ -94,17 +93,8 @@ internal fun AutomationCenter(project: ProjectEntry, onOpen: (AutomationDefiniti
                 FilterChip(selected = filter == null, onClick = { filter = null }, label = { Text(stringResource(R.string.automation_all)) })
                 for (s in AutomationSource.entries) FilterChip(selected = filter == s.name, onClick = { filter = s.name }, label = { Text(sourceTitle(s)) })
             }
-        }
-        items(snapshot?.catalog?.entries.orEmpty().filter { filter == null || it.source.name == filter }, key = { it.id }) { d ->
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = { expanded = if (expanded == d.id) null else d.id }) { Text(automationTitle(d)) }
-                Text(d.id, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
-                Text(stringResource(if (d.available) R.string.automation_configured else R.string.automation_unavailable), style = MaterialTheme.typography.bodySmall)
-                if (expanded == d.id) AutomationDetails(d, running,
-                    onRun = { values -> AutomationUiCalls.start(context, project.project, d.id, d.revision, JsonObject(values.mapValues { JsonString(it.value) })) },
-                    onOpen = { onOpen(d) })
-                HorizontalDivider()
-            }
+            ContextSettingsSection(project, running) { refresh++ }
+            snapshot?.let { WorkflowSection(project, it, running) { refresh++ } }
         }
         work?.let { job -> item {
             Text(stringResource(R.string.automation_last_result), style = MaterialTheme.typography.titleSmall)
@@ -116,9 +106,33 @@ internal fun AutomationCenter(project: ProjectEntry, onOpen: (AutomationDefiniti
                 (data?.get("note") as? JsonString)?.value?.let { Text(it) }
                 (r["diagnostics"] as? JsonArray)?.items?.forEach { d -> ((d as? JsonObject)?.get("message") as? JsonString)?.value?.let { DiagnosticText(it, color = MaterialTheme.colorScheme.error) } }
                 val output = (data?.get("output") as? JsonString)?.value ?: data?.let(CanonicalJson::write)
-                output?.let { Text(it, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
+                if (data?.get("format") == JsonString("dpai.development-report")) DevelopmentReportView(data)
+                else output?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
             }
         } }
+        items(snapshot?.catalog?.entries.orEmpty().filter { filter == null || it.source.name == filter }, key = { it.id }) { d ->
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = { expanded = if (expanded == d.id) null else d.id }) { Text(automationTitle(d)) }
+                Text(d.id, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                androidx.compose.material3.FilterChip(selected = d.id !in snapshot?.disabled.orEmpty(), enabled = !running || d.id !in snapshot?.disabled.orEmpty(),
+                    onClick = {
+                        val disabled = d.id in snapshot?.disabled.orEmpty()
+                        loading = true
+                        // Вызов сохранения идёт в прежнем worker, не блокирует Compose.
+                        jobs.start("automation-setting:" + project.project.value, context.getString(R.string.workflow_tool_enabled)) {
+                            val result = AutomationWorkflows.store(context, project.project).disable(d.id, !disabled)
+                            refresh++
+                            LongJobs.Done(result.errors.joinToString("; ") { it.message }, failed = result is Outcome.Failure)
+                        }
+                    }, label = { Text(stringResource(R.string.workflow_tool_enabled)) })
+                Text(stringResource(if (d.available) R.string.automation_configured else R.string.automation_unavailable), style = MaterialTheme.typography.bodySmall)
+                if (expanded == d.id) AutomationDetails(d, running,
+                    onRun = { values -> AutomationUiCalls.start(context, project.project, d.id, d.revision, JsonObject(values.mapValues { JsonString(it.value) })) },
+                    onOpen = { onOpen(d) })
+                HorizontalDivider()
+            }
+        }
+
     }
 }
 
@@ -129,15 +143,17 @@ private fun AutomationDetails(d: AutomationDefinition, running: Boolean, onRun: 
     Text(stringResource(if (d.invocation == AutomationInvocation.DIRECT) R.string.automation_direct else R.string.automation_existing_ui), style = MaterialTheme.typography.bodySmall)
     d.reason?.let { DiagnosticText(it, style = MaterialTheme.typography.bodySmall) }
     if (d.source == AutomationSource.PULT) Text(d.purpose, style = MaterialTheme.typography.bodySmall)
+    if (d.source == AutomationSource.DEVELOPMENT) Text(stringResource(R.string.development_intro), style = MaterialTheme.typography.bodySmall)
     if (d.dependencies.isNotEmpty()) Text(stringResource(R.string.automation_dependencies, d.dependencies.joinToString()), style = MaterialTheme.typography.bodySmall)
     d.timeoutSeconds?.let { Text(stringResource(R.string.automation_timeout, it), style = MaterialTheme.typography.bodySmall) }
     for (p in d.parameters) {
+        val title = if (d.source == AutomationSource.DEVELOPMENT) stringResource(if (d.id.startsWith("context.")) contextParameter(p.name) else developmentParameter(p.name)) + if (p.required) " *" else "" else p.title
         if (p.text) {
             OutlinedTextField(values[p.name].orEmpty(), { values = values + (p.name to it.take(p.maxLength)) },
-                enabled = !running, label = { Text(p.title) }, modifier = Modifier.fillMaxWidth())
+                enabled = !running, label = { Text(title) }, modifier = Modifier.fillMaxWidth())
             continue
         }
-        Text(p.title)
+        Text(title)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             for (v in p.choices) FilterChip(selected = values[p.name] == v, enabled = !running, onClick = { values = values + (p.name to v) }, label = { Text(v) })
         }
@@ -152,6 +168,7 @@ private fun sourceTitle(source: AutomationSource): String = stringResource(when 
     AutomationSource.MANUAL -> R.string.automation_profiles
     AutomationSource.VERIFICATION -> R.string.automation_verification
     AutomationSource.ENVIRONMENT -> R.string.automation_environment
+    AutomationSource.DEVELOPMENT -> R.string.automation_development
 })
 
 @Composable
@@ -166,9 +183,22 @@ private fun automationTitle(d: AutomationDefinition): String = when (d.id) {
     "environment.probe" -> stringResource(R.string.env_tools_probe)
     "environment.command" -> stringResource(R.string.env_linux_command)
     "environment.android_sdk" -> stringResource(R.string.env_sdk_install)
-    else -> when (d.source) {
+    else -> if (d.id.startsWith("context.")) stringResource(contextTitle(d.id)) else when (d.source) {
+        AutomationSource.DEVELOPMENT -> stringResource(developmentTitle(d.id))
         AutomationSource.VERIFICATION -> stringResource(R.string.automation_verification_level, d.title)
         AutomationSource.ENVIRONMENT -> stringResource(R.string.automation_package_operation, d.title)
         else -> d.title
     }
+}
+
+private fun contextTitle(id: String): Int = when (id) {
+    "context.task" -> R.string.context_task; "context.symbol" -> R.string.context_symbol
+    "context.interfaces" -> R.string.context_interfaces; "context.constraints" -> R.string.context_constraints
+    "context.history" -> R.string.context_changes; "context.evidence" -> R.string.context_evidence
+    else -> R.string.context_expand
+}
+private fun contextParameter(name: String): Int = when (name) {
+    "objective" -> R.string.context_objective; "paths" -> R.string.context_paths; "acceptance" -> R.string.context_acceptance
+    "related" -> R.string.context_related; "reason" -> R.string.context_reason
+    else -> developmentParameter(name)
 }

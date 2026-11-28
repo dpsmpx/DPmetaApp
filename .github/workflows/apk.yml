@@ -57,14 +57,71 @@ jobs:
         continue-on-error: true
         shell: bash
         run: tools/check/run.sh full --strict --verbose
+      - name: Restore Robolectric image downloads
+        id: robolectric-cache
+        continue-on-error: true
+        timeout-minutes: 3
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5, Node 24
+        with:
+          path: ~/.gradle/caches/modules-2/files-2.1/org.robolectric/android-all-instrumented
+          key: robolectric-image-${{ runner.os }}-${{ hashFiles('dpai/gradle/libs.versions.toml', 'gradle/verification-metadata.xml') }}
+      - name: Verify interface themes and render screens
+        id: interface
+        timeout-minutes: 8
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          interface_out="$GITHUB_WORKSPACE/build/interface-screenshots"
+          mkdir -p "$interface_out/reports"
+          python3 tools/prepare-screenshots.py --log-dir "$interface_out/preparation"
+          echo 'image_ready=true' >> "$GITHUB_OUTPUT"
+          appearance_status=0
+          ./gradlew --console=plain :shell:testDebugUnitTest \
+            -Pdpmeta.screenshots "-Pdpmeta.screenshots.dir=$interface_out" \
+            --tests 'com.dpsmpx.dpmeta.shell.AppearanceTest' || appearance_status=$?
+          for result in shell/build/test-results/testDebugUnitTest/TEST-*AppearanceTest.xml; do
+            if test -f "$result"; then cp "$result" "$interface_out/reports/"; fi
+          done
+          screenshots_status=0
+          ./gradlew --console=plain :shell:testDebugUnitTest \
+            -Pdpmeta.screenshots "-Pdpmeta.screenshots.dir=$interface_out" \
+            --tests 'com.dpsmpx.dpmeta.shell.ScreenshotsTest' || screenshots_status=$?
+          for result in shell/build/test-results/testDebugUnitTest/TEST-*ScreenshotsTest.xml; do
+            if test -f "$result"; then cp "$result" "$interface_out/reports/"; fi
+          done
+          test "$appearance_status" -eq 0
+          test "$screenshots_status" -eq 0
+          test -s "$interface_out/reports/TEST-com.dpsmpx.dpmeta.shell.AppearanceTest.xml"
+          test -s "$interface_out/reports/TEST-com.dpsmpx.dpmeta.shell.ScreenshotsTest.xml"
+          test "$(find "$interface_out" -type f -name '*.png' | wc -l)" -eq 16
+          echo 'Interface verification: both test classes passed, 16 rendered PNG files.'
+      - name: Save verified Robolectric image downloads
+        if: always() && steps.interface.outputs.image_ready == 'true' && steps.robolectric-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        timeout-minutes: 3
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5, Node 24
+        with:
+          path: ~/.gradle/caches/modules-2/files-2.1/org.robolectric/android-all-instrumented
+          key: robolectric-image-${{ runner.os }}-${{ hashFiles('dpai/gradle/libs.versions.toml', 'gradle/verification-metadata.xml') }}
+      - name: Upload interface screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DPmetaApp-interface-${{ github.sha }}
+          path: build/interface-screenshots/
+          if-no-files-found: error
+          retention-days: 14
       - name: Preserve failing JUnit test reports
-        if: steps.strict.outcome == 'failure'
+        if: always() && (steps.strict.outcome == 'failure' || steps.interface.outcome == 'failure')
         uses: actions/upload-artifact@v4
         with:
           name: DPmetaApp-test-results-${{ github.sha }}
           path: |
             **/build/test-results/**/*.xml
             **/build/reports/tests/**
+            build/reports/configuration-cache/**
+            build/interface-screenshots/preparation/**
           if-no-files-found: warn
           retention-days: 7
       - name: Build primary DPmetaApp APK (targetSdk 28)
@@ -109,10 +166,16 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Require green full-strict result
-        if: steps.strict.outcome != 'success'
+        if: always() && steps.strict.outcome != 'success'
         shell: bash
         run: |
           echo 'full --strict failed: APKs (if created) are diagnostic only; merge into main is forbidden.'
+          exit 1
+      - name: Require green interface result
+        if: always() && steps.interface.outcome != 'success'
+        shell: bash
+        run: |
+          echo 'Interface verification failed: APKs are diagnostic only.'
           exit 1
 
   signed-release:
