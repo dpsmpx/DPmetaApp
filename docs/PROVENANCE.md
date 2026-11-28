@@ -36,12 +36,20 @@ Compose, JSch; wrapper Gradle со сверкой SHA-256) — `dpai/docs/PROVEN
 | AndroidX Core (`androidx.core:core`, каталог `androidx-core`) | 1.18.0 | Apache-2.0 | `FileProvider` — «Поделиться» экспортом истории (F-36) | `:app` | D-67 |
 | Robolectric (`org.robolectric:robolectric`, каталог `robolectric`; с ним JUnit 4 `junit:junit` 4.13.2 — EPL-1.0 и `junit-vintage-engine` из JUnit BOM — EPL-2.0) | 4.17 | MIT (транзитивные — как у DPpass, `dppass/docs/PROVENANCE.md`) | снимки экранов на JVM (`docs/SCREENSHOTS.md`): только тестам `:shell` и только по свойству `dpmeta.screenshots`; в APK и обычную сборку не попадает | `:shell` (тест) | те же версии, что у тестов экранов DPpass (`DPpass:D-86`) |
 | Образ «Android целиком» (`org.robolectric:android-all-instrumented`, каталог `robolectric-android-all`) | 16-robolectric-13921718-i7 | Apache-2.0 | образ SDK 36 для Robolectric 4.17; берётся Gradle со сверкой суммы, тест ничего не скачивает | `:shell` (тест) | `DPpass:D-86`; SHA-256 — `gradle/verification-metadata.xml` |
+| GitHub Actions Cache (`actions/cache`, restore/save) | v5, commit `caa296126883cff596d87d8935842f9db880ef25` | MIT | сохранение проверенных файлов образа Robolectric между прогонами, без кэша результатов тестов | только CI, `.github/workflows/apk.yml` | официальный `actions/cache`, Node 24; разрешённый workflow D-187 |
 
 Образ Robolectric API 30 (`org.robolectric:android-all-instrumented`
 11-robolectric-6757853-i7, каталог `robolectric-android30`, Apache-2.0) —
 только тестам `:shell` при `dpmeta.test.sdk=30`. Версия сверена с
 DefaultSdkProvider Robolectric 4.17; JAR/POM SHA-256 получены из Maven Central
 и закреплены в `gradle/verification-metadata.xml`. В APK не включается.
+
+28 ноября 2026 для обоих образов выбран отдельный репозиторий Gradle —
+зеркало Maven Central `https://maven-central.storage-download.googleapis.com/maven2/`.
+Фильтр разрешает ему только `org.robolectric:android-all-instrumented`;
+версии и закреплённые SHA-256 JAR/POM не меняются. Это дополнительный
+канал получения тех же файлов после устойчивого HTTP 429 основного
+узла, без доверия контрольным суммам, полученным вместе с загрузкой.
 
 Предпросмотр на ПК (`DP_AI_Orcestrator:D-169`) на один запуск добавляет тестам
 модуля проекта на ПК Robolectric 4.17 и JUnit 4.13.2 — версии закреплены в
