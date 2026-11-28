@@ -177,16 +177,22 @@ dependencies {
 }
 
 if (screenshots) {
+    // Отдельная подготовка позволяет повторить сетевую загрузку до запуска тестов.
+    // Sync получает только артефакт, уже сверенный Gradle; Robolectric остаётся offline.
+    val imageDirectory = layout.buildDirectory.dir("robolectric-image")
+    val prepareImage = tasks.register<Sync>("prepareRobolectricImage") {
+        from(robolectricImage)
+        into(imageDirectory)
+    }
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
-        val image: FileCollection = robolectricImage.incoming.artifacts.artifactFiles
-        inputs.files(image)
+        inputs.files(prepareImage)
         // Robolectric ничего не скачивает сам: образ уже сверен Gradle.
         systemProperty("robolectric.offline", "true")
         systemProperty("robolectric.enabledSdks", testSdk)
         // Образ Android 16 заводит общую память через внутренности FileDescriptor JDK — только в JVM тестов.
         jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
-        jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Drobolectric.dependency.dir=" + image.singleFile.parentFile.path) })
+        systemProperty("robolectric.dependency.dir", imageDirectory.get().asFile.absolutePath)
         val corpus = rootProject.layout.projectDirectory.dir("tests/corpus/ecosystem")
         inputs.dir(corpus).withPropertyName("corpus")
         systemProperty("corpus.ecosystem", corpus.asFile.absolutePath)

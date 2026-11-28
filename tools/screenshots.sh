@@ -20,6 +20,7 @@ OUT="$(cd "$OUT" && pwd)"
 find "$OUT" -maxdepth 1 -name '*.png' -type f -delete
 
 cd "$ROOT"
+python3 tools/prepare-screenshots.py
 ./gradlew --console=plain :shell:testDebugUnitTest \
   -Pdpmeta.screenshots -Pdpmeta.screenshots.dir="$OUT" \
   --tests 'com.dpsmpx.dpmeta.shell.ScreenshotsTest'

@@ -66,6 +66,7 @@ jobs:
           set -euo pipefail
           interface_out="$GITHUB_WORKSPACE/build/interface-screenshots"
           mkdir -p "$interface_out/reports"
+          python3 tools/prepare-screenshots.py --log-dir "$interface_out/preparation"
           appearance_status=0
           ./gradlew --console=plain :shell:testDebugUnitTest \
             -Pdpmeta.screenshots "-Pdpmeta.screenshots.dir=$interface_out" \
@@ -95,13 +96,15 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Preserve failing JUnit test reports
-        if: steps.strict.outcome == 'failure' || steps.interface.outcome == 'failure'
+        if: always() && (steps.strict.outcome == 'failure' || steps.interface.outcome == 'failure')
         uses: actions/upload-artifact@v4
         with:
           name: DPmetaApp-test-results-${{ github.sha }}
           path: |
             **/build/test-results/**/*.xml
             **/build/reports/tests/**
+            build/reports/configuration-cache/**
+            build/interface-screenshots/preparation/**
           if-no-files-found: warn
           retention-days: 7
       - name: Build primary DPmetaApp APK (targetSdk 28)
