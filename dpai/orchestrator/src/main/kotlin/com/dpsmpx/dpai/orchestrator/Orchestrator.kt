@@ -825,7 +825,21 @@ class Orchestrator(
         return open.sortedWith(compareBy<ExecutionTargetId>({ !ownSlot(it) }, { it != planned }, { it.value }))
     }
 
+    private fun modelAdmissionWaiting(task: TaskId): Boolean {
+        val gate = com.dpsmpx.dpai.accounts.AiAdmission.global
+        val reason = gate.failure()?.let { "настройка ИИ не прочитана: $it" } ?: gate.snapshot().policy?.let { p ->
+            when {
+                gate.active() != 0 -> "ждёт завершения или сверки общего ИИ-вызова"
+                p.allowed.none { it.native } -> "в общем режиме ИИ разрешены только API-модели; задача CLI остаётся в очереди"
+                else -> null
+            }
+        }
+        if (reason != null) waiting(task, reason, DiagCode.OPERATION_NOT_ALLOWED)
+        return reason != null
+    }
+
     private fun launch(task: TaskId, planned: ExecutionTargetId) {
+        if (modelAdmissionWaiting(task)) return
         val t = tasks.tasks.getValue(task)
         val session = ids.next(IdKinds.SESSION)
         // План выбирает target по месту, не по пределам: его подписка могла упереться в предел пяти часов
@@ -1372,6 +1386,7 @@ class Orchestrator(
      * задача ждёт с причиной; изменения не получены — ревью без итога.
      */
     private fun launchReview(task: TaskId, role: ReviewRole, attempt: Int) {
+        if (modelAdmissionWaiting(task)) return
         val t = tasks.tasks.getValue(task)
         val work = lastWork(task) ?: return recordReviewFailure(task, role, attempt, null, "у задачи нет рабочей сессии — неизвестно, где её дерево")
         val target = work.target

@@ -183,8 +183,10 @@ object ModelsStore {
     @Synchronized
     fun saveProfile(p: ApiProfile, key: Secret?): String? {
         val d = docs ?: return "хранилище не готово"
+        if (p.capabilities?.let { it.binding != com.dpsmpx.dpai.accounts.ModelCapabilities.binding(p) } == true) return "сведения о возможностях относятся к другой модели или адресу"
         if (key != null && !key.isEmpty && !ApiKeys.put(app, p.id, key)) return "ключ не сохранён: Keystore отказал"
-        val next = profileFlow.value.filter { it.id != p.id } + p
+        val retained = com.dpsmpx.dpai.accounts.ApiProfiles.retainCapabilities(profileFlow.value.firstOrNull { it.id == p.id }, p)
+        val next = profileFlow.value.filter { it.id != p.id } + retained
         return when (val w = d.write(PROFILES, ApiProfileBook.toJson(next))) {
             is Outcome.Failure -> "профиль не сохранён: ${w.errors.first().message}"
             is Outcome.Success -> null.also { profileFlow.value = next }

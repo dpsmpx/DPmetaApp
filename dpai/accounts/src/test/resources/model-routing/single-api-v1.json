@@ -1,0 +1,16 @@
+{
+  "format": "dpai.model-routing",
+  "version": 1,
+  "policy": {
+    "mode": "SINGLE",
+    "allowed": [
+      {
+        "backend": "ANTHROPIC_API",
+        "model": "model-a",
+        "profile": "acc_01J9ZQ3K8M7N6P5R4S3T2V1W0X",
+        "address": "https://api.anthropic.com/v1"
+      }
+    ]
+  },
+  "pending": []
+}

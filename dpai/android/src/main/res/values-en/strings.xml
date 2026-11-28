@@ -311,4 +311,21 @@
     <string name="context_mode_project">Project wide</string>
     <string name="context_mode_full">Full context</string>
     <string name="context_mode_custom">Custom</string>
+
+    <!-- Общий допуск моделей, D-225. -->
+    <string name="routing_title">Studio AI mode</string>
+    <string name="routing_unconfigured">Mode not configured</string>
+    <string name="routing_active">Active or unreconciled calls: %1$d</string>
+    <string name="routing_intro">SINGLE allows one selected model; MULTI_SEQUENTIAL allows selected models one at a time. This also covers dashboard calls, AI completion, local hints and CLI. When only API models are selected, CLI tasks wait in the queue. Finish calls and CLI sessions before changing modes.</string>
+    <string name="routing_api_profiles">Allowed API profiles</string>
+    <string name="routing_no_profiles">Add a profile and select its model first.</string>
+    <string name="routing_stale">A saved profile was removed or changed. Select current profiles.</string>
+    <string name="routing_apply">Apply mode</string>
+    <string name="routing_disable">Remove studio-wide restriction</string>
+    <string name="routing_cloud_confirm">Reconcile cloud session</string>
+    <string name="routing_native_pending">The CLI reservation clears after confirmed exit. Wait for the target or stop the session.</string>
+    <string name="routing_cloud_warning">Open Claude and verify that this session has finished or stopped. The app cannot check this through /fire. Confirm only after checking.</string>
+    <string name="routing_cloud_finished">Verified: session finished</string>
+    <string name="routing_cancel">Cancel</string>
+    <string name="routing_clear_selection">Clear selection</string>
 </resources>

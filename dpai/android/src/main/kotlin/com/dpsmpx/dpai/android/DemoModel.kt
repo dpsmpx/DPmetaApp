@@ -234,6 +234,13 @@ class DemoModel(
 
     @Volatile private var executorChatCache: List<ExecutorChat> = emptyList()
 
+    /** Смена общей политики не запускает такт и не теряет очередь; старые контуры сначала читаются. */
+    internal fun configureAiMode(expected: String, policy: com.dpsmpx.dpai.accounts.AiModePolicy?): Outcome<Unit> = lock.withLock {
+        current()
+        val quiet = contours.values.all { view -> !view.orchestrator.storageBroken && view.orchestrator.sessions.sessions.values.none { !it.terminal } }
+        com.dpsmpx.dpai.accounts.AiAdmission.global.configure(expected, policy, quiet)
+    }
+
     /** Сессии всех рабочих проектов, включая фоновые; ожидание занятого такта ограничено. */
     fun executorChats(): List<ExecutorChat> {
         if (!lock.tryLock(200, TimeUnit.MILLISECONDS)) return executorChatCache

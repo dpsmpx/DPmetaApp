@@ -151,6 +151,7 @@ fun ModelsPane(controller: Controller, model: DemoModel, onSession: (ExecutorCha
             TextButton(onClick = { showProfiles = !showProfiles }) { Text(if (showProfiles) "Скрыть исполнителей и настройки ▾" else "Исполнители и настройки ▸") }
         }
         if (showProfiles) item {
+            ModelRoutingSection(profiles, model)
             // «Добавить профиль» — заметной кнопкой, а не текстом под пояснением (AI:A-26).
             androidx.compose.material3.FilledTonalButton(onClick = { creating = true }, modifier = Modifier.padding(top = 4.dp)) { Text("Добавить профиль") }
         }

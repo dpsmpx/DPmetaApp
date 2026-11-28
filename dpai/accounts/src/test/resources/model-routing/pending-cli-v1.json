@@ -1,0 +1,30 @@
+{
+  "format": "dpai.model-routing",
+  "version": 1,
+  "policy": {
+    "mode": "SINGLE",
+    "allowed": [
+      {
+        "backend": "CLAUDE",
+        "model": "model-a",
+        "profile": null,
+        "address": null
+      }
+    ]
+  },
+  "pending": [
+    {
+      "owner": "ses_01J9ZQ3K8M7N6P5R4S3T2V1W0X",
+      "model": {
+        "backend": "CLAUDE",
+        "model": "model-a",
+        "profile": null,
+        "address": null
+      },
+      "target": "tgt_01J9ZQ3K8M7N6P5R4S3T2V1W0X",
+      "reference": null,
+      "turn": 2,
+      "location": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ]
+}

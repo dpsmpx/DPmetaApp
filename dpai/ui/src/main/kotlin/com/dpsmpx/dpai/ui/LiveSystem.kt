@@ -13,6 +13,11 @@ import com.dpsmpx.dpai.core.ids.ProviderSessionId
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.hashing.Hashing
+import com.dpsmpx.dpai.core.serialization.JsonObject
+import com.dpsmpx.dpai.core.serialization.JsonString
+import com.dpsmpx.dpai.core.serialization.JsonNumber
+import com.dpsmpx.dpai.core.serialization.JsonBool
 import com.dpsmpx.dpai.core.state.SessionState
 import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.execution.agent.FollowingEventSource
@@ -242,7 +247,18 @@ class LiveSystem(
         for (e in usable) {
             val agent = manager.client(e.id).valueOrNull()!!
             val events = FollowingEventSource(agent, clock).also { streams += it }
-            runners[e.id] = ClaudeCodeCliRunner(agent, { ProviderSessionId.newUuid(random) }, eventSource = events)
+            val admitted = com.dpsmpx.dpai.orchestrator.AdmittedRunner(
+                ClaudeCodeCliRunner(agent, { ProviderSessionId.newUuid(random) }, eventSource = events), agent, e.id,
+                location = Hashing.sha256(JsonObject.of(
+                    "target" to JsonString(e.id.value), "inApp" to JsonBool(e.inApp),
+                    "host" to JsonString(e.host), "port" to JsonNumber.of(e.port),
+                    "user" to JsonString(e.user), "agent" to JsonString(e.agent), "platform" to JsonString(e.platform.name),
+                )).hex,
+            )
+            runners[e.id] = admitted
+            for (pending in com.dpsmpx.dpai.accounts.AiAdmission.global.snapshot().pending.filter { it.target == e.id && it.model.native }) {
+                IdKinds.SESSION.parse(pending.owner).valueOrNull()?.let { admitted.reconcile(it) }
+            }
         }
         lateinit var o: Orchestrator
         val router = RoutingRunner({ o.sessions.sessions[it]?.target }, { runners[it] })

@@ -1,6 +1,13 @@
 package com.dpsmpx.dpai.providers
 
 import com.dpsmpx.dpai.accounts.Routine
+import com.dpsmpx.dpai.accounts.AiAdmission
+import com.dpsmpx.dpai.accounts.AiBackend
+import com.dpsmpx.dpai.accounts.AiModelRef
+import com.dpsmpx.dpai.core.clock.Clock
+import com.dpsmpx.dpai.core.clock.RandomSource
+import com.dpsmpx.dpai.core.ids.IdGenerator
+import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Secret
 import com.dpsmpx.dpai.core.result.Outcome
@@ -24,7 +31,7 @@ data class RoutineFired(val sessionId: String, val sessionUrl: String)
  * состояться»: человек сверяет сессии в Claude до повтора. Ссылка ответа —
  * только `https://claude.ai/code/…`: иной адрес приложение не откроет.
  */
-class RoutineClient(private val transport: Transport = UrlTransport()) {
+class RoutineClient(private val transport: Transport = UrlTransport(), private val admission: AiAdmission = AiAdmission.global) {
     fun fire(routine: Routine, token: Secret?, text: String, cancel: Cancel = Cancel()): Outcome<RoutineFired> {
         if (token == null || token.isEmpty) {
             return Outcome.failure(DiagCode.PROVIDER_KEY_MISSING, "у маршрута «${routine.name}» нет токена", SUBJECT)
@@ -46,14 +53,26 @@ class RoutineClient(private val transport: Transport = UrlTransport()) {
             SecretHeader("Authorization", "Bearer ", token),
         )
         ProviderHosts.check(call, emptySet()).let { if (it is Outcome.Failure) return it }
+        // /fire не сообщает модель и окончание облачной сессии. Не выдаём такой запуск за SINGLE.
+        val owner = "routine:${ids.next(IdKinds.CORRELATION).value}"
+        when (val reserved = admission.acquire(owner, AiModelRef(AiBackend.CLOUD_ROUTINE, null, routine.id))) {
+            is Outcome.Failure -> return reserved
+            is Outcome.Success -> Unit
+        }
         val reply = when (val r = transport.open(call, cancel)) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }
         return reply.use {
             try {
-                if (it.status != 200) return refusal(it)
-                parse(JsonParser().parse(it.readText(MAX_REPLY_CHARS)).valueOrNull())
+                if (it.status != 200) {
+                    // Эти ответы подтверждают отказ до запуска; 5xx/обрыв оставляют неопределённость.
+                    if (it.status in setOf(401, 403, 404, 429)) admission.release(owner)
+                    return refusal(it)
+                }
+                parse(JsonParser().parse(it.readText(MAX_REPLY_CHARS)).valueOrNull()).also { parsed ->
+                    if (parsed is Outcome.Success) admission.cloudReference(owner, parsed.value.sessionUrl.substringBefore('?'))
+                }
             } catch (e: IOException) {
                 Outcome.failure(DiagCode.NETWORK_UNREACHABLE, "ответ оборвался (${e.javaClass.simpleName}): запуск мог состояться — сверьте сессии в Claude до повтора", SUBJECT)
             }
@@ -98,6 +117,7 @@ class RoutineClient(private val transport: Transport = UrlTransport()) {
     }
 
     companion object {
+        private val ids = IdGenerator(Clock.SYSTEM, RandomSource.secure())
         const val SUBJECT = "routine"
 
         /** Бета-заголовок маршрутов; сервис принимает запрос и без него, с ним — так, как в документации. */

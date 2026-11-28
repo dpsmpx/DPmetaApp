@@ -298,4 +298,21 @@
     <string name="context_mode_project">Весь проект</string>
     <string name="context_mode_full">Полный контекст</string>
     <string name="context_mode_custom">Свой</string>
+
+    <!-- Общий допуск моделей, D-225. -->
+    <string name="routing_title">Общий режим ИИ</string>
+    <string name="routing_unconfigured">Режим не настроен</string>
+    <string name="routing_active">Активных или не сверенных вызовов: %1$d</string>
+    <string name="routing_intro">SINGLE разрешает одну выбранную модель; MULTI_SEQUENTIAL — выбранные модели по очереди. Ограничение действует также на пульт, ИИ-дополнение, локальные подсказки и CLI. При выборе только API-моделей задачи CLI ждут в очереди. Смена режима требует завершения вызовов и сессий CLI.</string>
+    <string name="routing_api_profiles">Разрешённые API-профили</string>
+    <string name="routing_no_profiles">Сначала добавьте профиль с выбранной моделью.</string>
+    <string name="routing_stale">Сохранённый профиль удалён или изменён. Выберите актуальные профили.</string>
+    <string name="routing_apply">Применить режим</string>
+    <string name="routing_disable">Без общего ограничения</string>
+    <string name="routing_cloud_confirm">Сверить облачную сессию</string>
+    <string name="routing_native_pending">Резерв CLI снимается после подтверждённого выхода. Дождитесь доступа к target или остановите сессию.</string>
+    <string name="routing_cloud_warning">Откройте Claude и убедитесь, что эта сессия закончилась или остановлена. Приложение не может проверить это через /fire. Подтверждайте только после сверки.</string>
+    <string name="routing_cloud_finished">Проверено: сессия завершена</string>
+    <string name="routing_cancel">Отмена</string>
+    <string name="routing_clear_selection">Сбросить выбор</string>
 </resources>

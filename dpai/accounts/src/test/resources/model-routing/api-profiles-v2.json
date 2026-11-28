@@ -1,0 +1,46 @@
+{
+  "format": "dpai.api-profiles",
+  "version": 2,
+  "profiles": [
+    {
+      "id": "acc_01J9ZQ3K8M7N6P5R4S3T2V1W0X",
+      "name": "Example",
+      "provider": "anthropic",
+      "baseUrl": "https://api.anthropic.com/v1",
+      "model": "model-a",
+      "customHost": false,
+      "capabilities": {
+        "format": "dpai.model-capabilities",
+        "version": 1,
+        "binding": "a5ac44ac850fa5868b380218525617f02ffd012572ce47a40b0a19badd096e67",
+        "roles": [
+          "IMPLEMENTER"
+        ],
+        "tools": null,
+        "contextTokens": {
+          "unknown": "not measured"
+        },
+        "code": {
+          "unknown": "not measured"
+        },
+        "reasoning": {
+          "unknown": "not measured"
+        },
+        "relativeCost": {
+          "unknown": "not measured"
+        },
+        "remainingCalls": {
+          "unknown": "not measured"
+        },
+        "maximumComplexity": {
+          "unknown": "not measured"
+        },
+        "availability": {
+          "unknown": "not measured"
+        },
+        "specializations": [],
+        "verified": []
+      }
+    }
+  ]
+}
