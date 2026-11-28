@@ -256,9 +256,6 @@ class LiveSystem(
                 )).hex,
             )
             runners[e.id] = admitted
-            for (pending in com.dpsmpx.dpai.accounts.AiAdmission.global.snapshot().pending.filter { it.target == e.id && it.model.native }) {
-                IdKinds.SESSION.parse(pending.owner).valueOrNull()?.let { admitted.reconcile(it) }
-            }
         }
         lateinit var o: Orchestrator
         val router = RoutingRunner({ o.sessions.sessions[it]?.target }, { runners[it] })
@@ -469,6 +466,15 @@ class LiveSystem(
         }
     }
 
+    /** Сверяем только собственные сессии и после ответа target, без SSH в конструкторе (D-63). */
+    private fun reconcileAiReservations(target: ExecutionTargetId) {
+        val runner = runners[target] as? com.dpsmpx.dpai.orchestrator.AdmittedRunner ?: return
+        for (pending in com.dpsmpx.dpai.accounts.AiAdmission.global.snapshot().pending.filter { it.target == target && it.model.native }) {
+            val session = IdKinds.SESSION.parse(pending.owner).valueOrNull() ?: continue
+            if (session in orchestrator.sessions.sessions) problems += runner.reconcile(session).errors
+        }
+    }
+
     override fun step() {
         if (externalPause()) return
         if (!probesStarted) {
@@ -485,6 +491,7 @@ class LiveSystem(
                 is Outcome.Success -> r.value?.let { status ->
                     probes.remove(target)
                     probeFailedAt.remove(target)
+                    reconcileAiReservations(target)
                     // Target ответил: прежние сетевые отказы (SSH до добавления ключа и т. п.) — уже не правда, на «Внимание» их не держать.
                     problems.removeAll { it.category == com.dpsmpx.dpai.core.diagnostics.Category.NETWORK }
                     val slot = slotOf[target]

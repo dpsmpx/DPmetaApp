@@ -94,4 +94,14 @@ class AdmittedRunnerTest {
         assertIs<Outcome.Success<*>>(r.reconcile(session))
         assertEquals(0, gate.active())
     }
+
+    @Test fun unsupportedDelegationControlFailsBeforeAnyCliLaunch() {
+        val codex = AiModelRef.native(Executor.CODEX, "model-a")
+        val g = AiAdmission()
+        g.configure("unconfigured", AiModePolicy(AiMode.SINGLE, listOf(codex)), true)
+        val session = ids.next(IdKinds.SESSION)
+        assertIs<Outcome.Failure>(runner(g).start(session, request.copy(executor = Executor.CODEX)))
+        assertEquals(null, host.spec(session))
+        assertEquals(0, g.active())
+    }
 }

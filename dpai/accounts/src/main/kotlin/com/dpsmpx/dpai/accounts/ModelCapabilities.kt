@@ -7,7 +7,6 @@ import com.dpsmpx.dpai.core.measure.MeasureSource
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.JsonArray
 import com.dpsmpx.dpai.core.serialization.JsonBool
-import com.dpsmpx.dpai.core.serialization.JsonNull
 import com.dpsmpx.dpai.core.serialization.JsonNumber
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
@@ -32,7 +31,7 @@ data class ModelVerification(val evidence: String, val complexity: Int, val pass
 data class ModelCapabilities(
     val binding: String,
     val roles: Set<ModelRole> = emptySet(),
-    val tools: Set<String>? = null,
+    val tools: Measure<Set<String>> = Measure.unknown("инструменты модели не указаны"),
     val contextTokens: Measure<Long> = Measure.unknown("предел контекста не указан"),
     val code: Measure<Boolean> = Measure.unknown("возможности работы с кодом не указаны"),
     val reasoning: Measure<Boolean> = Measure.unknown("поддержка рассуждений не указана"),
@@ -45,10 +44,10 @@ data class ModelCapabilities(
 ) {
     init {
         require(binding.matches(Regex("[0-9a-f]{64}")))
-        require(listOf(contextTokens, code, reasoning, relativeCost, remainingCalls, maximumComplexity, availability).all {
+        require(listOf(tools, contextTokens, code, reasoning, relativeCost, remainingCalls, maximumComplexity, availability).all {
             it !is Measure.Unknown || it.reason.isNotBlank() && it.reason.length <= 1000 && it.reason.none(Char::isISOControl)
         })
-        require(tools == null || tools.size <= 128 && tools.all { it.matches(Regex("[A-Za-z][A-Za-z0-9_.-]{0,99}")) })
+        require(tools.orNull()?.let { names -> names.size <= 128 && names.all { it.matches(Regex("[A-Za-z][A-Za-z0-9_.-]{0,99}")) } } != false)
         require(contextTokens.orNull()?.let { it in 1..10_000_000 } != false)
         require(relativeCost.orNull()?.let { it in 1..1_000_000 } != false)
         require(remainingCalls.orNull()?.let { it >= 0 } != false)
@@ -65,7 +64,7 @@ data class ModelCapabilities(
     fun json(): JsonObject = JsonObject.of(
         "format" to JsonString("dpai.model-capabilities"), "version" to JsonNumber.of(1),
         "binding" to JsonString(binding), "roles" to strings(roles.map { it.name }.sorted()),
-        "tools" to (tools?.let { strings(it.sorted()) } ?: JsonNull),
+        "tools" to measured(tools) { strings(it.sorted()) },
         "contextTokens" to measured(contextTokens) { JsonNumber.of(it) },
         "code" to measured(code, ::JsonBool), "reasoning" to measured(reasoning, ::JsonBool),
         "relativeCost" to measured(relativeCost) { JsonNumber.of(it) },
@@ -95,16 +94,18 @@ data class ModelCapabilities(
             fun long(k: String): Measure<Long> = readMeasured(o[k]) { (it as JsonNumber).toLongExact()!! }
             fun bool(k: String): Measure<Boolean> = readMeasured(o[k]) { (it as JsonBool).value }
             val roleNames = names("roles")
-            val toolNames = if (o["tools"] == JsonNull) null else names("tools")
+            val toolNames = readMeasured(o["tools"]) { value ->
+                (value as JsonArray).items.also { require(it.size <= 128) }.map { (it as JsonString).value }.also { require(it.distinct().size == it.size) }.toSet()
+            }
             val specialties = names("specializations")
-            require(roleNames.distinct().size == roleNames.size && toolNames?.let { it.distinct().size == it.size } != false && specialties.distinct().size == specialties.size)
+            require(roleNames.distinct().size == roleNames.size && specialties.distinct().size == specialties.size)
             val records = (o["verified"] as JsonArray).items.also { require(it.size <= 64) }.map {
                 val record = it as JsonObject
                 require(record.fields.keys == setOf("evidence", "complexity", "passed"))
                 val rank = (record["complexity"] as JsonNumber).toLongExact()!!.also { n -> require(n in 1..5) }
                 ModelVerification((record["evidence"] as JsonString).value, rank.toInt(), (record["passed"] as JsonBool).value)
             }
-            Outcome.success(ModelCapabilities(text("binding"), roleNames.map(ModelRole::valueOf).toSet(), toolNames?.toSet(),
+            Outcome.success(ModelCapabilities(text("binding"), roleNames.map(ModelRole::valueOf).toSet(), toolNames,
                 long("contextTokens"), bool("code"), bool("reasoning"), long("relativeCost"), long("remainingCalls"), long("maximumComplexity"),
                 readMeasured(o["availability"]) { ModelAvailability.valueOf((it as JsonString).value) }, specialties.toSet(), records))
         } catch (_: IllegalArgumentException) { invalid() } catch (_: ClassCastException) { invalid() } catch (_: NullPointerException) { invalid() }

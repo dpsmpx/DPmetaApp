@@ -16,7 +16,9 @@
         "roles": [
           "IMPLEMENTER"
         ],
-        "tools": null,
+        "tools": {
+          "unknown": "not measured"
+        },
         "contextTokens": {
           "unknown": "not measured"
         },

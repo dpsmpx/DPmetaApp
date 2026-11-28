@@ -17,6 +17,9 @@ class ModelCapabilitiesTest {
     @Test fun unknownsAndEvidenceRoundTripWithoutGuessedQuality() {
         val unknown = ModelCapabilities(ModelCapabilities.binding(profile))
         assertIs<Measure.Unknown>(unknown.maximumComplexity)
+        assertIs<Measure.Unknown>(unknown.tools)
+        val noTools = unknown.copy(tools = Measure.observed(emptySet()))
+        assertEquals(noTools, ModelCapabilities.read(noTools.json()).valueOrNull())
         val caps = unknown.copy(roles = setOf(ModelRole.IMPLEMENTER), contextTokens = Measure.estimated(32000L))
             .record(ModelVerification("a".repeat(64), 3, true)).record(ModelVerification("a".repeat(64), 3, false))
         assertEquals(1, caps.verified.size)

@@ -39,6 +39,9 @@ class AdmittedRunner(
     override fun resume(session: SessionId, request: ClaudeRequest): Outcome<RunnerState> = turn(session, request) { delegate.resume(session, it) }
 
     private fun turn(session: SessionId, request: ClaudeRequest, launch: (ClaudeRequest) -> Outcome<RunnerState>): Outcome<RunnerState> {
+        if (admission.configured() && request.executor != Executor.CLAUDE) return Outcome.failure(
+            DiagCode.OPERATION_NOT_ALLOWED, "для этого CLI ещё не подтверждён запрет делегирования в общем режиме ИИ",
+        )
         val effective = controlled(request)
         val previous = delegate.inspect(session).valueOrNull()?.run?.turn ?: 0
         if (previous < 0 || previous == Int.MAX_VALUE) return Outcome.failure(DiagCode.VALUE_INVALID, "недопустимый номер предыдущего ИИ-хода")
